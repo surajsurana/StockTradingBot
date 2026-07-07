@@ -1,0 +1,21 @@
+# Real secrets -- never commit. Copy config/settings.example.py to
+# config/settings.py locally and fill in your own values there.
+config/settings.py
+
+# Local logs / generated data
+paper_trades_log.csv
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
