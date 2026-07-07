@@ -178,6 +178,20 @@ def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5") -> st
     return "\n".join(text_blocks)
 
 
+def disabled_news_assessment(symbol: str) -> NewsAssessment:
+    """
+    Stand-in for analyze_news() when config.settings.USE_NEWS_AGENT is False --
+    lets callers skip the News Agent's Claude call entirely (cost control)
+    while still feeding Research Analyst a well-formed, neutral input, the
+    same way a "no headlines found" result already does.
+    """
+    return NewsAssessment(
+        symbol=symbol, sentiment="neutral", confidence=0.0,
+        reasoning="News Agent disabled (USE_NEWS_AGENT=False in config/settings.py).",
+        headlines_considered=[],
+    )
+
+
 def analyze_news(symbol: str, api_key: str, max_items: int = 8,
                   call_fn: Optional[Callable[[str], str]] = None) -> NewsAssessment:
     """
