@@ -4,6 +4,8 @@ config/settings.py
 
 # Local logs / generated data
 paper_trades_log.csv
+closed_trades_log.csv
+data/known_positions.json
 *.log
 
 # Python

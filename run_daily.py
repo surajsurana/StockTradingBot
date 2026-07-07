@@ -78,6 +78,9 @@ from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
 from risk.risk_manager import RiskManager
 from execution.execution_engine import ExecutionEngine, fetch_available_capital
+from execution.positions import fetch_holdings
+from execution.position_state import reconcile_closed_positions, record_new_position
+from auth.kite_auto_login import ensure_fresh_kite_session
 from reporting.telegram_notifier import send_telegram_message
 
 PROGRESS_EVERY = 25  # print a progress line every N symbols during the Stage 1 scan
@@ -225,6 +228,27 @@ def get_available_capital(live_trading: bool):
     return settings.STARTING_CAPITAL
 
 
+def get_current_holdings(live_trading: bool) -> list:
+    """
+    Real current Kite holdings, used to seed RiskManager (so MAX_OPEN_POSITIONS
+    and deployed-capital limits respect what's actually held across days, not
+    just what happened in this run) and to reconcile closures (a position that
+    disappeared since last check was closed by a GTT trigger or by
+    monitor_positions.py's own early exit).
+
+    Only meaningful in LIVE mode -- paper mode never actually buys anything on
+    Kite, so treating real holdings as "the bot's positions" there would be
+    wrong (a paper "position" would never show up in real holdings, and
+    reconciliation would immediately -- incorrectly -- think it had closed).
+    Live mode requires this to succeed (same abort-rather-than-guess policy as
+    get_available_capital): sizing/reconciling against an unknown position
+    picture risks breaching real risk limits.
+    """
+    if not live_trading:
+        return []
+    return fetch_holdings(settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN)
+
+
 def main():
     limit, force_paper = parse_cli_args()
     live_trading = settings.LIVE_TRADING and not force_paper
@@ -234,9 +258,36 @@ def main():
                               else "PAPER MODE" + (" (forced by --paper)" if force_paper else "")))
     print("=" * 60)
 
+    session_ok = ensure_fresh_kite_session(settings)
+    if live_trading and not session_ok:
+        print("\nABORTING -- could not establish a valid Kite session (auto-login failed or "
+              "isn't configured). Run refresh_kite_token.py manually, or fill in "
+              "KITE_USER_ID/KITE_PASSWORD/KITE_TOTP_SECRET in config/settings.py.")
+        send_telegram_message(
+            "*Daily run aborted*\n\nCould not establish a valid Kite session for live trading.",
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
+        return
+
     capital = get_available_capital(live_trading)
     if capital is None:
         return
+
+    try:
+        holdings = get_current_holdings(live_trading)
+    except Exception as e:
+        print(f"\nABORTING -- could not fetch current holdings from Kite: {e}")
+        send_telegram_message(
+            f"*Daily run aborted*\n\nCould not fetch current holdings from Kite: {e}",
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
+        return
+
+    if live_trading:
+        reconcile_closed_positions(
+            holdings, settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN,
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
 
     symbols = get_universe(limit=limit)
     print(f"Universe: {len(symbols)} symbol(s)"
@@ -268,6 +319,7 @@ def main():
         max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
         daily_loss_circuit_breaker_pct=settings.DAILY_LOSS_CIRCUIT_BREAKER_PCT,
     )
+    risk_manager.seed_existing_positions(holdings)
     decisions = allocate(candidates, risk_manager)
 
     execution_engine = ExecutionEngine(
@@ -286,6 +338,11 @@ def main():
         if decision.approved and decision.approved_trade is not None:
             result = execution_engine.place_order(decision.approved_trade)
             executed.append((decision, result))
+            if live_trading:
+                signal = decision.approved_trade.signal
+                record_new_position(
+                    signal.symbol, decision.quantity, signal.entry_price, result.get("gtt_id"),
+                )
 
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",

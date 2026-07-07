@@ -94,3 +94,20 @@ class RiskManager:
 
     def reset_day(self):
         self.realized_pnl_today = 0.0
+
+    def seed_existing_positions(self, holdings: list):
+        """
+        Seeds open_positions_count/capital_deployed from what's actually held
+        in the Kite account (see execution/positions.py's fetch_holdings),
+        rather than starting both at zero as if nothing were open. Without
+        this, a fresh RiskManager instance each day would let MAX_OPEN_POSITIONS
+        and MAX_DEPLOYED_CAPITAL_PCT be breached across days -- e.g. 5
+        positions already open, then 5 more approved the next morning because
+        this run's in-memory count started back at 0.
+
+        Call this once, right after construction, before evaluating any new
+        candidate signal for the day. `holdings` is a list of objects with
+        `.quantity` and `.average_price` (execution.positions.Holding).
+        """
+        self.open_positions_count = len(holdings)
+        self.capital_deployed = sum(h.quantity * h.average_price for h in holdings)

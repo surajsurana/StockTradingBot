@@ -20,6 +20,18 @@ KITE_API_KEY = ""          # from developers.kite.trade
 KITE_API_SECRET = ""       # from developers.kite.trade -- never commit this
 KITE_ACCESS_TOKEN = ""     # regenerated daily -- run refresh_kite_token.py each morning
 
+# --- Automated login (auth/kite_auto_login.py) ---
+# Lets the bot log itself in every morning with no manual step. Security
+# tradeoff accepted consciously: your actual Kite password + TOTP secret are
+# stored here, in this git-ignored file. Never share this file or commit it.
+# KITE_TOTP_SECRET is the base32 secret from when you first set up 2FA (the
+# same one an authenticator app would be seeded with) -- NOT a 6-digit code,
+# since those expire every 30 seconds. Leave these blank to keep using the
+# semi-manual refresh_kite_token.py flow instead.
+KITE_USER_ID = ""       # your Kite login ID (e.g. "AB1234")
+KITE_PASSWORD = ""      # your Kite login password
+KITE_TOTP_SECRET = ""   # base32 TOTP secret, not a 6-digit code
+
 # --- Default universe: symbols traded if a strategy doesn't specify its own ---
 SYMBOLS = [
     "RELIANCE.NS",

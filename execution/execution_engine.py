@@ -9,6 +9,7 @@ that gets tested in paper mode is the same one that runs live.
 """
 
 import csv
+import json
 import os
 from datetime import datetime
 
@@ -159,4 +160,92 @@ class ExecutionEngine:
         )
         result = resp.json()
         print(f"[LIVE ORDER] status={resp.status_code} response={result}")
+
+        if signal.direction == "BUY" and result.get("status") == "success":
+            try:
+                result["gtt_id"] = self._place_gtt_exit(trade)
+            except Exception as e:
+                # The BUY itself already succeeded -- don't fail the whole trade
+                # over the safety-net GTT. Surface it loudly instead: an open
+                # position with no stop-loss/target attached needs a human's
+                # attention (or monitor_positions.py's next pass) rather than
+                # silently trading on with no exit plan at all.
+                print(f"WARNING: BUY for {symbol} filled but the GTT stop-loss/target "
+                      f"could not be placed: {e}")
+                result["gtt_id"] = None
+
+        return result
+
+    def _place_gtt_exit(self, trade: ApprovedTrade) -> int:
+        """
+        Places a two-leg GTT (Good Till Triggered / OCO) order: SELL at
+        stop_loss, SELL at target. Once this is placed, Zerodha's own servers
+        watch the price and fire the matching exit at the exchange -- no live
+        quotes or continuous polling needed from this bot (this account's
+        Kite tier doesn't have live-quote access; GTT is an order-management
+        endpoint, same tier as regular order placement, which already works).
+
+        last_price is approximated from signal.entry_price for the same
+        reason LIMIT orders are priced off it elsewhere in this file: no
+        fresher number is available on this account's tier. Returns the new
+        GTT's id so it can be cancelled later if monitor_positions.py decides
+        to exit the position early for reasons beyond a simple price trigger.
+        """
+        signal = trade.signal
+        symbol = signal.symbol.replace(".NS", "")
+
+        headers = {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {self.api_key}:{self.access_token}",
+        }
+        condition = {
+            "exchange": "NSE",
+            "tradingsymbol": symbol,
+            "trigger_values": [signal.stop_loss, signal.target],
+            "last_price": signal.entry_price,
+        }
+        orders = [
+            {
+                "exchange": "NSE", "tradingsymbol": symbol, "transaction_type": "SELL",
+                "quantity": trade.quantity, "order_type": "LIMIT", "product": "CNC",
+                "price": _round_to_tick(signal.stop_loss),
+            },
+            {
+                "exchange": "NSE", "tradingsymbol": symbol, "transaction_type": "SELL",
+                "quantity": trade.quantity, "order_type": "LIMIT", "product": "CNC",
+                "price": _round_to_tick(signal.target),
+            },
+        ]
+
+        resp = requests.post(
+            "https://api.kite.trade/gtt/triggers",
+            headers=headers,
+            data={
+                "type": "two-leg",
+                "condition": json.dumps(condition),
+                "orders": json.dumps(orders),
+            },
+        )
+        result = resp.json()
+        if resp.status_code not in (200, 201) or "data" not in result or "trigger_id" not in result["data"]:
+            raise RuntimeError(f"GTT placement failed (status {resp.status_code}): {result}")
+
+        print(f"[GTT PLACED] {symbol}: stop-loss {signal.stop_loss}, target {signal.target}, "
+              f"trigger_id={result['data']['trigger_id']}")
+        return result["data"]["trigger_id"]
+
+    def cancel_gtt(self, gtt_id: int) -> dict:
+        """
+        Cancels a standing GTT -- used when monitor_positions.py decides to
+        exit a position early (e.g. news/fundamentals turned unfavorable)
+        rather than waiting for the hard price trigger, so a stale GTT can't
+        also fire and double-sell the (already-sold) position.
+        """
+        headers = {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {self.api_key}:{self.access_token}",
+        }
+        resp = requests.delete(f"https://api.kite.trade/gtt/triggers/{gtt_id}", headers=headers)
+        result = resp.json()
+        print(f"[GTT CANCELLED] id={gtt_id} status={resp.status_code} response={result}")
         return result
