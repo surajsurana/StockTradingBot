@@ -34,7 +34,7 @@ from strategies.base import Signal
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
-from news.news_agent import analyze_news, disabled_news_assessment
+from news.news_agent import analyze_news_cached, disabled_news_assessment
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
 from execution.execution_engine import ExecutionEngine
@@ -75,8 +75,12 @@ def evaluate_holding(symbol: str, regime_series):
     fundamentals_result = check_health(symbol, metrics, settings.FUNDAMENTALS_CRITERIA)
 
     if settings.USE_NEWS_AGENT:
-        news_assessment = analyze_news(symbol, api_key=settings.ANTHROPIC_API_KEY,
-                                        max_items=settings.NEWS_MAX_ARTICLES)
+        # analyze_news_cached (not analyze_news) -- this function runs several
+        # times a day against the same held symbols, so it skips the Claude
+        # call and reuses the last verdict whenever the headlines haven't
+        # actually changed since the previous check.
+        news_assessment = analyze_news_cached(symbol, api_key=settings.ANTHROPIC_API_KEY,
+                                               max_items=settings.NEWS_MAX_ARTICLES)
     else:
         news_assessment = disabled_news_assessment(symbol)
 

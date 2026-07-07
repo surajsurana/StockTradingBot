@@ -28,6 +28,9 @@ will feed into the Research Analyst (a later piece) alongside the Technical
 and Fundamental agents' opinions.
 """
 
+import hashlib
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
@@ -35,6 +38,8 @@ from typing import Callable, Optional
 import yfinance as yf
 
 from news.rss_sources import fetch_rss_news_for_symbol
+
+NEWS_CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "news_cache.json")
 
 
 @dataclass
@@ -216,3 +221,73 @@ def analyze_news(symbol: str, api_key: str, max_items: int = 8,
     raw_response = call(prompt)
 
     return parse_news_response(symbol, raw_response, articles)
+
+
+def _headline_fingerprint(articles: list) -> str:
+    """
+    Stable fingerprint of a headline set (order-independent) -- used to
+    detect whether the news for a symbol has actually changed since the
+    last check.
+    """
+    titles = sorted(a["title"].strip().lower() for a in articles)
+    return hashlib.sha256("|".join(titles).encode("utf-8")).hexdigest()
+
+
+def _load_news_cache(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+    return json.loads(content) if content else {}
+
+
+def _save_news_cache(cache: dict, path: str):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2)
+
+
+def analyze_news_cached(symbol: str, api_key: str, max_items: int = 8,
+                         cache_path: str = NEWS_CACHE_PATH,
+                         call_fn: Optional[Callable[[str], str]] = None) -> NewsAssessment:
+    """
+    Same as analyze_news(), but skips the Claude call (and its cost) if the
+    headline set for this symbol hasn't changed since the last cached check
+    -- reuses the previous verdict instead of paying to re-analyze identical
+    headlines. Headline fetching itself (yfinance + RSS) is free and always
+    happens, so a genuinely new headline is still caught immediately.
+
+    Built for monitor_positions.py, which re-checks the same held symbols
+    several times a day -- most checks will find no new headlines since the
+    last one. run_daily.py doesn't use this: it only checks each symbol once
+    a day, so there's nothing same-day to compare against yet.
+    """
+    articles = fetch_recent_news(symbol, max_items=max_items)
+    fingerprint = _headline_fingerprint(articles)
+
+    cache = _load_news_cache(cache_path)
+    cached = cache.get(symbol)
+    if cached and cached.get("fingerprint") == fingerprint:
+        return NewsAssessment(
+            symbol=symbol, sentiment=cached["sentiment"], confidence=cached["confidence"],
+            reasoning=f"(cached -- headlines unchanged since last check) {cached['reasoning']}",
+            headlines_considered=articles,
+        )
+
+    if not articles:
+        assessment = NewsAssessment(
+            symbol=symbol, sentiment="neutral", confidence=0.0,
+            reasoning="No recent news found for this symbol.", headlines_considered=[],
+        )
+    else:
+        prompt = build_news_prompt(symbol, articles)
+        call = call_fn or (lambda p: call_claude(p, api_key))
+        raw_response = call(prompt)
+        assessment = parse_news_response(symbol, raw_response, articles)
+
+    cache[symbol] = {
+        "fingerprint": fingerprint, "sentiment": assessment.sentiment,
+        "confidence": assessment.confidence, "reasoning": assessment.reasoning,
+    }
+    _save_news_cache(cache, cache_path)
+    return assessment
