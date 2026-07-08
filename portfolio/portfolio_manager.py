@@ -85,18 +85,47 @@ def confidence_to_risk_multiplier(confidence: float) -> float:
     return MIN_RISK_MULTIPLIER + t * (MAX_RISK_MULTIPLIER - MIN_RISK_MULTIPLIER)
 
 
-def _rejection_reason_for_risk_manager_state(risk_manager: RiskManager) -> str:
+def _rejection_reason_for_risk_manager_state(risk_manager: RiskManager, signal: Signal, risk_pct: float) -> str:
     """
     Risk Manager's evaluate() just returns None on rejection without saying
-    why -- this inspects its state afterward to give a plain-language reason
-    for the audit trail, checked in the same order evaluate() itself checks.
+    why -- this re-runs the same checks evaluate() ran, in the same order,
+    to give an accurate plain-language reason for the audit trail.
+
+    Needs the specific signal/risk_pct that was evaluated (not just
+    risk_manager's state) to tell apart two very different rejections that
+    both come out of the same sizing code: a stock that's simply too
+    expensive for the risk budget at this capital level (nothing to do with
+    other trades) vs. capital genuinely already spoken for by higher-priority
+    trades or existing holdings. Confusing these was a real bug -- a
+    real-money run once reported "fully allocated to higher-confidence
+    trades already approved today" for the very first and only candidate of
+    the day, because both cases fell through to the same message.
     """
     if risk_manager.daily_loss_breached():
         return "Daily loss circuit breaker has been tripped -- no new positions today"
     if risk_manager.open_positions_count >= risk_manager.max_open_positions:
         return "Already at the maximum number of open positions"
+
+    risk_amount = risk_manager.capital * risk_pct
+    risk_per_share = signal.entry_price - signal.stop_loss
+    if risk_per_share <= 0:
+        return "Signal's stop-loss is at or above its entry price -- can't size a position"
+
+    quantity = int(risk_amount / risk_per_share)
+    if quantity <= 0:
+        return (f"Risk budget for this trade (Rs.{risk_amount:,.2f}) can't buy even 1 share within "
+                f"the stop-loss distance (Rs.{risk_per_share:,.2f}/share at a Rs.{signal.entry_price:,.2f} "
+                f"entry) -- the stock is too expensive for the available capital at this risk level, "
+                f"not a competing trade.")
+
+    # Past this point the trade would have sized fine on its own (quantity > 0
+    # from risk alone) -- any rejection from here on is genuinely about
+    # capital already committed to higher-priority trades or existing
+    # holdings, not this stock's price. No need to split further: whether the
+    # remaining budget was zero or just short of 1 share, the cause is the
+    # same.
     return ("Insufficient remaining capital budget -- fully allocated to "
-            "higher-confidence trades already approved today")
+            "higher-confidence trades already approved today (or existing holdings)")
 
 
 def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> list[PortfolioDecision]:
@@ -161,7 +190,7 @@ def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> lis
             decisions.append(PortfolioDecision(
                 symbol=candidate.symbol, approved=False, confidence=confidence,
                 risk_multiplier=multiplier,
-                reason=_rejection_reason_for_risk_manager_state(risk_manager),
+                reason=_rejection_reason_for_risk_manager_state(risk_manager, candidate.signal, risk_pct),
             ))
             continue
 
