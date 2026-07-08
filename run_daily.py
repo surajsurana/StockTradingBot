@@ -92,6 +92,7 @@ from cio.chief_investment_ai import MonthlyPlan
 from cio.plan_state import (
     load_monthly_plan, save_monthly_plan,
     effective_active_strategies, effective_capital_cap, effective_risk_per_trade_pct,
+    bump_capital_cap_to_real_capital,
 )
 from reporting.telegram_notifier import send_telegram_message
 
@@ -305,6 +306,16 @@ def main():
         save_monthly_plan(plan)
         print(f"\nNo Chief Investment AI plan existed yet -- bootstrapped one "
               f"(capital Rs.{capital:,.2f}, strategies {plan.active_strategies}).")
+    elif plan is not None and live_trading and bump_capital_cap_to_real_capital(plan, capital):
+        # Real capital grew past the plan's cap (funds were likely added) --
+        # raise the cap to match immediately rather than waiting for next
+        # month's clamped Chief Investment AI review. See
+        # bump_capital_cap_to_real_capital()'s docstring for why this is
+        # safe: a deposit is a fact about the account, not an AI judgment
+        # call, so it isn't subject to the same +/-20%/month guardrail.
+        save_monthly_plan(plan)
+        print(f"\nReal capital (Rs.{capital:,.2f}) exceeds the current plan's cap -- "
+              f"raised the cap to match.")
 
     active_strategies = effective_active_strategies(plan, settings)
     capital_for_sizing = effective_capital_cap(plan, capital)

@@ -15,6 +15,7 @@ from cio.chief_investment_ai import MonthlyPlan
 from cio.plan_state import (
     load_monthly_plan, save_monthly_plan,
     effective_active_strategies, effective_capital_cap, effective_risk_per_trade_pct,
+    bump_capital_cap_to_real_capital,
 )
 
 
@@ -92,6 +93,38 @@ class TestEffectiveCapitalCap(unittest.TestCase):
         plan = MonthlyPlan(month_label="July 2026", capital_allocated=8000,
                             target_return_pct=3.0, active_strategies=["ma_crossover"])
         self.assertEqual(effective_capital_cap(plan, 5000.0), 5000.0)
+
+
+class TestBumpCapitalCapToRealCapital(unittest.TestCase):
+    def test_real_capital_growth_raises_the_cap_immediately(self):
+        """Adding funds shouldn't be throttled by CIO's +/-20%/month clamp --
+        that guardrail is for CIO's own reasoning, not a deposit."""
+        plan = MonthlyPlan(month_label="July 2026", capital_allocated=5470.30,
+                            target_return_pct=3.0, active_strategies=["ma_crossover"])
+
+        changed = bump_capital_cap_to_real_capital(plan, 10470.30)
+
+        self.assertTrue(changed)
+        self.assertEqual(plan.capital_allocated, 10470.30)
+
+    def test_real_capital_can_exceed_previous_cap_by_any_margin(self):
+        """No 20% ceiling here -- a large deposit (e.g. more than doubling
+        capital) should be reflected in full, immediately."""
+        plan = MonthlyPlan(month_label="July 2026", capital_allocated=5000,
+                            target_return_pct=3.0, active_strategies=["ma_crossover"])
+
+        bump_capital_cap_to_real_capital(plan, 50000)
+
+        self.assertEqual(plan.capital_allocated, 50000)
+
+    def test_real_capital_at_or_below_cap_leaves_plan_unchanged(self):
+        plan = MonthlyPlan(month_label="July 2026", capital_allocated=5000,
+                            target_return_pct=3.0, active_strategies=["ma_crossover"])
+
+        changed = bump_capital_cap_to_real_capital(plan, 4000)
+
+        self.assertFalse(changed)
+        self.assertEqual(plan.capital_allocated, 5000)  # withdrawals handled by effective_capital_cap, not here
 
 
 class TestEffectiveRiskPerTradePct(unittest.TestCase):
