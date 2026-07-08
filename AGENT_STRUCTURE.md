@@ -68,9 +68,11 @@ flowchart TD
 
 **Why Research Analyst exists**: Technical, Fundamental, and News agents can disagree (e.g. good chart, bad news). Research Analyst is the one place that weighs all three into a single call, rather than each specialist agent acting alone.
 
-**Why Chief Investment AI is separate from Portfolio Manager**: Portfolio Manager makes a decision every time there's a candidate trade (daily cadence). Chief Investment AI runs once a month and sets the *envelope* — how much capital, what target return, which strategies are active — that Portfolio Manager then operates inside. Keeping them separate means one bad month's reasoning can't cause a runaway swing in day-to-day sizing (capital allocation is capped at ±20% month over month, and there's no persistence of this hand-off yet — see note below).
+**Why Chief Investment AI is separate from Portfolio Manager**: Portfolio Manager makes a decision every time there's a candidate trade (daily cadence). Chief Investment AI runs once a month and sets the *envelope* — how much capital, what target return, which strategies are active — that Portfolio Manager then operates inside. Keeping them separate means one bad month's reasoning can't cause a runaway swing in day-to-day sizing (capital allocation is capped at ±20% month over month).
+
+**Chief Investment AI is now wired up for real** (`monthly_review.py`, scheduled 1st of each month): it reviews last month's *actual* closed trades (`closed_trades_log.csv`, not a backtest stand-in), sets next month's capital cap/target/active strategies, persists that to `data/monthly_plan.json`, and `run_daily.py`/`monitor_positions.py` actually read it — `active_strategies` comes from the plan, and trades are sized against `min(real Kite capital, plan.capital_allocated)`, never past either limit. Sends both the review and the new plan to Telegram.
 
 ## Known gaps (honest, not hidden)
 
-- Chief Investment AI's monthly plan isn't yet wired into `run_daily.py` — risk settings still come from the static `config/settings.py` values, updated by hand. A documented gap, not a bug.
+- Chief Investment AI's plan doesn't touch `RISK_PER_TRADE_PCT`/`MAX_OPEN_POSITIONS`/`MAX_DEPLOYED_CAPITAL_PCT`/`DAILY_LOSS_CIRCUIT_BREAKER_PCT` — those are still static `config/settings.py` values. Only capital cap and active-strategy selection are CIO-driven so far.
 - The Nifty 500 universe list is a point-in-time snapshot (`data/nifty500_constituents.csv`), re-downloaded every few months, not a live feed.

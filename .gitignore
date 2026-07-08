@@ -7,6 +7,7 @@ paper_trades_log.csv
 closed_trades_log.csv
 data/known_positions.json
 data/news_cache.json
+data/monthly_plan.json
 *.log
 
 # Python

@@ -29,20 +29,29 @@ STRATEGY_REGISTRY = {
 }
 
 
-def get_technical_signals(symbol: str, price_history, regime_series) -> dict:
+def get_technical_signals(symbol: str, price_history, regime_series, active_strategies: list = None) -> dict:
     """
     Runs every active strategy against price_history and returns today's
     signal for each (or None if that strategy isn't proposing a trade today).
     Applies the market-regime filter only to strategies that opt into it
     (strategy.uses_regime_filter), exactly like the backtest in main.py does.
 
+    active_strategies: which strategy keys to run. Defaults to
+    settings.ACTIVE_STRATEGIES, but callers that resolve a live Chief
+    Investment AI plan (see cio/plan_state.py's effective_active_strategies)
+    should pass that instead, so CIO's monthly decision about which
+    strategies are active actually takes effect.
+
     Returns: dict of strategy_key -> Signal or None.
     """
+    if active_strategies is None:
+        active_strategies = settings.ACTIVE_STRATEGIES
+
     today_date = price_history.index[-1]
     market_is_bullish = is_bullish_on(regime_series, today_date)
 
     signals = {}
-    for strategy_key in settings.ACTIVE_STRATEGIES:
+    for strategy_key in active_strategies:
         strategy_cls = STRATEGY_REGISTRY.get(strategy_key)
         if strategy_cls is None:
             continue

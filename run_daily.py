@@ -58,14 +58,21 @@ IMPORTANT -- before running this for real:
    best-effort: it'll use your real Kite balance if credentials are set up
    and reachable, otherwise it quietly falls back to
    config.settings.STARTING_CAPITAL as a placeholder.
-   Known simplification: risk-rule settings themselves (RISK_PER_TRADE_PCT,
-   MAX_OPEN_POSITIONS, etc.) still come straight from config.settings, not
-   from whatever Chief Investment AI decided last -- there's no persistence
-   of its monthly plan yet. Update config/settings.py by hand to match the
-   latest monthly plan until that wiring exists.
+4. Chief Investment AI's monthly plan (data/monthly_plan.json, see
+   cio/plan_state.py) now actually constrains this run: active_strategies
+   comes from the plan if one exists (else config.ACTIVE_STRATEGIES), and
+   trades are sized against min(real Kite capital, plan.capital_allocated)
+   -- never against money that isn't really in the account, and never past
+   what Chief Investment AI actually authorized for the month. Run
+   monthly_review.py (scheduled for the 1st of each month) to update the
+   plan. RISK_PER_TRADE_PCT/MAX_OPEN_POSITIONS/MAX_DEPLOYED_CAPITAL_PCT/
+   DAILY_LOSS_CIRCUIT_BREAKER_PCT are still static config.settings values --
+   Chief Investment AI's plan doesn't touch those, only capital and strategy
+   selection.
 """
 
 import sys
+from datetime import date
 
 from config import settings
 from data.fetch_historical import fetch_all, fetch_nifty
@@ -81,6 +88,8 @@ from execution.execution_engine import ExecutionEngine, fetch_available_capital
 from execution.positions import fetch_holdings
 from execution.position_state import reconcile_closed_positions, record_new_position
 from auth.kite_auto_login import ensure_fresh_kite_session
+from cio.chief_investment_ai import MonthlyPlan
+from cio.plan_state import load_monthly_plan, save_monthly_plan, effective_active_strategies, effective_capital_cap
 from reporting.telegram_notifier import send_telegram_message
 
 PROGRESS_EVERY = 25  # print a progress line every N symbols during the Stage 1 scan
@@ -97,7 +106,7 @@ def parse_cli_args():
     return limit, force_paper
 
 
-def get_universe(limit: int = None) -> list:
+def get_universe(active_strategies: list, limit: int = None) -> list:
     if settings.USE_NIFTY500_UNIVERSE:
         try:
             symbols = get_nifty500_symbols()
@@ -105,7 +114,7 @@ def get_universe(limit: int = None) -> list:
             print(f"WARNING: {e}\nFalling back to config.SYMBOLS.")
             symbols = list(settings.SYMBOLS)
     else:
-        symbols = sorted({s for key in settings.ACTIVE_STRATEGIES
+        symbols = sorted({s for key in active_strategies
                            for s in settings.STRATEGY_SYMBOLS.get(key, settings.SYMBOLS)})
 
     if limit is not None:
@@ -113,7 +122,7 @@ def get_universe(limit: int = None) -> list:
     return symbols
 
 
-def run_stage1_scan(symbols: list, regime_series) -> list:
+def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> list:
     """
     Cheap scan (no LLM calls): fetches price history + fundamentals for
     every symbol, returns only those that pass fundamentals AND have at
@@ -136,7 +145,7 @@ def run_stage1_scan(symbols: list, regime_series) -> list:
         if price_history is None or len(price_history) < 60:
             continue  # not enough history yet, or fetch failed silently
 
-        technical_signals = get_technical_signals(symbol, price_history, regime_series)
+        technical_signals = get_technical_signals(symbol, price_history, regime_series, active_strategies)
         has_signal = any(sig is not None for sig in technical_signals.values())
         if not has_signal:
             continue
@@ -276,6 +285,29 @@ def main():
     if capital is None:
         return
 
+    plan = load_monthly_plan()
+    if plan is None and live_trading:
+        # First-ever live run: seed a starting plan from the real capital we
+        # just fetched, so Chief Investment AI has something to review and
+        # adjust from next month, instead of waiting for monthly_review.py
+        # to invent one from config placeholders.
+        plan = MonthlyPlan(
+            month_label=date.today().strftime("%B %Y"),
+            capital_allocated=capital,
+            target_return_pct=3.0,
+            active_strategies=list(settings.ACTIVE_STRATEGIES),
+            notes="Starting plan, bootstrapped from real capital on first live run.",
+        )
+        save_monthly_plan(plan)
+        print(f"\nNo Chief Investment AI plan existed yet -- bootstrapped one "
+              f"(capital Rs.{capital:,.2f}, strategies {plan.active_strategies}).")
+
+    active_strategies = effective_active_strategies(plan, settings)
+    capital_for_sizing = effective_capital_cap(plan, capital)
+    if capital_for_sizing < capital:
+        print(f"Chief Investment AI's monthly cap limits sizing to Rs.{capital_for_sizing:,.2f} "
+              f"(real capital is Rs.{capital:,.2f}).")
+
     try:
         holdings = get_current_holdings(live_trading)
     except Exception as e:
@@ -292,7 +324,7 @@ def main():
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
 
-    symbols = get_universe(limit=limit)
+    symbols = get_universe(active_strategies, limit=limit)
     print(f"Universe: {len(symbols)} symbol(s)"
           + (f" (limited via --limit={limit})" if limit else ""))
 
@@ -300,7 +332,7 @@ def main():
     nifty = fetch_nifty(period="1y")
     regime_series = build_regime_series(nifty)
 
-    survivors = run_stage1_scan(symbols, regime_series)
+    survivors = run_stage1_scan(symbols, regime_series, active_strategies)
 
     if not survivors:
         print("\nNo symbols passed Stage 1 today -- nothing to research or trade. This is a normal, "
@@ -316,7 +348,7 @@ def main():
     candidates = run_stage2_research(survivors)
 
     risk_manager = RiskManager(
-        capital=capital,
+        capital=capital_for_sizing,
         risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
         max_open_positions=settings.MAX_OPEN_POSITIONS,
         max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
@@ -350,7 +382,9 @@ def main():
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",
         "",
-        f"Capital available: Rs.{capital:,.2f}",
+        f"Capital available: Rs.{capital:,.2f}"
+        + (f" (Chief Investment AI cap this month: Rs.{capital_for_sizing:,.2f})"
+           if capital_for_sizing < capital else ""),
         f"Universe scanned: {len(symbols)}",
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
         f"Trades approved: {len([d for d in decisions if d.approved])}",

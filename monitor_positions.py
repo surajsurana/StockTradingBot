@@ -41,6 +41,7 @@ from execution.execution_engine import ExecutionEngine
 from execution.positions import fetch_holdings
 from execution.position_state import reconcile_closed_positions, load_known_positions
 from auth.kite_auto_login import ensure_fresh_kite_session
+from cio.plan_state import load_monthly_plan, effective_active_strategies
 from reporting.telegram_notifier import send_telegram_message
 
 
@@ -49,7 +50,7 @@ def parse_cli_args():
     return force_paper
 
 
-def evaluate_holding(symbol: str, regime_series):
+def evaluate_holding(symbol: str, regime_series, active_strategies: list):
     """
     Re-runs the same Technical + Fundamental + News + Research Analyst
     pipeline run_daily.py uses for new candidates, against an already-held
@@ -65,7 +66,7 @@ def evaluate_holding(symbol: str, regime_series):
     if price_history is None or len(price_history) < 60:
         return None
 
-    technical_signals = get_technical_signals(symbol, price_history, regime_series)
+    technical_signals = get_technical_signals(symbol, price_history, regime_series, active_strategies)
 
     try:
         metrics = fetch_fundamentals(symbol)
@@ -136,6 +137,8 @@ def main():
     nifty = fetch_nifty(period="1y")
     regime_series = build_regime_series(nifty)
 
+    active_strategies = effective_active_strategies(load_monthly_plan(), settings)
+
     execution_engine = ExecutionEngine(
         live_trading=True,
         api_key=settings.KITE_API_KEY,
@@ -149,7 +152,7 @@ def main():
 
     for holding in holdings:
         print(f"\nChecking {holding.symbol}...")
-        assessment = evaluate_holding(holding.symbol, regime_series)
+        assessment = evaluate_holding(holding.symbol, regime_series, active_strategies)
         if assessment is None:
             checked_lines.append(f"- {holding.symbol}: could not complete a fresh check -- left as-is.")
             continue
