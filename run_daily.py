@@ -81,6 +81,7 @@ from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals, first_available_signal
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news, disabled_news_assessment
+from macro.macro_strategist import assess_macro_conditions
 from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
 from risk.risk_manager import RiskManager
@@ -342,6 +343,27 @@ def main():
             holdings, settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN,
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
+
+    if settings.USE_MACRO_STRATEGIST:
+        macro_assessment = assess_macro_conditions(api_key=settings.ANTHROPIC_API_KEY,
+                                                     max_items=settings.MACRO_MAX_ARTICLES)
+        print(f"\nMacro Strategist: {macro_assessment.risk_level.upper()} -- {macro_assessment.reasoning}")
+
+        if macro_assessment.risk_level == "high":
+            print("\nMacro risk is HIGH today -- skipping today's scan entirely. "
+                  "Existing positions and their GTT stop-loss/target orders are unaffected.")
+            send_telegram_message(
+                f"*Daily run -- no new trades today*\n\nMacro Strategist flagged HIGH risk: "
+                f"{macro_assessment.reasoning}\n\nNo new positions will be opened today. "
+                f"Existing positions and their stop-loss/target orders are unaffected.",
+                settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+            )
+            return
+
+        if macro_assessment.risk_level == "elevated":
+            risk_per_trade_pct = risk_per_trade_pct * 0.5
+            print(f"Macro risk is ELEVATED today -- halving risk per trade to "
+                  f"{risk_per_trade_pct:.2%} for today only (not persisted to the monthly plan).")
 
     symbols = get_universe(active_strategies, limit=limit)
     print(f"Universe: {len(symbols)} symbol(s)"

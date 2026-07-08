@@ -7,14 +7,15 @@ trading day flows end to end, and the strategy/risk rules underneath it.
 
 | Agent | File(s) | What it does |
 |---|---|---|
+| Macro Strategist | `macro/macro_strategist.py` | Runs once a day (not per-stock), before the scan even starts — reads general world/market headlines (geopolitics, wars/ceasefires, natural disasters, central bank moves) and can skip new entries entirely (high risk) or halve risk-per-trade for the day (elevated risk) |
 | Technical Agent | `strategies/technical_agent.py` (+ `ma_crossover.py`, `mean_reversion.py`) | Reads price charts, proposes BUY signals with entry/stop-loss/target |
 | Fundamental Agent | `fundamentals/fundamental_agent.py` | Checks the company is financially healthy (debt, ROE, revenue growth) before it's even considered |
-| News Agent | `news/news_agent.py` | Reads recent headlines (yfinance + Moneycontrol + Economic Times RSS), asks Claude for a bullish/bearish/neutral read |
+| News Agent | `news/news_agent.py` | Reads recent headlines (yfinance + Moneycontrol + Economic Times RSS), asks Claude for a bullish/bearish/neutral read — *per stock*, unlike Macro Strategist |
 | Research Analyst | `research/research_analyst.py` | Combines Technical + Fundamental + News into one verdict per stock: favorable / unfavorable / neutral, with a confidence score |
 | Portfolio Manager | `portfolio/portfolio_manager.py` | Confidence-weighted position sizing; when capital is limited, decides which candidates get funded |
 | Risk Manager | `risk/risk_manager.py` | Hard, non-negotiable safety limits — max risk per trade, max open positions, max capital deployed, daily loss circuit breaker |
 | Execution Engine | `execution/execution_engine.py` | Places real orders via Kite (LIMIT orders), and a GTT stop-loss/target on every buy |
-| Chief Investment AI | `cio/chief_investment_ai.py` | The only agent that runs monthly, not daily — reviews last month's result and sets next month's capital/target/active-strategies envelope |
+| Chief Investment AI | `cio/chief_investment_ai.py` | The only agent that runs monthly, not daily — reviews last month's result and sets next month's capital/target/active-strategies/risk-per-trade envelope |
 
 **Supporting infrastructure** (not "agents" in the trading-decision sense, but what makes the above run unattended):
 
@@ -29,7 +30,9 @@ trading day flows end to end, and the strategy/risk rules underneath it.
 
 ```mermaid
 flowchart TD
-    U["Nifty 500 universe<br/>~500 stocks, 9:20am IST"]
+    MACRO["Macro Strategist<br/>daily, before the scan"]
+    MACRO -->|high risk| SKIP[("No new trades today<br/>existing GTTs unaffected")]
+    MACRO -->|normal or elevated risk<br/>elevated halves risk/trade| U["Nifty 500 universe<br/>~500 stocks, 9:20am IST"]
     U --> TECH[Technical Agent]
     U --> FUND[Fundamental Agent]
     TECH --> S1{"Stage 1 filter<br/>signal AND healthy?"}
@@ -67,6 +70,8 @@ flowchart TD
 - Daily loss circuit breaker at 3% — stops opening new positions for the day if hit (`config/settings.py`, still static)
 
 **Why Research Analyst exists**: Technical, Fundamental, and News agents can disagree (e.g. good chart, bad news). Research Analyst is the one place that weighs all three into a single call, rather than each specialist agent acting alone.
+
+**Why Macro Strategist is separate from News Agent**: News Agent only ever reads headlines about one company at a time, and only for stocks that already passed Stage 1 — it has no way to catch something like a geopolitical shock that would matter *before* any individual stock's chart reacts to it. Macro Strategist reads general world/market headlines once a day (not per-stock, so its cost is fixed regardless of how many candidates Stage 1 finds) and acts as a portfolio-wide brake, not a per-stock opinion. It's also distinct from Chief Investment AI: CIO decides how much to risk *this month*, on a slow, reviewed cadence; Macro Strategist decides whether *today specifically* calls for less than that — a same-day-only adjustment that's never persisted to the monthly plan.
 
 **Why Chief Investment AI is separate from Portfolio Manager**: Portfolio Manager makes a decision every time there's a candidate trade (daily cadence). Chief Investment AI runs once a month and sets the *envelope* — how much capital, what target return, which strategies are active — that Portfolio Manager then operates inside. Keeping them separate means one bad month's reasoning can't cause a runaway swing in day-to-day sizing (capital allocation is capped at ±20% month over month).
 
