@@ -37,6 +37,7 @@ def save_monthly_plan(plan: MonthlyPlan, path: str = MONTHLY_PLAN_PATH):
             "capital_allocated": plan.capital_allocated,
             "target_return_pct": plan.target_return_pct,
             "active_strategies": plan.active_strategies,
+            "risk_per_trade_pct": plan.risk_per_trade_pct,
             "notes": plan.notes,
         }, f, indent=2)
 
@@ -59,3 +60,10 @@ def effective_capital_cap(plan: MonthlyPlan | None, real_capital: float) -> floa
     if plan is None:
         return real_capital
     return min(real_capital, plan.capital_allocated)
+
+
+def effective_risk_per_trade_pct(plan: MonthlyPlan | None, settings) -> float:
+    """What fraction of capital to risk per trade today -- Chief Investment
+    AI's monthly decision if it's made one, otherwise the static config
+    default."""
+    return plan.risk_per_trade_pct if plan is not None else settings.RISK_PER_TRADE_PCT

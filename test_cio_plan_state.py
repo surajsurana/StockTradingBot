@@ -14,12 +14,12 @@ from types import SimpleNamespace
 from cio.chief_investment_ai import MonthlyPlan
 from cio.plan_state import (
     load_monthly_plan, save_monthly_plan,
-    effective_active_strategies, effective_capital_cap,
+    effective_active_strategies, effective_capital_cap, effective_risk_per_trade_pct,
 )
 
 
-def _settings(active_strategies=("ma_crossover", "mean_reversion")):
-    return SimpleNamespace(ACTIVE_STRATEGIES=list(active_strategies))
+def _settings(active_strategies=("ma_crossover", "mean_reversion"), risk_per_trade_pct=0.01):
+    return SimpleNamespace(ACTIVE_STRATEGIES=list(active_strategies), RISK_PER_TRADE_PCT=risk_per_trade_pct)
 
 
 class TestPlanPersistence(unittest.TestCase):
@@ -39,7 +39,7 @@ class TestPlanPersistence(unittest.TestCase):
     def test_save_then_load_round_trips(self):
         plan = MonthlyPlan(
             month_label="July 2026", capital_allocated=5470.30, target_return_pct=3.0,
-            active_strategies=["ma_crossover"], notes="test plan",
+            active_strategies=["ma_crossover"], risk_per_trade_pct=0.012, notes="test plan",
         )
         save_monthly_plan(plan, self.path)
 
@@ -49,6 +49,7 @@ class TestPlanPersistence(unittest.TestCase):
         self.assertEqual(loaded.capital_allocated, 5470.30)
         self.assertEqual(loaded.target_return_pct, 3.0)
         self.assertEqual(loaded.active_strategies, ["ma_crossover"])
+        self.assertEqual(loaded.risk_per_trade_pct, 0.012)
         self.assertEqual(loaded.notes, "test plan")
 
     def test_saving_a_new_plan_overwrites_the_old_one(self):
@@ -91,6 +92,18 @@ class TestEffectiveCapitalCap(unittest.TestCase):
         plan = MonthlyPlan(month_label="July 2026", capital_allocated=8000,
                             target_return_pct=3.0, active_strategies=["ma_crossover"])
         self.assertEqual(effective_capital_cap(plan, 5000.0), 5000.0)
+
+
+class TestEffectiveRiskPerTradePct(unittest.TestCase):
+    def test_no_plan_falls_back_to_settings(self):
+        settings = _settings(risk_per_trade_pct=0.01)
+        self.assertEqual(effective_risk_per_trade_pct(None, settings), 0.01)
+
+    def test_plan_overrides_settings(self):
+        settings = _settings(risk_per_trade_pct=0.01)
+        plan = MonthlyPlan(month_label="July 2026", capital_allocated=5000, target_return_pct=3.0,
+                            active_strategies=["ma_crossover"], risk_per_trade_pct=0.014)
+        self.assertEqual(effective_risk_per_trade_pct(plan, settings), 0.014)
 
 
 if __name__ == "__main__":

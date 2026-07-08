@@ -25,6 +25,11 @@ recommendation is never applied blindly.
 - Capital allocated can't change by more than MAX_MONTHLY_CAPITAL_CHANGE_PCT
   in either direction in a single month, no matter what's recommended -- this
   prevents a single bad month's reasoning from causing a runaway swing.
+- Risk per trade can't change by more than MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT
+  (relative) in a single month, AND is always clamped to a conservative
+  absolute band (MIN/MAX_RISK_PER_TRADE_PCT) regardless of what's
+  recommended -- same "no runaway swing" philosophy as capital, applied to
+  the one number that controls how much a single losing trade can cost.
 - Target return is clamped to a realistic band for swing trading
   (MIN/MAX_TARGET_RETURN_PCT) -- an unrealistically high target would
   quietly push the system toward riskier trade selection to try to hit it.
@@ -52,6 +57,14 @@ MAX_MONTHLY_CAPITAL_CHANGE_PCT = 0.20   # capital can move at most +/-20% month 
 MIN_TARGET_RETURN_PCT = 0.5             # don't let a quiet month's reasoning produce a near-zero target
 MAX_TARGET_RETURN_PCT = 10.0            # keep ambitions realistic for swing trading, not aggressive/risky
 
+# risk_per_trade_pct is a fraction (0.01 = 1%), matching RiskManager's own
+# units -- never let a good month push this past what prudent swing-trading
+# risk guidance considers reasonable (0.5%-2% of capital per trade), and
+# never let it move far in a single month even within that band.
+MIN_RISK_PER_TRADE_PCT = 0.005
+MAX_RISK_PER_TRADE_PCT = 0.02
+MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT = 0.15   # relative, e.g. 1% can move to 0.85%-1.15% in one month
+
 
 @dataclass
 class MonthlyReview:
@@ -67,6 +80,7 @@ class MonthlyPlan:
     capital_allocated: float
     target_return_pct: float
     active_strategies: list = field(default_factory=list)
+    risk_per_trade_pct: float = 0.01
     notes: str = ""
 
 
@@ -124,15 +138,17 @@ def build_plan_prompt(month_label: str, review: Optional[MonthlyReview], previou
 
 Currently allocated capital: Rs.{previous_plan.capital_allocated:,.2f}
 Current target return: {previous_plan.target_return_pct:.1f}%
+Current risk per trade: {previous_plan.risk_per_trade_pct * 100:.2f}% of capital (distance from entry to stop-loss)
 Current active strategies: {', '.join(previous_plan.active_strategies)}
 Available strategies in the system: {', '.join(sorted(KNOWN_STRATEGIES))}
 Broader market (Nifty 50) regime right now: {"bullish (above its 200-day average)" if market_is_bullish else "bearish/choppy (below its 200-day average)"}
 
-Decide the plan for this coming month: how much capital to allocate, what return to target, and which of the available strategies should be active. Be conservative and gradual -- avoid large swings from one month to the next based on limited data. A neutral, unchanged plan is a legitimate and often correct answer when nothing strongly suggests a change.
+Decide the plan for this coming month: how much capital to allocate, what return to target, what percentage of capital to risk per trade, and which of the available strategies should be active. Risk per trade should stay in a conservative 0.5%-2% band -- a stronger, higher-confidence month (especially in a bullish regime) can justify nudging it up a little, a weak or high-drawdown month should nudge it down. Be conservative and gradual -- avoid large swings from one month to the next based on limited data. A neutral, unchanged plan is a legitimate and often correct answer when nothing strongly suggests a change.
 
 Respond in EXACTLY this format, nothing else:
 CAPITAL: <a number, the Rupee amount to allocate>
 TARGET_RETURN_PCT: <a number between 0 and 10, the target return percent for the month>
+RISK_PER_TRADE_PCT: <a number between 0.5 and 2, the percent of capital to risk per trade>
 ACTIVE_STRATEGIES: <comma-separated strategy names from the available list above>
 NOTES: <one or two sentences explaining the plan>"""
 
@@ -140,10 +156,11 @@ NOTES: <one or two sentences explaining the plan>"""
 def parse_plan_response(month_label: str, raw_response: str, previous_plan: MonthlyPlan) -> MonthlyPlan:
     capital_match = re.search(r"CAPITAL:\s*([\d,.]+)", raw_response)
     target_match = re.search(r"TARGET_RETURN_PCT:\s*([\d.]+)", raw_response)
+    risk_match = re.search(r"RISK_PER_TRADE_PCT:\s*([\d.]+)", raw_response)
     strategies_match = re.search(r"ACTIVE_STRATEGIES:\s*(.+)", raw_response)
     notes_match = re.search(r"NOTES:\s*(.+)", raw_response, re.IGNORECASE | re.DOTALL)
 
-    if not capital_match or not target_match or not strategies_match:
+    if not capital_match or not target_match or not risk_match or not strategies_match:
         # Fail-safe: couldn't parse a usable plan -- keep last month's plan
         # unchanged rather than guess, and say so explicitly.
         return MonthlyPlan(
@@ -151,6 +168,7 @@ def parse_plan_response(month_label: str, raw_response: str, previous_plan: Mont
             capital_allocated=previous_plan.capital_allocated,
             target_return_pct=previous_plan.target_return_pct,
             active_strategies=list(previous_plan.active_strategies),
+            risk_per_trade_pct=previous_plan.risk_per_trade_pct,
             notes=(f"Could not parse a clear plan from the model's response -- keeping last month's "
                    f"plan unchanged. Raw response: {raw_response[:200]}"),
         )
@@ -165,6 +183,15 @@ def parse_plan_response(month_label: str, raw_response: str, previous_plan: Mont
     raw_target = float(target_match.group(1))
     target_return_pct = max(MIN_TARGET_RETURN_PCT, min(MAX_TARGET_RETURN_PCT, raw_target))
 
+    # --- Risk per trade: clamp to +/- MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT of last
+    # month's value, THEN to the absolute MIN/MAX band -- both guardrails apply,
+    # same "never a runaway swing" philosophy as capital.
+    raw_risk_per_trade_pct = float(risk_match.group(1)) / 100
+    min_monthly_risk = previous_plan.risk_per_trade_pct * (1 - MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT)
+    max_monthly_risk = previous_plan.risk_per_trade_pct * (1 + MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT)
+    risk_per_trade_pct = max(min_monthly_risk, min(max_monthly_risk, raw_risk_per_trade_pct))
+    risk_per_trade_pct = max(MIN_RISK_PER_TRADE_PCT, min(MAX_RISK_PER_TRADE_PCT, risk_per_trade_pct))
+
     # --- Active strategies: validate against known strategies, drop anything hallucinated ---
     proposed = [s.strip() for s in strategies_match.group(1).split(",") if s.strip()]
     valid_strategies = [s for s in proposed if s in KNOWN_STRATEGIES]
@@ -175,7 +202,8 @@ def parse_plan_response(month_label: str, raw_response: str, previous_plan: Mont
 
     return MonthlyPlan(
         month_label=month_label, capital_allocated=capital_allocated,
-        target_return_pct=target_return_pct, active_strategies=valid_strategies, notes=notes,
+        target_return_pct=target_return_pct, active_strategies=valid_strategies,
+        risk_per_trade_pct=risk_per_trade_pct, notes=notes,
     )
 
 

@@ -60,19 +60,19 @@ flowchart TD
 - `ma_crossover` — trend-following, moving-average crossover. Only takes BUY signals when the broader market (Nifty 50) is itself in an uptrend (the "market regime filter").
 - `mean_reversion` — buys dips in range-bound stocks; deliberately *not* gated by the market-regime filter, since it wants choppy/declining conditions.
 
-**Risk limits** (`config/settings.py`):
-- 1% of capital risked per trade (distance from entry to stop-loss)
-- Max 5 concurrent open positions
-- Max 50% of capital deployed at once
-- Daily loss circuit breaker at 3% — stops opening new positions for the day if hit
+**Risk limits**:
+- Risk per trade (distance from entry to stop-loss) — starts at 1% of capital, now a **Chief Investment AI monthly decision** (see below): can drift up in a strong/bullish month or down after a weak one, clamped to a 0.5%–2% band and at most ±15% relative change per month. Falls back to `config/settings.py`'s `RISK_PER_TRADE_PCT` until a plan exists.
+- Max 5 concurrent open positions (`config/settings.py`, still static)
+- Max 50% of capital deployed at once (`config/settings.py`, still static)
+- Daily loss circuit breaker at 3% — stops opening new positions for the day if hit (`config/settings.py`, still static)
 
 **Why Research Analyst exists**: Technical, Fundamental, and News agents can disagree (e.g. good chart, bad news). Research Analyst is the one place that weighs all three into a single call, rather than each specialist agent acting alone.
 
 **Why Chief Investment AI is separate from Portfolio Manager**: Portfolio Manager makes a decision every time there's a candidate trade (daily cadence). Chief Investment AI runs once a month and sets the *envelope* — how much capital, what target return, which strategies are active — that Portfolio Manager then operates inside. Keeping them separate means one bad month's reasoning can't cause a runaway swing in day-to-day sizing (capital allocation is capped at ±20% month over month).
 
-**Chief Investment AI is now wired up for real** (`monthly_review.py`, scheduled 1st of each month): it reviews last month's *actual* closed trades (`closed_trades_log.csv`, not a backtest stand-in), sets next month's capital cap/target/active strategies, persists that to `data/monthly_plan.json`, and `run_daily.py`/`monitor_positions.py` actually read it — `active_strategies` comes from the plan, and trades are sized against `min(real Kite capital, plan.capital_allocated)`, never past either limit. Sends both the review and the new plan to Telegram.
+**Chief Investment AI is now wired up for real** (`monthly_review.py`, scheduled 1st of each month): it reviews last month's *actual* closed trades (`closed_trades_log.csv`, not a backtest stand-in), sets next month's capital cap/target/active strategies/**risk per trade**, persists that to `data/monthly_plan.json`, and `run_daily.py`/`monitor_positions.py` actually read it — `active_strategies` comes from the plan, trades are sized against `min(real Kite capital, plan.capital_allocated)`, and `RiskManager` uses the plan's risk-per-trade figure, never past any of these limits. Sends both the review and the new plan to Telegram.
 
 ## Known gaps (honest, not hidden)
 
-- Chief Investment AI's plan doesn't touch `RISK_PER_TRADE_PCT`/`MAX_OPEN_POSITIONS`/`MAX_DEPLOYED_CAPITAL_PCT`/`DAILY_LOSS_CIRCUIT_BREAKER_PCT` — those are still static `config/settings.py` values. Only capital cap and active-strategy selection are CIO-driven so far.
+- Chief Investment AI's plan now covers capital cap, active strategies, and risk-per-trade — but not `MAX_OPEN_POSITIONS`/`MAX_DEPLOYED_CAPITAL_PCT`/`DAILY_LOSS_CIRCUIT_BREAKER_PCT`, which are still static `config/settings.py` values.
 - The Nifty 500 universe list is a point-in-time snapshot (`data/nifty500_constituents.csv`), re-downloaded every few months, not a live feed.

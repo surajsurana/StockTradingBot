@@ -52,6 +52,7 @@ def main():
             capital_allocated=settings.STARTING_CAPITAL,
             target_return_pct=3.0,
             active_strategies=list(settings.ACTIVE_STRATEGIES),
+            risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
             notes="Starting plan (no prior month to compare against yet).",
         )
     else:
@@ -81,7 +82,8 @@ def main():
         )
     send_telegram_message(
         build_monthly_plan_text(new_plan.month_label, new_plan.capital_allocated, new_plan.target_return_pct,
-                                 new_plan.active_strategies, notes=new_plan.notes),
+                                 new_plan.active_strategies, risk_per_trade_pct=new_plan.risk_per_trade_pct,
+                                 notes=new_plan.notes),
         settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
     )
 

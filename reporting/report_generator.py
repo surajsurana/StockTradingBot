@@ -14,12 +14,16 @@ from backtest.backtester import BacktestResult
 
 
 def build_monthly_plan_text(month_label: str, capital_allocated: float, target_return_pct: float,
-                             active_strategies: list, notes: str = "") -> str:
+                             active_strategies: list, risk_per_trade_pct: float = None,
+                             notes: str = "") -> str:
     """
     The "here's the plan for this month" message, sent at the start of each
     month. States what capital is being used and what return is being aimed
     for, so there's a clear promise to check the month's actual result
     against later -- see build_monthly_review_text.
+
+    risk_per_trade_pct: optional, a fraction (0.01 = 1%). Omit if the caller
+    doesn't have Chief Investment AI's risk decision to report.
     """
     target_amount = capital_allocated * (target_return_pct / 100)
     lines = [
@@ -27,8 +31,10 @@ def build_monthly_plan_text(month_label: str, capital_allocated: float, target_r
         "",
         f"Capital being used this month: {capital_allocated:,.2f}",
         f"Target return: {target_return_pct:.1f}% (approx. {target_amount:,.2f})",
-        f"Active strategies: {', '.join(active_strategies)}",
     ]
+    if risk_per_trade_pct is not None:
+        lines.append(f"Risk per trade: {risk_per_trade_pct:.2%} of capital")
+    lines.append(f"Active strategies: {', '.join(active_strategies)}")
     if notes:
         lines.append("")
         lines.append(notes)

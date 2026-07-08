@@ -89,7 +89,10 @@ from execution.positions import fetch_holdings
 from execution.position_state import reconcile_closed_positions, record_new_position
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.chief_investment_ai import MonthlyPlan
-from cio.plan_state import load_monthly_plan, save_monthly_plan, effective_active_strategies, effective_capital_cap
+from cio.plan_state import (
+    load_monthly_plan, save_monthly_plan,
+    effective_active_strategies, effective_capital_cap, effective_risk_per_trade_pct,
+)
 from reporting.telegram_notifier import send_telegram_message
 
 PROGRESS_EVERY = 25  # print a progress line every N symbols during the Stage 1 scan
@@ -296,6 +299,7 @@ def main():
             capital_allocated=capital,
             target_return_pct=3.0,
             active_strategies=list(settings.ACTIVE_STRATEGIES),
+            risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
             notes="Starting plan, bootstrapped from real capital on first live run.",
         )
         save_monthly_plan(plan)
@@ -304,9 +308,13 @@ def main():
 
     active_strategies = effective_active_strategies(plan, settings)
     capital_for_sizing = effective_capital_cap(plan, capital)
+    risk_per_trade_pct = effective_risk_per_trade_pct(plan, settings)
     if capital_for_sizing < capital:
         print(f"Chief Investment AI's monthly cap limits sizing to Rs.{capital_for_sizing:,.2f} "
               f"(real capital is Rs.{capital:,.2f}).")
+    if risk_per_trade_pct != settings.RISK_PER_TRADE_PCT:
+        print(f"Chief Investment AI's monthly plan sets risk per trade to "
+              f"{risk_per_trade_pct:.2%} (config default is {settings.RISK_PER_TRADE_PCT:.2%}).")
 
     try:
         holdings = get_current_holdings(live_trading)
@@ -349,7 +357,7 @@ def main():
 
     risk_manager = RiskManager(
         capital=capital_for_sizing,
-        risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
+        risk_per_trade_pct=risk_per_trade_pct,
         max_open_positions=settings.MAX_OPEN_POSITIONS,
         max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
         daily_loss_circuit_breaker_pct=settings.DAILY_LOSS_CIRCUIT_BREAKER_PCT,
