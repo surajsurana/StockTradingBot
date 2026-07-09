@@ -80,7 +80,7 @@ from data.nifty500_universe import get_nifty500_symbols
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals, first_available_signal
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
-from news.news_agent import analyze_news, disabled_news_assessment
+from news.news_agent import analyze_news, disabled_news_assessment, ClaudeAPIError
 from macro.macro_strategist import assess_macro_conditions
 from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
@@ -460,4 +460,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClaudeAPIError as e:
+        print(f"\nABORTING -- {e}")
+        send_telegram_message(
+            f"*Daily run aborted -- could not reach Claude*\n\n{e}\n\n"
+            f"No new trades were evaluated today. Existing positions and their GTT "
+            f"stop-loss/target orders are unaffected.",
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
+        sys.exit(1)

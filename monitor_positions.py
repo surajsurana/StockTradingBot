@@ -34,7 +34,7 @@ from strategies.base import Signal
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
-from news.news_agent import analyze_news_cached, disabled_news_assessment
+from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
 from execution.execution_engine import ExecutionEngine
@@ -210,4 +210,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClaudeAPIError as e:
+        print(f"\nABORTING -- {e}")
+        send_telegram_message(
+            f"*Position monitor aborted -- could not reach Claude*\n\n{e}\n\n"
+            f"Open positions were not re-checked this run. Their GTT stop-loss/target "
+            f"orders remain active and unaffected.",
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
+        sys.exit(1)

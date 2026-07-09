@@ -26,6 +26,7 @@ from config import settings
 from data.fetch_historical import fetch_nifty
 from strategies.market_regime import build_regime_series, is_bullish_on
 from cio.chief_investment_ai import MonthlyPlan, review_month, plan_month
+from news.news_agent import ClaudeAPIError
 from cio.plan_state import load_monthly_plan, save_monthly_plan
 from reporting.trade_history import load_closed_trades_for_month
 from reporting.report_generator import build_monthly_plan_text, build_monthly_review_text
@@ -89,4 +90,14 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ClaudeAPIError as e:
+        print(f"\nABORTING -- {e}")
+        send_telegram_message(
+            f"*Monthly review aborted -- could not reach Claude*\n\n{e}\n\n"
+            f"Last month's plan stays in effect unchanged until this can run successfully.",
+            settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+        )
+        import sys
+        sys.exit(1)

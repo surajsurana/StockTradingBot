@@ -155,20 +155,50 @@ def parse_news_response(symbol: str, raw_response: str, articles: list) -> NewsA
     )
 
 
+class ClaudeAPIError(RuntimeError):
+    """
+    Raised when a call to Claude's API itself fails (bad/missing API key,
+    insufficient credit balance, rate limit, network issue, Anthropic outage
+    -- anything before we even get a response to parse). Deliberately a
+    distinct type from a parsing failure (which the various parse_*_response
+    functions already handle by defaulting to a safe "neutral"/"normal"
+    result): an API failure means we have no judgment at all to fall back
+    on, so callers (run_daily.py, monitor_positions.py, monthly_review.py)
+    catch this specifically to send a clear Telegram alert and stop, rather
+    than silently defaulting to "neutral" as if Claude had actually weighed
+    in, or crashing with a traceback nobody sees until they check the VPS.
+    """
+
+
 def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5") -> str:
     """
     The actual call to Claude's API. Requires the `anthropic` package
     (pip install anthropic) and your own API key. Kept as its own small
     function so tests/validation can swap in a fake version instead of
     hitting the real API.
+
+    Raises ClaudeAPIError (not the raw anthropic exception) on any failure
+    to actually reach Claude, with a human-readable reason -- specifically
+    calling out an insufficient credit balance, since that's the one a
+    trading system left unattended is most likely to hit silently.
     """
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model=model,
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.AnthropicError as e:
+        message = str(e)
+        if "credit balance" in message.lower() or "insufficient" in message.lower():
+            raise ClaudeAPIError(
+                f"Anthropic account has insufficient credit balance -- add credits at "
+                f"console.anthropic.com/settings/billing. (Original error: {message})"
+            ) from e
+        raise ClaudeAPIError(f"Could not reach Claude's API: {message}") from e
+
     # Claude's response can include non-text blocks before the actual answer
     # (e.g. a "thinking" block when extended reasoning kicks in) -- content[0]
     # isn't reliably the text block, so find every text block and join them,
