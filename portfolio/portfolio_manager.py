@@ -208,29 +208,30 @@ def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> lis
     return decisions
 
 
-def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | None = None,
-                        order_protection: dict | None = None) -> str:
+def build_decision_log(decisions: list[PortfolioDecision], gtt_status: dict | None = None) -> str:
     """
     Human-readable audit trail of every candidate considered today, in the
     order they were decided (approved trades first, in priority order, then
     rejections) -- this is the record of "why" for each decision, for review
     or for a WhatsApp report.
 
-    order_prices: optional {symbol: actual order price} -- Portfolio Manager
-    only ever knows the sizing decision, not the price an order actually got
-    placed at (that's only known after execution_engine.place_order() runs,
-    later than this function is first called for the pre-execution console
-    log). Callers that already have that -- run_daily.py, building the
-    post-execution Telegram report -- can pass it so the price shows inline
-    next to qty/capital, instead of needing a separate section.
+    Every approved trade's Qty/Rate/Amount/GTT/Stop-loss all come from one
+    consistent basis -- signal.entry_price, the same number RiskManager
+    used to size capital_deployed in the first place (qty * entry_price) --
+    so Rate x Qty always equals Amount, and GTT%/Stop-loss% are exact,
+    reproducible distances from that same Rate. Shown together in one block
+    per symbol rather than scattered, so there's nothing to cross-reference.
 
-    order_protection: optional {symbol: pre-formatted stop-loss/target/GTT
-    status string} -- same timing reasoning as order_prices, but for
-    whether the safety-net GTT actually got placed. A production trade once
-    had its GTT silently rejected (a tick-size mismatch) while the BUY
-    itself succeeded, leaving a real position with no stop-loss for hours
-    before anyone noticed by checking Kite directly -- this makes that
-    failure show up in the Telegram message itself instead.
+    gtt_status: optional {symbol: pre-formatted GTT status string} --
+    Portfolio Manager only ever knows the sizing decision, not whether the
+    safety-net GTT actually got placed (that's only known after
+    execution_engine.place_order() runs, later than this function is first
+    called for the pre-execution console log). A production trade once had
+    its GTT silently rejected (a tick-size mismatch) while the BUY itself
+    succeeded, leaving a real position with no stop-loss for hours before
+    anyone noticed by checking Kite directly -- passing this in (from
+    run_daily.py, building the post-execution Telegram report) makes that
+    failure show up in the message itself instead.
     """
     lines = ["PORTFOLIO MANAGER -- DECISION LOG", "=" * 40]
 
@@ -242,16 +243,26 @@ def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | 
     if approved:
         lines.append("APPROVED:")
         for d in approved:
-            price = order_prices.get(d.symbol) if order_prices else None
-            price_text = f", price Rs.{price:,.2f}" if price is not None else ""
-            lines.append(
-                f"  - {d.symbol}: qty {d.quantity}{price_text}, capital deployed Rs.{d.capital_deployed:,.2f} "
-                f"(confidence {d.confidence:.0%}, {d.risk_multiplier:.2f}x sizing)"
-            )
-            protection = order_protection.get(d.symbol) if order_protection else None
-            if protection:
-                lines.append(f"      {protection}")
-            lines.append(f"      reason: {d.reason}")
+            lines.append(f"  - {d.symbol}")
+            lines.append(f"      Qty: {d.quantity}")
+
+            signal = d.approved_trade.signal if d.approved_trade else None
+            if signal is not None:
+                lines.append(f"      Rate: Rs.{signal.entry_price:,.2f}")
+            lines.append(f"      Amount: Rs.{d.capital_deployed:,.2f}")
+
+            if signal is not None and signal.entry_price > 0:
+                target_pct = (signal.target - signal.entry_price) / signal.entry_price * 100
+                stop_pct = (signal.entry_price - signal.stop_loss) / signal.entry_price * 100
+                lines.append(f"      GTT Rate: Rs.{signal.target:,.2f} (+{target_pct:.2f}%)")
+                lines.append(f"      Stop Loss Rate: Rs.{signal.stop_loss:,.2f} (-{stop_pct:.2f}%)")
+
+            gtt_text = gtt_status.get(d.symbol) if gtt_status else None
+            if gtt_text:
+                lines.append(f"      GTT Status: {gtt_text}")
+
+            lines.append(f"      Confidence: {d.confidence:.0%} ({d.risk_multiplier:.2f}x sizing)")
+            lines.append(f"      Reason: {d.reason}")
 
     if rejected:
         lines.append("\nREJECTED:")

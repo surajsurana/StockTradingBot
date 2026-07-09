@@ -487,25 +487,16 @@ def main():
                         settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
                     )
 
-    order_prices = {
-        decision.symbol: result["price"]
-        for decision, result in executed
-        if result.get("status") in ("success", "paper") and result.get("price") is not None
-    }
-
-    order_protection = {}
+    gtt_status = {}
     for decision, result in executed:
         if result.get("status") not in ("success", "paper"):
             continue
-        signal = decision.approved_trade.signal
-        stop_target = f"stop-loss Rs.{signal.stop_loss:,.2f}, target Rs.{signal.target:,.2f}"
         if result["status"] == "paper":
-            gtt_text = "paper mode, no real GTT"
+            gtt_status[decision.symbol] = "paper mode, no real GTT"
         elif result.get("gtt_id") is not None:
-            gtt_text = f"GTT placed (id {result['gtt_id']})"
+            gtt_status[decision.symbol] = f"placed (id {result['gtt_id']})"
         else:
-            gtt_text = "GTT FAILED -- NO stop-loss/target protection, check Kite manually"
-        order_protection[decision.symbol] = f"{stop_target}, {gtt_text}"
+            gtt_status[decision.symbol] = "FAILED -- NO stop-loss/target protection, check Kite manually"
 
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",
@@ -519,7 +510,7 @@ def main():
         f"Trades approved: {len([d for d in decisions if d.approved])}",
         f"Trades rejected: {len([d for d in decisions if not d.approved])}",
         "",
-        build_decision_log(decisions, order_prices, order_protection),
+        build_decision_log(decisions, gtt_status),
     ]
 
     send_telegram_message("\n".join(report_lines), settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
