@@ -127,16 +127,26 @@ def get_universe(active_strategies: list, limit: int = None) -> list:
     return symbols
 
 
-def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> list:
+def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tuple[list, dict]:
     """
     Cheap scan (no LLM calls): fetches price history + fundamentals for
     every symbol, returns only those that pass fundamentals AND have at
     least one active technical signal today.
 
-    Returns a list of dicts: {"symbol", "technical_signals", "fundamentals_result"}
+    Returns (survivors, rejection_counts). survivors is a list of dicts:
+    {"symbol", "technical_signals", "fundamentals_result"}. rejection_counts
+    tallies why everyone else was rejected:
+      - "insufficient_history": fewer than 60 days of price history (new/thin
+        listing), or the yfinance fetch itself failed for that symbol.
+      - "no_signal": had enough history, but no active strategy's entry
+        condition fired today (e.g. no MA crossover, not oversold).
+      - "failed_fundamentals": had a signal, but the company didn't pass the
+        health check (debt/ROE/revenue-growth), or its fundamentals couldn't
+        be fetched at all.
     """
     print(f"\nStage 1: scanning {len(symbols)} symbols (Technical + Fundamentals, no LLM cost)...")
     survivors = []
+    rejection_counts = {"insufficient_history": 0, "no_signal": 0, "failed_fundamentals": 0}
 
     for i, symbol in enumerate(symbols, start=1):
         if i % PROGRESS_EVERY == 0 or i == len(symbols):
@@ -146,22 +156,27 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> li
             price_history = fetch_all([symbol], period="1y").get(symbol)
         except Exception as e:
             print(f"WARNING: could not fetch price history for {symbol}: {e}")
+            rejection_counts["insufficient_history"] += 1
             continue
         if price_history is None or len(price_history) < 60:
+            rejection_counts["insufficient_history"] += 1
             continue  # not enough history yet, or fetch failed silently
 
         technical_signals = get_technical_signals(symbol, price_history, regime_series, active_strategies)
         has_signal = any(sig is not None for sig in technical_signals.values())
         if not has_signal:
+            rejection_counts["no_signal"] += 1
             continue
 
         try:
             metrics = fetch_fundamentals(symbol)
         except Exception as e:
             print(f"WARNING: could not fetch fundamentals for {symbol}: {e}")
+            rejection_counts["failed_fundamentals"] += 1
             continue
         fundamentals_result = check_health(symbol, metrics, settings.FUNDAMENTALS_CRITERIA)
         if not fundamentals_result.passed:
+            rejection_counts["failed_fundamentals"] += 1
             continue
 
         survivors.append({
@@ -170,8 +185,15 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> li
             "fundamentals_result": fundamentals_result,
         })
 
-    print(f"Stage 1 complete: {len(survivors)} symbol(s) passed both filters and move to Stage 2.")
-    return survivors
+    print(f"Stage 1 complete: {len(survivors)} symbol(s) passed both filters and move to Stage 2 "
+          f"({format_stage1_rejections(rejection_counts)}).")
+    return survivors, rejection_counts
+
+
+def format_stage1_rejections(rejection_counts: dict) -> str:
+    return (f"{rejection_counts['no_signal']} no signal, "
+            f"{rejection_counts['failed_fundamentals']} failed fundamentals, "
+            f"{rejection_counts['insufficient_history']} insufficient history")
 
 
 def run_stage2_research(survivors: list) -> list:
@@ -373,15 +395,15 @@ def main():
     nifty = fetch_nifty(period="1y")
     regime_series = build_regime_series(nifty)
 
-    survivors = run_stage1_scan(symbols, regime_series, active_strategies)
+    survivors, rejection_counts = run_stage1_scan(symbols, regime_series, active_strategies)
 
     if not survivors:
         print("\nNo symbols passed Stage 1 today -- nothing to research or trade. This is a normal, "
               "quiet day; the system is not forcing trades that aren't there.")
         send_telegram_message(
             f"*Daily run -- no trades today*\n\nCapital available: Rs.{capital:,.2f}\n\n"
-            f"No symbols passed both the technical signal and fundamentals checks today. "
-            f"Nothing was researched or traded.",
+            f"No symbols passed both the technical signal and fundamentals checks today "
+            f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded.",
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
         return
@@ -428,6 +450,7 @@ def main():
            if capital_for_sizing < capital else ""),
         f"Universe scanned: {len(symbols)}",
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
+        f"Stage 1 rejected: {format_stage1_rejections(rejection_counts)}",
         f"Trades approved: {len([d for d in decisions if d.approved])}",
         f"Trades rejected: {len([d for d in decisions if not d.approved])}",
         "",
