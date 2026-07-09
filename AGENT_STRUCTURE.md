@@ -34,7 +34,7 @@ flowchart TD
     MACRO -->|high risk| SKIP[("No new trades this run<br/>existing GTTs unaffected")]
     MACRO -->|normal or elevated risk<br/>elevated halves risk/trade| HELD{"Already held?<br/>(exclude_held_symbols)"}
     HELD -->|yes, skip| SKIP
-    HELD -->|no| U["Nifty 500 universe<br/>~500 stocks, 9:20am/11:10am/1:10pm/2:55pm IST"]
+    HELD -->|no| U["Nifty 500 universe<br/>~500 stocks, 9:20am/11:10am/1:10pm/3:00pm IST"]
     U --> TECH[Technical Agent]
     U --> FUND[Fundamental Agent]
     TECH --> S1{"Stage 1 filter<br/>signal AND healthy?"}
@@ -49,15 +49,15 @@ flowchart TD
     EXEC --> KITE[("Zerodha Kite<br/>LIMIT order + GTT")]
     EXEC --> TG[("Telegram summary")]
 
-    MON["Position Monitor<br/>11:15am / 1:15pm / 3:00pm IST"]
+    MON["Position Monitor<br/>10:20am / 12:10pm / 2:10pm / 3:25pm IST"]
     MON -.re-runs Technical+Fundamental+News+Research on open positions.-> RESEARCH
     MON -->|unfavorable verdict| EXEC
     EXEC -.exits early, cancels GTT.-> KITE
 ```
 
-**Two schedules run on the VPS, both unattended:**
-- `run_daily.py` — four times during market hours (**9:20am, 11:10am, 1:10pm, 2:55pm IST**). Full pipeline above: scans the universe, researches survivors, sizes and places new trades. Runs beyond the morning one exist so a setup that completes mid-day (not visible yet at 9:20am) still gets caught the same day, rather than waiting until tomorrow morning. Each run excludes symbols already held (`exclude_held_symbols`) so the same signal firing again a few hours later doesn't buy the same stock twice, and uses News Agent's cached path (`analyze_news_cached`) so unchanged headlines aren't re-paid for on every re-scan.
-- `monitor_positions.py` — three times during market hours (**11:15am, 1:15pm, 3:00pm IST**). Re-checks everything currently held and can exit early on bad news/fundamentals/technicals, on top of the automatic GTT stop-loss/target that's already sitting on every position. Deliberately *not* run right after every `run_daily.py` scan (e.g. 9:20am) -- a position bought minutes ago hasn't had time for news, fundamentals, or even the day's own technical picture to meaningfully change, so an immediate re-check would just re-confirm the same inputs that supported the buy. The ~2-hour gap to the next scheduled check is closer to the timescale where something could actually be different.
+**Two schedules run on the VPS, both unattended, roughly alternating about an hour apart:**
+- `run_daily.py` — four times during market hours (**9:20am, 11:10am, 1:10pm, 3:00pm IST**). Full pipeline above: scans the universe, researches survivors, sizes and places new trades. Runs beyond the morning one exist so a setup that completes mid-day (not visible yet at 9:20am) still gets caught the same day, rather than waiting until tomorrow morning. Each run excludes symbols already held (`exclude_held_symbols`) so the same signal firing again a few hours later doesn't buy the same stock twice, and uses News Agent's cached path (`analyze_news_cached`) so unchanged headlines aren't re-paid for on every re-scan.
+- `monitor_positions.py` — four times during market hours (**10:20am, 12:10pm, 2:10pm, 3:25pm IST**), each about an hour after the preceding `run_daily.py` scan -- long enough for news, fundamentals, or the day's technical picture to actually have moved, unlike an immediate back-to-back check. The last gap is compressed to 25 minutes (not a full hour) because NSE closes at 3:30pm -- an exit order placed right at the close might not fill in time, but the position's GTT stop-loss/target stays active either way, so downside protection isn't at risk even if a late exit attempt doesn't complete that day.
 
 ## Strategy & risk rules
 
