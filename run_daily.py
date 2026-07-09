@@ -477,10 +477,13 @@ def main():
                     # otherwise claim capital was deployed when it wasn't.
                     print(f"WARNING: live order for {signal.symbol} did not succeed -- "
                           f"not recording a position. Result: {result}")
+                    attempted_price = result.get("price")
                     send_telegram_message(
                         f"*Order failed -- {signal.symbol}*\n\nPortfolio Manager approved this "
                         f"trade, but the Kite order itself failed -- no position was opened, no "
-                        f"capital was deployed.\n\nReason: {result.get('message', result)}",
+                        f"capital was deployed."
+                        + (f"\n\nAttempted price: Rs.{attempted_price:,.2f}" if attempted_price else "")
+                        + f"\n\nReason: {result.get('message', result)}",
                         settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
                     )
 
@@ -498,6 +501,17 @@ def main():
         "",
         build_decision_log(decisions),
     ]
+
+    order_lines = [
+        f"  - {decision.symbol}: order placed at Rs.{result['price']:,.2f}"
+        for decision, result in executed
+        if result.get("status") in ("success", "paper") and result.get("price") is not None
+    ]
+    if order_lines:
+        report_lines.append("")
+        report_lines.append("ORDER PRICES:")
+        report_lines.extend(order_lines)
+
     send_telegram_message("\n".join(report_lines), settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
 
 

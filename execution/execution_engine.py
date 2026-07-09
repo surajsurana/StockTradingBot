@@ -111,7 +111,7 @@ class ExecutionEngine:
 
         print(f"[PAPER TRADE] {signal.direction} {trade.quantity} x {signal.symbol} "
               f"@ {signal.entry_price} (stop {signal.stop_loss}, target {signal.target})")
-        return {"status": "paper", **row}
+        return {"status": "paper", "price": signal.entry_price, **row}
 
     def _place_live_order(self, trade: ApprovedTrade) -> dict:
         """
@@ -161,6 +161,7 @@ class ExecutionEngine:
             data=payload,
         )
         result = resp.json()
+        result["price"] = limit_price  # the LIMIT price actually sent to Kite, tick-rounded
         print(f"[LIVE ORDER] status={resp.status_code} response={result}")
 
         if signal.direction == "BUY" and result.get("status") == "success":

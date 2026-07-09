@@ -73,6 +73,28 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
         mock_gtt.assert_called_once()
         self.assertEqual(result["gtt_id"], 999)
 
+    @patch("execution.execution_engine.get_tick_size", return_value=0.50)
+    @patch.object(ExecutionEngine, "_place_gtt_exit", return_value=999)
+    @patch("execution.execution_engine.requests.post")
+    def test_result_includes_the_actual_limit_price_sent(self, mock_post, mock_gtt, mock_tick):
+        # entry 1500.0 * 1.015 buffer = 1522.5, rounded to the nearest 0.50 tick
+        mock_post.return_value = _resp(200, {"status": "success", "data": {"order_id": "abc"}})
+
+        result = self.engine._place_live_order(_buy_trade())
+
+        self.assertEqual(result["price"], 1522.5)
+
+    @patch("execution.execution_engine.get_tick_size", return_value=0.50)
+    @patch("execution.execution_engine.requests.post")
+    def test_failed_order_still_reports_the_attempted_price(self, mock_post, mock_tick):
+        mock_post.return_value = _resp(400, {"status": "error", "message": "Tick size for this "
+                                              "script is 0.50", "data": None})
+
+        result = self.engine._place_live_order(_buy_trade())
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["price"], 1522.5)
+
     @patch.object(ExecutionEngine, "_place_gtt_exit", side_effect=RuntimeError("GTT endpoint down"))
     @patch("execution.execution_engine.requests.post")
     def test_gtt_failure_does_not_fail_the_buy(self, mock_post, mock_gtt):
