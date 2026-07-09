@@ -208,7 +208,8 @@ def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> lis
     return decisions
 
 
-def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | None = None) -> str:
+def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | None = None,
+                        order_protection: dict | None = None) -> str:
     """
     Human-readable audit trail of every candidate considered today, in the
     order they were decided (approved trades first, in priority order, then
@@ -222,6 +223,14 @@ def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | 
     log). Callers that already have that -- run_daily.py, building the
     post-execution Telegram report -- can pass it so the price shows inline
     next to qty/capital, instead of needing a separate section.
+
+    order_protection: optional {symbol: pre-formatted stop-loss/target/GTT
+    status string} -- same timing reasoning as order_prices, but for
+    whether the safety-net GTT actually got placed. A production trade once
+    had its GTT silently rejected (a tick-size mismatch) while the BUY
+    itself succeeded, leaving a real position with no stop-loss for hours
+    before anyone noticed by checking Kite directly -- this makes that
+    failure show up in the Telegram message itself instead.
     """
     lines = ["PORTFOLIO MANAGER -- DECISION LOG", "=" * 40]
 
@@ -239,6 +248,9 @@ def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | 
                 f"  - {d.symbol}: qty {d.quantity}{price_text}, capital deployed Rs.{d.capital_deployed:,.2f} "
                 f"(confidence {d.confidence:.0%}, {d.risk_multiplier:.2f}x sizing)"
             )
+            protection = order_protection.get(d.symbol) if order_protection else None
+            if protection:
+                lines.append(f"      {protection}")
             lines.append(f"      reason: {d.reason}")
 
     if rejected:
