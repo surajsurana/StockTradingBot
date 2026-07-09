@@ -463,11 +463,26 @@ def main():
         if decision.approved and decision.approved_trade is not None:
             result = execution_engine.place_order(decision.approved_trade)
             executed.append((decision, result))
+            signal = decision.approved_trade.signal
             if live_trading:
-                signal = decision.approved_trade.signal
-                record_new_position(
-                    signal.symbol, decision.quantity, signal.entry_price, result.get("gtt_id"),
-                )
+                if result.get("status") == "success":
+                    record_new_position(
+                        signal.symbol, decision.quantity, signal.entry_price, result.get("gtt_id"),
+                    )
+                else:
+                    # Portfolio Manager approved this trade, but the actual Kite
+                    # order failed (rejected, insufficient margin, etc.) -- don't
+                    # record a position that doesn't exist. Surfaced loudly:
+                    # this is real money and the Telegram summary below would
+                    # otherwise claim capital was deployed when it wasn't.
+                    print(f"WARNING: live order for {signal.symbol} did not succeed -- "
+                          f"not recording a position. Result: {result}")
+                    send_telegram_message(
+                        f"*Order failed -- {signal.symbol}*\n\nPortfolio Manager approved this "
+                        f"trade, but the Kite order itself failed -- no position was opened, no "
+                        f"capital was deployed.\n\nReason: {result.get('message', result)}",
+                        settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
+                    )
 
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",

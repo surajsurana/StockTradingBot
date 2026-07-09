@@ -174,14 +174,27 @@ def main():
             ))
             print(f"  Exited early: {sell_result}")
 
-            if gtt_id is not None:
-                execution_engine.cancel_gtt(gtt_id)
+            if sell_result.get("status") == "success":
+                if gtt_id is not None:
+                    execution_engine.cancel_gtt(gtt_id)
 
-            exited_symbols.append(holding.symbol)
-            checked_lines.append(
-                f"- {holding.symbol}: EXITED EARLY (verdict turned unfavorable, "
-                f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"
-            )
+                exited_symbols.append(holding.symbol)
+                checked_lines.append(
+                    f"- {holding.symbol}: EXITED EARLY (verdict turned unfavorable, "
+                    f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"
+                )
+            else:
+                # The exit SELL itself failed -- do NOT cancel the GTT and do NOT
+                # mark this as exited. This position is still really held, so its
+                # GTT stop-loss/target must stay in place; treating a failed exit
+                # as successful would leave a real position with no protection.
+                print(f"WARNING: exit SELL order for {holding.symbol} did not succeed -- "
+                      f"GTT left in place, still counted as held. Result: {sell_result}")
+                checked_lines.append(
+                    f"- {holding.symbol}: verdict turned unfavorable ({assessment.confidence:.0%} "
+                    f"confidence) but the exit order failed -- still held, GTT stop-loss/target "
+                    f"unaffected. {assessment.reasoning}"
+                )
         else:
             checked_lines.append(
                 f"- {holding.symbol}: held ({assessment.verdict}, {assessment.confidence:.0%} confidence)"

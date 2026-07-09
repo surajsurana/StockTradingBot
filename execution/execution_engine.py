@@ -16,6 +16,7 @@ from datetime import datetime
 import requests
 
 from risk.risk_manager import ApprovedTrade
+from execution.tick_size import get_tick_size
 
 
 PAPER_LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "paper_trades_log.csv")
@@ -132,11 +133,12 @@ class ExecutionEngine:
 
         signal = trade.signal
         symbol = signal.symbol.replace(".NS", "")  # Kite uses raw NSE symbols, not the .NS suffix
+        tick = get_tick_size(signal.symbol, self.api_key, self.access_token)
 
         if signal.direction == "BUY":
-            limit_price = _round_to_tick(signal.entry_price * (1 + self.limit_order_buffer_pct))
+            limit_price = _round_to_tick(signal.entry_price * (1 + self.limit_order_buffer_pct), tick)
         else:
-            limit_price = _round_to_tick(signal.entry_price * (1 - self.limit_order_buffer_pct))
+            limit_price = _round_to_tick(signal.entry_price * (1 - self.limit_order_buffer_pct), tick)
 
         headers = {
             "X-Kite-Version": "3",
@@ -193,6 +195,7 @@ class ExecutionEngine:
         """
         signal = trade.signal
         symbol = signal.symbol.replace(".NS", "")
+        tick = get_tick_size(signal.symbol, self.api_key, self.access_token)
 
         headers = {
             "X-Kite-Version": "3",
@@ -208,12 +211,12 @@ class ExecutionEngine:
             {
                 "exchange": "NSE", "tradingsymbol": symbol, "transaction_type": "SELL",
                 "quantity": trade.quantity, "order_type": "LIMIT", "product": "CNC",
-                "price": _round_to_tick(signal.stop_loss),
+                "price": _round_to_tick(signal.stop_loss, tick),
             },
             {
                 "exchange": "NSE", "tradingsymbol": symbol, "transaction_type": "SELL",
                 "quantity": trade.quantity, "order_type": "LIMIT", "product": "CNC",
-                "price": _round_to_tick(signal.target),
+                "price": _round_to_tick(signal.target, tick),
             },
         ]
 
