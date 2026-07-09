@@ -208,12 +208,20 @@ def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> lis
     return decisions
 
 
-def build_decision_log(decisions: list[PortfolioDecision]) -> str:
+def build_decision_log(decisions: list[PortfolioDecision], order_prices: dict | None = None) -> str:
     """
     Human-readable audit trail of every candidate considered today, in the
     order they were decided (approved trades first, in priority order, then
     rejections) -- this is the record of "why" for each decision, for review
     or for a WhatsApp report.
+
+    order_prices: optional {symbol: actual order price} -- Portfolio Manager
+    only ever knows the sizing decision, not the price an order actually got
+    placed at (that's only known after execution_engine.place_order() runs,
+    later than this function is first called for the pre-execution console
+    log). Callers that already have that -- run_daily.py, building the
+    post-execution Telegram report -- can pass it so the price shows inline
+    next to qty/capital, instead of needing a separate section.
     """
     lines = ["PORTFOLIO MANAGER -- DECISION LOG", "=" * 40]
 
@@ -225,8 +233,10 @@ def build_decision_log(decisions: list[PortfolioDecision]) -> str:
     if approved:
         lines.append("APPROVED:")
         for d in approved:
+            price = order_prices.get(d.symbol) if order_prices else None
+            price_text = f", price Rs.{price:,.2f}" if price is not None else ""
             lines.append(
-                f"  - {d.symbol}: qty {d.quantity}, capital deployed Rs.{d.capital_deployed:,.2f} "
+                f"  - {d.symbol}: qty {d.quantity}{price_text}, capital deployed Rs.{d.capital_deployed:,.2f} "
                 f"(confidence {d.confidence:.0%}, {d.risk_multiplier:.2f}x sizing)"
             )
             lines.append(f"      reason: {d.reason}")

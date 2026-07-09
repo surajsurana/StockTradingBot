@@ -487,6 +487,12 @@ def main():
                         settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
                     )
 
+    order_prices = {
+        decision.symbol: result["price"]
+        for decision, result in executed
+        if result.get("status") in ("success", "paper") and result.get("price") is not None
+    }
+
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",
         "",
@@ -499,18 +505,8 @@ def main():
         f"Trades approved: {len([d for d in decisions if d.approved])}",
         f"Trades rejected: {len([d for d in decisions if not d.approved])}",
         "",
-        build_decision_log(decisions),
+        build_decision_log(decisions, order_prices),
     ]
-
-    order_lines = [
-        f"  - {decision.symbol}: order placed at Rs.{result['price']:,.2f}"
-        for decision, result in executed
-        if result.get("status") in ("success", "paper") and result.get("price") is not None
-    ]
-    if order_lines:
-        report_lines.append("")
-        report_lines.append("ORDER PRICES:")
-        report_lines.extend(order_lines)
 
     send_telegram_message("\n".join(report_lines), settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
 
