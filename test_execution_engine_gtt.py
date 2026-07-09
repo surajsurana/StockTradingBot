@@ -52,6 +52,29 @@ class TestPlaceGttExit(unittest.TestCase):
         self.assertTrue(all(o["transaction_type"] == "SELL" for o in orders))
         self.assertTrue(all(o["quantity"] == 10 for o in orders))
 
+    @patch("execution.execution_engine.get_tick_size", return_value=0.05)
+    @patch("execution.execution_engine.requests.post")
+    def test_trigger_values_are_tick_rounded_not_raw_floats(self, mock_post, mock_tick):
+        # Regression test: a real production trade had stop_loss/target as
+        # raw, non-tick-aligned floats (ATR/swing-low math never lands on a
+        # clean multiple of the tick size). The GTT's two SELL order prices
+        # were tick-rounded, but condition["trigger_values"] used the raw
+        # signal values directly -- Kite rejected it: "Stoploss trigger
+        # price should be a multiple of tick size 0.05." The BUY had already
+        # filled by the time this failed, leaving a real position with zero
+        # stop-loss/target protection.
+        mock_post.return_value = _resp(200, {"data": {"trigger_id": 4242}})
+        signal = Signal(symbol="NTPC.NS", direction="BUY", entry_price=344.0,
+                         stop_loss=333.9709881591797, target=364.05741464355,
+                         confidence=0.68, strategy_name="test", reason="test")
+        trade = ApprovedTrade(signal=signal, quantity=15, capital_deployed=5160.0)
+
+        self.engine._place_gtt_exit(trade)
+
+        kwargs = mock_post.call_args[1]
+        condition = json.loads(kwargs["data"]["condition"])
+        self.assertEqual(condition["trigger_values"], [333.95, 364.05])
+
     @patch("execution.execution_engine.requests.post")
     def test_placement_failure_raises(self, mock_post):
         mock_post.return_value = _resp(400, {"error_type": "InputException", "message": "bad request"})

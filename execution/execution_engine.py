@@ -205,7 +205,7 @@ class ExecutionEngine:
         condition = {
             "exchange": "NSE",
             "tradingsymbol": symbol,
-            "trigger_values": [signal.stop_loss, signal.target],
+            "trigger_values": [_round_to_tick(signal.stop_loss, tick), _round_to_tick(signal.target, tick)],
             "last_price": signal.entry_price,
         }
         orders = [
