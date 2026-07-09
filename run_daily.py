@@ -86,7 +86,7 @@ from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
 from risk.risk_manager import RiskManager
 from execution.execution_engine import ExecutionEngine, fetch_available_capital
-from execution.positions import fetch_holdings
+from execution.positions import fetch_all_holdings
 from execution.position_state import reconcile_closed_positions, record_new_position
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.chief_investment_ai import MonthlyPlan
@@ -307,7 +307,7 @@ def get_current_holdings(live_trading: bool) -> list:
     """
     if not live_trading:
         return []
-    return fetch_holdings(settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN)
+    return fetch_all_holdings(settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN)
 
 
 def main():

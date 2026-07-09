@@ -1,5 +1,6 @@
 """
-Mock-based unit tests for execution/positions.py's fetch_holdings() -- run with:
+Mock-based unit tests for execution/positions.py's fetch_holdings(),
+fetch_same_day_positions(), and fetch_all_holdings() -- run with:
 
     python test_execution_positions.py
 """
@@ -7,7 +8,7 @@ Mock-based unit tests for execution/positions.py's fetch_holdings() -- run with:
 import unittest
 from unittest.mock import patch, MagicMock
 
-from execution.positions import fetch_holdings, Holding
+from execution.positions import fetch_holdings, fetch_same_day_positions, fetch_all_holdings, Holding
 
 
 def _resp(status_code=200, json_data=None):
@@ -55,6 +56,64 @@ class TestFetchHoldings(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             fetch_holdings("api_key", "stale_token")
         self.assertIn("stale", str(ctx.exception))
+
+
+class TestFetchSameDayPositions(unittest.TestCase):
+    @patch("execution.positions.requests.get")
+    def test_filters_to_cnc_with_positive_quantity(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": {"net": [
+            {"tradingsymbol": "NTPC", "product": "CNC", "quantity": 15, "average_price": 344.1},
+            {"tradingsymbol": "RELIANCE", "product": "MIS", "quantity": 10, "average_price": 1300.0},
+            {"tradingsymbol": "TCS", "product": "CNC", "quantity": 0, "average_price": 3200.0},
+        ]}})
+
+        positions = fetch_same_day_positions("api_key", "token")
+
+        self.assertEqual(positions, [Holding(symbol="NTPC.NS", quantity=15, average_price=344.1)])
+
+    @patch("execution.positions.requests.get")
+    def test_empty_net_list(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": {"net": []}})
+        self.assertEqual(fetch_same_day_positions("api_key", "token"), [])
+
+
+class TestFetchAllHoldings(unittest.TestCase):
+    @patch("execution.positions.fetch_same_day_positions")
+    @patch("execution.positions.fetch_holdings")
+    def test_merges_settled_and_same_day_by_symbol(self, mock_holdings, mock_same_day):
+        # Regression test: a real production trade (NTPC.NS, bought same-day)
+        # was missing from /portfolio/holdings until T+1 settlement -- calling
+        # fetch_holdings() alone made monitor_positions.py conclude the
+        # position had closed hours after a legitimate same-day BUY.
+        mock_holdings.return_value = [Holding(symbol="INFY.NS", quantity=5, average_price=1500.0)]
+        mock_same_day.return_value = [Holding(symbol="NTPC.NS", quantity=15, average_price=344.1)]
+
+        merged = fetch_all_holdings("api_key", "token")
+
+        self.assertEqual(len(merged), 2)
+        symbols = {h.symbol for h in merged}
+        self.assertEqual(symbols, {"INFY.NS", "NTPC.NS"})
+
+    @patch("execution.positions.fetch_same_day_positions")
+    @patch("execution.positions.fetch_holdings")
+    def test_settled_holdings_take_priority_on_overlap(self, mock_holdings, mock_same_day):
+        mock_holdings.return_value = [Holding(symbol="NTPC.NS", quantity=15, average_price=344.1)]
+        mock_same_day.return_value = [Holding(symbol="NTPC.NS", quantity=999, average_price=1.0)]
+
+        merged = fetch_all_holdings("api_key", "token")
+
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0].quantity, 15)  # settled figure wins, not the same-day one
+
+    @patch("execution.positions.fetch_same_day_positions")
+    @patch("execution.positions.fetch_holdings")
+    def test_no_same_day_positions_returns_holdings_unchanged(self, mock_holdings, mock_same_day):
+        mock_holdings.return_value = [Holding(symbol="INFY.NS", quantity=5, average_price=1500.0)]
+        mock_same_day.return_value = []
+
+        merged = fetch_all_holdings("api_key", "token")
+
+        self.assertEqual(merged, mock_holdings.return_value)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ from news.news_agent import analyze_news_cached, disabled_news_assessment, Claud
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
 from execution.execution_engine import ExecutionEngine
-from execution.positions import fetch_holdings
+from execution.positions import fetch_all_holdings
 from execution.position_state import reconcile_closed_positions, load_known_positions
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.plan_state import load_monthly_plan, effective_active_strategies
@@ -111,7 +111,7 @@ def main():
         return
 
     try:
-        holdings = fetch_holdings(settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN)
+        holdings = fetch_all_holdings(settings.KITE_API_KEY, settings.KITE_ACCESS_TOKEN)
     except Exception as e:
         print(f"\nABORTING -- could not fetch current holdings: {e}")
         send_telegram_message(
