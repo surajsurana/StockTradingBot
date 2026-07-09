@@ -208,19 +208,25 @@ def allocate(candidates: list[TradeCandidate], risk_manager: RiskManager) -> lis
     return decisions
 
 
-def build_decision_log(decisions: list[PortfolioDecision], gtt_status: dict | None = None) -> str:
+def build_decision_log(decisions: list[PortfolioDecision], gtt_status: dict | None = None,
+                        fill_prices: dict | None = None) -> str:
     """
     Human-readable audit trail of every candidate considered today, in the
     order they were decided (approved trades first, in priority order, then
     rejections) -- this is the record of "why" for each decision, for review
     or for a WhatsApp report.
 
-    Every approved trade's Qty/Rate/Amount/GTT/Stop-loss all come from one
-    consistent basis -- signal.entry_price, the same number RiskManager
-    used to size capital_deployed in the first place (qty * entry_price) --
-    so Rate x Qty always equals Amount, and GTT%/Stop-loss% are exact,
-    reproducible distances from that same Rate. Shown together in one block
-    per symbol rather than scattered, so there's nothing to cross-reference.
+    Every approved trade's Qty/Rate/GTT/Stop-loss share one consistent
+    basis: Rate, which is the real average fill price when known (a LIMIT
+    buy can fill at a BETTER price than the limit sent -- a real trade
+    filled at 344.10 against a 349.15 limit, and reporting the limit price
+    as "the price" never matched what Kite actually showed), falling back
+    to signal.entry_price only if the fill price isn't available yet.
+    GTT%/Stop-loss% are computed from that same Rate, so everything in the
+    block relates consistently to the one number actually shown. Amount is
+    Portfolio Manager's budgeted capital_deployed (qty * entry_price at
+    sizing time) -- it can differ slightly from Rate x Qty when the real
+    fill price isn't exactly the sizing estimate, which is normal.
 
     gtt_status: optional {symbol: pre-formatted GTT status string} --
     Portfolio Manager only ever knows the sizing decision, not whether the
@@ -232,6 +238,9 @@ def build_decision_log(decisions: list[PortfolioDecision], gtt_status: dict | No
     anyone noticed by checking Kite directly -- passing this in (from
     run_daily.py, building the post-execution Telegram report) makes that
     failure show up in the message itself instead.
+
+    fill_prices: optional {symbol: real average fill price}, same timing
+    reasoning as gtt_status -- only known after execution.
     """
     lines = ["PORTFOLIO MANAGER -- DECISION LOG", "=" * 40]
 
@@ -247,13 +256,16 @@ def build_decision_log(decisions: list[PortfolioDecision], gtt_status: dict | No
             lines.append(f"      Qty: {d.quantity}")
 
             signal = d.approved_trade.signal if d.approved_trade else None
-            if signal is not None:
-                lines.append(f"      Rate: Rs.{signal.entry_price:,.2f}")
+            rate = fill_prices.get(d.symbol) if fill_prices else None
+            if rate is None and signal is not None:
+                rate = signal.entry_price
+            if rate is not None:
+                lines.append(f"      Rate: Rs.{rate:,.2f}")
             lines.append(f"      Amount: Rs.{d.capital_deployed:,.2f}")
 
-            if signal is not None and signal.entry_price > 0:
-                target_pct = (signal.target - signal.entry_price) / signal.entry_price * 100
-                stop_pct = (signal.entry_price - signal.stop_loss) / signal.entry_price * 100
+            if signal is not None and rate is not None and rate > 0:
+                target_pct = (signal.target - rate) / rate * 100
+                stop_pct = (rate - signal.stop_loss) / rate * 100
                 lines.append(f"      GTT Rate: Rs.{signal.target:,.2f} (+{target_pct:.2f}%)")
                 lines.append(f"      Stop Loss Rate: Rs.{signal.stop_loss:,.2f} (-{stop_pct:.2f}%)")
 

@@ -161,8 +161,23 @@ class ExecutionEngine:
             data=payload,
         )
         result = resp.json()
-        result["price"] = limit_price  # the LIMIT price actually sent to Kite, tick-rounded
+        result["price"] = limit_price  # the LIMIT price sent to Kite -- a placeholder, overwritten
+                                        # below with the real fill price when available (a LIMIT
+                                        # buy can fill at a BETTER price than the limit, and did on
+                                        # a real trade: limit 349.15, actual fill 344.10 -- reporting
+                                        # the limit price as "the price" was misleading).
         print(f"[LIVE ORDER] status={resp.status_code} response={result}")
+
+        if result.get("status") == "success":
+            order_id = result.get("data", {}).get("order_id")
+            if order_id:
+                try:
+                    fill_price = self._fetch_average_fill_price(order_id)
+                    if fill_price is not None:
+                        result["price"] = fill_price
+                except Exception as e:
+                    print(f"WARNING: could not fetch actual fill price for order {order_id} "
+                          f"-- reporting the LIMIT price ({limit_price}) as an estimate instead: {e}")
 
         if signal.direction == "BUY" and result.get("status") == "success":
             try:
@@ -178,6 +193,33 @@ class ExecutionEngine:
                 result["gtt_id"] = None
 
         return result
+
+    def _fetch_average_fill_price(self, order_id: str) -> float | None:
+        """
+        Looks up the actual average price an order filled at, via Kite's
+        /orders/:order_id endpoint (returns every status update for that
+        order -- OPEN, then COMPLETE once filled; the last entry is the most
+        current). Returns None if the order hasn't filled yet (average_price
+        is 0/absent) or the lookup itself fails -- callers should treat that
+        as "use the limit price as an estimate instead," not an error, since
+        this is a best-effort accuracy improvement, not something that
+        should ever block reporting a trade that already went through.
+        """
+        headers = {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {self.api_key}:{self.access_token}",
+        }
+        resp = requests.get(f"https://api.kite.trade/orders/{order_id}", headers=headers)
+        result = resp.json()
+
+        if resp.status_code != 200 or not result.get("data"):
+            return None
+
+        latest = result["data"][-1]
+        avg_price = latest.get("average_price")
+        if avg_price and float(avg_price) > 0:
+            return float(avg_price)
+        return None
 
     def _place_gtt_exit(self, trade: ApprovedTrade) -> int:
         """

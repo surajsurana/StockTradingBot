@@ -86,9 +86,10 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
     def setUp(self):
         self.engine = ExecutionEngine(live_trading=True, api_key="api_key", access_token="token")
 
+    @patch.object(ExecutionEngine, "_fetch_average_fill_price", return_value=None)
     @patch.object(ExecutionEngine, "_place_gtt_exit", return_value=999)
     @patch("execution.execution_engine.requests.post")
-    def test_successful_buy_places_gtt(self, mock_post, mock_gtt):
+    def test_successful_buy_places_gtt(self, mock_post, mock_gtt, mock_fill):
         mock_post.return_value = _resp(200, {"status": "success", "data": {"order_id": "abc"}})
 
         result = self.engine._place_live_order(_buy_trade())
@@ -96,10 +97,11 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
         mock_gtt.assert_called_once()
         self.assertEqual(result["gtt_id"], 999)
 
+    @patch.object(ExecutionEngine, "_fetch_average_fill_price", return_value=None)
     @patch("execution.execution_engine.get_tick_size", return_value=0.50)
     @patch.object(ExecutionEngine, "_place_gtt_exit", return_value=999)
     @patch("execution.execution_engine.requests.post")
-    def test_result_includes_the_actual_limit_price_sent(self, mock_post, mock_gtt, mock_tick):
+    def test_falls_back_to_limit_price_when_fill_price_unavailable(self, mock_post, mock_gtt, mock_tick, mock_fill):
         # entry 1500.0 * 1.015 buffer = 1522.5, rounded to the nearest 0.50 tick
         mock_post.return_value = _resp(200, {"status": "success", "data": {"order_id": "abc"}})
 
@@ -118,9 +120,25 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["price"], 1522.5)
 
+    @patch.object(ExecutionEngine, "_fetch_average_fill_price")
+    @patch.object(ExecutionEngine, "_place_gtt_exit", return_value=999)
+    @patch("execution.execution_engine.requests.post")
+    def test_real_fill_price_overrides_the_limit_price_estimate(self, mock_post, mock_gtt, mock_fill):
+        # Regression test: a real production trade had a LIMIT price of
+        # 349.15, but the actual fill (a LIMIT buy can fill at a BETTER
+        # price than the limit) was 344.10 -- Telegram reported 349.15 as
+        # "the price", which never matched what Kite actually shows.
+        mock_post.return_value = _resp(200, {"status": "success", "data": {"order_id": "abc"}})
+        mock_fill.return_value = 344.10
+
+        result = self.engine._place_live_order(_buy_trade())
+
+        self.assertEqual(result["price"], 344.10)
+
+    @patch.object(ExecutionEngine, "_fetch_average_fill_price", return_value=None)
     @patch.object(ExecutionEngine, "_place_gtt_exit", side_effect=RuntimeError("GTT endpoint down"))
     @patch("execution.execution_engine.requests.post")
-    def test_gtt_failure_does_not_fail_the_buy(self, mock_post, mock_gtt):
+    def test_gtt_failure_does_not_fail_the_buy(self, mock_post, mock_gtt, mock_fill):
         """The BUY already filled -- a GTT placement failure shouldn't make
         place_order look like the whole trade failed. It should be surfaced
         (gtt_id is None) so the position is known to be missing its safety net."""
@@ -131,9 +149,10 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertIsNone(result["gtt_id"])
 
+    @patch.object(ExecutionEngine, "_fetch_average_fill_price", return_value=None)
     @patch.object(ExecutionEngine, "_place_gtt_exit")
     @patch("execution.execution_engine.requests.post")
-    def test_sell_order_never_triggers_gtt_placement(self, mock_post, mock_gtt):
+    def test_sell_order_never_triggers_gtt_placement(self, mock_post, mock_gtt, mock_fill):
         mock_post.return_value = _resp(200, {"status": "success", "data": {"order_id": "abc"}})
         sell_signal = Signal(symbol="INFY.NS", direction="SELL", entry_price=1500.0, stop_loss=1500.0,
                               target=1500.0, confidence=0.8, strategy_name="test", reason="exit")
@@ -142,6 +161,36 @@ class TestPlaceLiveOrderWiresGtt(unittest.TestCase):
         self.engine._place_live_order(trade)
 
         mock_gtt.assert_not_called()
+
+
+class TestFetchAverageFillPrice(unittest.TestCase):
+    def setUp(self):
+        self.engine = ExecutionEngine(live_trading=True, api_key="api_key", access_token="token")
+
+    @patch("execution.execution_engine.requests.get")
+    def test_returns_average_price_from_latest_status_update(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"status": "OPEN", "average_price": 0},
+            {"status": "COMPLETE", "average_price": 344.10},
+        ]})
+
+        price = self.engine._fetch_average_fill_price("order123")
+
+        self.assertEqual(price, 344.10)
+
+    @patch("execution.execution_engine.requests.get")
+    def test_still_pending_returns_none(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"status": "OPEN", "average_price": 0},
+        ]})
+
+        self.assertIsNone(self.engine._fetch_average_fill_price("order123"))
+
+    @patch("execution.execution_engine.requests.get")
+    def test_lookup_failure_returns_none_not_an_exception(self, mock_get):
+        mock_get.return_value = _resp(500, {"error_type": "GeneralException"})
+
+        self.assertIsNone(self.engine._fetch_average_fill_price("order123"))
 
 
 class TestCancelGtt(unittest.TestCase):

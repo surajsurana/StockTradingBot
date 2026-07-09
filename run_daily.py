@@ -488,9 +488,12 @@ def main():
                     )
 
     gtt_status = {}
+    fill_prices = {}
     for decision, result in executed:
         if result.get("status") not in ("success", "paper"):
             continue
+        if result.get("price") is not None:
+            fill_prices[decision.symbol] = result["price"]
         if result["status"] == "paper":
             gtt_status[decision.symbol] = "paper mode, no real GTT"
         elif result.get("gtt_id") is not None:
@@ -510,7 +513,7 @@ def main():
         f"Trades approved: {len([d for d in decisions if d.approved])}",
         f"Trades rejected: {len([d for d in decisions if not d.approved])}",
         "",
-        build_decision_log(decisions, gtt_status),
+        build_decision_log(decisions, gtt_status, fill_prices),
     ]
 
     send_telegram_message("\n".join(report_lines), settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID)
