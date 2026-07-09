@@ -287,10 +287,10 @@ def analyze_news_cached(symbol: str, api_key: str, max_items: int = 8,
     headlines. Headline fetching itself (yfinance + RSS) is free and always
     happens, so a genuinely new headline is still caught immediately.
 
-    Built for monitor_positions.py, which re-checks the same held symbols
-    several times a day -- most checks will find no new headlines since the
-    last one. run_daily.py doesn't use this: it only checks each symbol once
-    a day, so there's nothing same-day to compare against yet.
+    Used by both monitor_positions.py (re-checks held symbols several times
+    a day) and run_daily.py (now also runs several times a day, scanning for
+    new candidates each time -- see cron) -- in both cases, most checks will
+    find no new headlines since the last one for a given symbol.
     """
     articles = fetch_recent_news(symbol, max_items=max_items)
     fingerprint = _headline_fingerprint(articles)

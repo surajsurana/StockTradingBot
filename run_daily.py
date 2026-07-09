@@ -80,7 +80,7 @@ from data.nifty500_universe import get_nifty500_symbols
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals, first_available_signal
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
-from news.news_agent import analyze_news, disabled_news_assessment, ClaudeAPIError
+from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from macro.macro_strategist import assess_macro_conditions
 from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
@@ -109,6 +109,24 @@ def parse_cli_args():
         elif arg == "--paper":
             force_paper = True
     return limit, force_paper
+
+
+def exclude_held_symbols(symbols: list, holdings: list) -> list:
+    """
+    Drops any symbol already held in the real account from today's scan.
+
+    run_daily.py can now run several times a day (see cron). Without this, a
+    symbol that signaled and got bought in an earlier run could signal again
+    in a later run (technical strategies only look at today's candle, which
+    doesn't know it already triggered a buy a few hours ago) and get bought
+    a second time -- silently pyramiding into the same position with a
+    second, conflicting GTT order, rather than a deliberate decision to add
+    to it. Adding to winners on purpose is a legitimate strategy, but not
+    one this system currently decides to do -- so for now, already-held
+    symbols are simply skipped.
+    """
+    held_symbols = {h.symbol for h in holdings}
+    return [s for s in symbols if s not in held_symbols]
 
 
 def get_universe(active_strategies: list, limit: int = None) -> list:
@@ -211,8 +229,12 @@ def run_stage2_research(survivors: list) -> list:
 
         print(f"  Researching {symbol}...")
         if settings.USE_NEWS_AGENT:
-            news_assessment = analyze_news(symbol, api_key=settings.ANTHROPIC_API_KEY,
-                                            max_items=settings.NEWS_MAX_ARTICLES)
+            # analyze_news_cached, not analyze_news -- run_daily.py now runs
+            # several times a day (see cron), so this skips the Claude call
+            # and reuses the last verdict when a symbol's headlines haven't
+            # changed since the previous check, same as monitor_positions.py.
+            news_assessment = analyze_news_cached(symbol, api_key=settings.ANTHROPIC_API_KEY,
+                                                   max_items=settings.NEWS_MAX_ARTICLES)
         else:
             news_assessment = disabled_news_assessment(symbol)
         research_result = analyze_stock(
@@ -388,6 +410,11 @@ def main():
                   f"{risk_per_trade_pct:.2%} for today only (not persisted to the monthly plan).")
 
     symbols = get_universe(active_strategies, limit=limit)
+    before_exclusion = len(symbols)
+    symbols = exclude_held_symbols(symbols, holdings)
+    if len(symbols) < before_exclusion:
+        print(f"Excluding {before_exclusion - len(symbols)} already-held symbol(s) from today's "
+              f"scan (avoids buying more of a position already open).")
     print(f"Universe: {len(symbols)} symbol(s)"
           + (f" (limited via --limit={limit})" if limit else ""))
 

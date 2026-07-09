@@ -30,9 +30,11 @@ trading day flows end to end, and the strategy/risk rules underneath it.
 
 ```mermaid
 flowchart TD
-    MACRO["Macro Strategist<br/>daily, before the scan"]
-    MACRO -->|high risk| SKIP[("No new trades today<br/>existing GTTs unaffected")]
-    MACRO -->|normal or elevated risk<br/>elevated halves risk/trade| U["Nifty 500 universe<br/>~500 stocks, 9:20am IST"]
+    MACRO["Macro Strategist<br/>before every scan, 4x/day"]
+    MACRO -->|high risk| SKIP[("No new trades this run<br/>existing GTTs unaffected")]
+    MACRO -->|normal or elevated risk<br/>elevated halves risk/trade| HELD{"Already held?<br/>(exclude_held_symbols)"}
+    HELD -->|yes, skip| SKIP
+    HELD -->|no| U["Nifty 500 universe<br/>~500 stocks, 9:20am/11:10am/1:10pm/2:55pm IST"]
     U --> TECH[Technical Agent]
     U --> FUND[Fundamental Agent]
     TECH --> S1{"Stage 1 filter<br/>signal AND healthy?"}
@@ -54,8 +56,8 @@ flowchart TD
 ```
 
 **Two schedules run on the VPS, both unattended:**
-- `run_daily.py` — once each morning at **9:20am IST**. Full pipeline above: scans the universe, researches survivors, sizes and places new trades.
-- `monitor_positions.py` — three times during market hours (**11:15am, 1:15pm, 3:00pm IST**). Re-checks everything currently held and can exit early on bad news/fundamentals/technicals, on top of the automatic GTT stop-loss/target that's already sitting on every position.
+- `run_daily.py` — four times during market hours (**9:20am, 11:10am, 1:10pm, 2:55pm IST**). Full pipeline above: scans the universe, researches survivors, sizes and places new trades. Runs beyond the morning one exist so a setup that completes mid-day (not visible yet at 9:20am) still gets caught the same day, rather than waiting until tomorrow morning. Each run excludes symbols already held (`exclude_held_symbols`) so the same signal firing again a few hours later doesn't buy the same stock twice, and uses News Agent's cached path (`analyze_news_cached`) so unchanged headlines aren't re-paid for on every re-scan.
+- `monitor_positions.py` — three times during market hours (**11:15am, 1:15pm, 3:00pm IST**, a few minutes after each intraday `run_daily.py` run). Re-checks everything currently held and can exit early on bad news/fundamentals/technicals, on top of the automatic GTT stop-loss/target that's already sitting on every position.
 
 ## Strategy & risk rules
 
