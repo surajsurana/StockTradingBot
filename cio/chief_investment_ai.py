@@ -59,10 +59,10 @@ MAX_TARGET_RETURN_PCT = 10.0            # keep ambitions realistic for swing tra
 
 # risk_per_trade_pct is a fraction (0.01 = 1%), matching RiskManager's own
 # units -- never let a good month push this past what prudent swing-trading
-# risk guidance considers reasonable (0.5%-2% of capital per trade), and
+# risk guidance considers reasonable (0.5%-3% of capital per trade), and
 # never let it move far in a single month even within that band.
 MIN_RISK_PER_TRADE_PCT = 0.005
-MAX_RISK_PER_TRADE_PCT = 0.02
+MAX_RISK_PER_TRADE_PCT = 0.03
 MAX_MONTHLY_RISK_PER_TRADE_CHANGE_PCT = 0.15   # relative, e.g. 1% can move to 0.85%-1.15% in one month
 
 
