@@ -49,15 +49,15 @@ flowchart TD
     EXEC --> KITE[("Zerodha Kite<br/>LIMIT order + GTT")]
     EXEC --> TG[("Telegram summary")]
 
-    MON["Position Monitor<br/>11:15am / 1:15pm / 3:00pm IST"]
+    MON["Position Monitor<br/>9:25am / 11:15am / 1:15pm / 3:00pm IST"]
     MON -.re-runs Technical+Fundamental+News+Research on open positions.-> RESEARCH
     MON -->|unfavorable verdict| EXEC
     EXEC -.exits early, cancels GTT.-> KITE
 ```
 
-**Two schedules run on the VPS, both unattended:**
+**Two schedules run on the VPS, both unattended, each `run_daily.py` run followed ~5 minutes later by a `monitor_positions.py` check:**
 - `run_daily.py` — four times during market hours (**9:20am, 11:10am, 1:10pm, 2:55pm IST**). Full pipeline above: scans the universe, researches survivors, sizes and places new trades. Runs beyond the morning one exist so a setup that completes mid-day (not visible yet at 9:20am) still gets caught the same day, rather than waiting until tomorrow morning. Each run excludes symbols already held (`exclude_held_symbols`) so the same signal firing again a few hours later doesn't buy the same stock twice, and uses News Agent's cached path (`analyze_news_cached`) so unchanged headlines aren't re-paid for on every re-scan.
-- `monitor_positions.py` — three times during market hours (**11:15am, 1:15pm, 3:00pm IST**, a few minutes after each intraday `run_daily.py` run). Re-checks everything currently held and can exit early on bad news/fundamentals/technicals, on top of the automatic GTT stop-loss/target that's already sitting on every position.
+- `monitor_positions.py` — four times during market hours (**9:25am, 11:15am, 1:15pm, 3:00pm IST**). Re-checks everything currently held and can exit early on bad news/fundamentals/technicals, on top of the automatic GTT stop-loss/target that's already sitting on every position. The 9:25am run exists specifically so a position opened at 9:20am doesn't sit unchecked until 11:15am -- every `run_daily.py` run now gets a nearby follow-up check, not just the later three.
 
 ## Strategy & risk rules
 
