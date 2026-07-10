@@ -72,13 +72,14 @@ IMPORTANT -- before running this for real:
 """
 
 import sys
+from collections import defaultdict
 from datetime import date
 
 from config import settings
 from data.fetch_historical import fetch_all, fetch_nifty
 from data.nifty500_universe import get_nifty500_symbols
 from strategies.market_regime import build_regime_series
-from strategies.technical_agent import get_technical_signals, first_available_signal
+from strategies.technical_agent import get_technical_signals, get_technical_diagnostics, first_available_signal
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from macro.macro_strategist import assess_macro_conditions
@@ -145,15 +146,15 @@ def get_universe(active_strategies: list, limit: int = None) -> list:
     return symbols
 
 
-def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tuple[list, dict]:
+def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tuple[list, dict, dict]:
     """
     Cheap scan (no LLM calls): fetches price history + fundamentals for
     every symbol, returns only those that pass fundamentals AND have at
     least one active technical signal today.
 
-    Returns (survivors, rejection_counts). survivors is a list of dicts:
-    {"symbol", "technical_signals", "fundamentals_result"}. rejection_counts
-    tallies why everyone else was rejected:
+    Returns (survivors, rejection_counts, funnel). survivors is a list of
+    dicts: {"symbol", "technical_signals", "fundamentals_result"}.
+    rejection_counts tallies why everyone else was rejected:
       - "insufficient_history": fewer than 60 days of price history (new/thin
         listing), or the yfinance fetch itself failed for that symbol.
       - "no_signal": had enough history, but no active strategy's entry
@@ -161,10 +162,19 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tu
       - "failed_fundamentals": had a signal, but the company didn't pass the
         health check (debt/ROE/revenue-growth), or its fundamentals couldn't
         be fetched at all.
+
+    funnel: {strategy_key: {gate_name: count}} -- how many symbols passed
+    each individual gate inside each strategy's diagnose() (MA crossover,
+    volume confirmed, momentum confirmed, ... for ma_crossover; oversold
+    transition, valid stop, ... for mean_reversion), computed via
+    get_technical_diagnostics() on the SAME already-fetched price_history
+    (no extra network calls) alongside the real get_technical_signals()
+    call that actually decides survivors -- see format_scan_funnel().
     """
     print(f"\nStage 1: scanning {len(symbols)} symbols (Technical + Fundamentals, no LLM cost)...")
     survivors = []
     rejection_counts = {"insufficient_history": 0, "no_signal": 0, "failed_fundamentals": 0}
+    funnel = {key: defaultdict(int) for key in active_strategies}
 
     for i, symbol in enumerate(symbols, start=1):
         if i % PROGRESS_EVERY == 0 or i == len(symbols):
@@ -181,6 +191,18 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tu
             continue  # not enough history yet, or fetch failed silently
 
         technical_signals = get_technical_signals(symbol, price_history, regime_series, active_strategies)
+
+        diagnostics = get_technical_diagnostics(symbol, price_history, regime_series, active_strategies)
+        for strategy_key, diagnosis in diagnostics.items():
+            for gate, passed in diagnosis.items():
+                if gate == "regime_blocked":
+                    continue
+                if gate == "signal":
+                    if passed is not None:
+                        funnel[strategy_key]["signal"] += 1
+                elif passed is True:
+                    funnel[strategy_key][gate] += 1
+
         has_signal = any(sig is not None for sig in technical_signals.values())
         if not has_signal:
             rejection_counts["no_signal"] += 1
@@ -205,7 +227,75 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tu
 
     print(f"Stage 1 complete: {len(survivors)} symbol(s) passed both filters and move to Stage 2 "
           f"({format_stage1_rejections(rejection_counts)}).")
-    return survivors, rejection_counts
+    return survivors, rejection_counts, funnel
+
+
+FUNNEL_STAGE_ORDER = {
+    "ma_crossover": ["sufficient_history", "crossed_up", "volume_confirmed",
+                      "momentum_confirmed", "valid_stop", "signal"],
+    "mean_reversion": ["sufficient_history", "oversold_transition", "valid_stop", "valid_target", "signal"],
+}
+
+# Display-only names for Telegram text -- raw strategy_key strings
+# ("ma_crossover", "mean_reversion") each contain exactly one underscore,
+# which Telegram's legacy Markdown parse_mode treats as an unmatched
+# italic marker and rejects the ENTIRE message over ("can't find end of
+# the entity"). Never interpolate a raw strategy_key into Telegram text.
+STRATEGY_DISPLAY_NAMES = {
+    "ma_crossover": "MA Crossover",
+    "mean_reversion": "Mean Reversion",
+}
+
+FUNNEL_GATE_LABELS = {
+    "ma_crossover": {
+        "sufficient_history": "Sufficient History",
+        "crossed_up": "MA Crossover (20>50)",
+        "volume_confirmed": "Volume Confirmed (>=1.5x avg)",
+        "momentum_confirmed": "Momentum Confirmed (10d ROC>0)",
+        "valid_stop": "Valid Stop-Loss",
+        "signal": "Raw Signal",
+    },
+    "mean_reversion": {
+        "sufficient_history": "Sufficient History",
+        "oversold_transition": "RSI+BB Oversold Transition",
+        "valid_stop": "Valid Stop-Loss",
+        "valid_target": "Valid Target",
+        "signal": "Signal",
+    },
+}
+
+
+def format_scan_funnel(funnel: dict, total_scanned: int) -> str:
+    """
+    Per-strategy, gate-by-gate breakdown of where symbols actually fell out
+    of contention today -- "no_signal" alone doesn't say whether a symbol
+    never crossed at all, crossed but on thin volume, crossed on volume but
+    against the recent trend, etc. Each strategy's counts are cumulative
+    from total_scanned (a symbol passing a later gate necessarily passed
+    every gate before it, by construction of diagnose()'s early returns).
+    """
+    lines = []
+    biggest_drop = (None, None, 0)
+
+    for strategy_key, order in FUNNEL_STAGE_ORDER.items():
+        if strategy_key not in funnel:
+            continue
+        display_name = STRATEGY_DISPLAY_NAMES.get(strategy_key, strategy_key)
+        lines.append(f"\n{display_name} funnel:")
+        prev_count = total_scanned
+        for gate in order:
+            count = funnel[strategy_key].get(gate, 0)
+            label = FUNNEL_GATE_LABELS[strategy_key][gate]
+            lines.append(f"  {label}: {count}")
+            drop = prev_count - count
+            if drop > biggest_drop[2]:
+                biggest_drop = (display_name, label, drop)
+            prev_count = count
+
+    if biggest_drop[0]:
+        lines.append(f"\nPrimary bottleneck: {biggest_drop[1]} ({biggest_drop[0]}) -- cut {biggest_drop[2]}")
+
+    return "\n".join(lines)
 
 
 def format_stage1_rejections(rejection_counts: dict) -> str:
@@ -438,7 +528,7 @@ def main():
     nifty = fetch_nifty(period="1y")
     regime_series = build_regime_series(nifty)
 
-    survivors, rejection_counts = run_stage1_scan(symbols, regime_series, active_strategies)
+    survivors, rejection_counts, funnel = run_stage1_scan(symbols, regime_series, active_strategies)
 
     if not survivors:
         print("\nNo symbols passed Stage 1 today -- nothing to research or trade. This is a normal, "
@@ -447,7 +537,8 @@ def main():
         send_telegram_message(
             f"*Daily run -- no trades today*\n\nCapital available: Rs.{capital:,.2f}\n\n"
             f"No symbols passed both the technical signal and fundamentals checks today "
-            f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded."
+            f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded.\n"
+            f"{format_scan_funnel(funnel, len(symbols))}"
             + (f"\n\n{macro_line}" if macro_line else ""),
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
@@ -530,6 +621,7 @@ def main():
         f"Universe scanned: {len(symbols)}",
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
         f"Stage 1 rejected: {format_stage1_rejections(rejection_counts)}",
+        format_scan_funnel(funnel, len(symbols)),
         f"Trades approved: {len([d for d in decisions if d.approved])}",
         f"Trades rejected: {len([d for d in decisions if not d.approved])}",
         "",

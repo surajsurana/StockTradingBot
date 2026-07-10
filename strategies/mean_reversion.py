@@ -81,3 +81,62 @@ class MeanReversionStrategy(Strategy):
             strategy_name=self.name,
             reason=f"RSI({self.rsi_period})={today['rsi']:.1f} oversold, price at lower Bollinger Band",
         )
+
+    def diagnose(self, price_history: pd.DataFrame) -> dict:
+        """
+        Step-by-step funnel breakdown, for run_daily.py's daily scan
+        summary -- shows exactly which gate a symbol fell at, instead of
+        just a single pass/fail. Diagnostic only, never used to decide a
+        real trade, so it deliberately mirrors generate_signal()'s gates
+        rather than sharing code with it (if you change one, change the
+        other) -- keeps this reporting feature from ever touching the live
+        trading path.
+        """
+        result = {
+            "sufficient_history": False, "oversold_transition": None,
+            "valid_stop": None, "valid_target": None, "signal": None,
+        }
+        min_bars = max(self.rsi_period, self.bb_period) + 2
+        if len(price_history) < min_bars:
+            return result
+
+        df = price_history.copy()
+        df["rsi"] = rsi(df["Close"], self.rsi_period)
+        lower, middle, upper = bollinger_bands(df["Close"], self.bb_period, self.bb_std)
+        df["bb_lower"] = lower
+        df["bb_middle"] = middle
+
+        today = df.iloc[-1]
+        yesterday = df.iloc[-2]
+
+        if pd.isna(today["rsi"]) or pd.isna(today["bb_lower"]) or pd.isna(yesterday["rsi"]):
+            return result
+        result["sufficient_history"] = True
+
+        today_oversold = (today["rsi"] < self.rsi_oversold) and (today["Close"] <= today["bb_lower"])
+        yesterday_bb_lower = df.iloc[-2]["bb_lower"]
+        yesterday_oversold = (yesterday["rsi"] < self.rsi_oversold) and (
+            yesterday["Close"] <= yesterday_bb_lower if not pd.isna(yesterday_bb_lower) else False
+        )
+
+        transition = bool(today_oversold and not yesterday_oversold)
+        result["oversold_transition"] = transition
+        if not transition:
+            return result
+
+        entry_price = float(today["Close"])
+        swing_low = float(df["Low"].iloc[-5:].min())
+        stop_loss = min(swing_low, entry_price * 0.97)
+        valid_stop = stop_loss < entry_price
+        result["valid_stop"] = valid_stop
+        if not valid_stop:
+            return result
+
+        target = float(today["bb_middle"])
+        valid_target = target > entry_price
+        result["valid_target"] = valid_target
+        if not valid_target:
+            return result
+
+        result["signal"] = self.generate_signal(price_history)
+        return result

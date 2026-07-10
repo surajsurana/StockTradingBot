@@ -1,15 +1,16 @@
 """
-Mock-based unit tests for run_daily.py's exclude_held_symbols() and
-format_macro_summary(). Run with:
+Mock-based unit tests for run_daily.py's exclude_held_symbols(),
+format_macro_summary(), and format_scan_funnel(). Run with:
 
     python test_run_daily.py
 """
 
 import unittest
 from dataclasses import dataclass
+from collections import defaultdict
 
 from execution.positions import Holding
-from run_daily import exclude_held_symbols, format_macro_summary
+from run_daily import exclude_held_symbols, format_macro_summary, format_scan_funnel
 
 
 class TestExcludeHeldSymbols(unittest.TestCase):
@@ -58,6 +59,44 @@ class TestFormatMacroSummary(unittest.TestCase):
 
         self.assertIn("NORMAL", text)
         self.assertIn("Routine headlines, nothing unusual.", text)
+
+
+class TestFormatScanFunnel(unittest.TestCase):
+    def test_shows_gate_counts_and_finds_the_biggest_drop(self):
+        funnel = {
+            "ma_crossover": defaultdict(int, {
+                "sufficient_history": 456, "crossed_up": 12, "volume_confirmed": 5,
+                "momentum_confirmed": 3, "valid_stop": 3, "signal": 3,
+            }),
+        }
+
+        text = format_scan_funnel(funnel, total_scanned=457)
+
+        self.assertIn("MA Crossover (20>50): 12", text)
+        self.assertIn("Volume Confirmed (>=1.5x avg): 5", text)
+        # biggest drop: sufficient_history(456) -> crossed_up(12) = 444,
+        # bigger than any other stage-to-stage drop in this funnel
+        self.assertIn("Primary bottleneck: MA Crossover (20>50) (MA Crossover) -- cut 444", text)
+        # display name only, never the raw underscored strategy_key -- Telegram's
+        # legacy Markdown parse_mode rejects the whole message over an unmatched
+        # underscore ("ma_crossover" has exactly one)
+        self.assertNotIn("ma_crossover", text)
+        self.assertNotIn("mean_reversion", text)
+
+    def test_multiple_strategies_shown_separately(self):
+        funnel = {
+            "ma_crossover": defaultdict(int, {"sufficient_history": 456, "crossed_up": 0}),
+            "mean_reversion": defaultdict(int, {"sufficient_history": 456, "oversold_transition": 8}),
+        }
+
+        text = format_scan_funnel(funnel, total_scanned=457)
+
+        self.assertIn("MA Crossover funnel:", text)
+        self.assertIn("Mean Reversion funnel:", text)
+
+    def test_empty_funnel_produces_no_bottleneck_line(self):
+        text = format_scan_funnel({}, total_scanned=457)
+        self.assertNotIn("Primary bottleneck", text)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,46 @@ def get_technical_signals(symbol: str, price_history, regime_series, active_stra
     return signals
 
 
+def get_technical_diagnostics(symbol: str, price_history, regime_series, active_strategies: list = None) -> dict:
+    """
+    Diagnostic counterpart to get_technical_signals() -- returns each
+    active strategy's full diagnose() funnel breakdown (which gate a
+    symbol passed/failed at) instead of just the final signal, for
+    run_daily.py's daily scan summary. Never used to decide a real trade
+    (get_technical_signals() still owns that entirely) -- this exists so
+    "why didn't anything fire today" has a real answer instead of just a
+    single no_signal count.
+
+    regime_blocked is recorded separately per strategy: a strategy can
+    complete every one of its own gates and still not become a real
+    tradeable signal if the market-regime filter blocks it (ma_crossover
+    only trades in an uptrend) -- diagnose() itself doesn't know about the
+    regime filter, since that's applied here, the same place
+    get_technical_signals() applies it.
+    """
+    if active_strategies is None:
+        active_strategies = settings.ACTIVE_STRATEGIES
+
+    today_date = price_history.index[-1]
+    market_is_bullish = is_bullish_on(regime_series, today_date)
+
+    diagnostics = {}
+    for strategy_key in active_strategies:
+        strategy_cls = STRATEGY_REGISTRY.get(strategy_key)
+        if strategy_cls is None:
+            continue
+        strategy = strategy_cls()
+        diagnosis = strategy.diagnose(price_history)
+        diagnosis["regime_blocked"] = bool(
+            diagnosis.get("signal") is not None
+            and strategy.uses_regime_filter and settings.USE_MARKET_REGIME_FILTER
+            and not market_is_bullish
+        )
+        diagnostics[strategy_key] = diagnosis
+
+    return diagnostics
+
+
 def first_available_signal(technical_signals: dict):
     """
     Picks the first non-None signal across strategies for callers (like

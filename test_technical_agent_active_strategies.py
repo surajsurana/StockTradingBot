@@ -13,7 +13,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from strategies.technical_agent import get_technical_signals
+from strategies.base import Signal
+from strategies.technical_agent import get_technical_signals, get_technical_diagnostics
 
 
 def _fake_price_history():
@@ -72,6 +73,57 @@ class TestActiveStrategiesOverride(unittest.TestCase):
                                          active_strategies=[])
 
         self.assertEqual(signals, {})
+
+
+class _DiagnosableStrategy:
+    """Always reports every gate passed and a real signal -- used to check
+    get_technical_diagnostics()'s regime_blocked flag specifically."""
+    uses_regime_filter = True
+
+    def diagnose(self, price_history):
+        return {
+            "sufficient_history": True, "crossed_up": True,
+            "volume_confirmed": True, "momentum_confirmed": True, "valid_stop": True,
+            "signal": Signal(symbol="", direction="BUY", entry_price=100.0, stop_loss=95.0,
+                              target=110.0, confidence=0.6, strategy_name="ma_crossover", reason="test"),
+        }
+
+
+class TestGetTechnicalDiagnostics(unittest.TestCase):
+    @patch("strategies.technical_agent.STRATEGY_REGISTRY", {"ma_crossover": _DiagnosableStrategy})
+    @patch("strategies.technical_agent.settings")
+    def test_returns_raw_diagnosis_per_strategy(self, mock_settings):
+        mock_settings.ACTIVE_STRATEGIES = ["ma_crossover"]
+        mock_settings.USE_MARKET_REGIME_FILTER = False
+
+        diagnostics = get_technical_diagnostics("TEST.NS", (ph := _fake_price_history()),
+                                                  _fake_regime_series(ph))
+
+        self.assertTrue(diagnostics["ma_crossover"]["crossed_up"])
+        self.assertIsNotNone(diagnostics["ma_crossover"]["signal"])
+
+    @patch("strategies.technical_agent.STRATEGY_REGISTRY", {"ma_crossover": _DiagnosableStrategy})
+    @patch("strategies.technical_agent.settings")
+    def test_regime_blocked_true_when_signal_exists_but_market_bearish(self, mock_settings):
+        mock_settings.ACTIVE_STRATEGIES = ["ma_crossover"]
+        mock_settings.USE_MARKET_REGIME_FILTER = True
+
+        ph = _fake_price_history()
+        bearish_regime = pd.Series(False, index=ph.index)  # market NOT bullish
+        diagnostics = get_technical_diagnostics("TEST.NS", ph, bearish_regime)
+
+        self.assertTrue(diagnostics["ma_crossover"]["regime_blocked"])
+
+    @patch("strategies.technical_agent.STRATEGY_REGISTRY", {"ma_crossover": _DiagnosableStrategy})
+    @patch("strategies.technical_agent.settings")
+    def test_regime_not_blocked_when_market_bullish(self, mock_settings):
+        mock_settings.ACTIVE_STRATEGIES = ["ma_crossover"]
+        mock_settings.USE_MARKET_REGIME_FILTER = True
+
+        diagnostics = get_technical_diagnostics("TEST.NS", (ph := _fake_price_history()),
+                                                  _fake_regime_series(ph))  # bullish
+
+        self.assertFalse(diagnostics["ma_crossover"]["regime_blocked"])
 
 
 if __name__ == "__main__":

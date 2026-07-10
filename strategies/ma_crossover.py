@@ -138,3 +138,69 @@ class MACrossoverStrategy(Strategy):
             strategy_name=self.name,
             reason=reason,
         )
+
+    def diagnose(self, price_history: pd.DataFrame) -> dict:
+        """
+        Step-by-step funnel breakdown, for run_daily.py's daily scan
+        summary -- shows exactly which gate a symbol fell at, instead of
+        just a single pass/fail. Diagnostic only, never used to decide a
+        real trade, so it deliberately mirrors generate_signal()'s gates
+        rather than sharing code with it (if you change one, change the
+        other) -- keeps this reporting feature from ever touching the live
+        trading path.
+        """
+        result = {
+            "sufficient_history": False, "crossed_up": None,
+            "volume_confirmed": None, "momentum_confirmed": None,
+            "valid_stop": None, "signal": None,
+        }
+        if len(price_history) < self.slow_period + 2:
+            return result
+
+        df = price_history.copy()
+        df["fast_ma"] = df["Close"].rolling(self.fast_period).mean()
+        df["slow_ma"] = df["Close"].rolling(self.slow_period).mean()
+        df["atr"] = _atr(df)
+        df["avg_volume"] = df["Volume"].shift(1).rolling(self.volume_avg_period).mean()
+        df["roc"] = (df["Close"] - df["Close"].shift(self.momentum_period)) / df["Close"].shift(self.momentum_period) * 100
+
+        today = df.iloc[-1]
+        yesterday = df.iloc[-2]
+
+        if pd.isna(today["fast_ma"]) or pd.isna(today["slow_ma"]) or pd.isna(today["atr"]):
+            return result
+        result["sufficient_history"] = True
+
+        crossed_up = (yesterday["fast_ma"] <= yesterday["slow_ma"]) and (today["fast_ma"] > today["slow_ma"])
+        result["crossed_up"] = crossed_up
+        if not crossed_up:
+            return result
+
+        volume_confirmed = True
+        if self.require_volume_confirmation:
+            volume_confirmed = bool(
+                not pd.isna(today["avg_volume"]) and today["avg_volume"] > 0
+                and today["Volume"] >= self.volume_confirmation_multiple * today["avg_volume"]
+            )
+        result["volume_confirmed"] = volume_confirmed
+        if not volume_confirmed:
+            return result
+
+        momentum_confirmed = True
+        if self.require_momentum_confirmation:
+            momentum_confirmed = bool(not pd.isna(today["roc"]) and today["roc"] > 0)
+        result["momentum_confirmed"] = momentum_confirmed
+        if not momentum_confirmed:
+            return result
+
+        entry_price = float(today["Close"])
+        atr_stop_distance = 2 * float(today["atr"])
+        swing_low = float(df["Low"].iloc[-10:].min())
+        stop_loss = max(entry_price - atr_stop_distance, swing_low)
+        valid_stop = stop_loss < entry_price
+        result["valid_stop"] = valid_stop
+        if not valid_stop:
+            return result
+
+        result["signal"] = self.generate_signal(price_history)
+        return result
