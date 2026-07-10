@@ -214,6 +214,21 @@ def format_stage1_rejections(rejection_counts: dict) -> str:
             f"{rejection_counts['insufficient_history']} insufficient history")
 
 
+def format_macro_summary(macro_assessment) -> str:
+    """
+    One-line Macro Strategist summary for Telegram. Previously only shown
+    on a HIGH-risk day (which gets its own dedicated alert); on NORMAL/
+    ELEVATED days the read was logged to the console but never reached
+    Telegram at all, so there was no daily record of what it actually
+    thought. Returns "" if Macro Strategist is disabled (macro_assessment
+    is None), so callers can blindly concatenate this into a report without
+    a None-check at every call site.
+    """
+    if macro_assessment is None:
+        return ""
+    return f"Macro Strategist: {macro_assessment.risk_level.upper()} -- {macro_assessment.reasoning}"
+
+
 def run_stage2_research(survivors: list) -> list:
     """
     Expensive stage (calls Claude twice per symbol): News Agent + Research
@@ -388,6 +403,7 @@ def main():
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
 
+    macro_assessment = None
     if settings.USE_MACRO_STRATEGIST:
         macro_assessment = assess_macro_conditions(api_key=settings.ANTHROPIC_API_KEY,
                                                      max_items=settings.MACRO_MAX_ARTICLES)
@@ -427,10 +443,12 @@ def main():
     if not survivors:
         print("\nNo symbols passed Stage 1 today -- nothing to research or trade. This is a normal, "
               "quiet day; the system is not forcing trades that aren't there.")
+        macro_line = format_macro_summary(macro_assessment)
         send_telegram_message(
             f"*Daily run -- no trades today*\n\nCapital available: Rs.{capital:,.2f}\n\n"
             f"No symbols passed both the technical signal and fundamentals checks today "
-            f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded.",
+            f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded."
+            + (f"\n\n{macro_line}" if macro_line else ""),
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
         return
@@ -501,12 +519,14 @@ def main():
         else:
             gtt_status[decision.symbol] = "FAILED -- NO stop-loss/target protection, check Kite manually"
 
+    macro_line = format_macro_summary(macro_assessment)
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",
         "",
         f"Capital available: Rs.{capital:,.2f}"
         + (f" (Chief Investment AI cap this month: Rs.{capital_for_sizing:,.2f})"
            if capital_for_sizing < capital else ""),
+    ] + ([macro_line, ""] if macro_line else []) + [
         f"Universe scanned: {len(symbols)}",
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
         f"Stage 1 rejected: {format_stage1_rejections(rejection_counts)}",

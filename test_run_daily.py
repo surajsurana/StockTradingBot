@@ -1,15 +1,15 @@
 """
-Mock-based unit tests for run_daily.py's exclude_held_symbols() -- the guard
-that stops the same symbol from being bought twice when run_daily.py runs
-several times a day (see cron: 9:20am/11:10am/1:10pm/2:55pm). Run with:
+Mock-based unit tests for run_daily.py's exclude_held_symbols() and
+format_macro_summary(). Run with:
 
     python test_run_daily.py
 """
 
 import unittest
+from dataclasses import dataclass
 
 from execution.positions import Holding
-from run_daily import exclude_held_symbols
+from run_daily import exclude_held_symbols, format_macro_summary
 
 
 class TestExcludeHeldSymbols(unittest.TestCase):
@@ -37,6 +37,27 @@ class TestExcludeHeldSymbols(unittest.TestCase):
         symbols = ["RELIANCE.NS", "TCS.NS"]
         holdings = [Holding(symbol="SOMEOTHER.NS", quantity=1, average_price=100.0)]
         self.assertEqual(exclude_held_symbols(symbols, holdings), symbols)
+
+
+@dataclass
+class _FakeMacroAssessment:
+    risk_level: str
+    reasoning: str
+
+
+class TestFormatMacroSummary(unittest.TestCase):
+    def test_none_returns_empty_string(self):
+        # USE_MACRO_STRATEGIST=False -- nothing to show, and callers can
+        # blindly concatenate the result without a None-check.
+        self.assertEqual(format_macro_summary(None), "")
+
+    def test_includes_risk_level_and_reasoning(self):
+        assessment = _FakeMacroAssessment(risk_level="normal", reasoning="Routine headlines, nothing unusual.")
+
+        text = format_macro_summary(assessment)
+
+        self.assertIn("NORMAL", text)
+        self.assertIn("Routine headlines, nothing unusual.", text)
 
 
 if __name__ == "__main__":
