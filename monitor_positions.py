@@ -50,6 +50,22 @@ def parse_cli_args():
     return force_paper
 
 
+def price_pnl_text(holding) -> str:
+    """
+    Short "current price (P&L Rs., P&L %)" fragment for a holding, using
+    last_price straight from Kite's holdings/positions response -- a
+    periodic snapshot (not full live-quote-tier data), but good enough to
+    show at-a-glance P&L on every position-check Telegram line without
+    needing to open Kite separately. Empty string if last_price wasn't
+    available for some reason (never blocks the rest of the line).
+    """
+    if holding.last_price is None or holding.average_price <= 0:
+        return ""
+    pnl = (holding.last_price - holding.average_price) * holding.quantity
+    pnl_pct = (holding.last_price - holding.average_price) / holding.average_price * 100
+    return f"Rs.{holding.last_price:,.2f} ({pnl_pct:+.2f}%, Rs.{pnl:+,.2f})"
+
+
 def evaluate_holding(symbol: str, regime_series, active_strategies: list):
     """
     Re-runs the same Technical + Fundamental + News + Research Analyst
@@ -152,9 +168,12 @@ def main():
 
     for holding in holdings:
         print(f"\nChecking {holding.symbol}...")
+        price_pnl = price_pnl_text(holding)
+        prefix = f"- {holding.symbol}: {price_pnl} -- " if price_pnl else f"- {holding.symbol}: "
+
         assessment = evaluate_holding(holding.symbol, regime_series, active_strategies)
         if assessment is None:
-            checked_lines.append(f"- {holding.symbol}: could not complete a fresh check -- left as-is.")
+            checked_lines.append(f"{prefix}could not complete a fresh check -- left as-is.")
             continue
 
         print(f"  Fresh verdict: {assessment.verdict.upper()} ({assessment.confidence:.0%})")
@@ -180,7 +199,7 @@ def main():
 
                 exited_symbols.append(holding.symbol)
                 checked_lines.append(
-                    f"- {holding.symbol}: EXITED EARLY (verdict turned unfavorable, "
+                    f"{prefix}EXITED EARLY (verdict turned unfavorable, "
                     f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"
                 )
             else:
@@ -191,13 +210,13 @@ def main():
                 print(f"WARNING: exit SELL order for {holding.symbol} did not succeed -- "
                       f"GTT left in place, still counted as held. Result: {sell_result}")
                 checked_lines.append(
-                    f"- {holding.symbol}: verdict turned unfavorable ({assessment.confidence:.0%} "
+                    f"{prefix}verdict turned unfavorable ({assessment.confidence:.0%} "
                     f"confidence) but the exit order failed -- still held, GTT stop-loss/target "
                     f"unaffected. {assessment.reasoning}"
                 )
         else:
             checked_lines.append(
-                f"- {holding.symbol}: held ({assessment.verdict}, {assessment.confidence:.0%} confidence)"
+                f"{prefix}held ({assessment.verdict}, {assessment.confidence:.0%} confidence)"
             )
 
     # Early exits placed above still show up in Kite holdings until the sell

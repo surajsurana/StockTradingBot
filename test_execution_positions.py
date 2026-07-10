@@ -20,6 +20,26 @@ def _resp(status_code=200, json_data=None):
 
 class TestFetchHoldings(unittest.TestCase):
     @patch("execution.positions.requests.get")
+    def test_last_price_captured_when_present(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"tradingsymbol": "NTPC", "quantity": 15, "average_price": 344.1, "last_price": 345.6},
+        ]})
+
+        holdings = fetch_holdings("api_key", "token")
+
+        self.assertEqual(holdings[0].last_price, 345.6)
+
+    @patch("execution.positions.requests.get")
+    def test_missing_last_price_defaults_to_none(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"tradingsymbol": "NTPC", "quantity": 15, "average_price": 344.1},
+        ]})
+
+        holdings = fetch_holdings("api_key", "token")
+
+        self.assertIsNone(holdings[0].last_price)
+
+    @patch("execution.positions.requests.get")
     def test_success_maps_fields_and_appends_ns_suffix(self, mock_get):
         mock_get.return_value = _resp(200, {"data": [
             {"tradingsymbol": "INFY", "quantity": 5, "average_price": "1500.50"},

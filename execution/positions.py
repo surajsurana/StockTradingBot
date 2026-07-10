@@ -37,6 +37,9 @@ class Holding:
     symbol: str          # yfinance-style, e.g. "INFY.NS" (matches Signal.symbol elsewhere)
     quantity: int
     average_price: float
+    last_price: float | None = None   # Kite includes this directly in holdings/positions --
+                                       # a periodic snapshot, not live-quote-tier data, but
+                                       # good enough for a periodic P&L check
 
 
 def fetch_holdings(api_key: str, access_token: str) -> list[Holding]:
@@ -75,10 +78,12 @@ def fetch_holdings(api_key: str, access_token: str) -> list[Holding]:
         quantity = row.get("quantity", 0) + row.get("t1_quantity", 0)
         if quantity <= 0:
             continue  # fully sold/closed positions still show up here with quantity 0
+        last_price = row.get("last_price")
         holdings.append(Holding(
             symbol=f"{row['tradingsymbol']}.NS",
             quantity=quantity,
             average_price=float(row["average_price"]),
+            last_price=float(last_price) if last_price else None,
         ))
     return holdings
 
@@ -112,10 +117,12 @@ def fetch_same_day_positions(api_key: str, access_token: str) -> list[Holding]:
         quantity = row.get("quantity", 0)
         if quantity <= 0:
             continue
+        last_price = row.get("last_price")
         positions.append(Holding(
             symbol=f"{row['tradingsymbol']}.NS",
             quantity=quantity,
             average_price=float(row["average_price"]),
+            last_price=float(last_price) if last_price else None,
         ))
     return positions
 
