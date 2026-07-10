@@ -34,6 +34,33 @@ class TestFetchHoldings(unittest.TestCase):
         ])
 
     @patch("execution.positions.requests.get")
+    def test_t1_quantity_counted_as_held(self, mock_get):
+        # Regression test: a real T+1 holding (bought yesterday, not fully
+        # settled yet) has quantity=0 and the real amount under
+        # t1_quantity. Reading `quantity` alone made this look sold/closed
+        # the day after a real buy, even though Kite's own GTT for it was
+        # still active and the position was genuinely still held.
+        mock_get.return_value = _resp(200, {"data": [
+            {"tradingsymbol": "NTPC", "quantity": 0, "t1_quantity": 15, "average_price": 344.1},
+        ]})
+
+        holdings = fetch_holdings("api_key", "token")
+
+        self.assertEqual(holdings, [Holding(symbol="NTPC.NS", quantity=15, average_price=344.1)])
+
+    @patch("execution.positions.requests.get")
+    def test_fully_settled_quantity_and_t1_quantity_not_double_counted(self, mock_get):
+        # Once settlement completes, t1_quantity rolls into quantity and
+        # goes to 0 -- adding them together must not double the real amount.
+        mock_get.return_value = _resp(200, {"data": [
+            {"tradingsymbol": "NTPC", "quantity": 15, "t1_quantity": 0, "average_price": 344.1},
+        ]})
+
+        holdings = fetch_holdings("api_key", "token")
+
+        self.assertEqual(holdings[0].quantity, 15)
+
+    @patch("execution.positions.requests.get")
     def test_zero_quantity_rows_filtered_out(self, mock_get):
         mock_get.return_value = _resp(200, {"data": [
             {"tradingsymbol": "INFY", "quantity": 0, "average_price": 1500.0},   # fully sold, still listed
