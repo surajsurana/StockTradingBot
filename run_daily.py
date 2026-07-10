@@ -535,7 +535,10 @@ def main():
               "quiet day; the system is not forcing trades that aren't there.")
         macro_line = format_macro_summary(macro_assessment)
         send_telegram_message(
-            f"*Daily run -- no trades today*\n\nCapital available: Rs.{capital:,.2f}\n\n"
+            f"*Daily run -- no trades today ({'LIVE' if live_trading else 'PAPER'} mode)*\n\n"
+            f"Capital available: Rs.{capital:,.2f}\n\n"
+            f"Universe scanned: {len(symbols)}"
+            + (f" (limited via --limit={limit})" if limit else "") + "\n\n"
             f"No symbols passed both the technical signal and fundamentals checks today "
             f"({format_stage1_rejections(rejection_counts)}). Nothing was researched or traded.\n"
             f"{format_scan_funnel(funnel, len(symbols))}"
