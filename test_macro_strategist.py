@@ -51,6 +51,29 @@ class TestFetchGeneralHeadlines(unittest.TestCase):
     def test_respects_max_items(self, mock_mc, mock_et, mock_zp):
         self.assertEqual(len(fetch_general_headlines(max_items=5)), 5)
 
+    @patch("macro.macro_strategist.fetch_zerodha_pulse_articles", return_value=[
+        {"title": "Iran oil supply disruption risk weighs on markets", "publisher": "ZerodhaPulse"},
+    ])
+    @patch("macro.macro_strategist.fetch_economic_times_articles", return_value=[
+        {"title": "US Fed holds rates steady", "publisher": "ET"},
+    ])
+    @patch("macro.macro_strategist.fetch_moneycontrol_articles",
+           return_value=[{"title": f"Q4 earnings story {i}", "publisher": "Moneycontrol"} for i in range(49)])
+    def test_moneycontrol_volume_does_not_crowd_out_other_sources(self, mock_mc, mock_et, mock_zp):
+        # Regression test: a real production day had Moneycontrol alone
+        # return 49 articles, which -- under the old concatenate-then-
+        # truncate logic -- filled the entire 20-item cap before Economic
+        # Times or Zerodha Pulse were ever considered. A genuine
+        # geopolitical story (Iran oil supply disruption) sitting in both
+        # of those feeds was never read as a result. Interleaving must
+        # guarantee every source gets representation regardless of how
+        # many articles Moneycontrol alone returns.
+        headlines = fetch_general_headlines(max_items=20)
+        titles = [h["title"] for h in headlines]
+
+        self.assertIn("Iran oil supply disruption risk weighs on markets", titles)
+        self.assertIn("US Fed holds rates steady", titles)
+
 
 class TestParseMacroResponse(unittest.TestCase):
     def test_normal_risk_parsed(self):

@@ -49,23 +49,42 @@ def fetch_general_headlines(max_items: int = 20) -> list:
     for per-stock news, but without the per-symbol keyword filter, since a
     macro or geopolitical story won't usually mention any single company.
     Deduplicates by title (a story often gets picked up by more than one
-    source), same approach as news_agent.fetch_recent_news.
+    source).
+
+    Sources are interleaved (one from each, round-robin) rather than
+    concatenated-then-truncated -- Moneycontrol alone regularly returns
+    40-50+ articles, which silently squeezed Economic Times and Zerodha
+    Pulse out of the list entirely before the max_items cap was ever
+    applied. A real production case: an Iran/oil-supply-disruption story
+    ("Sensex jumps... despite rising oil prices and Iran supply disruption
+    risks") was present in both ET and Zerodha Pulse the same day Macro
+    Strategist reported NORMAL with no geopolitical mention -- it had
+    simply never been read, since Moneycontrol's own ~49 articles filled
+    the entire 20-item budget first. Same fix already used in
+    news_agent.fetch_recent_news for the identical per-stock problem.
     """
-    articles = (
-        fetch_moneycontrol_articles()
-        + fetch_economic_times_articles()
-        + fetch_zerodha_pulse_articles()
-    )
+    moneycontrol = fetch_moneycontrol_articles()
+    economic_times = fetch_economic_times_articles()
+    zerodha_pulse = fetch_zerodha_pulse_articles()
 
     seen_titles = set()
-    deduped = []
-    for article in articles:
-        key = article["title"].strip().lower()
-        if key and key not in seen_titles:
-            seen_titles.add(key)
-            deduped.append({"title": article["title"], "publisher": article["publisher"]})
+    interleaved = []
 
-    return deduped[:max_items]
+    max_len = max(len(moneycontrol), len(economic_times), len(zerodha_pulse))
+    for i in range(max_len):
+        for source_list in (moneycontrol, economic_times, zerodha_pulse):
+            if i < len(source_list):
+                article = source_list[i]
+                key = article["title"].strip().lower()
+                if key and key not in seen_titles:
+                    seen_titles.add(key)
+                    interleaved.append({"title": article["title"], "publisher": article["publisher"]})
+            if len(interleaved) >= max_items:
+                break
+        if len(interleaved) >= max_items:
+            break
+
+    return interleaved[:max_items]
 
 
 def build_macro_prompt(articles: list) -> str:
