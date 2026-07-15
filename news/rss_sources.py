@@ -37,6 +37,10 @@ headlines (the same mechanism news readers and aggregators use) -- this is
 not scraping.
 """
 
+import csv
+import os
+import re
+
 import feedparser
 import requests
 
@@ -65,8 +69,12 @@ ALJAZEERA_FEED = "https://www.aljazeera.com/xml/rss/all.xml"
 CNN_WORLD_FEED = "http://rss.cnn.com/rss/cnn_world.rss"
 TIMES_OF_INDIA_WORLD_FEED = "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms"
 
-# Maps a ticker symbol to the name variants likely to appear in headlines.
-# Extend this as more symbols are added to the tradable universe.
+# Manual overrides: ticker symbol -> name variants likely to appear in
+# headlines. Only needed where the auto-derived keywords (from the Nifty 500
+# constituents CSV's Company Name column -- see _build_auto_keywords) would
+# miss common shorthand, like "RIL" for Reliance. Every other symbol gets
+# its keywords derived automatically, so nothing needs to be added here just
+# because a new stock entered the tradable universe.
 SYMBOL_KEYWORDS = {
     "RELIANCE.NS": ["Reliance", "Reliance Industries", "RIL"],
     "TCS.NS": ["TCS", "Tata Consultancy"],
@@ -74,6 +82,94 @@ SYMBOL_KEYWORDS = {
     "INFY.NS": ["Infosys"],
     "ICICIBANK.NS": ["ICICI Bank", "ICICI"],
 }
+
+NIFTY500_CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "nifty500_constituents.csv")
+
+# Corporate suffixes that carry no matching signal -- stripped from the end
+# of company names when deriving keywords ("Patanjali Foods Ltd." should
+# match on "Patanjali Foods", not require headlines to say "Ltd.").
+_CORPORATE_SUFFIXES = re.compile(r"\s+(ltd\.?|limited)\s*$", re.IGNORECASE)
+
+# First words too generic to use alone as a headline keyword -- "Indian Oil
+# Corporation" must not match every headline containing "Indian". The full
+# company name variant still applies to these; only the single-word
+# shorthand is suppressed.
+_GENERIC_FIRST_WORDS = {
+    "india", "indian", "national", "central", "state", "the", "new",
+    "united", "great", "general", "oil", "power", "steel", "life", "bank",
+}
+
+_auto_keywords_cache = None
+
+
+def _derive_keywords(company_name: str) -> list:
+    """
+    Turns a CSV company name into headline-matching keyword variants:
+    the full name minus corporate suffixes ("Patanjali Foods Ltd." ->
+    "Patanjali Foods"), plus the first word alone when it's distinctive
+    enough to stand on its own ("Patanjali" -- headlines rarely use the
+    full legal name). Group names like Tata/Adani are deliberately kept as
+    single-word variants: group-level news (e.g. a governance scandal)
+    genuinely affects each member stock, and the News Agent sees which
+    company it's assessing so it can discount unrelated group headlines.
+    """
+    cleaned = _CORPORATE_SUFFIXES.sub("", company_name.strip())
+    if not cleaned:
+        return []
+
+    variants = [cleaned]
+    first_word = cleaned.split()[0]
+    if (len(first_word) >= 4 and first_word.lower() not in _GENERIC_FIRST_WORDS
+            and first_word.lower() != cleaned.lower()):
+        variants.append(first_word)
+    return variants
+
+
+def _build_auto_keywords() -> dict:
+    """
+    Builds {"SYMBOL.NS": [keyword variants]} for every stock in the Nifty
+    500 constituents CSV (the same file run_daily.py scans from), so news
+    filtering works for the entire tradable universe without maintaining a
+    manual mapping per stock. Returns {} with a warning if the CSV is
+    missing -- callers fall back to the manual SYMBOL_KEYWORDS only.
+    """
+    global _auto_keywords_cache
+    if _auto_keywords_cache is not None:
+        return _auto_keywords_cache
+
+    if not os.path.exists(NIFTY500_CSV_PATH):
+        print(f"WARNING: Nifty 500 constituents CSV not found at {NIFTY500_CSV_PATH} -- "
+              f"news keyword auto-derivation disabled, only manual SYMBOL_KEYWORDS apply.")
+        _auto_keywords_cache = {}
+        return _auto_keywords_cache
+
+    mapping = {}
+    with open(NIFTY500_CSV_PATH, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            symbol = (row.get("Symbol") or "").strip()
+            company_name = (row.get("Company Name") or "").strip()
+            if not symbol or not company_name:
+                continue
+            keywords = _derive_keywords(company_name)
+            if keywords:
+                mapping[f"{symbol}.NS"] = keywords
+
+    _auto_keywords_cache = mapping
+    return mapping
+
+
+def keywords_for_symbol(symbol: str) -> list:
+    """
+    Keyword variants for a symbol: the manual SYMBOL_KEYWORDS override wins
+    if present (curated shorthand like "RIL"), otherwise auto-derived from
+    the company's name in the Nifty 500 CSV. Returns [] only if the symbol
+    is in neither -- which now means "not in the scanned universe at all",
+    not "nobody added it to a hardcoded map yet".
+    """
+    manual = SYMBOL_KEYWORDS.get(symbol)
+    if manual:
+        return manual
+    return _build_auto_keywords().get(symbol, [])
 
 
 def _fetch_feed(url: str, source_label: str) -> list:
@@ -153,10 +249,10 @@ def fetch_rss_news_for_symbol(symbol: str, max_items: int = 8) -> list:
     Returns a list of {'title', 'publisher'} dicts, same shape as
     news_agent.fetch_recent_news, so all sources can be combined in one list.
     """
-    keywords = SYMBOL_KEYWORDS.get(symbol)
+    keywords = keywords_for_symbol(symbol)
     if not keywords:
-        print(f"WARNING: no keyword mapping for {symbol} in SYMBOL_KEYWORDS -- "
-              f"can't filter RSS articles for this symbol. Add it to news/rss_sources.py.")
+        print(f"WARNING: no keywords for {symbol} -- not in SYMBOL_KEYWORDS and not in the "
+              f"Nifty 500 constituents CSV. Can't filter RSS articles for this symbol.")
         return []
 
     all_articles = (

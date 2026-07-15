@@ -79,6 +79,7 @@ RISK_PER_TRADE_PCT = 0.01          # risk 1% of capital per trade (entry-to-stop
 MAX_OPEN_POSITIONS = 5
 MAX_DEPLOYED_CAPITAL_PCT = 0.60    # never have more than 60% of capital in the market at once
 DAILY_LOSS_CIRCUIT_BREAKER_PCT = 0.03   # stop opening new trades if daily loss exceeds 3%
+STOP_LOSS_COOLDOWN_DAYS = 3        # trading days to wait before re-entering a symbol closed at a loss
 
 # --- Market-regime filter ---
 USE_MARKET_REGIME_FILTER = True    # validated in backtest: improves win rate, P&L, and drawdown

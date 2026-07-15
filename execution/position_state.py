@@ -19,7 +19,7 @@ import csv
 import json
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import requests
 
@@ -109,6 +109,57 @@ def _log_closed_trade(position: KnownPosition, exit_price, reason: str, path: st
             writer.writeheader()
         writer.writerow(row)
     return realized_pnl
+
+
+def _trading_days_between(start: date, end: date) -> int:
+    """Weekdays strictly after `start`, up to and including `end`. An
+    approximation that ignores exchange holidays -- close enough for a
+    cooldown window, and errs on the side of a slightly longer wait."""
+    if end <= start:
+        return 0
+    days = 0
+    current = start
+    while current < end:
+        current += timedelta(days=1)
+        if current.weekday() < 5:  # Mon-Fri
+            days += 1
+    return days
+
+
+def symbols_in_cooldown(cooldown_trading_days: int, today: date = None,
+                         path: str = CLOSED_TRADES_LOG_PATH) -> set:
+    """
+    Symbols that were closed AT A LOSS within the last `cooldown_trading_days`
+    trading days -- the bot should not re-enter these yet. A stop-out is the
+    market saying the setup failed; the same technical signal re-firing hours
+    later on the same depressed price pattern is usually the same failed
+    setup, not a new opportunity (seen live: PATANJALI stopped out at a loss
+    in the morning run, then re-bought the same afternoon at a HIGHER price
+    than the morning's entry, with a wider stop and a bigger position).
+
+    Profit-target exits do NOT trigger a cooldown -- there's nothing wrong
+    with a setup that worked. A closure whose exit price couldn't be
+    recovered (realized_pnl blank in the log) is treated as a loss --
+    conservative, same "don't guess" philosophy as the rest of this module.
+    """
+    if today is None:
+        today = date.today()
+    if not os.path.exists(path):
+        return set()
+
+    cooling = set()
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            pnl_text = (row.get("realized_pnl") or "").strip()
+            if pnl_text and float(pnl_text) > 0:
+                continue  # profitable exit -- no cooldown
+            try:
+                closed_on = datetime.fromisoformat(row["timestamp"]).date()
+            except (KeyError, ValueError):
+                continue
+            if _trading_days_between(closed_on, today) < cooldown_trading_days:
+                cooling.add(row["symbol"])
+    return cooling
 
 
 def reconcile_closed_positions(current_holdings: list, api_key: str, access_token: str,

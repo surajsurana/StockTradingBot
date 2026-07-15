@@ -88,7 +88,8 @@ from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandi
 from risk.risk_manager import RiskManager
 from execution.execution_engine import ExecutionEngine, fetch_available_capital
 from execution.positions import fetch_all_holdings
-from execution.position_state import reconcile_closed_positions, record_new_position
+from execution.position_state import (reconcile_closed_positions, record_new_position,
+                                       symbols_in_cooldown)
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.chief_investment_ai import MonthlyPlan
 from cio.plan_state import (
@@ -540,6 +541,15 @@ def main():
     if len(symbols) < before_exclusion:
         print(f"Excluding {before_exclusion - len(symbols)} already-held symbol(s) from today's "
               f"scan (avoids buying more of a position already open).")
+
+    cooldown_days = getattr(settings, "STOP_LOSS_COOLDOWN_DAYS", 3)
+    cooling = symbols_in_cooldown(cooldown_days)
+    cooling_in_universe = sorted(cooling & set(symbols))
+    if cooling_in_universe:
+        symbols = [s for s in symbols if s not in cooling]
+        print(f"Excluding {len(cooling_in_universe)} symbol(s) in stop-loss cooldown "
+              f"(closed at a loss within the last {cooldown_days} trading day(s), "
+              f"not re-entering yet): {', '.join(cooling_in_universe)}")
     print(f"Universe: {len(symbols)} symbol(s)"
           + (f" (limited via --limit={limit})" if limit else ""))
 
@@ -643,6 +653,8 @@ def main():
            if capital_for_sizing < total_account_value else ""),
     ] + ([macro_line, ""] if macro_line else []) + [
         f"Universe scanned: {len(symbols)}",
+    ] + ([f"In stop-loss cooldown (skipped): {', '.join(cooling_in_universe)}"]
+         if cooling_in_universe else []) + [
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
         f"Stage 1 rejected: {format_stage1_rejections(rejection_counts)}",
         format_scan_funnel(funnel, len(symbols)),
