@@ -18,19 +18,43 @@ def _articles():
     return [{"title": "Company reports strong quarterly profit", "publisher": "ET"}]
 
 
+def _patch_all_sources(**overrides):
+    """
+    Decorator stacking @patch for all seven fetch_*_articles() functions
+    fetch_general_headlines() reads from, defaulting each to [] unless
+    overridden by name (e.g. _patch_all_sources(zerodha_pulse=[...])).
+    Keeps the seven-source test list from needing seven @patch lines
+    repeated on every single test.
+    """
+    names = {
+        "moneycontrol": "fetch_moneycontrol_articles",
+        "economic_times": "fetch_economic_times_articles",
+        "zerodha_pulse": "fetch_zerodha_pulse_articles",
+        "bbc": "fetch_bbc_articles",
+        "aljazeera": "fetch_aljazeera_articles",
+        "cnn": "fetch_cnn_articles",
+        "times_of_india": "fetch_times_of_india_articles",
+    }
+
+    def decorator(func):
+        for key, func_name in names.items():
+            func = patch(f"macro.macro_strategist.{func_name}", return_value=overrides.get(key, []))(func)
+        return func
+
+    return decorator
+
+
 class TestFetchGeneralHeadlines(unittest.TestCase):
-    @patch("macro.macro_strategist.fetch_zerodha_pulse_articles", return_value=[
-        {"title": "Global oil prices spike after Middle East tensions", "publisher": "ZerodhaPulse"},
-    ])
-    @patch("macro.macro_strategist.fetch_economic_times_articles", return_value=[
-        {"title": "Global oil prices spike after Middle East tensions", "publisher": "ET"},  # duplicate title
-        {"title": "RBI holds rates steady", "publisher": "ET"},
-    ])
-    @patch("macro.macro_strategist.fetch_moneycontrol_articles", return_value=[
-        {"title": "Sensex opens flat", "publisher": "Moneycontrol"},
-    ])
-    def test_combines_and_dedupes_across_sources(self, mock_mc, mock_et, mock_zp):
-        headlines = fetch_general_headlines(max_items=20)
+    @_patch_all_sources(
+        zerodha_pulse=[{"title": "Global oil prices spike after Middle East tensions", "publisher": "ZerodhaPulse"}],
+        economic_times=[
+            {"title": "Global oil prices spike after Middle East tensions", "publisher": "ET"},  # duplicate title
+            {"title": "RBI holds rates steady", "publisher": "ET"},
+        ],
+        moneycontrol=[{"title": "Sensex opens flat", "publisher": "Moneycontrol"}],
+    )
+    def test_combines_and_dedupes_across_sources(self, *mocks):
+        headlines = fetch_general_headlines(max_items=28)
 
         titles = [h["title"] for h in headlines]
         self.assertEqual(len(titles), len(set(t.lower() for t in titles)), "should be deduplicated")
@@ -38,41 +62,49 @@ class TestFetchGeneralHeadlines(unittest.TestCase):
         self.assertIn("RBI holds rates steady", titles)
         self.assertEqual(titles.count("Global oil prices spike after Middle East tensions"), 1)
 
-    @patch("macro.macro_strategist.fetch_zerodha_pulse_articles", return_value=[])
-    @patch("macro.macro_strategist.fetch_economic_times_articles", return_value=[])
-    @patch("macro.macro_strategist.fetch_moneycontrol_articles", return_value=[])
-    def test_no_headlines_returns_empty_list(self, mock_mc, mock_et, mock_zp):
+    @_patch_all_sources()
+    def test_no_headlines_returns_empty_list(self, *mocks):
         self.assertEqual(fetch_general_headlines(), [])
 
-    @patch("macro.macro_strategist.fetch_zerodha_pulse_articles", return_value=[])
-    @patch("macro.macro_strategist.fetch_economic_times_articles", return_value=[])
-    @patch("macro.macro_strategist.fetch_moneycontrol_articles",
-           return_value=[{"title": f"Story {i}", "publisher": "Moneycontrol"} for i in range(30)])
-    def test_respects_max_items(self, mock_mc, mock_et, mock_zp):
+    @_patch_all_sources(
+        moneycontrol=[{"title": f"Story {i}", "publisher": "Moneycontrol"} for i in range(30)],
+    )
+    def test_respects_max_items(self, *mocks):
         self.assertEqual(len(fetch_general_headlines(max_items=5)), 5)
 
-    @patch("macro.macro_strategist.fetch_zerodha_pulse_articles", return_value=[
-        {"title": "Iran oil supply disruption risk weighs on markets", "publisher": "ZerodhaPulse"},
-    ])
-    @patch("macro.macro_strategist.fetch_economic_times_articles", return_value=[
-        {"title": "US Fed holds rates steady", "publisher": "ET"},
-    ])
-    @patch("macro.macro_strategist.fetch_moneycontrol_articles",
-           return_value=[{"title": f"Q4 earnings story {i}", "publisher": "Moneycontrol"} for i in range(49)])
-    def test_moneycontrol_volume_does_not_crowd_out_other_sources(self, mock_mc, mock_et, mock_zp):
+    @_patch_all_sources(
+        zerodha_pulse=[{"title": "Iran oil supply disruption risk weighs on markets", "publisher": "ZerodhaPulse"}],
+        economic_times=[{"title": "US Fed holds rates steady", "publisher": "ET"}],
+        moneycontrol=[{"title": f"Q4 earnings story {i}", "publisher": "Moneycontrol"} for i in range(49)],
+    )
+    def test_moneycontrol_volume_does_not_crowd_out_other_sources(self, *mocks):
         # Regression test: a real production day had Moneycontrol alone
         # return 49 articles, which -- under the old concatenate-then-
-        # truncate logic -- filled the entire 20-item cap before Economic
-        # Times or Zerodha Pulse were ever considered. A genuine
-        # geopolitical story (Iran oil supply disruption) sitting in both
-        # of those feeds was never read as a result. Interleaving must
-        # guarantee every source gets representation regardless of how
-        # many articles Moneycontrol alone returns.
-        headlines = fetch_general_headlines(max_items=20)
+        # truncate logic -- filled the entire max_items cap before any
+        # other source was ever considered. A genuine geopolitical story
+        # (Iran oil supply disruption) sitting in both ET and Zerodha
+        # Pulse was never read as a result. Interleaving must guarantee
+        # every source gets representation regardless of how many
+        # articles Moneycontrol alone returns.
+        headlines = fetch_general_headlines(max_items=28)
         titles = [h["title"] for h in headlines]
 
         self.assertIn("Iran oil supply disruption risk weighs on markets", titles)
         self.assertIn("US Fed holds rates steady", titles)
+
+    @_patch_all_sources(
+        bbc=[{"title": "Trump threatens to bomb bridges unless Iran resumes talks", "publisher": "BBC"}],
+        aljazeera=[{"title": "Iran war live: US carries out strikes on Gulf bases", "publisher": "AlJazeera"}],
+    )
+    def test_global_sources_included(self, *mocks):
+        # The whole point of adding BBC/Al Jazeera/CNN/Times of India:
+        # geopolitical stories that would never appear in Indian financial
+        # RSS feeds must actually reach the headline list.
+        headlines = fetch_general_headlines(max_items=28)
+        titles = [h["title"] for h in headlines]
+
+        self.assertIn("Trump threatens to bomb bridges unless Iran resumes talks", titles)
+        self.assertIn("Iran war live: US carries out strikes on Gulf bases", titles)
 
 
 class TestParseMacroResponse(unittest.TestCase):

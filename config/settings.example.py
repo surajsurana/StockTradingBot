@@ -107,12 +107,13 @@ NEWS_MODEL = "claude-sonnet-5"
 NEWS_MAX_ARTICLES = 8
 
 # --- Macro Strategist ---
-# Runs once per day (not per-stock), before the Nifty 500 scan -- reads
-# general market/world headlines and can throttle or skip new entries for
-# the day on elevated/high geopolitical or macro risk. See
-# macro/macro_strategist.py.
+# Runs several times per day (not per-stock), before each scan -- reads
+# general market/world headlines (Indian financial + BBC/Al Jazeera/CNN/
+# Times of India for global/geopolitical coverage) and can throttle or
+# skip new entries for the day on elevated/high geopolitical or macro
+# risk. See macro/macro_strategist.py.
 USE_MACRO_STRATEGIST = True
-MACRO_MAX_ARTICLES = 20
+MACRO_MAX_ARTICLES = 28   # 7 sources interleaved -- was 20 for 3 sources
 
 # --- Reporting ---
 # Telegram was chosen over WhatsApp -- free, no Twilio/Meta approval process,

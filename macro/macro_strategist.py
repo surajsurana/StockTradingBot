@@ -17,11 +17,18 @@ Strategist answers "does today specifically call for trading smaller than
 that" and never persists its read anywhere -- it's a same-day-only
 adjustment layered on top of whatever CIO already decided.
 
-Reuses the same general RSS feeds news/rss_sources.py already fetches for
-per-stock news (Moneycontrol, Economic Times, Zerodha Pulse) -- just
-without the per-symbol keyword filter, since a geopolitical or macro story
-usually won't mention any single company by name. No new, unverified feed
-sources added.
+Reuses the general-market RSS feeds news/rss_sources.py already fetches
+for per-stock news (Moneycontrol, Economic Times, Zerodha Pulse) -- just
+without the per-symbol keyword filter, since a geopolitical or macro
+story usually won't mention any single company by name. Also pulls BBC,
+Al Jazeera, CNN, and Times of India (World section) specifically for
+global/geopolitical coverage the Indian financial sources alone don't
+carry -- added after a real gap: an Iran/oil-supply-disruption story was
+sitting in Indian sources too but never got read (see
+fetch_general_headlines's docstring), and even once that was fixed, all
+three original sources are India-focused financial news, not general
+world coverage. BBC's and Al Jazeera's feeds both carried live Iran-
+related stories when these were added and verified.
 """
 
 import re
@@ -31,6 +38,7 @@ from typing import Callable, Optional
 from news.news_agent import call_claude
 from news.rss_sources import (
     fetch_moneycontrol_articles, fetch_economic_times_articles, fetch_zerodha_pulse_articles,
+    fetch_bbc_articles, fetch_aljazeera_articles, fetch_cnn_articles, fetch_times_of_india_articles,
 )
 
 RISK_LEVELS = {"normal", "elevated", "high"}
@@ -43,36 +51,42 @@ class MacroAssessment:
     headlines_considered: list = field(default_factory=list)
 
 
-def fetch_general_headlines(max_items: int = 20) -> list:
+def fetch_general_headlines(max_items: int = 28) -> list:
     """
-    Unfiltered general market/world headlines -- the same RSS sources used
-    for per-stock news, but without the per-symbol keyword filter, since a
-    macro or geopolitical story won't usually mention any single company.
-    Deduplicates by title (a story often gets picked up by more than one
-    source).
+    Unfiltered general market/world headlines from seven sources: the
+    Indian financial feeds (Moneycontrol, Economic Times, Zerodha Pulse)
+    plus general world/geopolitical coverage (BBC, Al Jazeera, CNN, Times
+    of India World). Deduplicates by title (a story often gets picked up
+    by more than one source).
 
     Sources are interleaved (one from each, round-robin) rather than
     concatenated-then-truncated -- Moneycontrol alone regularly returns
-    40-50+ articles, which silently squeezed Economic Times and Zerodha
-    Pulse out of the list entirely before the max_items cap was ever
-    applied. A real production case: an Iran/oil-supply-disruption story
-    ("Sensex jumps... despite rising oil prices and Iran supply disruption
-    risks") was present in both ET and Zerodha Pulse the same day Macro
-    Strategist reported NORMAL with no geopolitical mention -- it had
-    simply never been read, since Moneycontrol's own ~49 articles filled
-    the entire 20-item budget first. Same fix already used in
+    40-50+ articles, which silently squeezed every other source out of the
+    list entirely before the max_items cap was ever applied. A real
+    production case: an Iran/oil-supply-disruption story ("Sensex
+    jumps... despite rising oil prices and Iran supply disruption risks")
+    was present in both ET and Zerodha Pulse the same day Macro Strategist
+    reported NORMAL with no geopolitical mention -- it had simply never
+    been read, since Moneycontrol's own ~49 articles filled the entire
+    20-item budget first. Same fix already used in
     news_agent.fetch_recent_news for the identical per-stock problem.
     """
-    moneycontrol = fetch_moneycontrol_articles()
-    economic_times = fetch_economic_times_articles()
-    zerodha_pulse = fetch_zerodha_pulse_articles()
+    sources = [
+        fetch_moneycontrol_articles(),
+        fetch_economic_times_articles(),
+        fetch_zerodha_pulse_articles(),
+        fetch_bbc_articles(),
+        fetch_aljazeera_articles(),
+        fetch_cnn_articles(),
+        fetch_times_of_india_articles(),
+    ]
 
     seen_titles = set()
     interleaved = []
 
-    max_len = max(len(moneycontrol), len(economic_times), len(zerodha_pulse))
+    max_len = max((len(s) for s in sources), default=0)
     for i in range(max_len):
-        for source_list in (moneycontrol, economic_times, zerodha_pulse):
+        for source_list in sources:
             if i < len(source_list):
                 article = source_list[i]
                 key = article["title"].strip().lower()

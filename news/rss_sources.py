@@ -1,7 +1,12 @@
 """
 Pulls headlines from Moneycontrol, Economic Times, and Zerodha Pulse via
 public RSS feeds, and filters them down to articles that actually mention a
-given company.
+given company. Also pulls BBC, Al Jazeera, CNN, and Times of India for
+general world/geopolitical coverage -- these four are used by
+macro/macro_strategist.py only, not for per-stock news, since they don't
+help match headlines to a specific company the way the financial sources
+do; they're for exactly the kind of story a keyword match would never
+catch (a Middle East conflict, a central bank move, a natural disaster).
 
 Important honest caveat: the Moneycontrol and Economic Times feed URLs were
 written from general knowledge of how these sites publish RSS, not verified
@@ -11,6 +16,10 @@ contrast, WAS verified live and working while building this
 (http://pulse.zerodha.com/feed.php) -- it's a market news aggregator that
 itself pulls from Economic Times, NDTV Profit, Finshots, and other major
 Indian financial sources, so it's a strong, confirmed source on its own.
+BBC, Al Jazeera, CNN, and Times of India were ALL verified live and working
+when added -- BBC's and Al Jazeera's live feeds both carried real Iran-
+related coverage at verification time, confirming they add the kind of
+geopolitical signal the financial-only sources above were missing.
 
 News sites occasionally restructure their RSS feeds. Each fetch is wrapped
 so that if a feed URL has moved or is temporarily unavailable, that one
@@ -48,6 +57,13 @@ ECONOMIC_TIMES_FEEDS = {
 # Verified live and working while building this project -- a market news
 # aggregator, so a single feed covers many underlying sources at once.
 ZERODHA_PULSE_FEED = "http://pulse.zerodha.com/feed.php"
+
+# General world/geopolitical sources -- used by Macro Strategist only (see
+# module docstring). All verified live and working when added.
+BBC_WORLD_FEED = "http://feeds.bbci.co.uk/news/world/rss.xml"
+ALJAZEERA_FEED = "https://www.aljazeera.com/xml/rss/all.xml"
+CNN_WORLD_FEED = "http://rss.cnn.com/rss/cnn_world.rss"
+TIMES_OF_INDIA_WORLD_FEED = "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms"
 
 # Maps a ticker symbol to the name variants likely to appear in headlines.
 # Extend this as more symbols are added to the tradable universe.
@@ -97,6 +113,31 @@ def fetch_economic_times_articles() -> list:
 def fetch_zerodha_pulse_articles() -> list:
     """Fetches Zerodha Pulse's aggregated market news feed."""
     return _fetch_feed(ZERODHA_PULSE_FEED, "ZerodhaPulse")
+
+
+def fetch_bbc_articles() -> list:
+    """Fetches BBC's World News feed -- general world/geopolitical coverage."""
+    return _fetch_feed(BBC_WORLD_FEED, "BBC")
+
+
+def fetch_aljazeera_articles() -> list:
+    """
+    Fetches Al Jazeera's general feed -- a mix of world news, sport, and
+    features, but with particularly strong Middle East coverage, which is
+    exactly the gap this was added to close (a regional conflict story is
+    more likely to show up here first than in Indian financial RSS feeds).
+    """
+    return _fetch_feed(ALJAZEERA_FEED, "AlJazeera")
+
+
+def fetch_cnn_articles() -> list:
+    """Fetches CNN's World News feed."""
+    return _fetch_feed(CNN_WORLD_FEED, "CNN")
+
+
+def fetch_times_of_india_articles() -> list:
+    """Fetches Times of India's World section feed."""
+    return _fetch_feed(TIMES_OF_INDIA_WORLD_FEED, "TimesOfIndia")
 
 
 def _matches_keywords(article: dict, keywords: list) -> bool:
