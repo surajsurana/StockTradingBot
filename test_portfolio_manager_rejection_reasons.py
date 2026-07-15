@@ -17,9 +17,10 @@ from strategies.base import Signal
 from portfolio.portfolio_manager import TradeCandidate
 
 
-def _risk_manager(capital=100000, max_positions=5, max_deployed_pct=0.5):
+def _risk_manager(capital=100000, max_positions=5, max_deployed_pct=0.5, max_per_trade_pct=None):
     return RiskManager(capital=capital, risk_per_trade_pct=0.01, max_open_positions=max_positions,
-                        max_deployed_capital_pct=max_deployed_pct, daily_loss_circuit_breaker_pct=0.03)
+                        max_deployed_capital_pct=max_deployed_pct, daily_loss_circuit_breaker_pct=0.03,
+                        max_capital_per_trade_pct=max_per_trade_pct)
 
 
 def _candidate(symbol, entry, stop, confidence=0.65):
@@ -53,8 +54,15 @@ class TestGenuineCapitalExhaustion(unittest.TestCase):
         """STRONG.NS is sized first (higher confidence) and consumes most of
         the 30% deployed-capital cap, leaving too little budget for even 1
         share of WEAK.NS -- this is the genuine capital-conflict case and
-        must still report the "already approved today" message correctly."""
-        risk_manager = _risk_manager(capital=100000, max_deployed_pct=0.3)
+        must still report the "already approved today" message correctly.
+
+        max_per_trade_pct is set equal to max_deployed_pct here to opt out
+        of the newer per-trade cap (see test_risk_manager_per_trade_cap.py)
+        -- this test is specifically about the total-deployed-capital
+        exhaustion path, a different mechanism with its own dedicated
+        tests, and the per-trade cap would otherwise stop STRONG.NS from
+        ever consuming "most of" a 5-slot budget by design."""
+        risk_manager = _risk_manager(capital=100000, max_deployed_pct=0.3, max_per_trade_pct=0.3)
         strong = _candidate("STRONG.NS", entry=1000, stop=950, confidence=0.95)
         weak = _candidate("WEAK.NS", entry=5000, stop=4750, confidence=0.55)
 

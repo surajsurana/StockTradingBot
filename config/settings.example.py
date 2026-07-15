@@ -77,7 +77,7 @@ STRATEGY_SYMBOLS = {
 STARTING_CAPITAL = 100000          # paper capital for backtests; replace with real capital later
 RISK_PER_TRADE_PCT = 0.01          # risk 1% of capital per trade (entry-to-stop distance)
 MAX_OPEN_POSITIONS = 5
-MAX_DEPLOYED_CAPITAL_PCT = 0.50    # never have more than 50% of capital in the market at once
+MAX_DEPLOYED_CAPITAL_PCT = 0.60    # never have more than 60% of capital in the market at once
 DAILY_LOSS_CIRCUIT_BREAKER_PCT = 0.03   # stop opening new trades if daily loss exceeds 3%
 
 # --- Market-regime filter ---
