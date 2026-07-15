@@ -439,44 +439,6 @@ def main():
     if capital is None:
         return
 
-    plan = load_monthly_plan()
-    if plan is None and live_trading:
-        # First-ever live run: seed a starting plan from the real capital we
-        # just fetched, so Chief Investment AI has something to review and
-        # adjust from next month, instead of waiting for monthly_review.py
-        # to invent one from config placeholders.
-        plan = MonthlyPlan(
-            month_label=date.today().strftime("%B %Y"),
-            capital_allocated=capital,
-            target_return_pct=3.0,
-            active_strategies=list(settings.ACTIVE_STRATEGIES),
-            risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
-            notes="Starting plan, bootstrapped from real capital on first live run.",
-        )
-        save_monthly_plan(plan)
-        print(f"\nNo Chief Investment AI plan existed yet -- bootstrapped one "
-              f"(capital Rs.{capital:,.2f}, strategies {plan.active_strategies}).")
-    elif plan is not None and live_trading and bump_capital_cap_to_real_capital(plan, capital):
-        # Real capital grew past the plan's cap (funds were likely added) --
-        # raise the cap to match immediately rather than waiting for next
-        # month's clamped Chief Investment AI review. See
-        # bump_capital_cap_to_real_capital()'s docstring for why this is
-        # safe: a deposit is a fact about the account, not an AI judgment
-        # call, so it isn't subject to the same +/-20%/month guardrail.
-        save_monthly_plan(plan)
-        print(f"\nReal capital (Rs.{capital:,.2f}) exceeds the current plan's cap -- "
-              f"raised the cap to match.")
-
-    active_strategies = effective_active_strategies(plan, settings)
-    capital_for_sizing = effective_capital_cap(plan, capital)
-    risk_per_trade_pct = effective_risk_per_trade_pct(plan, settings)
-    if capital_for_sizing < capital:
-        print(f"Chief Investment AI's monthly cap limits sizing to Rs.{capital_for_sizing:,.2f} "
-              f"(real capital is Rs.{capital:,.2f}).")
-    if risk_per_trade_pct != settings.RISK_PER_TRADE_PCT:
-        print(f"Chief Investment AI's monthly plan sets risk per trade to "
-              f"{risk_per_trade_pct:.2%} (config default is {settings.RISK_PER_TRADE_PCT:.2%}).")
-
     try:
         holdings = get_current_holdings(live_trading)
     except Exception as e:
@@ -486,6 +448,63 @@ def main():
             settings.TELEGRAM_BOT_TOKEN, settings.TELEGRAM_CHAT_ID,
         )
         return
+
+    # Free cash alone understates real trading capital once positions are
+    # open -- money in a held stock is still yours, just temporarily
+    # illiquid. Every capital calculation below (CIO's monthly cap,
+    # RiskManager's per-trade risk sizing, RiskManager's 50%-max-deployed
+    # cap) needs TOTAL account value, not free cash alone. Using free cash
+    # for these was a real bug: it made the 50%-deployed cap shrink every
+    # time a position opened (since spending cash lowers free cash, which
+    # lowers the cap, even though total equity didn't drop), and could let
+    # existing holdings alone exceed the cap outright -- confirmed live:
+    # Rs.21,188 free cash + Rs.14,266 in holdings meant the old 50%-of-free-
+    # cash cap (Rs.10,594) was already below existing holdings alone, so
+    # EVERY new trade was being rejected as "insufficient capital"
+    # regardless of price or confidence.
+    holdings_value = sum(h.quantity * h.average_price for h in holdings)
+    total_account_value = capital + holdings_value
+    if holdings_value > 0:
+        print(f"Existing holdings value: Rs.{holdings_value:,.2f} -- "
+              f"total account value Rs.{total_account_value:,.2f}")
+
+    plan = load_monthly_plan()
+    if plan is None and live_trading:
+        # First-ever live run: seed a starting plan from the real capital we
+        # just fetched, so Chief Investment AI has something to review and
+        # adjust from next month, instead of waiting for monthly_review.py
+        # to invent one from config placeholders.
+        plan = MonthlyPlan(
+            month_label=date.today().strftime("%B %Y"),
+            capital_allocated=total_account_value,
+            target_return_pct=3.0,
+            active_strategies=list(settings.ACTIVE_STRATEGIES),
+            risk_per_trade_pct=settings.RISK_PER_TRADE_PCT,
+            notes="Starting plan, bootstrapped from real capital on first live run.",
+        )
+        save_monthly_plan(plan)
+        print(f"\nNo Chief Investment AI plan existed yet -- bootstrapped one "
+              f"(capital Rs.{total_account_value:,.2f}, strategies {plan.active_strategies}).")
+    elif plan is not None and live_trading and bump_capital_cap_to_real_capital(plan, total_account_value):
+        # Real capital grew past the plan's cap (funds were likely added) --
+        # raise the cap to match immediately rather than waiting for next
+        # month's clamped Chief Investment AI review. See
+        # bump_capital_cap_to_real_capital()'s docstring for why this is
+        # safe: a deposit is a fact about the account, not an AI judgment
+        # call, so it isn't subject to the same +/-20%/month guardrail.
+        save_monthly_plan(plan)
+        print(f"\nTotal account value (Rs.{total_account_value:,.2f}) exceeds the current plan's "
+              f"cap -- raised the cap to match.")
+
+    active_strategies = effective_active_strategies(plan, settings)
+    capital_for_sizing = effective_capital_cap(plan, total_account_value)
+    risk_per_trade_pct = effective_risk_per_trade_pct(plan, settings)
+    if capital_for_sizing < total_account_value:
+        print(f"Chief Investment AI's monthly cap limits sizing to Rs.{capital_for_sizing:,.2f} "
+              f"(total account value is Rs.{total_account_value:,.2f}).")
+    if risk_per_trade_pct != settings.RISK_PER_TRADE_PCT:
+        print(f"Chief Investment AI's monthly plan sets risk per trade to "
+              f"{risk_per_trade_pct:.2%} (config default is {settings.RISK_PER_TRADE_PCT:.2%}).")
 
     if live_trading:
         reconcile_closed_positions(
@@ -617,9 +636,11 @@ def main():
     report_lines = [
         f"*Daily run -- {'LIVE' if live_trading else 'PAPER'} mode*",
         "",
-        f"Capital available: Rs.{capital:,.2f}"
+        f"Free cash: Rs.{capital:,.2f}"
+        + (f" | Existing holdings: Rs.{holdings_value:,.2f}" if holdings_value > 0 else ""),
+        f"Total account value: Rs.{total_account_value:,.2f}"
         + (f" (Chief Investment AI cap this month: Rs.{capital_for_sizing:,.2f})"
-           if capital_for_sizing < capital else ""),
+           if capital_for_sizing < total_account_value else ""),
     ] + ([macro_line, ""] if macro_line else []) + [
         f"Universe scanned: {len(symbols)}",
         f"Stage 1 survivors (signal + fundamentals passed): {len(survivors)}",
