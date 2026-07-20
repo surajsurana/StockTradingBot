@@ -76,12 +76,29 @@ STRATEGY_SYMBOLS = {
 # --- Risk limits ---
 STARTING_CAPITAL = 100000          # paper capital for backtests; replace with real capital later
 RISK_PER_TRADE_PCT = 0.01          # risk 1% of capital per trade (entry-to-stop distance)
-MAX_OPEN_POSITIONS = 5
+MAX_OPEN_POSITIONS = 10
 MAX_DEPLOYED_CAPITAL_PCT = 0.60    # never have more than 60% of capital in the market at once
+MAX_CAPITAL_PER_TRADE_PCT = 0.12   # explicit -- kept at 12% even though 60%/10 slots would default to 6%,
+                                    # so a single high-confidence trade can still use a meaningful chunk of
+                                    # capital; 10 slots mainly gives room for smaller/lower-confidence trades
+                                    # to also get taken rather than guaranteeing 10 similarly-sized positions
 DAILY_LOSS_CIRCUIT_BREAKER_PCT = 0.03   # stop opening new trades if daily loss exceeds 3%
 STOP_LOSS_COOLDOWN_DAYS = 3        # trading days to wait before re-entering a symbol closed at a loss
 TRAILING_STOP_ACTIVATION_FRACTION = 0.8   # arm the trailing stop once 80% of the way from entry to target
 TRAILING_STOP_LOCK_IN_FRACTION = 0.7      # once armed, lock in 70% of the gain made so far
+USE_PARTIAL_PROFIT_BOOKING = False  # OFF -- backtested (91 symbols, 3mo) against the already-deployed
+                                     # trailing stop and every activation/booking/extension combination
+                                     # tried underperformed just leaving the trailing stop alone (best case
+                                     # +Rs.4,929 vs the trailing-stop-only baseline's +Rs.5,473). Code is
+                                     # built and tested; re-enable only after finding a config that actually
+                                     # beats the baseline, not just raises the win rate.
+PARTIAL_PROFIT_ACTIVATION_FRACTION = 0.6   # book partial profit once 60% of the way to original target --
+                                            # earlier than the trailing stop's 80%, so it has a real chance
+                                            # of acting before the original GTT's target leg could fire on
+                                            # its own between our periodic checks
+PARTIAL_PROFIT_BOOKING_FRACTION = 0.5      # fraction of shares to sell outright when triggered
+PARTIAL_PROFIT_TARGET_EXTENSION_MULTIPLE = 1.0   # runner tranche's new target extends the original
+                                                  # entry-to-target distance by this multiple (1.0 = doubles it)
 
 # --- Market-regime filter ---
 USE_MARKET_REGIME_FILTER = True    # validated in backtest: improves win rate, P&L, and drawdown

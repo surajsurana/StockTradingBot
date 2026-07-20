@@ -145,6 +145,7 @@ def main():
             max_open_positions=settings.MAX_OPEN_POSITIONS,
             max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
             daily_loss_circuit_breaker_pct=settings.DAILY_LOSS_CIRCUIT_BREAKER_PCT,
+            max_capital_per_trade_pct=settings.MAX_CAPITAL_PER_TRADE_PCT,
         )
 
     baseline_trades, trailing_trades = [], []

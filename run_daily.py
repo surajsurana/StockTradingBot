@@ -337,23 +337,38 @@ def run_stage2_research(survivors: list) -> list:
         price_history = item["price_history"]
 
         print(f"  Researching {symbol}...")
-        if settings.USE_NEWS_AGENT:
-            # analyze_news_cached, not analyze_news -- run_daily.py now runs
-            # several times a day (see cron), so this skips the Claude call
-            # and reuses the last verdict when a symbol's headlines haven't
-            # changed since the previous check, same as monitor_positions.py.
-            news_assessment = analyze_news_cached(symbol, api_key=settings.ANTHROPIC_API_KEY,
-                                                   max_items=settings.NEWS_MAX_ARTICLES)
-        else:
-            news_assessment = disabled_news_assessment(symbol)
-        # entry_price=None -- this is a fresh candidate, not a held position
-        # yet, so there's no "since entry" figure to report, only the
-        # recent-move/MA/volume facts.
-        price_action = compute_price_action(price_history, entry_price=None)
-        research_result = analyze_stock(
-            symbol, technical_signals, fundamentals_result, news_assessment,
-            api_key=settings.ANTHROPIC_API_KEY, price_action=price_action,
-        )
+        try:
+            if settings.USE_NEWS_AGENT:
+                # analyze_news_cached, not analyze_news -- run_daily.py now runs
+                # several times a day (see cron), so this skips the Claude call
+                # and reuses the last verdict when a symbol's headlines haven't
+                # changed since the previous check, same as monitor_positions.py.
+                news_assessment = analyze_news_cached(symbol, api_key=settings.ANTHROPIC_API_KEY,
+                                                       max_items=settings.NEWS_MAX_ARTICLES)
+            else:
+                news_assessment = disabled_news_assessment(symbol)
+            # entry_price=None -- this is a fresh candidate, not a held position
+            # yet, so there's no "since entry" figure to report, only the
+            # recent-move/MA/volume facts.
+            price_action = compute_price_action(price_history, entry_price=None)
+            research_result = analyze_stock(
+                symbol, technical_signals, fundamentals_result, news_assessment,
+                api_key=settings.ANTHROPIC_API_KEY, price_action=price_action,
+            )
+        except ClaudeAPIError:
+            # A ClaudeAPIError (bad key, rate limit, outage) means Claude is
+            # unreachable right now -- every remaining candidate would fail
+            # identically, so let it propagate and abort the whole run (the
+            # __main__ handler already reports this clearly), rather than
+            # silently researching zero candidates.
+            raise
+        except Exception as e:
+            # Anything else is specific to THIS candidate (e.g. an occasional
+            # Claude response shape with no text block to parse -- a real,
+            # transient failure seen live) -- must not abort research for
+            # every other candidate in the batch. Skip this one, keep going.
+            print(f"WARNING: could not research {symbol}: {e} -- skipping this candidate.")
+            continue
         print(f"    Verdict: {research_result.verdict.upper()} ({research_result.confidence:.0%})")
 
         candidate_signal = first_available_signal(technical_signals)
@@ -591,6 +606,7 @@ def main():
         max_open_positions=settings.MAX_OPEN_POSITIONS,
         max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
         daily_loss_circuit_breaker_pct=settings.DAILY_LOSS_CIRCUIT_BREAKER_PCT,
+        max_capital_per_trade_pct=settings.MAX_CAPITAL_PER_TRADE_PCT,
     )
     risk_manager.seed_existing_positions(holdings)
     decisions = allocate(candidates, risk_manager)

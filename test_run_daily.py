@@ -1,6 +1,7 @@
 """
 Mock-based unit tests for run_daily.py's exclude_held_symbols(),
-format_macro_summary(), and format_scan_funnel(). Run with:
+format_macro_summary(), format_scan_funnel(), and run_stage2_research()'s
+per-candidate error handling. Run with:
 
     python test_run_daily.py
 """
@@ -8,9 +9,12 @@ format_macro_summary(), and format_scan_funnel(). Run with:
 import unittest
 from dataclasses import dataclass
 from collections import defaultdict
+from unittest.mock import patch
 
 from execution.positions import Holding
-from run_daily import exclude_held_symbols, format_macro_summary, format_scan_funnel
+from news.news_agent import ClaudeAPIError, NewsAssessment
+from research.research_analyst import ResearchAssessment
+from run_daily import exclude_held_symbols, format_macro_summary, format_scan_funnel, run_stage2_research
 
 
 class TestExcludeHeldSymbols(unittest.TestCase):
@@ -97,6 +101,49 @@ class TestFormatScanFunnel(unittest.TestCase):
     def test_empty_funnel_produces_no_bottleneck_line(self):
         text = format_scan_funnel({}, total_scanned=457)
         self.assertNotIn("Primary bottleneck", text)
+
+
+def _survivor(symbol):
+    return {"symbol": symbol, "technical_signals": {}, "fundamentals_result": None, "price_history": None}
+
+
+class TestRunStage2ResearchPerCandidateErrorHandling(unittest.TestCase):
+    """
+    Regression tests for a real incident: one candidate's Claude call
+    raising an unexpected (non-ClaudeAPIError) exception -- e.g. "Claude's
+    response contained no text block to parse", seen live -- crashed the
+    entire run_daily.py process, researching ZERO candidates that run
+    instead of just skipping the one that failed.
+    """
+
+    @patch("run_daily.compute_price_action", return_value=None)
+    @patch("run_daily.analyze_news_cached")
+    @patch("run_daily.analyze_stock")
+    def test_one_candidates_unexpected_error_does_not_stop_the_others(self, mock_analyze, mock_news, mock_pa):
+        mock_news.return_value = NewsAssessment(symbol="X", sentiment="neutral", confidence=0.5, reasoning="x")
+        good_result = ResearchAssessment(symbol="GOOD.NS", verdict="favorable", confidence=0.7, reasoning="ok")
+        mock_analyze.side_effect = [
+            RuntimeError("Claude's response contained no text block to parse (got block types: ['thinking'])."),
+            good_result,
+        ]
+
+        candidates = run_stage2_research([_survivor("BAD.NS"), _survivor("GOOD.NS")])
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].symbol, "GOOD.NS")
+
+    @patch("run_daily.compute_price_action", return_value=None)
+    @patch("run_daily.analyze_news_cached")
+    @patch("run_daily.analyze_stock")
+    def test_claude_api_error_propagates_and_aborts(self, mock_analyze, mock_news, mock_pa):
+        # A ClaudeAPIError means Claude is unreachable entirely -- every
+        # remaining candidate would fail identically, so this should abort
+        # the whole batch (unlike a candidate-specific parsing failure).
+        mock_news.return_value = NewsAssessment(symbol="X", sentiment="neutral", confidence=0.5, reasoning="x")
+        mock_analyze.side_effect = ClaudeAPIError("rate limited")
+
+        with self.assertRaises(ClaudeAPIError):
+            run_stage2_research([_survivor("A.NS"), _survivor("B.NS")])
 
 
 if __name__ == "__main__":

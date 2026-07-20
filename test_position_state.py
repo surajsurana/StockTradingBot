@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock
 from execution.position_state import (
     record_new_position, load_known_positions, save_known_positions,
     reconcile_closed_positions, _log_closed_trade, KnownPosition,
-    update_position_stop,
+    update_position_stop, record_partial_profit_booking,
 )
 from execution.positions import Holding
 
@@ -72,9 +72,16 @@ class TestKnownPositionsRoundTrip(unittest.TestCase):
         self.assertIsNone(positions["INFY.NS"].stop_loss)
         self.assertIsNone(positions["INFY.NS"].target)
 
+    def test_partial_booked_defaults_to_false(self):
+        record_new_position("INFY.NS", 10, 1500.0, gtt_id=1, path=self.path)
+
+        positions = load_known_positions(self.path)
+        self.assertFalse(positions["INFY.NS"].partial_booked)
+
     def test_loading_legacy_json_without_new_fields_still_works(self):
-        # A known_positions.json written before stop_loss/target existed --
-        # must not crash on load, e.g. the real VPS state pre-deploy.
+        # A known_positions.json written before stop_loss/target/
+        # partial_booked existed -- must not crash on load, e.g. the real
+        # VPS state pre-deploy.
         import json
         with open(self.path, "w") as f:
             json.dump({"INFY.NS": {"symbol": "INFY.NS", "quantity": 10, "entry_price": 1500.0,
@@ -83,6 +90,7 @@ class TestKnownPositionsRoundTrip(unittest.TestCase):
         positions = load_known_positions(self.path)
         self.assertIsNone(positions["INFY.NS"].stop_loss)
         self.assertIsNone(positions["INFY.NS"].target)
+        self.assertFalse(positions["INFY.NS"].partial_booked)
 
 
 class TestUpdatePositionStop(unittest.TestCase):
@@ -109,6 +117,36 @@ class TestUpdatePositionStop(unittest.TestCase):
     def test_unknown_symbol_is_a_no_op(self):
         # should not raise even though nothing is known yet
         update_position_stop("GHOST.NS", 100.0, new_gtt_id=1, path=self.path)
+        self.assertEqual(load_known_positions(self.path), {})
+
+
+class TestRecordPartialProfitBooking(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        self.tmp.close()
+        self.path = self.tmp.name
+
+    def tearDown(self):
+        if os.path.exists(self.path):
+            os.unlink(self.path)
+
+    def test_updates_quantity_target_gtt_id_and_marks_booked(self):
+        record_new_position("INFY.NS", 10, 1500.0, gtt_id=1,
+                             stop_loss=1455.0, target=1650.0, path=self.path)
+
+        record_partial_profit_booking("INFY.NS", remaining_quantity=5, extended_target=1800.0,
+                                       new_gtt_id=99, path=self.path)
+
+        pos = load_known_positions(self.path)["INFY.NS"]
+        self.assertEqual(pos.quantity, 5)
+        self.assertEqual(pos.target, 1800.0)
+        self.assertEqual(pos.gtt_id, 99)
+        self.assertTrue(pos.partial_booked)
+        self.assertEqual(pos.stop_loss, 1455.0)  # deliberately left untouched
+
+    def test_unknown_symbol_is_a_no_op(self):
+        record_partial_profit_booking("GHOST.NS", remaining_quantity=5, extended_target=1800.0,
+                                       new_gtt_id=99, path=self.path)
         self.assertEqual(load_known_positions(self.path), {})
 
 

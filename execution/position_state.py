@@ -44,6 +44,12 @@ class KnownPosition:
     # here on for every new position).
     stop_loss: float | None = None
     target: float | None = None
+    # Added for partial profit booking (risk/partial_profit.py) -- default
+    # False so pre-existing positions never retroactively "already booked"
+    # themselves; True once this position has had its booking tranche sold
+    # and its GTT restructured for the runner tranche, so the check never
+    # re-fires for the same position.
+    partial_booked: bool = False
 
 
 def load_known_positions(path: str = KNOWN_POSITIONS_PATH) -> dict:
@@ -92,6 +98,29 @@ def update_position_stop(symbol: str, new_stop_loss: float, new_gtt_id,
         return
     known.stop_loss = new_stop_loss
     known.gtt_id = new_gtt_id
+    save_known_positions(positions, path)
+
+
+def record_partial_profit_booking(symbol: str, remaining_quantity: int, extended_target: float,
+                                   new_gtt_id, path: str = KNOWN_POSITIONS_PATH):
+    """
+    Called after partial profit booking (risk/partial_profit.py) has
+    restructured a position's GTT for the reduced "runner" quantity --
+    updates quantity, target, and gtt_id to match, and marks
+    partial_booked=True so this never re-fires for the same position.
+    stop_loss is deliberately left untouched here: the runner tranche keeps
+    whatever stop it already had (including any prior trailing-stop
+    ratchet), it doesn't reset. No-op if the symbol isn't currently known,
+    same reasoning as update_position_stop.
+    """
+    positions = load_known_positions(path)
+    known = positions.get(symbol)
+    if known is None:
+        return
+    known.quantity = remaining_quantity
+    known.target = extended_target
+    known.gtt_id = new_gtt_id
+    known.partial_booked = True
     save_known_positions(positions, path)
 
 

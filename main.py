@@ -61,6 +61,7 @@ def run_strategy(strategy_key: str, data: dict, regime_series, eligible_symbols:
             max_open_positions=settings.MAX_OPEN_POSITIONS,
             max_deployed_capital_pct=settings.MAX_DEPLOYED_CAPITAL_PCT,
             daily_loss_circuit_breaker_pct=settings.DAILY_LOSS_CIRCUIT_BREAKER_PCT,
+            max_capital_per_trade_pct=settings.MAX_CAPITAL_PER_TRADE_PCT,
         )
         result = run_backtest(symbol, price_history, strategy, risk_manager, regime_series=effective_regime)
         regime_note = "regime-filtered" if effective_regime is not None else "no regime filter"

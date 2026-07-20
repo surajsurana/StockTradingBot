@@ -40,9 +40,11 @@ from news.news_agent import analyze_news_cached, disabled_news_assessment, Claud
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
 from risk.trailing_stop import compute_trailing_stop_update
+from risk.partial_profit import should_book_partial_profit, compute_extended_target, compute_booking_split
 from execution.execution_engine import ExecutionEngine
 from execution.positions import fetch_all_holdings
-from execution.position_state import reconcile_closed_positions, load_known_positions, update_position_stop
+from execution.position_state import (reconcile_closed_positions, load_known_positions,
+                                       update_position_stop, record_partial_profit_booking)
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.plan_state import load_monthly_plan, effective_active_strategies
 from reporting.telegram_notifier import send_telegram_message
@@ -149,6 +151,195 @@ def evaluate_holding(symbol: str, regime_series, active_strategies: list, entry_
     return assessment, price_history
 
 
+def check_holding(holding, regime_series, active_strategies: list, known_positions: dict,
+                   execution_engine: ExecutionEngine) -> tuple[str, bool]:
+    """
+    Full check + action for ONE held position: fresh Research Analyst
+    verdict, early exit if unfavorable, otherwise partial profit booking
+    then trailing stop. Returns (checked_line, exited) -- the Telegram
+    report line for this symbol, and whether it was fully exited this
+    cycle (so the caller can add it to reconciliation).
+
+    Deliberately a single function called per-symbol from main()'s loop and
+    wrapped in a try/except there -- an unexpected failure partway through
+    one symbol's checks (seen live: an occasional Claude API response
+    shape crashing the whole process) must never prevent every OTHER held
+    position from being checked in the same cycle.
+    """
+    price_pnl = price_pnl_text(holding)
+    prefix = f"- {holding.symbol}: {price_pnl} -- " if price_pnl else f"- {holding.symbol}: "
+
+    assessment, price_history = evaluate_holding(
+        holding.symbol, regime_series, active_strategies, entry_price=holding.average_price,
+    )
+    if assessment is None:
+        return f"{prefix}could not complete a fresh check -- left as-is.", False
+
+    print(f"  Fresh verdict: {assessment.verdict.upper()} ({assessment.confidence:.0%})")
+
+    if assessment.verdict == "unfavorable":
+        known = known_positions.get(holding.symbol)
+        gtt_id = known.gtt_id if known else None
+
+        exit_signal = Signal(
+            symbol=holding.symbol, direction="SELL", entry_price=holding.average_price,
+            stop_loss=holding.average_price, target=holding.average_price, confidence=assessment.confidence,
+            strategy_name="monitor_positions", reason=assessment.reasoning,
+        )
+        sell_result = execution_engine.place_order(ApprovedTrade(
+            signal=exit_signal, quantity=holding.quantity,
+            capital_deployed=holding.quantity * holding.average_price,
+        ))
+        print(f"  Exited early: {sell_result}")
+
+        if sell_result.get("status") == "success":
+            if gtt_id is not None:
+                execution_engine.cancel_gtt(gtt_id)
+            return (f"{prefix}EXITED EARLY (verdict turned unfavorable, "
+                    f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"), True
+        else:
+            # The exit SELL itself failed -- do NOT cancel the GTT and do NOT
+            # mark this as exited. This position is still really held, so its
+            # GTT stop-loss/target must stay in place; treating a failed exit
+            # as successful would leave a real position with no protection.
+            print(f"WARNING: exit SELL order for {holding.symbol} did not succeed -- "
+                  f"GTT left in place, still counted as held. Result: {sell_result}")
+            return (f"{prefix}verdict turned unfavorable ({assessment.confidence:.0%} "
+                    f"confidence) but the exit order failed -- still held, GTT stop-loss/target "
+                    f"unaffected. {assessment.reasoning}"), False
+
+    trailing_note = ""
+    partial_note = ""
+    current_quantity = holding.quantity
+    known = known_positions.get(holding.symbol)
+    has_gtt_state = (known is not None and known.stop_loss is not None
+                      and known.target is not None and known.gtt_id is not None)
+    highest_high = _highest_high_since(price_history, known.opened_at) if has_gtt_state else None
+
+    # --- Partial profit booking, checked FIRST: it can restructure the
+    # GTT and reduce the live quantity, which the trailing-stop check
+    # below must then use (via current_quantity / known, both updated
+    # in place here), not the pre-booking figures. ---
+    if (settings.USE_PARTIAL_PROFIT_BOOKING and has_gtt_state and not known.partial_booked
+            and highest_high is not None
+            and should_book_partial_profit(
+                entry_price=known.entry_price, target=known.target,
+                highest_high_since_entry=highest_high,
+                activation_fraction=settings.PARTIAL_PROFIT_ACTIVATION_FRACTION,
+            )):
+        split = compute_booking_split(current_quantity, settings.PARTIAL_PROFIT_BOOKING_FRACTION)
+        if split is None:
+            print(f"  Partial profit booking triggered for {holding.symbol} but position "
+                  f"(qty {current_quantity}) is too small to split -- skipping.")
+        else:
+            booking_qty, remaining_qty = split
+            extended_target = compute_extended_target(
+                known.entry_price, known.target, settings.PARTIAL_PROFIT_TARGET_EXTENSION_MULTIPLE,
+            )
+            runner_signal = Signal(
+                symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
+                stop_loss=known.stop_loss, target=extended_target, confidence=assessment.confidence,
+                strategy_name="partial_profit", reason="Runner tranche after partial booking",
+            )
+            try:
+                # Reduced-quantity runner GTT placed FIRST -- same lesson
+                # as replace_gtt's own fix: never remove existing
+                # protection before its replacement is confirmed live.
+                new_gtt_id = execution_engine.replace_gtt(known.gtt_id, ApprovedTrade(
+                    signal=runner_signal, quantity=remaining_qty,
+                    capital_deployed=remaining_qty * known.entry_price,
+                ))
+                record_partial_profit_booking(holding.symbol, remaining_qty, extended_target, new_gtt_id)
+                known.quantity = remaining_qty
+                known.target = extended_target
+                known.gtt_id = new_gtt_id
+                known.partial_booked = True
+                current_quantity = remaining_qty
+                print(f"  Runner GTT placed for {holding.symbol}: qty {remaining_qty}, "
+                      f"stop Rs.{known.stop_loss:,.2f}, extended target Rs.{extended_target:,.2f}")
+
+                booking_price = holding.last_price if holding.last_price else known.entry_price
+                booking_signal = Signal(
+                    symbol=holding.symbol, direction="SELL", entry_price=booking_price,
+                    stop_loss=booking_price, target=booking_price, confidence=assessment.confidence,
+                    strategy_name="partial_profit", reason="Partial profit booking",
+                )
+                booking_result = execution_engine.place_order(ApprovedTrade(
+                    signal=booking_signal, quantity=booking_qty,
+                    capital_deployed=booking_qty * booking_price,
+                ))
+                if booking_result.get("status") == "success":
+                    partial_note = (f" | Partial profit booked: sold {booking_qty} shares, "
+                                     f"{remaining_qty} remain with extended target Rs.{extended_target:,.2f}")
+                    print(f"  Partial profit booking SELL succeeded for {holding.symbol}: {booking_result}")
+                else:
+                    # The runner GTT is already live and correctly covers
+                    # remaining_qty -- real risk is bounded to just the
+                    # booking_qty shares that failed to sell, not the
+                    # whole position. Retrying the sell itself (not the
+                    # GTT restructure, which succeeded and is recorded)
+                    # is the only thing left to do, next check or manually.
+                    print(f"WARNING: partial profit booking SELL for {holding.symbol} failed after "
+                          f"the runner GTT was already restructured -- {booking_qty} share(s) are "
+                          f"currently unprotected by any stop-loss (real holdings {holding.quantity}, "
+                          f"only {remaining_qty} covered by the new GTT). Result: {booking_result}")
+                    partial_note = (f" | Partial profit booking SELL FAILED after GTT restructure -- "
+                                     f"{booking_qty} share(s) currently unprotected, needs attention")
+            except Exception as e:
+                print(f"WARNING: could not restructure GTT for partial profit booking on "
+                      f"{holding.symbol}: {e} -- original stop-loss/target (covering the full "
+                      f"position) remain in place, nothing was sold.")
+                partial_note = " | Partial profit booking FAILED, original GTT unaffected"
+
+    # --- Trailing stop -- uses `known`/current_quantity, which may
+    # already reflect a partial-profit restructure from just above. ---
+    if has_gtt_state:
+        if highest_high is None:
+            highest_high = _highest_high_since(price_history, known.opened_at)
+        if highest_high is not None:
+            new_stop = compute_trailing_stop_update(
+                entry_price=known.entry_price, current_stop=known.stop_loss,
+                target=known.target, highest_high_since_entry=highest_high,
+                activation_fraction=settings.TRAILING_STOP_ACTIVATION_FRACTION,
+                lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
+            )
+            if new_stop is not None and _trailing_stop_would_be_rejected(new_stop, holding.last_price):
+                # Kite requires a GTT's stop-loss to sit BELOW current price when
+                # placed (the two triggers must bracket the current price). new_stop
+                # was computed from the highest price reached since entry -- a past
+                # peak -- so if price has since pulled back to/through that level,
+                # attempting to place it would be rejected outright (seen live: Kite
+                # error "Trigger prices must bracket current price"). Skip this cycle
+                # rather than retry a call guaranteed to fail; the ORIGINAL stop is
+                # completely unaffected, so nothing is lost by waiting -- if price
+                # moves back up past this level, the ratchet will succeed next check.
+                print(f"  Trailing stop would raise to Rs.{new_stop:,.2f}, but price has since "
+                      f"pulled back to Rs.{holding.last_price:,.2f} -- skipping this cycle, "
+                      f"original stop-loss (Rs.{known.stop_loss:,.2f}) unaffected.")
+                trailing_note = " | Trailing stop deferred (price pulled back below the computed level)"
+            elif new_stop is not None:
+                trailing_signal = Signal(
+                    symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
+                    stop_loss=new_stop, target=known.target, confidence=assessment.confidence,
+                    strategy_name="trailing_stop", reason="Trailing stop ratchet",
+                )
+                try:
+                    new_gtt_id = execution_engine.replace_gtt(known.gtt_id, ApprovedTrade(
+                        signal=trailing_signal, quantity=current_quantity,
+                        capital_deployed=current_quantity * known.entry_price,
+                    ))
+                    update_position_stop(holding.symbol, new_stop, new_gtt_id)
+                    trailing_note = f" | Trailing stop raised to Rs.{new_stop:,.2f} (locking in gain)"
+                    print(f"  Trailing stop raised: Rs.{known.stop_loss:,.2f} -> Rs.{new_stop:,.2f}")
+                except Exception as e:
+                    print(f"WARNING: could not raise trailing stop for {holding.symbol}: {e} "
+                          f"-- original stop-loss (Rs.{known.stop_loss:,.2f}) remains in place.")
+                    trailing_note = " | Trailing stop raise FAILED, original stop-loss unaffected"
+
+    return (f"{prefix}held ({assessment.verdict}, {assessment.confidence:.0%} confidence)"
+            f"{partial_note}{trailing_note}"), False
+
+
 def main():
     force_paper = parse_cli_args()
     live_trading = settings.LIVE_TRADING and not force_paper
@@ -212,102 +403,30 @@ def main():
 
     for holding in holdings:
         print(f"\nChecking {holding.symbol}...")
-        price_pnl = price_pnl_text(holding)
-        prefix = f"- {holding.symbol}: {price_pnl} -- " if price_pnl else f"- {holding.symbol}: "
-
-        assessment, price_history = evaluate_holding(
-            holding.symbol, regime_series, active_strategies, entry_price=holding.average_price,
-        )
-        if assessment is None:
-            checked_lines.append(f"{prefix}could not complete a fresh check -- left as-is.")
+        try:
+            checked_line, exited = check_holding(
+                holding, regime_series, active_strategies, known_positions, execution_engine,
+            )
+        except Exception as e:
+            # A single symbol's check must never take down monitoring for
+            # every other position -- seen live: an occasional Claude API
+            # response shape (a "thinking" block with no text block, a
+            # genuine transient response, not a ClaudeAPIError this file
+            # otherwise catches) crashed the whole process mid-run and
+            # silently skipped every remaining symbol's trailing-stop/
+            # partial-profit/exit checks for that entire cycle. Existing
+            # GTT stop-loss/target protection is completely unaffected
+            # either way -- this only means today's judgment-layer check
+            # for this one symbol didn't run; it'll run again next cycle.
+            print(f"WARNING: unexpected error while checking {holding.symbol}: {e} -- skipping this "
+                  f"symbol this cycle, its GTT stop-loss/target (if any) is unaffected.")
+            checked_lines.append(f"- {holding.symbol}: unexpected error during check ({e}) -- "
+                                  f"skipped this cycle, GTT unaffected.")
             continue
 
-        print(f"  Fresh verdict: {assessment.verdict.upper()} ({assessment.confidence:.0%})")
-
-        if assessment.verdict == "unfavorable":
-            known = known_positions.get(holding.symbol)
-            gtt_id = known.gtt_id if known else None
-
-            exit_signal = Signal(
-                symbol=holding.symbol, direction="SELL", entry_price=holding.average_price,
-                stop_loss=holding.average_price, target=holding.average_price, confidence=assessment.confidence,
-                strategy_name="monitor_positions", reason=assessment.reasoning,
-            )
-            sell_result = execution_engine.place_order(ApprovedTrade(
-                signal=exit_signal, quantity=holding.quantity,
-                capital_deployed=holding.quantity * holding.average_price,
-            ))
-            print(f"  Exited early: {sell_result}")
-
-            if sell_result.get("status") == "success":
-                if gtt_id is not None:
-                    execution_engine.cancel_gtt(gtt_id)
-
-                exited_symbols.append(holding.symbol)
-                checked_lines.append(
-                    f"{prefix}EXITED EARLY (verdict turned unfavorable, "
-                    f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"
-                )
-            else:
-                # The exit SELL itself failed -- do NOT cancel the GTT and do NOT
-                # mark this as exited. This position is still really held, so its
-                # GTT stop-loss/target must stay in place; treating a failed exit
-                # as successful would leave a real position with no protection.
-                print(f"WARNING: exit SELL order for {holding.symbol} did not succeed -- "
-                      f"GTT left in place, still counted as held. Result: {sell_result}")
-                checked_lines.append(
-                    f"{prefix}verdict turned unfavorable ({assessment.confidence:.0%} "
-                    f"confidence) but the exit order failed -- still held, GTT stop-loss/target "
-                    f"unaffected. {assessment.reasoning}"
-                )
-        else:
-            trailing_note = ""
-            known = known_positions.get(holding.symbol)
-            if known is not None and known.stop_loss is not None and known.target is not None and known.gtt_id is not None:
-                highest_high = _highest_high_since(price_history, known.opened_at)
-                if highest_high is not None:
-                    new_stop = compute_trailing_stop_update(
-                        entry_price=known.entry_price, current_stop=known.stop_loss,
-                        target=known.target, highest_high_since_entry=highest_high,
-                        activation_fraction=settings.TRAILING_STOP_ACTIVATION_FRACTION,
-                        lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
-                    )
-                    if new_stop is not None and _trailing_stop_would_be_rejected(new_stop, holding.last_price):
-                        # Kite requires a GTT's stop-loss to sit BELOW current price when
-                        # placed (the two triggers must bracket the current price). new_stop
-                        # was computed from the highest price reached since entry -- a past
-                        # peak -- so if price has since pulled back to/through that level,
-                        # attempting to place it would be rejected outright (seen live: Kite
-                        # error "Trigger prices must bracket current price"). Skip this cycle
-                        # rather than retry a call guaranteed to fail; the ORIGINAL stop is
-                        # completely unaffected, so nothing is lost by waiting -- if price
-                        # moves back up past this level, the ratchet will succeed next check.
-                        print(f"  Trailing stop would raise to Rs.{new_stop:,.2f}, but price has since "
-                              f"pulled back to Rs.{holding.last_price:,.2f} -- skipping this cycle, "
-                              f"original stop-loss (Rs.{known.stop_loss:,.2f}) unaffected.")
-                        trailing_note = " | Trailing stop deferred (price pulled back below the computed level)"
-                    elif new_stop is not None:
-                        trailing_signal = Signal(
-                            symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
-                            stop_loss=new_stop, target=known.target, confidence=assessment.confidence,
-                            strategy_name="trailing_stop", reason="Trailing stop ratchet",
-                        )
-                        try:
-                            new_gtt_id = execution_engine.replace_gtt(known.gtt_id, ApprovedTrade(
-                                signal=trailing_signal, quantity=holding.quantity,
-                                capital_deployed=holding.quantity * known.entry_price,
-                            ))
-                            update_position_stop(holding.symbol, new_stop, new_gtt_id)
-                            trailing_note = f" | Trailing stop raised to Rs.{new_stop:,.2f} (locking in gain)"
-                            print(f"  Trailing stop raised: Rs.{known.stop_loss:,.2f} -> Rs.{new_stop:,.2f}")
-                        except Exception as e:
-                            print(f"WARNING: could not raise trailing stop for {holding.symbol}: {e} "
-                                  f"-- original stop-loss (Rs.{known.stop_loss:,.2f}) remains in place.")
-                            trailing_note = " | Trailing stop raise FAILED, original stop-loss unaffected"
-
-            checked_lines.append(
-                f"{prefix}held ({assessment.verdict}, {assessment.confidence:.0%} confidence){trailing_note}"
-            )
+        checked_lines.append(checked_line)
+        if exited:
+            exited_symbols.append(holding.symbol)
 
     # Early exits placed above still show up in Kite holdings until the sell
     # settles, so reconciliation can't diff them out yet by comparing against
