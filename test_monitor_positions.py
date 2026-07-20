@@ -1,8 +1,14 @@
 """
 Mock-based unit tests for monitor_positions.py's price_pnl_text() -- the
 short "current price (P&L Rs., P&L %)" fragment shown on every
-position-check Telegram line -- and _highest_high_since(), which arms the
-trailing stop (risk/trailing_stop.py). Run with:
+position-check Telegram line -- _highest_high_since(), which arms the
+trailing stop (risk/trailing_stop.py) -- and
+_trailing_stop_would_be_rejected(), added after a real live failure:
+Kite rejected 3 real trailing-stop GTT placements ("Trigger prices must
+bracket current price") because the new stop (computed from the highest
+price since entry, a past peak) had ended up above where price had since
+pulled back to -- Kite requires a fresh GTT's stop-loss to sit below
+current price when placed. Run with:
 
     python test_monitor_positions.py
 """
@@ -11,7 +17,7 @@ import unittest
 import pandas as pd
 
 from execution.positions import Holding
-from monitor_positions import price_pnl_text, _highest_high_since
+from monitor_positions import price_pnl_text, _highest_high_since, _trailing_stop_would_be_rejected
 
 
 class TestPricePnlText(unittest.TestCase):
@@ -61,6 +67,24 @@ class TestHighestHighSince(unittest.TestCase):
         df = self._history([100, 105])  # 2026-07-01, 2026-07-02
         opened_at = "2026-08-01T09:15:00"
         self.assertIsNone(_highest_high_since(df, opened_at))
+
+
+class TestTrailingStopWouldBeRejected(unittest.TestCase):
+    def test_real_live_case_geship(self):
+        # actual values from the live GESHIP.NS failure
+        self.assertTrue(_trailing_stop_would_be_rejected(1351.50, 1338.10))
+
+    def test_new_stop_below_current_price_is_placeable(self):
+        self.assertFalse(_trailing_stop_would_be_rejected(1351.50, 1400.00))
+
+    def test_new_stop_exactly_equal_to_current_price_is_rejected(self):
+        # Kite requires the stop to be strictly below current price
+        self.assertTrue(_trailing_stop_would_be_rejected(100.0, 100.0))
+
+    def test_missing_current_price_assumes_placeable(self):
+        # last_price can be None -- the real GTT call is still the
+        # authoritative check either way, this is a best-effort pre-check
+        self.assertFalse(_trailing_stop_would_be_rejected(1351.50, None))
 
 
 if __name__ == "__main__":

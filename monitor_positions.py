@@ -48,6 +48,22 @@ from cio.plan_state import load_monthly_plan, effective_active_strategies
 from reporting.telegram_notifier import send_telegram_message
 
 
+def _trailing_stop_would_be_rejected(new_stop: float, current_price) -> bool:
+    """
+    True if placing a GTT at new_stop would fail Kite's "trigger prices must
+    bracket current price" validation -- i.e. new_stop is at or above the
+    current market price. new_stop is computed from the highest price
+    reached since entry (a past peak), so if price has since pulled back to
+    or through that level, submitting it is guaranteed to be rejected
+    outright rather than silently accepted at a wrong level. Returns False
+    (assume placeable) if current_price isn't available -- the actual GTT
+    call is still the authoritative check either way.
+    """
+    if current_price is None:
+        return False
+    return new_stop >= current_price
+
+
 def _highest_high_since(price_history, opened_at_iso: str):
     """
     Highest daily High from a position's entry date to today, used to arm
@@ -256,7 +272,21 @@ def main():
                         activation_fraction=settings.TRAILING_STOP_ACTIVATION_FRACTION,
                         lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
                     )
-                    if new_stop is not None:
+                    if new_stop is not None and _trailing_stop_would_be_rejected(new_stop, holding.last_price):
+                        # Kite requires a GTT's stop-loss to sit BELOW current price when
+                        # placed (the two triggers must bracket the current price). new_stop
+                        # was computed from the highest price reached since entry -- a past
+                        # peak -- so if price has since pulled back to/through that level,
+                        # attempting to place it would be rejected outright (seen live: Kite
+                        # error "Trigger prices must bracket current price"). Skip this cycle
+                        # rather than retry a call guaranteed to fail; the ORIGINAL stop is
+                        # completely unaffected, so nothing is lost by waiting -- if price
+                        # moves back up past this level, the ratchet will succeed next check.
+                        print(f"  Trailing stop would raise to Rs.{new_stop:,.2f}, but price has since "
+                              f"pulled back to Rs.{holding.last_price:,.2f} -- skipping this cycle, "
+                              f"original stop-loss (Rs.{known.stop_loss:,.2f}) unaffected.")
+                        trailing_note = " | Trailing stop deferred (price pulled back below the computed level)"
+                    elif new_stop is not None:
                         trailing_signal = Signal(
                             symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
                             stop_loss=new_stop, target=known.target, confidence=assessment.confidence,
