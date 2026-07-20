@@ -26,7 +26,8 @@ is a no-op.
 Kite's actual (undocumented, web-only) login flow, reverse-engineered from
 the browser's network requests:
 1. POST https://kite.zerodha.com/api/login with user_id/password -> a
-   request_id and a twofa_type (normally "totp").
+   request_id and a twofa_type ("app_code" for an authenticator-app TOTP
+   code -- confirmed live; "sms" is the other option Kite offers).
 2. POST https://kite.zerodha.com/api/twofa with that request_id and a fresh
    TOTP code -> sets session cookies on success.
 3. GET the same Connect login URL a human would open
@@ -103,7 +104,12 @@ def auto_login(api_key: str, api_secret: str, user_id: str, password: str, totp_
         "user_id": user_id,
         "request_id": request_id,
         "twofa_value": totp_code,
-        "twofa_type": "totp",
+        # "app_code" is Kite's actual label for an authenticator-app TOTP
+        # code (confirmed live: /api/login's response includes
+        # twofa_type="app_code" as the expected value, alongside "sms" as
+        # the other option) -- "totp" was simply the wrong literal string,
+        # unrelated to the TOTP code generation itself (still correct).
+        "twofa_type": "app_code",
     })
     twofa_data = twofa_resp.json()
     if twofa_resp.status_code != 200 or not twofa_data.get("status") == "success":

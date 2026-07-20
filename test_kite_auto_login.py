@@ -47,6 +47,31 @@ class TestAutoLogin(unittest.TestCase):
         self.assertEqual(token, "fresh_access_token")
         mock_exchange.assert_called_once_with("api_key", "api_secret", "abc123")
 
+    @patch("auth.kite_auto_login.exchange_request_token", return_value="fresh_access_token")
+    @patch("auth.kite_auto_login.requests.Session")
+    def test_twofa_request_uses_app_code_not_totp(self, mock_session_cls, mock_exchange):
+        # Regression test for a real incident: this sent "totp" as
+        # twofa_type, but Kite's actual API expects "app_code" for an
+        # authenticator-app code (confirmed live by inspecting a real
+        # /api/login response: twofa_type="app_code", twofa_types=
+        # ["app_code", "sms"]) -- "totp" was simply the wrong literal
+        # string and every automated login failed with "The requested 2FA
+        # type is not available" until this was fixed.
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.post.side_effect = [
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "app_code"}}),
+            _resp(200, {"status": "success"}),
+        ]
+        session.get.return_value = _resp(
+            302, headers={"Location": "http://127.0.0.1?request_token=abc123&action=login"}
+        )
+
+        auto_login("api_key", "api_secret", "AB1234", "pw", "BASE32SECRET")
+
+        twofa_call_kwargs = session.post.call_args_list[1][1]
+        self.assertEqual(twofa_call_kwargs["data"]["twofa_type"], "app_code")
+
     @patch("auth.kite_auto_login.requests.Session")
     def test_missing_credentials_raises(self, mock_session_cls):
         with self.assertRaises(RuntimeError):
