@@ -252,9 +252,9 @@ def main():
                 if highest_high is not None:
                     new_stop = compute_trailing_stop_update(
                         entry_price=known.entry_price, current_stop=known.stop_loss,
-                        highest_high_since_entry=highest_high,
-                        activation_pct=settings.TRAILING_STOP_ACTIVATION_PCT,
-                        lock_in_pct=settings.TRAILING_STOP_LOCK_IN_PCT,
+                        target=known.target, highest_high_since_entry=highest_high,
+                        activation_fraction=settings.TRAILING_STOP_ACTIVATION_FRACTION,
+                        lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
                     )
                     if new_stop is not None:
                         trailing_signal = Signal(
