@@ -92,6 +92,14 @@ def run_backtest(symbol: str, price_history: pd.DataFrame, strategy, risk_manage
         window = price_history.iloc[: i + 1]  # only data up to and including "today"
         today_date = str(price_history.index[i].date())
         today_row = price_history.iloc[i]
+        # Real run_daily.py builds a fresh RiskManager every run, so
+        # realized_pnl_today implicitly resets every real trading day.
+        # risk_manager here is deliberately reused across this whole
+        # symbol's simulated history -- without this explicit reset, a
+        # losing streak anywhere in a multi-year fetch window can trip the
+        # 3% daily-loss circuit breaker permanently and silently suppress
+        # every later trade for this symbol for the rest of the backtest.
+        risk_manager.reset_day()
 
         if open_trade is not None:
             hit_stop = today_row["Low"] <= open_trade.signal.stop_loss

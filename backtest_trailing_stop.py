@@ -67,6 +67,15 @@ def run_symbol(symbol, price_history, strategy, regime_series, risk_manager_fact
         window = price_history.iloc[: i + 1]
         today_date = price_history.index[i].date()
         today_row = price_history.iloc[i]
+        # Real run_daily.py builds a fresh RiskManager every run, so
+        # realized_pnl_today implicitly resets every real trading day.
+        # risk_manager here is deliberately reused across this whole
+        # symbol's simulated history -- without this explicit reset, a
+        # losing streak anywhere in the (long) fetch window can trip the 3%
+        # daily-loss circuit breaker permanently and silently suppress
+        # every later trade for this symbol, including within the actual
+        # reporting window (a real bug, caught via the portfolio backtest).
+        risk_manager.reset_day()
 
         if open_trade is not None:
             highest_high_since_entry = max(highest_high_since_entry, float(today_row["High"]))
