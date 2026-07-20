@@ -27,22 +27,42 @@ own --paper override semantics.
 """
 
 import sys
+from datetime import datetime
 
 from config import settings
 from data.fetch_historical import fetch_all, fetch_nifty
 from strategies.base import Signal
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals
+from strategies.price_action import compute_price_action
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
+from risk.trailing_stop import compute_trailing_stop_update
 from execution.execution_engine import ExecutionEngine
 from execution.positions import fetch_all_holdings
-from execution.position_state import reconcile_closed_positions, load_known_positions
+from execution.position_state import reconcile_closed_positions, load_known_positions, update_position_stop
 from auth.kite_auto_login import ensure_fresh_kite_session
 from cio.plan_state import load_monthly_plan, effective_active_strategies
 from reporting.telegram_notifier import send_telegram_message
+
+
+def _highest_high_since(price_history, opened_at_iso: str):
+    """
+    Highest daily High from a position's entry date to today, used to arm
+    the trailing stop -- compares by DATE only (not full timestamp) since
+    price_history's index (from yfinance) and opened_at (server local time)
+    aren't guaranteed to share a timezone, and date-level granularity is all
+    a daily-candle trailing stop needs anyway. Returns None if no rows fall
+    on/after the entry date (shouldn't normally happen for a real open
+    position, but a stale/corrupted opened_at shouldn't crash monitoring).
+    """
+    opened_date = datetime.fromisoformat(opened_at_iso).date()
+    subset = price_history.loc[price_history.index.date >= opened_date]
+    if subset.empty:
+        return None
+    return float(subset["High"].max())
 
 
 def parse_cli_args():
@@ -66,29 +86,36 @@ def price_pnl_text(holding) -> str:
     return f"Rs.{holding.last_price:,.2f} ({pnl_pct:+.2f}%, Rs.{pnl:+,.2f})"
 
 
-def evaluate_holding(symbol: str, regime_series, active_strategies: list):
+def evaluate_holding(symbol: str, regime_series, active_strategies: list, entry_price: float = None):
     """
     Re-runs the same Technical + Fundamental + News + Research Analyst
     pipeline run_daily.py uses for new candidates, against an already-held
-    symbol. Returns the ResearchAssessment, or None if price history/
-    fundamentals couldn't be fetched (treated as "skip this check", not as
-    an exit signal -- a data-fetch hiccup shouldn't trigger a real sell).
+    symbol -- now also including price-action facts (recent move magnitude,
+    position vs moving averages, volume) so a position quietly breaking down
+    isn't invisible just because neither strategy generates a SELL signal.
+
+    Returns (ResearchAssessment, price_history), or (None, None) if price
+    history/fundamentals couldn't be fetched (treated as "skip this check",
+    not as an exit signal -- a data-fetch hiccup shouldn't trigger a real
+    sell). price_history is returned alongside the assessment so the caller
+    can also run the trailing-stop check without fetching it a second time.
     """
     try:
         price_history = fetch_all([symbol], period="1y").get(symbol)
     except Exception as e:
         print(f"WARNING: could not fetch price history for {symbol}: {e}")
-        return None
+        return None, None
     if price_history is None or len(price_history) < 60:
-        return None
+        return None, None
 
     technical_signals = get_technical_signals(symbol, price_history, regime_series, active_strategies)
+    price_action = compute_price_action(price_history, entry_price=entry_price)
 
     try:
         metrics = fetch_fundamentals(symbol)
     except Exception as e:
         print(f"WARNING: could not fetch fundamentals for {symbol}: {e}")
-        return None
+        return None, None
     fundamentals_result = check_health(symbol, metrics, settings.FUNDAMENTALS_CRITERIA)
 
     if settings.USE_NEWS_AGENT:
@@ -101,8 +128,9 @@ def evaluate_holding(symbol: str, regime_series, active_strategies: list):
     else:
         news_assessment = disabled_news_assessment(symbol)
 
-    return analyze_stock(symbol, technical_signals, fundamentals_result, news_assessment,
-                          api_key=settings.ANTHROPIC_API_KEY)
+    assessment = analyze_stock(symbol, technical_signals, fundamentals_result, news_assessment,
+                                api_key=settings.ANTHROPIC_API_KEY, price_action=price_action)
+    return assessment, price_history
 
 
 def main():
@@ -171,7 +199,9 @@ def main():
         price_pnl = price_pnl_text(holding)
         prefix = f"- {holding.symbol}: {price_pnl} -- " if price_pnl else f"- {holding.symbol}: "
 
-        assessment = evaluate_holding(holding.symbol, regime_series, active_strategies)
+        assessment, price_history = evaluate_holding(
+            holding.symbol, regime_series, active_strategies, entry_price=holding.average_price,
+        )
         if assessment is None:
             checked_lines.append(f"{prefix}could not complete a fresh check -- left as-is.")
             continue
@@ -215,8 +245,38 @@ def main():
                     f"unaffected. {assessment.reasoning}"
                 )
         else:
+            trailing_note = ""
+            known = known_positions.get(holding.symbol)
+            if known is not None and known.stop_loss is not None and known.target is not None and known.gtt_id is not None:
+                highest_high = _highest_high_since(price_history, known.opened_at)
+                if highest_high is not None:
+                    new_stop = compute_trailing_stop_update(
+                        entry_price=known.entry_price, current_stop=known.stop_loss,
+                        highest_high_since_entry=highest_high,
+                        activation_pct=settings.TRAILING_STOP_ACTIVATION_PCT,
+                        lock_in_pct=settings.TRAILING_STOP_LOCK_IN_PCT,
+                    )
+                    if new_stop is not None:
+                        trailing_signal = Signal(
+                            symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
+                            stop_loss=new_stop, target=known.target, confidence=assessment.confidence,
+                            strategy_name="trailing_stop", reason="Trailing stop ratchet",
+                        )
+                        try:
+                            new_gtt_id = execution_engine.replace_gtt(known.gtt_id, ApprovedTrade(
+                                signal=trailing_signal, quantity=holding.quantity,
+                                capital_deployed=holding.quantity * known.entry_price,
+                            ))
+                            update_position_stop(holding.symbol, new_stop, new_gtt_id)
+                            trailing_note = f" | Trailing stop raised to Rs.{new_stop:,.2f} (locking in gain)"
+                            print(f"  Trailing stop raised: Rs.{known.stop_loss:,.2f} -> Rs.{new_stop:,.2f}")
+                        except Exception as e:
+                            print(f"WARNING: could not raise trailing stop for {holding.symbol}: {e} "
+                                  f"-- original stop-loss (Rs.{known.stop_loss:,.2f}) remains in place.")
+                            trailing_note = " | Trailing stop raise FAILED, original stop-loss unaffected"
+
             checked_lines.append(
-                f"{prefix}held ({assessment.verdict}, {assessment.confidence:.0%} confidence)"
+                f"{prefix}held ({assessment.verdict}, {assessment.confidence:.0%} confidence){trailing_note}"
             )
 
     # Early exits placed above still show up in Kite holdings until the sell

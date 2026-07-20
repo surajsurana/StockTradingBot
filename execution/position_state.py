@@ -36,6 +36,14 @@ class KnownPosition:
     entry_price: float
     gtt_id: int | None
     opened_at: str
+    # Added for the trailing-stop feature -- default None so positions
+    # recorded by an older version of this code (before these fields
+    # existed) still load fine from a pre-existing known_positions.json;
+    # the trailing stop simply skips a position until these are known
+    # (backfilled once from Kite's real GTT trigger, or set at entry from
+    # here on for every new position).
+    stop_loss: float | None = None
+    target: float | None = None
 
 
 def load_known_positions(path: str = KNOWN_POSITIONS_PATH) -> dict:
@@ -55,13 +63,35 @@ def save_known_positions(positions: dict, path: str = KNOWN_POSITIONS_PATH):
         json.dump({symbol: asdict(p) for symbol, p in positions.items()}, f, indent=2)
 
 
-def record_new_position(symbol: str, quantity: int, entry_price: float, gtt_id, path: str = KNOWN_POSITIONS_PATH):
+def record_new_position(symbol: str, quantity: int, entry_price: float, gtt_id,
+                         stop_loss: float | None = None, target: float | None = None,
+                         path: str = KNOWN_POSITIONS_PATH):
     """Called right after a new BUY (and its GTT) are placed."""
     positions = load_known_positions(path)
     positions[symbol] = KnownPosition(
         symbol=symbol, quantity=quantity, entry_price=entry_price,
         gtt_id=gtt_id, opened_at=datetime.now().isoformat(),
+        stop_loss=stop_loss, target=target,
     )
+    save_known_positions(positions, path)
+
+
+def update_position_stop(symbol: str, new_stop_loss: float, new_gtt_id,
+                          path: str = KNOWN_POSITIONS_PATH):
+    """
+    Called after the trailing stop (risk/trailing_stop.py) ratchets a
+    position's stop-loss up and monitor_positions.py has replaced the real
+    GTT order on Kite -- updates the locally-known stop_loss and gtt_id to
+    match. No-op (does not raise) if the symbol isn't currently known, since
+    a position could have closed between the trailing-stop check and this
+    call in a genuinely concurrent run -- not something worth crashing over.
+    """
+    positions = load_known_positions(path)
+    known = positions.get(symbol)
+    if known is None:
+        return
+    known.stop_loss = new_stop_loss
+    known.gtt_id = new_gtt_id
     save_known_positions(positions, path)
 
 

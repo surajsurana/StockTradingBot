@@ -80,6 +80,7 @@ from data.fetch_historical import fetch_all, fetch_nifty
 from data.nifty500_universe import get_nifty500_symbols
 from strategies.market_regime import build_regime_series
 from strategies.technical_agent import get_technical_signals, get_technical_diagnostics, first_available_signal
+from strategies.price_action import compute_price_action
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from macro.macro_strategist import assess_macro_conditions
@@ -224,6 +225,7 @@ def run_stage1_scan(symbols: list, regime_series, active_strategies: list) -> tu
             "symbol": symbol,
             "technical_signals": technical_signals,
             "fundamentals_result": fundamentals_result,
+            "price_history": price_history,
         })
 
     print(f"Stage 1 complete: {len(survivors)} symbol(s) passed both filters and move to Stage 2 "
@@ -332,6 +334,7 @@ def run_stage2_research(survivors: list) -> list:
         symbol = item["symbol"]
         technical_signals = item["technical_signals"]
         fundamentals_result = item["fundamentals_result"]
+        price_history = item["price_history"]
 
         print(f"  Researching {symbol}...")
         if settings.USE_NEWS_AGENT:
@@ -343,9 +346,13 @@ def run_stage2_research(survivors: list) -> list:
                                                    max_items=settings.NEWS_MAX_ARTICLES)
         else:
             news_assessment = disabled_news_assessment(symbol)
+        # entry_price=None -- this is a fresh candidate, not a held position
+        # yet, so there's no "since entry" figure to report, only the
+        # recent-move/MA/volume facts.
+        price_action = compute_price_action(price_history, entry_price=None)
         research_result = analyze_stock(
             symbol, technical_signals, fundamentals_result, news_assessment,
-            api_key=settings.ANTHROPIC_API_KEY,
+            api_key=settings.ANTHROPIC_API_KEY, price_action=price_action,
         )
         print(f"    Verdict: {research_result.verdict.upper()} ({research_result.confidence:.0%})")
 
@@ -609,6 +616,7 @@ def main():
                 if result.get("status") == "success":
                     record_new_position(
                         signal.symbol, decision.quantity, signal.entry_price, result.get("gtt_id"),
+                        stop_loss=signal.stop_loss, target=signal.target,
                     )
                 else:
                     # Portfolio Manager approved this trade, but the actual Kite

@@ -15,6 +15,7 @@ from unittest.mock import patch, MagicMock
 from execution.position_state import (
     record_new_position, load_known_positions, save_known_positions,
     reconcile_closed_positions, _log_closed_trade, KnownPosition,
+    update_position_stop,
 )
 from execution.positions import Holding
 
@@ -55,6 +56,60 @@ class TestKnownPositionsRoundTrip(unittest.TestCase):
 
         positions = load_known_positions(self.path)
         self.assertEqual(set(positions.keys()), {"INFY.NS", "TCS.NS"})
+
+    def test_stop_loss_and_target_are_stored(self):
+        record_new_position("INFY.NS", 10, 1500.0, gtt_id=1,
+                             stop_loss=1455.0, target=1650.0, path=self.path)
+
+        positions = load_known_positions(self.path)
+        self.assertEqual(positions["INFY.NS"].stop_loss, 1455.0)
+        self.assertEqual(positions["INFY.NS"].target, 1650.0)
+
+    def test_stop_loss_and_target_default_to_none(self):
+        record_new_position("INFY.NS", 10, 1500.0, gtt_id=1, path=self.path)
+
+        positions = load_known_positions(self.path)
+        self.assertIsNone(positions["INFY.NS"].stop_loss)
+        self.assertIsNone(positions["INFY.NS"].target)
+
+    def test_loading_legacy_json_without_new_fields_still_works(self):
+        # A known_positions.json written before stop_loss/target existed --
+        # must not crash on load, e.g. the real VPS state pre-deploy.
+        import json
+        with open(self.path, "w") as f:
+            json.dump({"INFY.NS": {"symbol": "INFY.NS", "quantity": 10, "entry_price": 1500.0,
+                                    "gtt_id": 1, "opened_at": "2026-07-01T00:00:00"}}, f)
+
+        positions = load_known_positions(self.path)
+        self.assertIsNone(positions["INFY.NS"].stop_loss)
+        self.assertIsNone(positions["INFY.NS"].target)
+
+
+class TestUpdatePositionStop(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        self.tmp.close()
+        self.path = self.tmp.name
+
+    def tearDown(self):
+        if os.path.exists(self.path):
+            os.unlink(self.path)
+
+    def test_updates_stop_loss_and_gtt_id(self):
+        record_new_position("INFY.NS", 10, 1500.0, gtt_id=1,
+                             stop_loss=1455.0, target=1650.0, path=self.path)
+
+        update_position_stop("INFY.NS", 1515.0, new_gtt_id=99, path=self.path)
+
+        positions = load_known_positions(self.path)
+        self.assertEqual(positions["INFY.NS"].stop_loss, 1515.0)
+        self.assertEqual(positions["INFY.NS"].gtt_id, 99)
+        self.assertEqual(positions["INFY.NS"].target, 1650.0)  # unchanged
+
+    def test_unknown_symbol_is_a_no_op(self):
+        # should not raise even though nothing is known yet
+        update_position_stop("GHOST.NS", 100.0, new_gtt_id=1, path=self.path)
+        self.assertEqual(load_known_positions(self.path), {})
 
 
 class TestLogClosedTrade(unittest.TestCase):

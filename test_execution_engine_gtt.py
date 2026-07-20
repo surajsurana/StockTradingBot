@@ -8,9 +8,9 @@ _place_live_order). Run with:
 
 import json
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 
-from execution.execution_engine import ExecutionEngine
+from execution.execution_engine import ExecutionEngine, fetch_gtt_trigger
 from risk.risk_manager import ApprovedTrade
 from strategies.base import Signal
 
@@ -203,6 +203,63 @@ class TestCancelGtt(unittest.TestCase):
 
         called_url = mock_delete.call_args[0][0]
         self.assertEqual(called_url, "https://api.kite.trade/gtt/triggers/4242")
+
+
+class TestReplaceGtt(unittest.TestCase):
+    """Used by the trailing stop (risk/trailing_stop.py, wired in via
+    monitor_positions.py) to move a position's stop-loss up -- Kite has no
+    "modify trigger price" endpoint, only cancel + create."""
+
+    def setUp(self):
+        self.engine = ExecutionEngine(live_trading=True, api_key="api_key", access_token="token")
+
+    @patch("execution.execution_engine.requests.post")
+    @patch("execution.execution_engine.requests.delete")
+    def test_cancels_old_then_places_new_gtt(self, mock_delete, mock_post):
+        mock_delete.return_value = _resp(200, {"status": "success"})
+        mock_post.return_value = _resp(200, {"data": {"trigger_id": 5555}})
+        # a trailing-stop-ratcheted trade: stop raised to 1515 (locking in a gain), target unchanged
+        signal = Signal(symbol="INFY.NS", direction="BUY", entry_price=1500.0, stop_loss=1515.0,
+                         target=1650.0, confidence=0.7, strategy_name="trailing_stop", reason="ratchet")
+        trade = ApprovedTrade(signal=signal, quantity=10, capital_deployed=15000.0)
+
+        new_gtt_id = self.engine.replace_gtt(4242, trade)
+
+        mock_delete.assert_called_once_with("https://api.kite.trade/gtt/triggers/4242", headers=ANY)
+        self.assertEqual(new_gtt_id, 5555)
+        condition = json.loads(mock_post.call_args[1]["data"]["condition"])
+        self.assertEqual(condition["trigger_values"], [1515.0, 1650.0])
+
+    @patch("execution.execution_engine.requests.post")
+    @patch("execution.execution_engine.requests.delete")
+    def test_new_placement_failure_propagates(self, mock_delete, mock_post):
+        mock_delete.return_value = _resp(200, {"status": "success"})
+        mock_post.return_value = _resp(400, {"error_type": "InputException", "message": "bad request"})
+
+        with self.assertRaises(RuntimeError):
+            self.engine.replace_gtt(4242, _buy_trade())
+
+
+class TestFetchGttTrigger(unittest.TestCase):
+    @patch("execution.execution_engine.requests.get")
+    def test_returns_stop_loss_and_target_from_trigger_values(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": {"condition": {"trigger_values": [339.35, 410.70]}}})
+
+        result = fetch_gtt_trigger(327629126, "api_key", "token")
+
+        self.assertEqual(result, {"stop_loss": 339.35, "target": 410.70})
+
+    @patch("execution.execution_engine.requests.get")
+    def test_missing_trigger_returns_none(self, mock_get):
+        mock_get.return_value = _resp(404, {"error_type": "DataException"})
+
+        self.assertIsNone(fetch_gtt_trigger(999, "api_key", "token"))
+
+    @patch("execution.execution_engine.requests.get")
+    def test_malformed_condition_returns_none(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": {"condition": {}}})
+
+        self.assertIsNone(fetch_gtt_trigger(999, "api_key", "token"))
 
 
 if __name__ == "__main__":

@@ -59,6 +59,32 @@ def fetch_available_capital(api_key: str, access_token: str) -> float:
     return float(equity["net"])
 
 
+def fetch_gtt_trigger(gtt_id: int, api_key: str, access_token: str) -> dict | None:
+    """
+    Looks up a GTT's real current stop-loss/target from Kite directly
+    (GET /gtt/triggers/:id), rather than trusting local state -- used once
+    to backfill known_positions.json's new stop_loss/target fields for
+    positions opened before those fields existed, so the trailing stop has
+    a real, verified starting point instead of a guess. Returns
+    {"stop_loss": float, "target": float} (trigger_values is always
+    [stop_loss, target], the same order _place_gtt_exit writes them in), or
+    None if the trigger can't be found/fetched.
+    """
+    headers = {
+        "X-Kite-Version": "3",
+        "Authorization": f"token {api_key}:{access_token}",
+    }
+    resp = requests.get(f"https://api.kite.trade/gtt/triggers/{gtt_id}", headers=headers)
+    result = resp.json()
+    if resp.status_code != 200 or "data" not in result:
+        return None
+
+    trigger_values = result["data"].get("condition", {}).get("trigger_values")
+    if not trigger_values or len(trigger_values) != 2:
+        return None
+    return {"stop_loss": float(trigger_values[0]), "target": float(trigger_values[1])}
+
+
 def _round_to_tick(price: float, tick: float = 0.05) -> float:
     """NSE equity prices must be in multiples of 0.05."""
     return round(round(price / tick) * tick, 2)
@@ -295,3 +321,23 @@ class ExecutionEngine:
         result = resp.json()
         print(f"[GTT CANCELLED] id={gtt_id} status={resp.status_code} response={result}")
         return result
+
+    def replace_gtt(self, old_gtt_id: int, trade: ApprovedTrade) -> int:
+        """
+        Cancels an existing GTT and places a new one with trade's (updated)
+        stop_loss/target -- used by the trailing stop (risk/trailing_stop.py,
+        wired in via monitor_positions.py) to ratchet a position's stop-loss
+        up as it moves favorably, since Kite has no "modify a GTT trigger
+        price" endpoint, only create/cancel.
+
+        Cancels the OLD GTT first, then places the new one -- if placement
+        then fails, the position is briefly unprotected until the next
+        monitor_positions.py run retries, same accepted gap as the original
+        BUY-then-GTT sequence in _place_live_order (a failed safety-net GTT
+        after a successful BUY is surfaced loudly there, not silently
+        swallowed, and the same applies here: the caller must check the
+        return value / let a raised exception propagate rather than assume
+        success).
+        """
+        self.cancel_gtt(old_gtt_id)
+        return self._place_gtt_exit(trade)
