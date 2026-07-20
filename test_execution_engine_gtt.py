@@ -208,14 +208,17 @@ class TestCancelGtt(unittest.TestCase):
 class TestReplaceGtt(unittest.TestCase):
     """Used by the trailing stop (risk/trailing_stop.py, wired in via
     monitor_positions.py) to move a position's stop-loss up -- Kite has no
-    "modify trigger price" endpoint, only cancel + create."""
+    "modify trigger price" endpoint, only cancel + create. Places the NEW
+    GTT first and only cancels the OLD one on success -- see
+    test_new_placement_failure_leaves_old_gtt_untouched for the real
+    incident (2026-07-20) this ordering fixes."""
 
     def setUp(self):
         self.engine = ExecutionEngine(live_trading=True, api_key="api_key", access_token="token")
 
     @patch("execution.execution_engine.requests.post")
     @patch("execution.execution_engine.requests.delete")
-    def test_cancels_old_then_places_new_gtt(self, mock_delete, mock_post):
+    def test_places_new_then_cancels_old_gtt(self, mock_delete, mock_post):
         mock_delete.return_value = _resp(200, {"status": "success"})
         mock_post.return_value = _resp(200, {"data": {"trigger_id": 5555}})
         # a trailing-stop-ratcheted trade: stop raised to 1515 (locking in a gain), target unchanged
@@ -232,12 +235,23 @@ class TestReplaceGtt(unittest.TestCase):
 
     @patch("execution.execution_engine.requests.post")
     @patch("execution.execution_engine.requests.delete")
-    def test_new_placement_failure_propagates(self, mock_delete, mock_post):
-        mock_delete.return_value = _resp(200, {"status": "success"})
-        mock_post.return_value = _resp(400, {"error_type": "InputException", "message": "bad request"})
+    def test_new_placement_failure_leaves_old_gtt_untouched(self, mock_delete, mock_post):
+        # Regression test for a real incident: 3 live positions
+        # (GESHIP.NS, KPIL.NS, NTPC.NS) lost ALL stop-loss/target protection
+        # when a cancel-then-place ordering cancelled the old GTT
+        # successfully, then the new placement failed (Kite rejected it --
+        # "Trigger prices must bracket current price", since price had
+        # moved since the new stop was computed from a past peak). The
+        # position was left with NO active GTT until manually restored.
+        # Placing first means this failure must never reach the delete call
+        # at all.
+        mock_post.return_value = _resp(400, {"error_type": "InputException",
+                                              "message": "Trigger prices must bracket current price"})
 
         with self.assertRaises(RuntimeError):
             self.engine.replace_gtt(4242, _buy_trade())
+
+        mock_delete.assert_not_called()
 
 
 class TestFetchGttTrigger(unittest.TestCase):

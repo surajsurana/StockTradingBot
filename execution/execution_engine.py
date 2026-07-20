@@ -324,20 +324,25 @@ class ExecutionEngine:
 
     def replace_gtt(self, old_gtt_id: int, trade: ApprovedTrade) -> int:
         """
-        Cancels an existing GTT and places a new one with trade's (updated)
-        stop_loss/target -- used by the trailing stop (risk/trailing_stop.py,
-        wired in via monitor_positions.py) to ratchet a position's stop-loss
-        up as it moves favorably, since Kite has no "modify a GTT trigger
-        price" endpoint, only create/cancel.
+        Places a NEW GTT with trade's (updated) stop_loss/target, and only
+        cancels the OLD one once that succeeds -- used by the trailing stop
+        (risk/trailing_stop.py, wired in via monitor_positions.py) to ratchet
+        a position's stop-loss up as it moves favorably, since Kite has no
+        "modify a GTT trigger price" endpoint, only create/cancel.
 
-        Cancels the OLD GTT first, then places the new one -- if placement
-        then fails, the position is briefly unprotected until the next
-        monitor_positions.py run retries, same accepted gap as the original
-        BUY-then-GTT sequence in _place_live_order (a failed safety-net GTT
-        after a successful BUY is surfaced loudly there, not silently
-        swallowed, and the same applies here: the caller must check the
-        return value / let a raised exception propagate rather than assume
-        success).
+        Place-then-cancel, deliberately in that order: a real incident
+        (2026-07-20) did this the other way around (cancel-then-place) and
+        the new placement failed on a live, in-production edge case (Kite
+        rejects a GTT whose trigger prices don't bracket the CURRENT price,
+        which can happen if price has moved since the new stop was computed
+        from a past peak) -- leaving 3 real positions with the OLD GTT
+        already cancelled and NO new one in its place, i.e. completely
+        unprotected until manually fixed. Placing first means if the new
+        GTT is rejected for any reason, this raises before the old GTT is
+        ever touched, so the position always has at least one active GTT at
+        every point in time. Caller must not assume success without
+        checking the return value / letting a raised exception propagate.
         """
+        new_gtt_id = self._place_gtt_exit(trade)
         self.cancel_gtt(old_gtt_id)
-        return self._place_gtt_exit(trade)
+        return new_gtt_id
