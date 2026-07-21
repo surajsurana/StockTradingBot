@@ -35,7 +35,7 @@ class TestAutoLogin(unittest.TestCase):
         mock_session_cls.return_value = session
 
         session.post.side_effect = [
-            _resp(200, {"data": {"request_id": "req123"}}),                 # /api/login
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "totp"}}),  # /api/login
             _resp(200, {"status": "success"}),                              # /api/twofa
         ]
         session.get.return_value = _resp(
@@ -49,14 +49,18 @@ class TestAutoLogin(unittest.TestCase):
 
     @patch("auth.kite_auto_login.exchange_request_token", return_value="fresh_access_token")
     @patch("auth.kite_auto_login.requests.Session")
-    def test_twofa_request_uses_app_code_not_totp(self, mock_session_cls, mock_exchange):
-        # Regression test for a real incident: this sent "totp" as
-        # twofa_type, but Kite's actual API expects "app_code" for an
-        # authenticator-app code (confirmed live by inspecting a real
-        # /api/login response: twofa_type="app_code", twofa_types=
-        # ["app_code", "sms"]) -- "totp" was simply the wrong literal
-        # string and every automated login failed with "The requested 2FA
-        # type is not available" until this was fixed.
+    def test_twofa_request_uses_type_from_login_response_app_code(self, mock_session_cls, mock_exchange):
+        # Regression test for a real, two-part incident: (1) this originally
+        # hardcoded "totp" as twofa_type, but with only Kite's native
+        # app-code 2FA configured, the account's real /api/login response
+        # required "app_code" (twofa_types: ["app_code", "sms"]) -- fixed by
+        # hardcoding "app_code" instead. (2) That ALSO broke, the moment
+        # External 2FA TOTP was enabled on Kite's own site and the
+        # account's real response changed to require "totp" (twofa_types:
+        # ["totp", "app_code"]) -- proving hardcoding EITHER value is
+        # fragile. The real fix: read twofa_type from the login response
+        # and submit that back verbatim, never hardcode it. This test
+        # covers the "app_code" account state; the next test covers "totp".
         session = MagicMock()
         mock_session_cls.return_value = session
         session.post.side_effect = [
@@ -71,6 +75,37 @@ class TestAutoLogin(unittest.TestCase):
 
         twofa_call_kwargs = session.post.call_args_list[1][1]
         self.assertEqual(twofa_call_kwargs["data"]["twofa_type"], "app_code")
+
+    @patch("auth.kite_auto_login.exchange_request_token", return_value="fresh_access_token")
+    @patch("auth.kite_auto_login.requests.Session")
+    def test_twofa_request_uses_type_from_login_response_totp(self, mock_session_cls, mock_exchange):
+        # Same account, different 2FA state (External 2FA TOTP enabled) --
+        # proves the type is read dynamically, not hardcoded to whatever
+        # value happened to work last time.
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.post.side_effect = [
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "totp"}}),
+            _resp(200, {"status": "success"}),
+        ]
+        session.get.return_value = _resp(
+            302, headers={"Location": "http://127.0.0.1?request_token=abc123&action=login"}
+        )
+
+        auto_login("api_key", "api_secret", "AB1234", "pw", "BASE32SECRET")
+
+        twofa_call_kwargs = session.post.call_args_list[1][1]
+        self.assertEqual(twofa_call_kwargs["data"]["twofa_type"], "totp")
+
+    @patch("auth.kite_auto_login.requests.Session")
+    def test_missing_twofa_type_in_login_response_raises_clearly(self, mock_session_cls):
+        session = MagicMock()
+        mock_session_cls.return_value = session
+        session.post.return_value = _resp(200, {"data": {"request_id": "req123"}})  # no twofa_type at all
+
+        with self.assertRaises(RuntimeError) as ctx:
+            auto_login("api_key", "api_secret", "AB1234", "pw", "BASE32SECRET")
+        self.assertIn("twofa_type", str(ctx.exception))
 
     @patch("auth.kite_auto_login.requests.Session")
     def test_missing_credentials_raises(self, mock_session_cls):
@@ -93,7 +128,7 @@ class TestAutoLogin(unittest.TestCase):
         session = MagicMock()
         mock_session_cls.return_value = session
         session.post.side_effect = [
-            _resp(200, {"data": {"request_id": "req123"}}),
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "totp"}}),
             _resp(400, {"status": "error", "message": "Invalid TOTP"}),
         ]
 
@@ -106,7 +141,7 @@ class TestAutoLogin(unittest.TestCase):
         session = MagicMock()
         mock_session_cls.return_value = session
         session.post.side_effect = [
-            _resp(200, {"data": {"request_id": "req123"}}),
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "totp"}}),
             _resp(200, {"status": "success"}),
         ]
         # First hop stays on kite.zerodha.com, second hop has the token.
@@ -123,7 +158,7 @@ class TestAutoLogin(unittest.TestCase):
         session = MagicMock()
         mock_session_cls.return_value = session
         session.post.side_effect = [
-            _resp(200, {"data": {"request_id": "req123"}}),
+            _resp(200, {"data": {"request_id": "req123", "twofa_type": "totp"}}),
             _resp(200, {"status": "success"}),
         ]
         # Always redirects to itself, never carries a request_token -- simulates

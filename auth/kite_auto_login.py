@@ -26,8 +26,12 @@ is a no-op.
 Kite's actual (undocumented, web-only) login flow, reverse-engineered from
 the browser's network requests:
 1. POST https://kite.zerodha.com/api/login with user_id/password -> a
-   request_id and a twofa_type ("app_code" for an authenticator-app TOTP
-   code -- confirmed live; "sms" is the other option Kite offers).
+   request_id and the CURRENT twofa_type to submit -- this is read from the
+   response and used as-is, not hardcoded, since it changes depending on
+   the account's 2FA configuration (confirmed live: "app_code" with only
+   Kite's native app-code 2FA set up, "totp" once External 2FA TOTP is
+   also enabled on Kite's own site -- hardcoding either broke the moment
+   the account's setup changed).
 2. POST https://kite.zerodha.com/api/twofa with that request_id and a fresh
    TOTP code -> sets session cookies on success.
 3. GET the same Connect login URL a human would open
@@ -98,18 +102,27 @@ def auto_login(api_key: str, api_secret: str, user_id: str, password: str, totp_
             f"Common causes: wrong KITE_USER_ID/KITE_PASSWORD, or Kite added a new login step."
         )
     request_id = login_data["data"]["request_id"]
+    # Read the required twofa_type from THIS response rather than hardcoding
+    # a guess -- confirmed live that it changes depending on account state:
+    # with only Kite's native app-code 2FA configured it was "app_code"
+    # (twofa_types: ["app_code", "sms"]); after enabling External 2FA TOTP
+    # on Kite's own site, it became "totp" (twofa_types: ["totp",
+    # "app_code"]). Hardcoding either value breaks the moment the account's
+    # 2FA configuration changes -- using what Kite itself reports is the
+    # only version of this that isn't guaranteed to go stale again.
+    twofa_type = login_data["data"].get("twofa_type")
+    if not twofa_type:
+        raise RuntimeError(
+            f"Kite's login response didn't include a twofa_type to submit: {login_data}. "
+            f"Kite's login flow may have changed -- fall back to refresh_kite_token.py."
+        )
 
     totp_code = pyotp.TOTP(totp_secret).now()
     twofa_resp = session.post(TWOFA_URL, data={
         "user_id": user_id,
         "request_id": request_id,
         "twofa_value": totp_code,
-        # "app_code" is Kite's actual label for an authenticator-app TOTP
-        # code (confirmed live: /api/login's response includes
-        # twofa_type="app_code" as the expected value, alongside "sms" as
-        # the other option) -- "totp" was simply the wrong literal string,
-        # unrelated to the TOTP code generation itself (still correct).
-        "twofa_type": "app_code",
+        "twofa_type": twofa_type,
     })
     twofa_data = twofa_resp.json()
     if twofa_resp.status_code != 200 or not twofa_data.get("status") == "success":
