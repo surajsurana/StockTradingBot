@@ -15,9 +15,13 @@ current price when placed. Run with:
 
 import unittest
 import pandas as pd
+from unittest.mock import patch, MagicMock
 
 from execution.positions import Holding
-from monitor_positions import price_pnl_text, _highest_high_since, _trailing_stop_would_be_rejected
+from execution.position_state import KnownPosition
+from research.research_analyst import ResearchAssessment
+from monitor_positions import (price_pnl_text, _highest_high_since, _trailing_stop_would_be_rejected,
+                                check_holding)
 
 
 class TestPricePnlText(unittest.TestCase):
@@ -85,6 +89,103 @@ class TestTrailingStopWouldBeRejected(unittest.TestCase):
         # last_price can be None -- the real GTT call is still the
         # authoritative check either way, this is a best-effort pre-check
         self.assertFalse(_trailing_stop_would_be_rejected(1351.50, None))
+
+
+class TestCheckHoldingExitVerification(unittest.TestCase):
+    """
+    Regression tests for a real incident (PATANJALI.NS): monitor_positions.py
+    treated a merely-PLACED SELL order (Kite's order-placement response
+    "status": "success", meaning only "accepted") as proof the position had
+    actually closed, cancelled its GTT immediately, and the LIMIT order
+    (separately mispriced off cost basis instead of current market -- see
+    the entry_price test below) then sat open/unfilled for hours with the
+    position completely unprotected. check_holding() must only cancel the
+    GTT once the order is confirmed COMPLETE via is_order_complete().
+    """
+
+    def _holding(self, average_price=350.45, last_price=338.05, quantity=17):
+        return Holding(symbol="PATANJALI.NS", quantity=quantity,
+                        average_price=average_price, last_price=last_price)
+
+    def _unfavorable_assessment(self):
+        return ResearchAssessment(symbol="PATANJALI.NS", verdict="unfavorable",
+                                   confidence=0.62, reasoning="test reasoning")
+
+    def _known(self, gtt_id=12345):
+        return {"PATANJALI.NS": KnownPosition(symbol="PATANJALI.NS", quantity=17, entry_price=350.45,
+                                               gtt_id=gtt_id, opened_at="2026-07-01T00:00:00")}
+
+    @patch("monitor_positions.evaluate_holding")
+    def test_order_placed_but_not_filled_leaves_gtt_in_place(self, mock_evaluate):
+        mock_evaluate.return_value = (self._unfavorable_assessment(), None)
+        engine = MagicMock()
+        engine.place_order.return_value = {"status": "success", "data": {"order_id": "999"}}
+        engine.is_order_complete.return_value = False  # the real-incident case
+
+        line, exited = check_holding(self._holding(), regime_series=None, active_strategies=[],
+                                      known_positions=self._known(), execution_engine=engine)
+
+        engine.cancel_gtt.assert_not_called()
+        self.assertFalse(exited)
+        self.assertIn("not yet filled", line)
+
+    @patch("monitor_positions.evaluate_holding")
+    def test_order_confirmed_filled_cancels_gtt_and_reports_exited(self, mock_evaluate):
+        mock_evaluate.return_value = (self._unfavorable_assessment(), None)
+        engine = MagicMock()
+        engine.place_order.return_value = {"status": "success", "data": {"order_id": "999"}}
+        engine.is_order_complete.return_value = True
+
+        line, exited = check_holding(self._holding(), regime_series=None, active_strategies=[],
+                                      known_positions=self._known(), execution_engine=engine)
+
+        engine.cancel_gtt.assert_called_once_with(12345)
+        self.assertTrue(exited)
+        self.assertIn("EXITED EARLY", line)
+
+    @patch("monitor_positions.evaluate_holding")
+    def test_placement_failure_outright_leaves_gtt_in_place(self, mock_evaluate):
+        mock_evaluate.return_value = (self._unfavorable_assessment(), None)
+        engine = MagicMock()
+        engine.place_order.return_value = {"status": "error", "message": "insufficient margin"}
+
+        line, exited = check_holding(self._holding(), regime_series=None, active_strategies=[],
+                                      known_positions=self._known(), execution_engine=engine)
+
+        engine.cancel_gtt.assert_not_called()
+        engine.is_order_complete.assert_not_called()  # nothing to check -- it was never placed
+        self.assertFalse(exited)
+        self.assertIn("exit order failed", line)
+
+    @patch("monitor_positions.evaluate_holding")
+    def test_exit_priced_off_current_market_not_cost_basis(self, mock_evaluate):
+        # Real incident: PATANJALI's average_price (350.45) was well above
+        # its current market price (338.05) after a decline -- pricing the
+        # SELL limit off average_price put it ABOVE current market, so it
+        # never filled. entry_price must be holding.last_price.
+        mock_evaluate.return_value = (self._unfavorable_assessment(), None)
+        engine = MagicMock()
+        engine.place_order.return_value = {"status": "success", "data": {"order_id": "999"}}
+        engine.is_order_complete.return_value = True
+
+        check_holding(self._holding(average_price=350.45, last_price=338.05), regime_series=None,
+                      active_strategies=[], known_positions=self._known(), execution_engine=engine)
+
+        placed_trade = engine.place_order.call_args[0][0]
+        self.assertEqual(placed_trade.signal.entry_price, 338.05)
+
+    @patch("monitor_positions.evaluate_holding")
+    def test_exit_falls_back_to_average_price_when_last_price_missing(self, mock_evaluate):
+        mock_evaluate.return_value = (self._unfavorable_assessment(), None)
+        engine = MagicMock()
+        engine.place_order.return_value = {"status": "success", "data": {"order_id": "999"}}
+        engine.is_order_complete.return_value = True
+
+        check_holding(self._holding(average_price=350.45, last_price=None), regime_series=None,
+                      active_strategies=[], known_positions=self._known(), execution_engine=engine)
+
+        placed_trade = engine.place_order.call_args[0][0]
+        self.assertEqual(placed_trade.signal.entry_price, 350.45)
 
 
 if __name__ == "__main__":

@@ -247,6 +247,35 @@ class ExecutionEngine:
             return float(avg_price)
         return None
 
+    def is_order_complete(self, order_id: str) -> bool:
+        """
+        True only if Kite reports this order's status as COMPLETE (fully
+        filled), via the same /orders/:order_id lookup as
+        _fetch_average_fill_price. Real incident this exists to prevent:
+        Kite's order-PLACEMENT response returning {"status": "success"}
+        only means the order was accepted/submitted -- for a LIMIT order,
+        that's not the same as it having actually FILLED. monitor_positions.py
+        once treated "successfully placed" as "position closed" for an
+        early-exit SELL, cancelled the GTT immediately, and the LIMIT order
+        then sat open/unfilled (mispriced relative to a falling market) for
+        hours with the position completely unprotected. Callers must check
+        this (or an equivalent real fill confirmation) before treating an
+        exit as done and removing any existing safety net. Returns False on
+        any lookup failure or non-COMPLETE status -- never assume filled.
+        """
+        headers = {
+            "X-Kite-Version": "3",
+            "Authorization": f"token {self.api_key}:{self.access_token}",
+        }
+        resp = requests.get(f"https://api.kite.trade/orders/{order_id}", headers=headers)
+        result = resp.json()
+
+        if resp.status_code != 200 or not result.get("data"):
+            return False
+
+        latest = result["data"][-1]
+        return latest.get("status") == "COMPLETE"
+
     def _place_gtt_exit(self, trade: ApprovedTrade) -> int:
         """
         Places a two-leg GTT (Good Till Triggered / OCO) order: SELL at

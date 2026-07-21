@@ -193,6 +193,49 @@ class TestFetchAverageFillPrice(unittest.TestCase):
         self.assertIsNone(self.engine._fetch_average_fill_price("order123"))
 
 
+class TestIsOrderComplete(unittest.TestCase):
+    """
+    Regression tests for a real incident: monitor_positions.py treated
+    Kite's order-PLACEMENT response ("status": "success", meaning only
+    "accepted") as proof an early-exit SELL had actually filled, cancelled
+    the position's GTT immediately, and the LIMIT order (mispriced off a
+    stale entry_price -- a separate bug) then sat open/unfilled for hours
+    with the position completely unprotected. is_order_complete() checks
+    the order's REAL status via Kite's own order-status endpoint.
+    """
+
+    def setUp(self):
+        self.engine = ExecutionEngine(live_trading=True, api_key="api_key", access_token="token")
+
+    @patch("execution.execution_engine.requests.get")
+    def test_complete_order_returns_true(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"status": "OPEN"}, {"status": "COMPLETE"},
+        ]})
+        self.assertTrue(self.engine.is_order_complete("order123"))
+
+    @patch("execution.execution_engine.requests.get")
+    def test_still_open_returns_false(self, mock_get):
+        # The exact real-incident case: a LIMIT order accepted by Kite but
+        # not yet (or never) filled.
+        mock_get.return_value = _resp(200, {"data": [
+            {"status": "OPEN"},
+        ]})
+        self.assertFalse(self.engine.is_order_complete("order123"))
+
+    @patch("execution.execution_engine.requests.get")
+    def test_rejected_order_returns_false(self, mock_get):
+        mock_get.return_value = _resp(200, {"data": [
+            {"status": "REJECTED"},
+        ]})
+        self.assertFalse(self.engine.is_order_complete("order123"))
+
+    @patch("execution.execution_engine.requests.get")
+    def test_lookup_failure_returns_false_not_an_exception(self, mock_get):
+        mock_get.return_value = _resp(500, {"error_type": "GeneralException"})
+        self.assertFalse(self.engine.is_order_complete("order123"))
+
+
 class TestCancelGtt(unittest.TestCase):
     @patch("execution.execution_engine.requests.delete")
     def test_cancel_sends_delete_to_correct_url(self, mock_delete):

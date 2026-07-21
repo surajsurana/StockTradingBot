@@ -181,27 +181,55 @@ def check_holding(holding, regime_series, active_strategies: list, known_positio
         known = known_positions.get(holding.symbol)
         gtt_id = known.gtt_id if known else None
 
+        # Priced off the CURRENT market price, not holding.average_price
+        # (cost basis) -- a real incident: for a position that had already
+        # fallen since entry, pricing the SELL limit off the (higher) entry
+        # cost put the limit ABOVE current market, so it sat open/unfilled
+        # indefinitely instead of executing promptly, exactly when a fast
+        # exit mattered most (the position was already falling).
+        exit_price = holding.last_price if holding.last_price else holding.average_price
         exit_signal = Signal(
-            symbol=holding.symbol, direction="SELL", entry_price=holding.average_price,
-            stop_loss=holding.average_price, target=holding.average_price, confidence=assessment.confidence,
+            symbol=holding.symbol, direction="SELL", entry_price=exit_price,
+            stop_loss=exit_price, target=exit_price, confidence=assessment.confidence,
             strategy_name="monitor_positions", reason=assessment.reasoning,
         )
         sell_result = execution_engine.place_order(ApprovedTrade(
             signal=exit_signal, quantity=holding.quantity,
-            capital_deployed=holding.quantity * holding.average_price,
+            capital_deployed=holding.quantity * exit_price,
         ))
         print(f"  Exited early: {sell_result}")
 
-        if sell_result.get("status") == "success":
+        # "status": "success" from Kite only means the order was
+        # accepted/submitted -- for a LIMIT order that's NOT the same as it
+        # having actually filled. Real incident: this treated a merely-
+        # PLACED order as a completed exit, cancelled the GTT immediately,
+        # and the (mispriced) order then sat open for hours with the
+        # position completely unprotected. Never remove the GTT until the
+        # order is confirmed COMPLETE.
+        order_id = sell_result.get("data", {}).get("order_id") if sell_result.get("status") == "success" else None
+        order_filled = order_id is not None and execution_engine.is_order_complete(order_id)
+
+        if order_filled:
             if gtt_id is not None:
                 execution_engine.cancel_gtt(gtt_id)
             return (f"{prefix}EXITED EARLY (verdict turned unfavorable, "
                     f"{assessment.confidence:.0%} confidence) -- {assessment.reasoning}"), True
+        elif order_id is not None:
+            # Order was placed but hasn't filled yet -- GTT stays in place as
+            # the safety net. It'll either fill on its own shortly (a
+            # correctly-priced limit order fills promptly for a liquid
+            # stock) or need a human to look at it; either way the position
+            # is never left with zero protection because of this path.
+            print(f"WARNING: exit SELL order for {holding.symbol} was placed (order {order_id}) "
+                  f"but has not filled yet -- GTT left in place, still counted as held.")
+            return (f"{prefix}verdict turned unfavorable ({assessment.confidence:.0%} confidence) -- "
+                    f"exit order placed but not yet filled, GTT stop-loss/target left in place as a "
+                    f"safety net. {assessment.reasoning}"), False
         else:
-            # The exit SELL itself failed -- do NOT cancel the GTT and do NOT
-            # mark this as exited. This position is still really held, so its
-            # GTT stop-loss/target must stay in place; treating a failed exit
-            # as successful would leave a real position with no protection.
+            # The exit SELL itself failed outright -- do NOT cancel the GTT and
+            # do NOT mark this as exited. This position is still really held, so
+            # its GTT stop-loss/target must stay in place; treating a failed
+            # exit as successful would leave a real position with no protection.
             print(f"WARNING: exit SELL order for {holding.symbol} did not succeed -- "
                   f"GTT left in place, still counted as held. Result: {sell_result}")
             return (f"{prefix}verdict turned unfavorable ({assessment.confidence:.0%} "
