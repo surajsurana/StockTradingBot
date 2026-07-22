@@ -236,6 +236,26 @@ class TestReconcileClosedPositions(unittest.TestCase):
         mock_telegram.assert_called_once()
         self.assertNotIn("INFY.NS", load_known_positions(self.known_path))
 
+    @patch("execution.position_state._log_closed_trade", return_value=-300.0)
+    @patch("execution.position_state.send_telegram_message")
+    @patch("execution.position_state.requests.get")
+    def test_notification_includes_pnl_percent(self, mock_get, mock_telegram, mock_log):
+        # entry 1500.0 -> exit 1470.0 is a real -2.00% move, independent of
+        # quantity/realized_pnl -- Suraj asked for this alongside the Rs.
+        # figure so a loss/gain reads in context without doing the math.
+        mock_get.return_value = _resp(200, {"data": [
+            {"tradingsymbol": "INFY", "transaction_type": "SELL", "status": "COMPLETE",
+             "average_price": 1470.0, "order_timestamp": "2026-07-07 10:00:00"},
+        ]})
+        save_known_positions({
+            "INFY.NS": KnownPosition("INFY.NS", 10, 1500.0, gtt_id=1, opened_at="2026-07-01T00:00:00"),
+        }, self.known_path)
+
+        reconcile_closed_positions([], "api_key", "token", "bot_token", "chat_id", path=self.known_path)
+
+        message_sent = mock_telegram.call_args[0][0]
+        self.assertIn("-2.00%", message_sent)
+
     @patch("execution.position_state._log_closed_trade", return_value=None)
     @patch("execution.position_state.send_telegram_message")
     @patch("execution.position_state.requests.get")

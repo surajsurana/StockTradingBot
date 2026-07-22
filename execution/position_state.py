@@ -242,7 +242,8 @@ def reconcile_closed_positions(current_holdings: list, api_key: str, access_toke
         realized_pnl = _log_closed_trade(position, exit_price, reason)
 
         if exit_price is not None:
-            pnl_text = f"Rs.{realized_pnl:,.2f}"
+            pnl_pct = (exit_price - position.entry_price) / position.entry_price * 100
+            pnl_text = f"Rs.{realized_pnl:,.2f} ({pnl_pct:+.2f}%)"
         else:
             pnl_text = "unknown (check Kite -- fill happened on an earlier day)"
 
