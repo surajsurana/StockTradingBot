@@ -83,7 +83,7 @@ from strategies.technical_agent import get_technical_signals, get_technical_diag
 from strategies.price_action import compute_price_action
 from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
-from macro.macro_strategist import assess_macro_conditions
+from macro.macro_strategist import assess_macro_conditions, MacroAssessment
 from research.research_analyst import analyze_stock
 from portfolio.portfolio_manager import allocate, build_decision_log, TradeCandidate
 from risk.risk_manager import RiskManager
@@ -305,6 +305,34 @@ def format_stage1_rejections(rejection_counts: dict) -> str:
     return (f"{rejection_counts['no_signal']} no signal, "
             f"{rejection_counts['failed_fundamentals']} failed fundamentals, "
             f"{rejection_counts['insufficient_history']} insufficient history")
+
+
+def get_macro_assessment_safe(api_key: str, max_items: int) -> MacroAssessment:
+    """
+    Calls assess_macro_conditions(), falling back to a "normal" risk read
+    (never blocking trading) if the call raises at all -- rather than
+    letting the exception propagate.
+
+    Real incident (2026-07-22): Claude returned a response with only a
+    "thinking" block and no text block, which call_claude() correctly
+    raises as a RuntimeError -- but nothing caught it here, so the whole
+    run died before Stage 1 even started, with an unhandled traceback and
+    zero Telegram alert (the run just silently didn't happen). parse_macro_
+    response() already has a documented fail-safe (default to "normal"
+    rather than block trading) for when Claude responds with garbled text;
+    this extends the same fail-safe to the case where the call fails
+    before producing any text to parse at all.
+    """
+    try:
+        return assess_macro_conditions(api_key=api_key, max_items=max_items)
+    except Exception as e:
+        print(f"\nMacro Strategist failed ({e}) -- defaulting to normal risk rather than "
+              f"aborting the run.")
+        return MacroAssessment(
+            risk_level="normal",
+            reasoning=f"Macro Strategist call failed, defaulting to normal: {e}",
+            headlines_considered=[],
+        )
 
 
 def format_macro_summary(macro_assessment) -> str:
@@ -537,8 +565,9 @@ def main():
 
     macro_assessment = None
     if settings.USE_MACRO_STRATEGIST:
-        macro_assessment = assess_macro_conditions(api_key=settings.ANTHROPIC_API_KEY,
-                                                     max_items=settings.MACRO_MAX_ARTICLES)
+        macro_assessment = get_macro_assessment_safe(
+            api_key=settings.ANTHROPIC_API_KEY, max_items=settings.MACRO_MAX_ARTICLES,
+        )
         print(f"\nMacro Strategist: {macro_assessment.risk_level.upper()} -- {macro_assessment.reasoning}")
 
         if macro_assessment.risk_level == "high":

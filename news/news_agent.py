@@ -187,7 +187,12 @@ def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5") -> st
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=300,
+            # Real incident (2026-07-22): a Macro Strategist call came back
+            # with only a "thinking" block and no text block at all -- 300
+            # was tight enough that some internal reasoning left no room for
+            # the actual answer. Raised well above what any of these
+            # short structured responses need, as headroom for that.
+            max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.AnthropicError as e:

@@ -1,7 +1,7 @@
 """
 Mock-based unit tests for run_daily.py's exclude_held_symbols(),
-format_macro_summary(), format_scan_funnel(), and run_stage2_research()'s
-per-candidate error handling. Run with:
+get_macro_assessment_safe(), format_macro_summary(), format_scan_funnel(),
+and run_stage2_research()'s per-candidate error handling. Run with:
 
     python test_run_daily.py
 """
@@ -14,7 +14,8 @@ from unittest.mock import patch
 from execution.positions import Holding
 from news.news_agent import ClaudeAPIError, NewsAssessment
 from research.research_analyst import ResearchAssessment
-from run_daily import exclude_held_symbols, format_macro_summary, format_scan_funnel, run_stage2_research
+from run_daily import (exclude_held_symbols, get_macro_assessment_safe, format_macro_summary,
+                        format_scan_funnel, run_stage2_research)
 
 
 class TestExcludeHeldSymbols(unittest.TestCase):
@@ -48,6 +49,53 @@ class TestExcludeHeldSymbols(unittest.TestCase):
 class _FakeMacroAssessment:
     risk_level: str
     reasoning: str
+
+
+class TestGetMacroAssessmentSafe(unittest.TestCase):
+    """
+    Regression tests for a real incident (2026-07-22): the 9:20am live run
+    crashed with an unhandled RuntimeError from assess_macro_conditions()
+    (Claude returned a "thinking"-only response, no text block) before
+    Stage 1 even started -- no trades, no Telegram alert, nothing in the
+    log but a traceback. get_macro_assessment_safe() must never let a
+    failure here propagate; it should behave like parse_macro_response()'s
+    existing "default to normal" fail-safe for any exception, not just
+    unparseable text.
+    """
+
+    @patch("run_daily.assess_macro_conditions")
+    def test_success_returns_the_real_assessment(self, mock_assess):
+        mock_assess.return_value = _FakeMacroAssessment(risk_level="elevated", reasoning="Some real reasoning.")
+
+        result = get_macro_assessment_safe(api_key="key", max_items=20)
+
+        self.assertEqual(result.risk_level, "elevated")
+        self.assertEqual(result.reasoning, "Some real reasoning.")
+
+    @patch("run_daily.assess_macro_conditions")
+    def test_exception_defaults_to_normal_instead_of_propagating(self, mock_assess):
+        mock_assess.side_effect = RuntimeError(
+            "Claude's response contained no text block to parse (got block types: ['thinking'])."
+        )
+
+        result = get_macro_assessment_safe(api_key="key", max_items=20)
+
+        self.assertEqual(result.risk_level, "normal")
+        self.assertIn("no text block to parse", result.reasoning)
+
+    @patch("run_daily.assess_macro_conditions")
+    def test_claude_api_error_also_defaults_to_normal_not_aborts(self, mock_assess):
+        # Unlike run_stage2_research (where a ClaudeAPIError deliberately
+        # propagates and aborts the whole run -- see
+        # TestRunStage2ResearchPerCandidateErrorHandling below), the Macro
+        # Strategist gate is explicitly designed to never block trading on
+        # its own failure -- the entry gate (Stage 1/2) is the real safety
+        # net for API outages, not this same-day risk-sizing adjustment.
+        mock_assess.side_effect = ClaudeAPIError("insufficient credit balance")
+
+        result = get_macro_assessment_safe(api_key="key", max_items=20)
+
+        self.assertEqual(result.risk_level, "normal")
 
 
 class TestFormatMacroSummary(unittest.TestCase):
