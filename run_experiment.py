@@ -37,15 +37,59 @@ from config import settings
 
 PENDING_PROPOSAL_PATH = os.path.join(os.path.dirname(__file__), "research_lab", "pending_proposal.json")
 
-# Same curated liquid large-cap universe used for the earlier (now-deleted)
-# ad hoc ORB backtest -- intraday strategies specifically need real
-# liquidity to execute without heavy slippage, unlike the daily-bar swing
-# strategies which scan the whole Nifty 500.
+# Curated liquid large/mid-cap universe -- intraday strategies specifically
+# need real liquidity to execute without heavy slippage, unlike the
+# daily-bar swing strategies which scan the whole Nifty 500. Widened from
+# the original 27 to ~150 (2026-07-24, per Suraj's request) specifically to
+# get EXP-001's sample size up toward 200-300 trades -- same curation
+# approach (manually selected well-known liquid names), just more of them.
+# Not a methodology change: still hand-picked for genuine liquidity, not
+# switched to an automated/computed selection method.
 LIQUID_UNIVERSE = [
+    # Original 27
     "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "ITC", "SBIN", "BHARTIARTL",
     "KOTAKBANK", "LT", "AXISBANK", "BAJFINANCE", "HINDUNILVR", "ASIANPAINT", "MARUTI",
     "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "WIPRO", "TATASTEEL",
     "JSWSTEEL", "NTPC", "POWERGRID", "HCLTECH", "BAJAJFINSV", "INDUSINDBK", "GRASIM",
+    # Banks / financials
+    "BAJAJ-AUTO", "BAJAJHLDNG", "SBILIFE", "HDFCLIFE", "ICICIPRULI", "ICICIGI",
+    "SHRIRAMFIN", "CHOLAFIN", "PNB", "BANKBARODA", "CANBK", "IDFCFIRSTB", "AUBANK",
+    "FEDERALBNK", "RECLTD", "PFC", "MUTHOOTFIN", "LICHSGFIN",
+    # IT
+    "TECHM", "LTIM", "PERSISTENT", "COFORGE", "MPHASIS", "OFSS",
+    # Auto / auto ancillary
+    "M&M", "TATAMOTORS", "EICHERMOT", "HEROMOTOCO", "TVSMOTOR", "BOSCHLTD",
+    "MOTHERSON", "BALKRISIND", "ASHOKLEY", "BHARATFORG",
+    # Pharma / healthcare
+    "DRREDDY", "CIPLA", "DIVISLAB", "APOLLOHOSP", "LUPIN", "AUROPHARMA", "TORNTPHARM",
+    "ALKEM", "MAXHEALTH", "SYNGENE",
+    # FMCG / consumer
+    "BRITANNIA", "TATACONSUM", "DABUR", "GODREJCP", "MARICO", "COLPAL", "UBL", "VBL",
+    # Metals / mining / energy
+    "HINDALCO", "VEDL", "COALINDIA", "ADANIENT", "ADANIPORTS", "ONGC", "BPCL",
+    "GAIL", "IOC", "SAIL", "NMDC", "JINDALSTEL", "HINDZINC",
+    # Cement / construction materials
+    "SHREECEM", "AMBUJACEM", "ACC", "DALBHARAT",
+    # Capital goods / industrials
+    "SIEMENS", "ABB", "CUMMINSIND", "HAVELLS", "POLYCAB", "DIXON", "SUPREMEIND",
+    "ASTRAL", "AIAENG", "SKFINDIA",
+    # Telecom / media
+    "IDEA", "INDUSTOWER", "PVRINOX",
+    # Real estate / infra
+    "DLF", "GODREJPROP", "OBEROIRLTY", "IRB", "GMRAIRPORT",
+    # Retail / consumer durables
+    "TRENT", "DMART", "PAGEIND", "VOLTAS", "WHIRLPOOL", "BLUESTARCO",
+    # Chemicals
+    "PIDILITIND", "SRF", "UPL", "AARTIIND", "DEEPAKNTR", "ATUL",
+    # Diversified / conglomerates
+    "ADANIPOWER", "ADANIGREEN", "TATAPOWER", "TATACHEM", "TATAELXSI",
+    # Financial services (NBFC/AMC/exchange)
+    "HDFCAMC", "NIPPONLIFE", "BSE", "MCX", "ANGELONE", "CDSL", "IEX",
+    # Insurance / others
+    "GICRE", "NIACL", "STARHEALTH",
+    # Additional liquid mid/largecaps
+    "ZOMATO", "NYKAA", "POLICYBZR", "PAYTM", "IRCTC", "INDIGO", "NAUKRI",
+    "LTF", "SONACOMS", "KPITTECH", "TATATECH",
 ]
 
 
@@ -151,8 +195,8 @@ def main():
     parser.add_argument("--n", type=int, default=8)
     parser.add_argument("--strategy-module", type=str)
     parser.add_argument("--strategy-class", type=str)
-    parser.add_argument("--days", type=int, default=180)
-    parser.add_argument("--limit", type=int, default=27)
+    parser.add_argument("--days", type=int, default=365)
+    parser.add_argument("--limit", type=int, default=len(LIQUID_UNIVERSE))
     parser.add_argument("--windows", type=int, default=4)
     args = parser.parse_args()
 
