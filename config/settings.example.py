@@ -19,6 +19,13 @@ LIVE_TRADING = False
 KITE_API_KEY = ""          # from developers.kite.trade
 KITE_API_SECRET = ""       # from developers.kite.trade -- never commit this
 KITE_ACCESS_TOKEN = ""     # regenerated daily -- run refresh_kite_token.py each morning
+# A separate, paid Kite Connect "Connect"-type app (distinct from the free
+# "Personal" app above) -- used ONLY for market data (live quotes,
+# historical candles), never for order placement. Kept deliberately apart
+# from the free app's credentials so the live trading bot's real orders
+# never depend on this paid subscription staying active.
+KITE_MARKET_DATA_API_KEY = ""
+KITE_MARKET_DATA_API_SECRET = ""
 
 # --- Automated login (auth/kite_auto_login.py) ---
 # Lets the bot log itself in every morning with no manual step. Security
@@ -158,3 +165,13 @@ LIMIT_ORDER_BUFFER_PCT = 0.015
 # run_daily.py uses this broader Nifty 500 snapshot instead of SYMBOLS/
 # STRATEGY_SYMBOLS. See data/nifty500_universe.py.
 USE_NIFTY500_UNIVERSE = True
+
+# --- Research Lab (research_lab/) -- intraday strategy research only ---
+# Nothing here is read by run_daily.py/monitor_positions.py/the real
+# risk.risk_manager.RiskManager -- the swing strategy is unaware these
+# settings exist and continues to assume 100% capital exactly as before.
+# INTRADAY_CAPITAL_ALLOCATION_PCT stays 0 until a research_lab strategy is
+# explicitly promoted to production in a future, separately-approved phase.
+RESEARCH_LAB_VIRTUAL_CAPITAL = 100000   # never real money in this phase
+SWING_CAPITAL_ALLOCATION_PCT = 100      # unchanged default -- swing still assumes 100%
+INTRADAY_CAPITAL_ALLOCATION_PCT = 0     # 0 until a strategy is approved for production
