@@ -12,7 +12,7 @@ from datetime import date
 import pandas as pd
 
 from research_lab.backtesting_engineer import (
-    Trade, compute_metrics, simulate_symbol, walk_forward_split,
+    Trade, _compute_day_context, compute_metrics, simulate_symbol, walk_forward_split,
 )
 from research_lab.base import Signal, Strategy
 from research_lab.risk_manager_research import RiskParameters
@@ -76,7 +76,7 @@ class _RangeBreakoutOnceADayStrategy(Strategy):
     simulate_symbol()'s one-trade-per-day and risk_params tests."""
     name = "test_strategy"
 
-    def generate_signal(self, todays_bars_so_far):
+    def generate_signal(self, todays_bars_so_far, context=None):
         if len(todays_bars_so_far) != 4:
             return None
         entry = float(todays_bars_so_far.iloc[-1]["Close"])
@@ -123,7 +123,7 @@ class TestSimulateSymbol(unittest.TestCase):
         class _AlwaysFiresStrategy(Strategy):
             name = "always_fires"
 
-            def generate_signal(self, todays_bars_so_far):
+            def generate_signal(self, todays_bars_so_far, context=None):
                 if len(todays_bars_so_far) < 2:
                     return None
                 entry = float(todays_bars_so_far.iloc[-1]["Close"])
@@ -145,6 +145,73 @@ class TestSimulateSymbol(unittest.TestCase):
         self.assertEqual(len(trades), 1)
         self.assertIsNotNone(trades[0].entry_hour)
         self.assertAlmostEqual(trades[0].entry_hour, 9 + 30 / 60, places=2)  # 4th bar = 09:30
+
+    def test_symbol_parameter_recorded_on_trade_not_unknown(self):
+        # Regression test: strategies following this project's convention
+        # (leave Signal.symbol="", let the caller fill it in) meant every
+        # trade used to be recorded as "UNKNOWN" regardless of which real
+        # symbol was actually traded -- silently breaking any per-symbol/
+        # sector analysis. Fixed by having simulate_symbol() trust its own
+        # `symbol` parameter (the caller always knows it) instead of
+        # reading (an intentionally blank) Signal.symbol.
+        df = self._synthetic_day(n_bars=8)
+        trades = simulate_symbol(df, _RangeBreakoutOnceADayStrategy(), capital=100000,
+                                  risk_per_trade_pct=0.01, symbol="RELIANCE")
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].symbol, "RELIANCE")
+
+    def test_symbol_defaults_to_unknown_if_not_given(self):
+        df = self._synthetic_day(n_bars=8)
+        trades = simulate_symbol(df, _RangeBreakoutOnceADayStrategy(), capital=100000,
+                                  risk_per_trade_pct=0.01)
+        self.assertEqual(trades[0].symbol, "UNKNOWN")
+
+
+class TestComputeDayContext(unittest.TestCase):
+    def _multi_day_df(self, n_days=25, first_15min_volume_per_bar=500, last_day_close=100.0):
+        dfs = []
+        for day in range(1, n_days + 1):
+            idx = pd.date_range(f"2026-01-{day:02d} 09:15", periods=10, freq="5min")
+            dfs.append(pd.DataFrame({
+                "Open": last_day_close, "High": last_day_close + 0.2, "Low": last_day_close - 0.2,
+                "Close": last_day_close, "Volume": first_15min_volume_per_bar,
+            }, index=idx))
+        return pd.concat(dfs)
+
+    def test_prior_close_is_previous_days_last_close(self):
+        df = self._multi_day_df(n_days=10, last_day_close=123.0)
+        ctx = _compute_day_context(df, date(2026, 1, 11))
+        self.assertEqual(ctx["prior_close"], 123.0)
+
+    def test_avg_first_15min_volume_hand_calculated(self):
+        # 3 bars/15min at 500 volume each = 1500 per day, constant across all days
+        df = self._multi_day_df(n_days=25, first_15min_volume_per_bar=500)
+        ctx = _compute_day_context(df, date(2026, 1, 26))
+        self.assertEqual(ctx["avg_first_15min_volume_20d"], 1500.0)
+
+    def test_no_prior_data_returns_none_prior_close(self):
+        df = self._multi_day_df(n_days=5)
+        ctx = _compute_day_context(df, date(2026, 1, 1))  # before any data exists
+        self.assertIsNone(ctx["prior_close"])
+        self.assertIsNone(ctx["avg_first_15min_volume_20d"])
+
+    def test_fewer_than_5_prior_days_gives_none_avg_volume_but_real_prior_close(self):
+        df = self._multi_day_df(n_days=3)
+        ctx = _compute_day_context(df, date(2026, 1, 4))
+        self.assertIsNotNone(ctx["prior_close"])
+        self.assertIsNone(ctx["avg_first_15min_volume_20d"])
+
+    def test_only_uses_data_strictly_before_trade_date_no_lookahead(self):
+        df = self._multi_day_df(n_days=10, last_day_close=100.0)
+        # Manually make day 11 (the day itself) have a very different close --
+        # context computed for day 11 must NOT see day 11's own data.
+        future_idx = pd.date_range("2026-01-11 09:15", periods=10, freq="5min")
+        future_day = pd.DataFrame({
+            "Open": 999.0, "High": 999.0, "Low": 999.0, "Close": 999.0, "Volume": 999,
+        }, index=future_idx)
+        full_df = pd.concat([df, future_day])
+        ctx = _compute_day_context(full_df, date(2026, 1, 11))
+        self.assertEqual(ctx["prior_close"], 100.0)  # not 999.0
 
 
 class TestWalkForwardSplit(unittest.TestCase):

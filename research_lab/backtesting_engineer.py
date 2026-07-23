@@ -48,8 +48,44 @@ class Trade:
                                # time-of-day breakdown; None if the caller didn't provide one
 
 
+def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int = 20) -> dict:
+    """
+    Multi-day context for the day about to be simulated, computed ONLY
+    from data strictly BEFORE trade_date -- no lookahead. df here is the
+    symbol's full multi-day intraday history (not one day's slice).
+
+    prior_close: previous trading day's last Close, or None if there's no
+    earlier data (e.g. the very first day in the fetched window).
+    avg_first_15min_volume_20d: average of the first-15-minutes' total
+    Volume (first 3 bars at 5-min candles) over up to the last
+    `lookback_days` trading days before trade_date, or None if fewer than
+    5 prior days are available (too small a sample to call "average").
+    """
+    prior_bars = df[df.index.date < trade_date]
+    if prior_bars.empty:
+        return {"prior_close": None, "avg_first_15min_volume_20d": None}
+
+    prior_close = float(prior_bars.iloc[-1]["Close"])
+
+    prior_bars = prior_bars.copy()
+    prior_bars["trade_date"] = prior_bars.index.date
+    prior_days = sorted(prior_bars["trade_date"].unique())[-lookback_days:]
+    if len(prior_days) < 5:
+        return {"prior_close": prior_close, "avg_first_15min_volume_20d": None}
+
+    first_15min_volumes = []
+    for d in prior_days:
+        day_bars = prior_bars[prior_bars["trade_date"] == d]
+        if len(day_bars) >= 3:
+            first_15min_volumes.append(float(day_bars.iloc[:3]["Volume"].sum()))
+    avg_volume = sum(first_15min_volumes) / len(first_15min_volumes) if first_15min_volumes else None
+
+    return {"prior_close": prior_close, "avg_first_15min_volume_20d": avg_volume}
+
+
 def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
-                     risk_per_trade_pct: float, risk_params: Optional[RiskParameters] = None) -> list:
+                     risk_per_trade_pct: float, risk_params: Optional[RiskParameters] = None,
+                     symbol: str = "UNKNOWN") -> list:
     """
     Bar-by-bar, day-by-day simulation of one symbol's intraday bars.
     Mandatory same-day square-off: any position still open at the last
@@ -57,6 +93,16 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
     stop/target -- mirrors real MIS mechanics. Stop/target checks assume
     the worst case when a single bar's High/Low straddle both (stop
     checked first) -- a standard, conservative convention.
+
+    symbol: recorded on every Trade regardless of what (if anything) the
+    strategy itself set on Signal.symbol -- this function's caller always
+    knows the real symbol (it's the dict key in run_backtest()'s `data`),
+    so trusting the caller here is more reliable than depending on every
+    strategy remembering to fill in signal.symbol correctly. Real bug
+    found while building this: strategies following this project's
+    existing convention (leave Signal.symbol="", let the caller fill it
+    in) meant every trade was recorded as "UNKNOWN", silently breaking
+    Performance Analyst's per-symbol/sector breakdowns.
 
     risk_params=None (default): capped at ONE trade per symbol per day --
     fixes a real discrepancy found while building this: the earlier ad hoc
@@ -77,6 +123,7 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
         if len(day_df) < 4:
             continue  # partial/holiday-truncated day, not enough bars to matter
 
+        day_context = _compute_day_context(df, trade_date)
         position = None
         trades_today = 0
         realized_pnl_today = 0.0
@@ -98,7 +145,7 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
                     continue
                 pnl = (exit_price - position["entry_price"]) * position["quantity"]
                 trades.append(Trade(
-                    symbol=position["symbol"], entry_date=trade_date, exit_date=trade_date,
+                    symbol=symbol, entry_date=trade_date, exit_date=trade_date,
                     entry_price=position["entry_price"], exit_price=exit_price,
                     quantity=position["quantity"], pnl=pnl, exit_reason=exit_reason,
                     entry_hour=position["entry_hour"],
@@ -116,7 +163,7 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
             elif should_block_new_trade(realized_pnl_today, trades_today, capital, risk_params):
                 continue
 
-            signal = strategy.generate_signal(todays_bars_so_far)
+            signal = strategy.generate_signal(todays_bars_so_far, day_context)
             if signal is None:
                 continue
             risk_per_share = signal.entry_price - signal.stop_loss
@@ -127,8 +174,8 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
                 continue
             entry_timestamp = todays_bars_so_far.index[-1]
             position = {
-                "symbol": signal.symbol or "UNKNOWN", "entry_price": signal.entry_price,
-                "stop_loss": signal.stop_loss, "target": signal.target, "quantity": quantity,
+                "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
+                "target": signal.target, "quantity": quantity,
                 "entry_hour": entry_timestamp.hour + entry_timestamp.minute / 60,
             }
 
@@ -153,7 +200,7 @@ def run_backtest(strategy: Strategy, data: dict, capital_per_symbol: float,
     for symbol, df in data.items():
         if df is None or df.empty:
             continue
-        trades = simulate_symbol(df, strategy, capital_per_symbol, risk_per_trade_pct, risk_params)
+        trades = simulate_symbol(df, strategy, capital_per_symbol, risk_per_trade_pct, risk_params, symbol=symbol)
         all_trades.extend(trades)
         calendar.update(df.index.date)
 

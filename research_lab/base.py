@@ -29,13 +29,23 @@ class Strategy:
 
     name = "base"
 
-    def generate_signal(self, price_history: pd.DataFrame) -> Optional[Signal]:
+    def generate_signal(self, price_history: pd.DataFrame, context: Optional[dict] = None) -> Optional[Signal]:
         """
         price_history: DataFrame with columns Open, High, Low, Close,
-        Volume. For intraday strategies this is TODAY's bars only, from
-        market open up to the current bar -- not multi-day history (see
-        backtesting_engineer.py, which calls this with a growing same-day
-        window).
+        Volume. TODAY's bars only, from market open up to the current bar
+        -- not multi-day history (see backtesting_engineer.py, which calls
+        this with a growing same-day window).
+
+        context: pre-computed multi-day facts backtesting_engineer.py
+        derives ONCE per day from the full multi-symbol history before the
+        day starts, since a strategy checking a genuinely intraday-only
+        signal has no other way to know things like "yesterday's close" or
+        "this stock's typical volume at this time of day" -- it only ever
+        sees today's bars in price_history. Currently provided keys:
+        "prior_close" (float or None if unavailable) and
+        "avg_first_15min_volume_20d" (float or None). None if a strategy
+        doesn't need any multi-day context (e.g. a pure intraday
+        opening-range strategy).
 
         Return a Signal if this strategy wants to open a position right
         now, otherwise return None.
