@@ -128,6 +128,10 @@ def propose_hypotheses(api_key: str, n: int = 8, call_fn: Optional[Callable[[str
     run rather than silently proceeding with nothing to test."""
     kb_summary = render_for_prompt(knowledge_base_path) if knowledge_base_path else render_for_prompt()
     prompt = build_hypothesis_prompt(kb_summary, n=n)
-    call = call_fn or (lambda p: call_claude(p, api_key))
+    # max_tokens raised well above call_claude's 1024 default -- a batch of
+    # n detailed, multi-field hypotheses is a much longer expected output
+    # than anything else that calls this function (see call_claude's
+    # docstring for the real 2026-07-24 incident this fixes).
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=4096))
     raw_response = call(prompt)
     return parse_hypotheses_response(raw_response)

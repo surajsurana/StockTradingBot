@@ -170,12 +170,22 @@ class ClaudeAPIError(RuntimeError):
     """
 
 
-def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5") -> str:
+def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5", max_tokens: int = 1024) -> str:
     """
     The actual call to Claude's API. Requires the `anthropic` package
     (pip install anthropic) and your own API key. Kept as its own small
     function so tests/validation can swap in a fake version instead of
     hitting the real API.
+
+    max_tokens default of 1024 covers this project's short structured
+    responses (sentiment/risk-level one-liners). Real incident
+    (2026-07-24): research_lab's Quant Researcher asks for a batch of 8
+    detailed hypotheses in one response -- a much longer output than
+    anything else that calls this function -- and 1024 wasn't enough
+    room, causing the same "thinking block only, no text" failure
+    originally seen and fixed for Macro Strategist at 300 tokens.
+    Callers with a longer expected output should pass a higher value
+    rather than this default being raised for everyone.
 
     Raises ClaudeAPIError (not the raw anthropic exception) on any failure
     to actually reach Claude, with a human-readable reason -- specifically
@@ -187,12 +197,7 @@ def call_claude(prompt: str, api_key: str, model: str = "claude-sonnet-5") -> st
     try:
         response = client.messages.create(
             model=model,
-            # Real incident (2026-07-22): a Macro Strategist call came back
-            # with only a "thinking" block and no text block at all -- 300
-            # was tight enough that some internal reasoning left no room for
-            # the actual answer. Raised well above what any of these
-            # short structured responses need, as headroom for that.
-            max_tokens=1024,
+            max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.AnthropicError as e:
