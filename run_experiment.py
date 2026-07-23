@@ -138,21 +138,42 @@ def run_propose(n: int):
           f"--strategy-module=research_lab.strategies.<name> --strategy-class=<ClassName>")
 
 
-def run_continue(strategy_module: str, strategy_class: str, days: int, limit: int, windows: int):
+def run_continue(strategy_module: str, strategy_class: str, days: int, limit: int, windows: int,
+                  from_experiment: str = None):
     from research_lab.research_director import run_experiment_phase2
     from research_lab.risk_manager_research import RiskParameters
     from data.fetch_kite_intraday import fetch_all_intraday
-
-    if not os.path.exists(PENDING_PROPOSAL_PATH):
-        print(f"No pending proposal found at {PENDING_PROPOSAL_PATH} -- run "
-              f"'python run_experiment.py --propose' first.")
-        sys.exit(1)
-    with open(PENDING_PROPOSAL_PATH, encoding="utf-8") as f:
-        pending = json.load(f)
-
     from research_lab.quant_researcher import Hypothesis
-    winner = Hypothesis(**pending["winner"])
-    print(f"Continuing experiment for: {winner.name}")
+
+    selection_reasoning = ""
+    if from_experiment:
+        # Re-validate an ALREADY-SELECTED hypothesis against new data
+        # (wider universe/lookback, etc.) rather than re-proposing --
+        # loads the exact saved hypothesis text from a prior experiment
+        # instead of pending_proposal.json (which is deleted after its
+        # own successful run, by design -- see save_experiment()).
+        from research_lab.experiment_manager import load_experiment
+        prior = load_experiment(from_experiment)
+        hyp_text = prior["hypothesis"]
+        name = hyp_text.split("\n")[0].lstrip("# ").strip()
+        mechanism = hyp_text.split("## Mechanism\n")[1].split("\n\n##")[0].strip()
+        rationale = hyp_text.split("## Rationale\n")[1].split("\n\n##")[0].strip()
+        rules = hyp_text.split("## Rules\n")[1].split("\n\n##")[0].strip()
+        winner = Hypothesis(name=name, mechanism=mechanism, rationale=rationale, rules=rules,
+                             distinctiveness="")
+        selection_reasoning = f"Same hypothesis as {from_experiment} -- re-validated on a wider sample."
+        print(f"Re-validating hypothesis from {from_experiment}: {winner.name}")
+    else:
+        if not os.path.exists(PENDING_PROPOSAL_PATH):
+            print(f"No pending proposal found at {PENDING_PROPOSAL_PATH} -- run "
+                  f"'python run_experiment.py --propose' first, or pass --from-experiment=EXP-NNN "
+                  f"to re-validate an already-selected hypothesis.")
+            sys.exit(1)
+        with open(PENDING_PROPOSAL_PATH, encoding="utf-8") as f:
+            pending = json.load(f)
+        winner = Hypothesis(**pending["winner"])
+        selection_reasoning = pending["selection_reasoning"]
+        print(f"Continuing experiment for: {winner.name}")
 
     module = importlib.import_module(strategy_module)
     strategy_cls = getattr(module, strategy_class)
@@ -175,7 +196,7 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
         hypothesis=winner, strategy=strategy, data=data,
         capital_per_symbol=settings.RESEARCH_LAB_VIRTUAL_CAPITAL,
         start_date=start_date, end_date=end_date,
-        selection_reasoning=pending["selection_reasoning"],
+        selection_reasoning=selection_reasoning,
         risk_params=RiskParameters(), n_walk_forward_windows=windows,
         narrative_api_key=settings.ANTHROPIC_API_KEY,
     )
@@ -185,7 +206,8 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
     print(f"\n{'=' * 70}\nSaved as {exp_id}\n{'=' * 70}")
     print(loaded["verdict"])
 
-    os.remove(PENDING_PROPOSAL_PATH)
+    if not from_experiment and os.path.exists(PENDING_PROPOSAL_PATH):
+        os.remove(PENDING_PROPOSAL_PATH)
 
 
 def main():
@@ -198,6 +220,9 @@ def main():
     parser.add_argument("--days", type=int, default=365)
     parser.add_argument("--limit", type=int, default=len(LIQUID_UNIVERSE))
     parser.add_argument("--windows", type=int, default=4)
+    parser.add_argument("--from-experiment", type=str, default=None,
+                         help="Re-validate an already-selected hypothesis (e.g. EXP-001) against "
+                              "new data, instead of consuming pending_proposal.json.")
     args = parser.parse_args()
 
     if args.propose:
@@ -206,7 +231,8 @@ def main():
         if not args.strategy_module or not args.strategy_class:
             print("--continue requires --strategy-module and --strategy-class")
             sys.exit(1)
-        run_continue(args.strategy_module, args.strategy_class, args.days, args.limit, args.windows)
+        run_continue(args.strategy_module, args.strategy_class, args.days, args.limit, args.windows,
+                     from_experiment=args.from_experiment)
     else:
         print(__doc__)
 
