@@ -19,6 +19,8 @@ import csv
 import os
 from typing import Callable, Optional
 
+import pandas as pd
+
 from news.news_agent import call_claude
 
 NIFTY500_CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "nifty500_constituents.csv")
@@ -61,13 +63,25 @@ def compute_time_of_day_breakdown(trades: list, bucket_hours: float = 1.0) -> di
 def compute_regime_breakdown(trades: list, regime_series) -> dict:
     """regime_series: from strategies/market_regime.py's build_regime_series
     (read-only reuse, never modified). Buckets each trade's P&L by whether
-    the broader Nifty was bullish or bearish on its entry_date."""
+    the broader Nifty was bullish or bearish on its entry_date.
+
+    Real bug found and fixed 2026-07-24: is_bullish_on()'s regime_series is
+    indexed by pd.Timestamp (from fetch_nifty()'s DatetimeIndex), but
+    Trade.entry_date is a plain datetime.date -- `date not in
+    DatetimeIndex` is always False for that mismatched type, so every
+    single trade was silently landing in the "not found -> bearish" branch
+    regardless of the real regime that day. Confirmed via direct testing:
+    the real 2-year regime series is ~40% bullish, but every trade in
+    EXP-001/002/003 was misclassified as 100% bearish. Fixed here (in
+    research_lab, not in the protected strategies/market_regime.py) by
+    converting to pd.Timestamp before lookup, which the DatetimeIndex
+    actually matches against."""
     from strategies.market_regime import is_bullish_on
 
     breakdown = {"bullish": 0.0, "bearish": 0.0, "unknown": 0.0}
     for t in trades:
         try:
-            bucket = "bullish" if is_bullish_on(regime_series, t.entry_date) else "bearish"
+            bucket = "bullish" if is_bullish_on(regime_series, pd.Timestamp(t.entry_date)) else "bearish"
         except Exception:
             bucket = "unknown"
         breakdown[bucket] += t.pnl
