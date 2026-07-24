@@ -55,11 +55,18 @@ _STOPWORDS = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "with
               "this", "that", "its", "for", "as", "by", "from", "not", "than"}
 
 
-def build_review_prompt(entries: list) -> str:
+def build_review_prompt(entries: list, prior_conclusions: str = "") -> str:
     blocks = "\n".join(
         f"- [{e.exp_id}] {e.hypothesis_name} -- verdict: {e.verdict}. "
         f"Mechanism: {e.mechanism_summary} Reason: {e.key_reason}"
         for e in entries
+    )
+    prior_section = (
+        f"\nA previous review already reached this conclusion -- treat it as ESTABLISHED, do not "
+        f"re-derive or contradict it, only add NEW higher-level findings beyond it (including, if "
+        f"relevant, whether any experiment record above should be read with this correction in mind):\n"
+        f"{prior_conclusions}\n"
+        if prior_conclusions else ""
     )
     return f"""You are the Research Director for an NSE cash-equity intraday strategy research lab. \
 Below is the FULL history of every hypothesis tested so far. Your job is NOT to summarize each one \
@@ -67,7 +74,7 @@ individually (that's already there) -- it's to step back and find HIGHER-LEVEL, 
 lessons: recurring market-structure or behavioral assumptions that keep failing regardless of the \
 specific mechanism used to express them, patterns across multiple DIFFERENT hypotheses, and concrete \
 guidance for what the next batch of hypotheses should actively avoid assuming.
-
+{prior_section}
 Full experiment history ({len(entries)} entries):
 {blocks}
 
@@ -88,6 +95,12 @@ def review_research_history(api_key: str = "", call_fn: Optional[Callable[[str],
     the result via knowledge_base.record_conclusion() so it becomes part
     of the permanent research history, then returns the text.
 
+    Feeds the LATEST prior conclusion (if any) into its own prompt as an
+    established fact, not just into Quant Researcher's -- otherwise a
+    second review could re-derive or silently contradict a correction
+    already recorded (e.g. a code-verified methodology-bug fix), since it
+    only ever saw the raw per-experiment Knowledge Base records before.
+
     Raises RuntimeError if there's no history yet to review (nothing
     useful to synthesize from zero experiments) -- callers should skip
     calling this on a genuinely first-ever run.
@@ -97,7 +110,10 @@ def review_research_history(api_key: str = "", call_fn: Optional[Callable[[str],
         raise RuntimeError("No experiment history to review yet -- skip this step on a first-ever run.")
 
     from news.news_agent import call_claude
-    prompt = build_review_prompt(entries)
+    from research_lab.knowledge_base import render_conclusions_for_prompt
+    prior_conclusions = (render_conclusions_for_prompt(conclusions_path) if conclusions_path
+                          else render_conclusions_for_prompt())
+    prompt = build_review_prompt(entries, prior_conclusions)
     call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=2048))
     conclusion_text = call(prompt)
 

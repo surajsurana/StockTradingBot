@@ -110,6 +110,22 @@ class TestReviewResearchHistory(unittest.TestCase):
         self.assertEqual(len(saved), 1)
         self.assertEqual(len(saved[0].based_on_exp_ids), 5)  # all 5 SEED-ORB entries
 
+    def test_prior_conclusion_reaches_a_second_reviews_own_prompt(self):
+        from research_lab.knowledge_base import record_conclusion
+
+        record_conclusion("Regime breakdown was miscomputed due to a date-type bug -- disregard it.",
+                           ["EXP-001"], path=self.conclusions_path)
+        captured = {}
+
+        def fake_call(prompt):
+            captured["prompt"] = prompt
+            return "A second, new conclusion."
+
+        review_research_history(call_fn=fake_call, knowledge_base_path=self.kb_path,
+                                 conclusions_path=self.conclusions_path)
+        self.assertIn("date-type bug", captured["prompt"])
+        self.assertIn("ESTABLISHED", captured["prompt"])
+
     def test_review_prompt_includes_full_history_not_summary(self):
         from research_lab.knowledge_base import load_entries
         entries = load_entries(self.kb_path)
