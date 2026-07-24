@@ -246,9 +246,11 @@ def rank_and_select(hypotheses: list, knowledge_base_path: Optional[str] = None,
     from research_lab.knowledge_base import render_for_prompt
     kb_summary = render_for_prompt(knowledge_base_path) if knowledge_base_path else render_for_prompt()
     prompt = build_ranking_prompt(survivors, kb_summary)
-    # Raised from 2048 alongside quant_researcher's bump -- this prompt also
-    # grows with Knowledge Base history size, same recurring failure risk.
-    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=4096))
+    # Raised alongside quant_researcher's same jump to 16384 -- this
+    # prompt also grows with Knowledge Base + conclusions history size,
+    # same recurring "thinking block only" failure risk as that one hit
+    # three times in a row.
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=16384))
     raw_response = call(prompt)
     result = parse_ranking_response(raw_response, survivors)
     result["rejected_by_hard_filter"] = rejected
