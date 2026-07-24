@@ -17,11 +17,11 @@ from datetime import date
 import pandas as pd
 
 from research_lab.base import Signal, Strategy
-from research_lab.knowledge_base import seed_orb_history
+from research_lab.knowledge_base import load_conclusions, seed_orb_history
 from research_lab.quant_researcher import Hypothesis
 from research_lab.research_director import (
-    build_ranking_prompt, hard_filter, parse_ranking_response, rank_and_select,
-    run_experiment_phase2,
+    build_ranking_prompt, build_review_prompt, hard_filter, parse_ranking_response, rank_and_select,
+    review_research_history, run_experiment_phase2,
 )
 
 
@@ -77,6 +77,46 @@ class TestHardFilter(unittest.TestCase):
     def test_distinct_hypothesis_survives(self):
         survivors, _ = hard_filter([_gap_hypothesis()], self.kb_path)
         self.assertEqual(len(survivors), 1)
+
+
+class TestReviewResearchHistory(unittest.TestCase):
+    def setUp(self):
+        fd, self.kb_path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        os.remove(self.kb_path)
+        fd2, self.conclusions_path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd2)
+        os.remove(self.conclusions_path)
+        seed_orb_history(self.kb_path)
+
+    def tearDown(self):
+        for p in (self.kb_path, self.conclusions_path):
+            if os.path.exists(p):
+                os.remove(p)
+
+    def test_raises_with_no_history(self):
+        empty_kb = self.kb_path + ".empty"
+        with self.assertRaises(RuntimeError):
+            review_research_history(call_fn=lambda p: "unused", knowledge_base_path=empty_kb,
+                                     conclusions_path=self.conclusions_path)
+
+    def test_records_conclusion_from_review(self):
+        conclusion = review_research_history(
+            call_fn=lambda p: "Range-breakout mechanisms keep failing regardless of filter added.",
+            knowledge_base_path=self.kb_path, conclusions_path=self.conclusions_path,
+        )
+        self.assertIn("Range-breakout", conclusion)
+        saved = load_conclusions(self.conclusions_path)
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(len(saved[0].based_on_exp_ids), 5)  # all 5 SEED-ORB entries
+
+    def test_review_prompt_includes_full_history_not_summary(self):
+        from research_lab.knowledge_base import load_entries
+        entries = load_entries(self.kb_path)
+        prompt = build_review_prompt(entries)
+        self.assertIn("SEED-ORB-1", prompt)
+        self.assertIn("SEED-ORB-5", prompt)
+        self.assertIn("higher-level", prompt.lower())
 
 
 class TestRankingParsing(unittest.TestCase):

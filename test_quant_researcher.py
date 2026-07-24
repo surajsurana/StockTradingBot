@@ -69,6 +69,15 @@ class TestBuildHypothesisPrompt(unittest.TestCase):
         self.assertIn("cash", prompt.lower())
         self.assertIn("no futures, no options", prompt.lower())
 
+    def test_research_conclusions_included_as_binding_when_present(self):
+        prompt = build_hypothesis_prompt("", n=5, research_conclusions="Single-regime dependency keeps failing.")
+        self.assertIn("Single-regime dependency", prompt)
+        self.assertIn("binding constraints", prompt.lower())
+
+    def test_no_conclusions_section_when_none_given(self):
+        prompt = build_hypothesis_prompt("", n=5, research_conclusions="")
+        self.assertNotIn("binding constraints", prompt.lower())
+
 
 class TestProposeHypotheses(unittest.TestCase):
     def test_uses_provided_call_fn_not_real_claude(self):
@@ -85,6 +94,30 @@ class TestProposeHypotheses(unittest.TestCase):
         propose_hypotheses(api_key="fake", n=2, call_fn=fake_call,
                             knowledge_base_path="/nonexistent/path/for/test.jsonl")
         self.assertIn("Research areas to draw from", captured["prompt"])
+
+    def test_conclusions_reach_the_prompt_when_a_review_exists(self):
+        import os
+        import tempfile
+        from research_lab.knowledge_base import record_conclusion
+
+        fd, conclusions_path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        os.remove(conclusions_path)
+        try:
+            record_conclusion("Single-regime dependency keeps failing.", ["EXP-001"], path=conclusions_path)
+            captured = {}
+
+            def fake_call(prompt):
+                captured["prompt"] = prompt
+                return _FAKE_RESPONSE
+
+            propose_hypotheses(api_key="fake", n=2, call_fn=fake_call,
+                                knowledge_base_path="/nonexistent/path/for/test.jsonl",
+                                conclusions_path=conclusions_path)
+            self.assertIn("Single-regime dependency", captured["prompt"])
+        finally:
+            if os.path.exists(conclusions_path):
+                os.remove(conclusions_path)
 
 
 if __name__ == "__main__":

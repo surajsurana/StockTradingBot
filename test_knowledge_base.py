@@ -72,5 +72,42 @@ class TestKnowledgeBase(unittest.TestCase):
         self.assertGreater(first_count, 0)
 
 
+class TestResearchConclusions(unittest.TestCase):
+    def setUp(self):
+        fd, self.path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        os.remove(self.path)
+
+    def tearDown(self):
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+    def test_record_then_load_round_trips(self):
+        kb.record_conclusion("Single-regime dependency keeps failing.", ["EXP-001", "EXP-002"],
+                              path=self.path)
+        conclusions = kb.load_conclusions(self.path)
+        self.assertEqual(len(conclusions), 1)
+        self.assertEqual(conclusions[0].based_on_exp_ids, ["EXP-001", "EXP-002"])
+        self.assertIn("Single-regime", conclusions[0].conclusion_text)
+
+    def test_append_only_never_overwrites_a_prior_conclusion(self):
+        kb.record_conclusion("First conclusion.", ["EXP-001"], path=self.path)
+        kb.record_conclusion("Second, updated conclusion.", ["EXP-001", "EXP-002"], path=self.path)
+        conclusions = kb.load_conclusions(self.path)
+        self.assertEqual(len(conclusions), 2)
+        self.assertEqual(conclusions[0].conclusion_text, "First conclusion.")
+        self.assertEqual(conclusions[1].conclusion_text, "Second, updated conclusion.")
+
+    def test_render_for_prompt_shows_only_the_latest(self):
+        kb.record_conclusion("Old, superseded conclusion.", ["EXP-001"], path=self.path)
+        kb.record_conclusion("Latest conclusion.", ["EXP-001", "EXP-002"], path=self.path)
+        rendered = kb.render_conclusions_for_prompt(self.path)
+        self.assertIn("Latest conclusion.", rendered)
+        self.assertNotIn("Old, superseded", rendered)
+
+    def test_render_for_prompt_empty_when_no_review_yet(self):
+        self.assertEqual(kb.render_conclusions_for_prompt(self.path), "")
+
+
 if __name__ == "__main__":
     unittest.main()

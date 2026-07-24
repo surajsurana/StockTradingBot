@@ -3,7 +3,8 @@ Research Director -- orchestrates one full experiment as a fixed-order
 pipeline of plain function calls, each with a simple input/output
 contract:
 
-    quant_researcher.propose_hypotheses()          [Claude -- creative]
+    research_director.review_research_history()    [Claude -- cross-experiment synthesis]
+    -> quant_researcher.propose_hypotheses()        [Claude -- creative]
     -> research_director.hard_filter()             [deterministic]
     -> research_director.rank_hypotheses()         [Claude -- judgment, pre-backtest only]
     -> (Strategy Developer implements the winner -- see NOTE below)
@@ -36,7 +37,7 @@ from typing import Callable, Optional
 
 from research_lab import backtesting_engineer, experiment_manager, performance_analyst, statistical_auditor
 from research_lab.base import Strategy
-from research_lab.knowledge_base import rejected_mechanisms
+from research_lab.knowledge_base import load_entries, record_conclusion, rejected_mechanisms
 from research_lab.performance_analyst import compute_regime_breakdown, compute_sector_breakdown, \
     compute_time_of_day_breakdown, load_sector_map
 from research_lab.quant_researcher import Hypothesis, propose_hypotheses
@@ -52,6 +53,60 @@ INFEASIBLE_DATA_KEYWORDS = [
 
 _STOPWORDS = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "with", "is",
               "this", "that", "its", "for", "as", "by", "from", "not", "than"}
+
+
+def build_review_prompt(entries: list) -> str:
+    blocks = "\n".join(
+        f"- [{e.exp_id}] {e.hypothesis_name} -- verdict: {e.verdict}. "
+        f"Mechanism: {e.mechanism_summary} Reason: {e.key_reason}"
+        for e in entries
+    )
+    return f"""You are the Research Director for an NSE cash-equity intraday strategy research lab. \
+Below is the FULL history of every hypothesis tested so far. Your job is NOT to summarize each one \
+individually (that's already there) -- it's to step back and find HIGHER-LEVEL, CROSS-CUTTING \
+lessons: recurring market-structure or behavioral assumptions that keep failing regardless of the \
+specific mechanism used to express them, patterns across multiple DIFFERENT hypotheses, and concrete \
+guidance for what the next batch of hypotheses should actively avoid assuming.
+
+Full experiment history ({len(entries)} entries):
+{blocks}
+
+Write 2-4 higher-level conclusions (not a per-experiment recap). For each, name the underlying \
+assumption that appears to be failing (or, if something has worked, what's supporting it), which \
+experiments support that conclusion, and what it implies for the next round of hypotheses. Be \
+specific and grounded in the actual results above, not generic trading platitudes."""
+
+
+def review_research_history(api_key: str = "", call_fn: Optional[Callable[[str], str]] = None,
+                             knowledge_base_path: Optional[str] = None,
+                             conclusions_path: Optional[str] = None) -> str:
+    """
+    Cross-experiment synthesis step, run BEFORE Quant Researcher proposes a
+    fresh batch -- distinct from both the per-experiment Performance
+    Analyst narrative (which only ever looks at ONE experiment) and the
+    raw Knowledge Base list (which is just facts, not synthesis). Records
+    the result via knowledge_base.record_conclusion() so it becomes part
+    of the permanent research history, then returns the text.
+
+    Raises RuntimeError if there's no history yet to review (nothing
+    useful to synthesize from zero experiments) -- callers should skip
+    calling this on a genuinely first-ever run.
+    """
+    entries = load_entries(knowledge_base_path) if knowledge_base_path else load_entries()
+    if not entries:
+        raise RuntimeError("No experiment history to review yet -- skip this step on a first-ever run.")
+
+    from news.news_agent import call_claude
+    prompt = build_review_prompt(entries)
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=2048))
+    conclusion_text = call(prompt)
+
+    exp_ids = [e.exp_id for e in entries]
+    if conclusions_path:
+        record_conclusion(conclusion_text, exp_ids, path=conclusions_path)
+    else:
+        record_conclusion(conclusion_text, exp_ids)
+    return conclusion_text
 
 
 def _significant_words(text: str) -> set:

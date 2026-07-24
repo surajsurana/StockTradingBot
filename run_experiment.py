@@ -94,10 +94,18 @@ LIQUID_UNIVERSE = [
 
 
 def run_propose(n: int):
+    from research_lab.knowledge_base import load_entries
     from research_lab.quant_researcher import propose_hypotheses
-    from research_lab.research_director import rank_and_select
+    from research_lab.research_director import rank_and_select, review_research_history
 
-    print(f"Quant Researcher: proposing {n} hypotheses (reading Knowledge Base history first)...")
+    if load_entries():
+        print("Research Director: reviewing full experiment history for cross-experiment lessons...")
+        conclusions = review_research_history(api_key=settings.ANTHROPIC_API_KEY)
+        print(f"\n{'-' * 70}\nResearch conclusions:\n{'-' * 70}\n{conclusions}\n{'-' * 70}\n")
+    else:
+        print("No experiment history yet -- skipping the review step for this first-ever run.")
+
+    print(f"\nQuant Researcher: proposing {n} hypotheses (informed by history + conclusions above)...")
     hypotheses = propose_hypotheses(settings.ANTHROPIC_API_KEY, n=n)
     print(f"Proposed {len(hypotheses)} hypotheses:")
     for h in hypotheses:

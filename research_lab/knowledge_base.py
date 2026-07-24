@@ -19,10 +19,19 @@ a write was ever interrupted.
 
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 KNOWLEDGE_BASE_PATH = os.path.join(os.path.dirname(__file__), "knowledge_base.jsonl")
+# Separate, append-only store for SYNTHESIZED cross-experiment lessons (the
+# Research Director's periodic review -- see research_director.py's
+# review_research_history()), distinct from the per-experiment records
+# above. Kept in its own file rather than mixed into knowledge_base.jsonl's
+# existing, already-tested/already-seeded per-experiment schema -- a
+# conclusion isn't shaped like an experiment record (it summarizes MANY of
+# them, not one), and this avoids any migration risk to data already in use.
+CONCLUSIONS_PATH = os.path.join(os.path.dirname(__file__), "research_conclusions.jsonl")
 
 
 @dataclass
@@ -104,6 +113,54 @@ def rejected_mechanisms(path: str = KNOWLEDGE_BASE_PATH) -> list:
     research_director.py) to reject near-duplicate hypotheses before any
     LLM ranking happens."""
     return [e.mechanism_summary for e in load_entries(path) if e.verdict in ("REJECT", "SEEDED")]
+
+
+@dataclass
+class ResearchConclusion:
+    timestamp: float
+    based_on_exp_ids: list
+    conclusion_text: str
+
+
+def record_conclusion(conclusion_text: str, based_on_exp_ids: list, path: str = CONCLUSIONS_PATH) -> None:
+    """
+    Appends a new synthesized conclusion -- never overwrites a prior one,
+    same append-only convention as record() above. Each review adds a NEW
+    entry (rather than replacing the last one) so the history of how the
+    lab's understanding evolved over time stays visible, even though
+    render_conclusions_for_prompt() below only surfaces the latest one to
+    Quant Researcher (the most up-to-date synthesis, not a pile of
+    overlapping/superseded ones).
+    """
+    entry = {"timestamp": time.time(), "based_on_exp_ids": based_on_exp_ids,
+              "conclusion_text": conclusion_text}
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def load_conclusions(path: str = CONCLUSIONS_PATH) -> list:
+    """Returns every conclusion as a list of ResearchConclusion, oldest first."""
+    if not os.path.exists(path):
+        return []
+    entries = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                entries.append(ResearchConclusion(**json.loads(line)))
+    return entries
+
+
+def render_conclusions_for_prompt(path: str = CONCLUSIONS_PATH) -> str:
+    """The latest research conclusion, formatted for Quant Researcher's
+    prompt. Empty string if no review has ever run yet."""
+    conclusions = load_conclusions(path)
+    if not conclusions:
+        return ""
+    latest = conclusions[-1]
+    return (f"Research Director's latest cross-experiment review (based on "
+            f"{len(latest.based_on_exp_ids)} experiments: {', '.join(latest.based_on_exp_ids)}):\n"
+            f"{latest.conclusion_text}")
 
 
 def seed_orb_history(path: str = KNOWLEDGE_BASE_PATH) -> None:

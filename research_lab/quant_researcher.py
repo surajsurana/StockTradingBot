@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from news.news_agent import call_claude, ClaudeAPIError
-from research_lab.knowledge_base import render_for_prompt
+from research_lab.knowledge_base import render_conclusions_for_prompt, render_for_prompt
 
 RESEARCH_AREAS = [
     "Opening Range Breakout", "Relative Volume", "VWAP", "Previous Day High/Low",
@@ -40,18 +40,24 @@ class Hypothesis:
     distinctiveness: str
 
 
-def build_hypothesis_prompt(knowledge_base_summary: str, n: int = 8) -> str:
+def build_hypothesis_prompt(knowledge_base_summary: str, n: int = 8, research_conclusions: str = "") -> str:
     areas_text = "\n".join(f"- {a}" for a in RESEARCH_AREAS)
     history_section = (
         f"\n{knowledge_base_summary}\n"
         if knowledge_base_summary
         else "\n(No prior research history yet -- this is the first batch.)\n"
     )
+    conclusions_section = (
+        f"\n{research_conclusions}\n\nTreat these conclusions as binding constraints, not just "
+        f"background -- if a conclusion says an underlying assumption keeps failing, no hypothesis "
+        f"in this batch should rely on that assumption even wrapped in a new-looking mechanism.\n"
+        if research_conclusions else ""
+    )
     return f"""You are the Quant Researcher for an NSE (Indian stock market) cash-equity \
 INTRADAY strategy research lab. Cash equity only -- no futures, no options, no leverage \
 assumptions. Your job is ONLY to propose hypotheses for further research; you do not decide \
 whether any of them work.
-{history_section}
+{history_section}{conclusions_section}
 Research areas to draw from (combine 2-3 per hypothesis rather than using one in isolation):
 {areas_text}
 
@@ -66,9 +72,10 @@ information flow, order flow, a specific type of market participant's behavior -
 known pattern")
 2. Be clearly different from every entry in the prior research history above (do not propose \
 something whose core mechanism substantially overlaps with a REJECTed or SEEDED-negative entry)
-3. Be clearly different from the OTHER hypotheses in this same batch (do not propose five variations \
+3. Not rely on any assumption the research conclusions above have flagged as repeatedly failing
+4. Be clearly different from the OTHER hypotheses in this same batch (do not propose five variations \
 of the same breakout idea)
-4. Be naturally selective (fires on a genuine subset of days/stocks, not constantly)
+5. Be naturally selective (fires on a genuine subset of days/stocks, not constantly)
 
 Respond in EXACTLY this format, one block per hypothesis, nothing else:
 
@@ -120,14 +127,18 @@ def parse_hypotheses_response(raw_response: str) -> list:
 
 
 def propose_hypotheses(api_key: str, n: int = 8, call_fn: Optional[Callable[[str], str]] = None,
-                        knowledge_base_path: Optional[str] = None) -> list:
-    """Full pipeline: reads the Knowledge Base, builds the prompt, calls
-    Claude, parses the response. Raises ClaudeAPIError on API failure --
-    unlike the swing system's Macro Strategist, there's no safe "default"
-    hypothesis to fall back to, so a failure here should stop the research
-    run rather than silently proceeding with nothing to test."""
+                        knowledge_base_path: Optional[str] = None,
+                        conclusions_path: Optional[str] = None) -> list:
+    """Full pipeline: reads the Knowledge Base (both the raw per-experiment
+    history AND the Research Director's latest synthesized cross-experiment
+    conclusions, if any review has run), builds the prompt, calls Claude,
+    parses the response. Raises ClaudeAPIError on API failure -- unlike the
+    swing system's Macro Strategist, there's no safe "default" hypothesis
+    to fall back to, so a failure here should stop the research run rather
+    than silently proceeding with nothing to test."""
     kb_summary = render_for_prompt(knowledge_base_path) if knowledge_base_path else render_for_prompt()
-    prompt = build_hypothesis_prompt(kb_summary, n=n)
+    conclusions = render_conclusions_for_prompt(conclusions_path) if conclusions_path else render_conclusions_for_prompt()
+    prompt = build_hypothesis_prompt(kb_summary, n=n, research_conclusions=conclusions)
     # max_tokens raised well above call_claude's 1024 default -- a batch of
     # n detailed, multi-field hypotheses is a much longer expected output
     # than anything else that calls this function (see call_claude's
