@@ -15,7 +15,15 @@ import pandas as pd
 @dataclass
 class Signal:
     symbol: str
-    direction: str        # "BUY" or "SELL"
+    direction: str        # "BUY" (long) or "SELL" (short) -- backtesting_engineer.py's
+                           # simulate_symbol() derives stop/target/exit checks/PnL sign
+                           # from this directly, so it must be set correctly:
+                           #   BUY  (long):  stop_loss < entry_price < target
+                           #   SELL (short): target < entry_price < stop_loss
+                           # A stop on the wrong side for the given direction is treated
+                           # as invalid and the signal is skipped (see _risk_per_share()).
+                           # Short here means standard NSE intraday (MIS) short-selling --
+                           # sell first, buy back same day -- not a futures/options position.
     entry_price: float
     stop_loss: float
     target: float

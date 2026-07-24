@@ -12,7 +12,8 @@ from datetime import date
 import pandas as pd
 
 from research_lab.backtesting_engineer import (
-    Trade, _compute_day_context, compute_metrics, simulate_symbol, walk_forward_split,
+    Trade, _check_exit, _compute_day_context, _risk_per_share, _trade_pnl,
+    compute_metrics, simulate_symbol, walk_forward_split,
 )
 from research_lab.base import Signal, Strategy
 from research_lab.risk_manager_research import RiskParameters
@@ -225,6 +226,135 @@ class TestWalkForwardSplit(unittest.TestCase):
         windows = walk_forward_split(date(2026, 1, 1), date(2026, 4, 1), 4)
         for i in range(len(windows) - 1):
             self.assertEqual(windows[i][1], windows[i + 1][0])
+
+
+class TestDirectionAgnosticHelpers(unittest.TestCase):
+    """Per Suraj's explicit request (2026-07-24): trade direction is a
+    property of the strategy, not a special case bolted onto long-only
+    logic. These test the shared helpers directly, matching the same
+    hand-calculation rigor as TestComputeMetrics above."""
+
+    def test_risk_per_share_long(self):
+        # BUY: risk = entry - stop (stop below entry)
+        self.assertEqual(_risk_per_share(entry_price=100.0, stop_loss=98.0, direction="BUY"), 2.0)
+
+    def test_risk_per_share_short(self):
+        # SELL: risk = stop - entry (stop above entry)
+        self.assertEqual(_risk_per_share(entry_price=100.0, stop_loss=102.0, direction="SELL"), 2.0)
+
+    def test_risk_per_share_invalid_long_stop_is_negative_or_zero(self):
+        # A BUY stop placed above entry is invalid -- caller treats <= 0 as reject
+        self.assertLessEqual(_risk_per_share(entry_price=100.0, stop_loss=101.0, direction="BUY"), 0)
+
+    def test_risk_per_share_invalid_short_stop_is_negative_or_zero(self):
+        # A SELL stop placed below entry is invalid
+        self.assertLessEqual(_risk_per_share(entry_price=100.0, stop_loss=99.0, direction="SELL"), 0)
+
+    def test_check_exit_long_stop_hit_by_low(self):
+        hit_stop, hit_target = _check_exit("BUY", bar_low=97.0, bar_high=100.5, stop_loss=98.0, target=105.0)
+        self.assertTrue(hit_stop)
+        self.assertFalse(hit_target)
+
+    def test_check_exit_long_target_hit_by_high(self):
+        hit_stop, hit_target = _check_exit("BUY", bar_low=99.0, bar_high=106.0, stop_loss=98.0, target=105.0)
+        self.assertFalse(hit_stop)
+        self.assertTrue(hit_target)
+
+    def test_check_exit_short_stop_hit_by_high(self):
+        # Mirror image of long: short's stop is ABOVE entry, breached by a HIGH
+        hit_stop, hit_target = _check_exit("SELL", bar_low=99.0, bar_high=103.0, stop_loss=102.0, target=95.0)
+        self.assertTrue(hit_stop)
+        self.assertFalse(hit_target)
+
+    def test_check_exit_short_target_hit_by_low(self):
+        # Short's target is BELOW entry, reached by a LOW
+        hit_stop, hit_target = _check_exit("SELL", bar_low=94.0, bar_high=100.5, stop_loss=102.0, target=95.0)
+        self.assertFalse(hit_stop)
+        self.assertTrue(hit_target)
+
+    def test_trade_pnl_long_profits_when_price_rises(self):
+        self.assertEqual(_trade_pnl("BUY", entry_price=100.0, exit_price=105.0, quantity=10), 50.0)
+
+    def test_trade_pnl_long_loses_when_price_falls(self):
+        self.assertEqual(_trade_pnl("BUY", entry_price=100.0, exit_price=98.0, quantity=10), -20.0)
+
+    def test_trade_pnl_short_profits_when_price_falls(self):
+        self.assertEqual(_trade_pnl("SELL", entry_price=100.0, exit_price=95.0, quantity=10), 50.0)
+
+    def test_trade_pnl_short_loses_when_price_rises(self):
+        self.assertEqual(_trade_pnl("SELL", entry_price=100.0, exit_price=102.0, quantity=10), -20.0)
+
+
+class _ShortOnceADayStrategy(Strategy):
+    """Fires a SHORT exactly once on the 4th bar of any day, mirroring
+    _RangeBreakoutOnceADayStrategy above but on the sell side."""
+    name = "test_short_strategy"
+
+    def generate_signal(self, todays_bars_so_far, context=None):
+        if len(todays_bars_so_far) != 4:
+            return None
+        entry = float(todays_bars_so_far.iloc[-1]["Close"])
+        return Signal(symbol="TEST", direction="SELL", entry_price=entry,
+                       stop_loss=entry + 1, target=entry - 2, confidence=0.5,
+                       strategy_name=self.name)
+
+
+class TestSimulateSymbolShortSide(unittest.TestCase):
+    """Full simulate_symbol() integration tests for short trades -- the
+    same mandatory-EOD-square-off and stop/target mechanics already
+    proven for longs, now verified for the mirror-image short case."""
+
+    def _falling_day(self, n_bars=8, start_price=100.0):
+        idx = pd.date_range("2026-01-05 09:15", periods=n_bars, freq="5min")
+        prices = [start_price - i * 0.5 for i in range(n_bars)]  # steadily falling
+        return pd.DataFrame({
+            "Open": prices, "High": [p + 0.3 for p in prices], "Low": [p - 0.3 for p in prices],
+            "Close": prices, "Volume": [1000] * n_bars,
+        }, index=idx)
+
+    def _rising_day(self, n_bars=8, start_price=100.0):
+        idx = pd.date_range("2026-01-05 09:15", periods=n_bars, freq="5min")
+        prices = [start_price + i * 0.5 for i in range(n_bars)]  # steadily rising
+        return pd.DataFrame({
+            "Open": prices, "High": [p + 0.3 for p in prices], "Low": [p - 0.3 for p in prices],
+            "Close": prices, "Volume": [1000] * n_bars,
+        }, index=idx)
+
+    def test_short_trade_profits_when_price_falls_to_target(self):
+        df = self._falling_day(n_bars=10)
+        trades = simulate_symbol(df, _ShortOnceADayStrategy(), capital=100000, risk_per_trade_pct=0.01)
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].direction, "SELL")
+        self.assertEqual(trades[0].exit_reason, "target")
+        self.assertGreater(trades[0].pnl, 0)  # short profited as price fell
+
+    def test_short_trade_loses_when_price_rises_to_stop(self):
+        df = self._rising_day(n_bars=10)
+        trades = simulate_symbol(df, _ShortOnceADayStrategy(), capital=100000, risk_per_trade_pct=0.01)
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].exit_reason, "stop_loss")
+        self.assertLess(trades[0].pnl, 0)  # short lost as price rose against it
+
+    def test_short_trade_eod_square_off_when_flat(self):
+        idx = pd.date_range("2026-01-05 09:15", periods=6, freq="5min")
+        flat_prices = [100.0] * 6
+        df = pd.DataFrame({
+            "Open": flat_prices, "High": flat_prices, "Low": flat_prices,
+            "Close": flat_prices, "Volume": [1000] * 6,
+        }, index=idx)
+        trades = simulate_symbol(df, _ShortOnceADayStrategy(), capital=100000, risk_per_trade_pct=0.01)
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].exit_reason, "eod_square_off")
+
+    def test_long_and_short_strategies_both_default_direction_buy_unaffected(self):
+        # Regression check: the existing long-only tests (TestSimulateSymbol)
+        # must be completely unaffected by this refactor -- direction
+        # defaults to "BUY" and long mechanics are unchanged.
+        df = self._rising_day(n_bars=10)
+        trades = simulate_symbol(df, _RangeBreakoutOnceADayStrategy(), capital=100000,
+                                  risk_per_trade_pct=0.01)
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades[0].direction, "BUY")
 
 
 if __name__ == "__main__":

@@ -46,6 +46,37 @@ class Trade:
     exit_reason: str
     entry_hour: float = None   # 24h float (e.g. 9.25 = 9:15am) -- for Performance Analyst's
                                # time-of-day breakdown; None if the caller didn't provide one
+    direction: str = "BUY"     # "BUY" (long) or "SELL" (short) -- see _is_long() etc. below
+
+
+def _is_long(direction: str) -> bool:
+    return direction == "BUY"
+
+
+def _risk_per_share(entry_price: float, stop_loss: float, direction: str) -> float:
+    """Always positive for a valid stop, regardless of direction -- a long's
+    stop sits below entry (risk = entry - stop); a short's stop sits above
+    entry (risk = stop - entry). Zero or negative means an invalid stop for
+    that direction (e.g. a "BUY" stop placed above entry)."""
+    return (entry_price - stop_loss) if _is_long(direction) else (stop_loss - entry_price)
+
+
+def _check_exit(direction: str, bar_low: float, bar_high: float, stop_loss: float, target: float) -> tuple:
+    """Returns (hit_stop, hit_target) for one bar. Long: stop is below
+    (breached by a low), target is above (reached by a high). Short: stop
+    is above (breached by a high), target is below (reached by a low) --
+    the exact mirror image."""
+    if _is_long(direction):
+        return bar_low <= stop_loss, bar_high >= target
+    return bar_high >= stop_loss, bar_low <= target
+
+
+def _trade_pnl(direction: str, entry_price: float, exit_price: float, quantity: int) -> float:
+    """Long profits as price rises; short profits as price falls -- same
+    magnitude of move, opposite sign of exposure."""
+    if _is_long(direction):
+        return (exit_price - entry_price) * quantity
+    return (entry_price - exit_price) * quantity
 
 
 def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int = 20) -> dict:
@@ -133,8 +164,10 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
             is_last_bar = i == len(day_df) - 1
 
             if position is not None:
-                hit_stop = bar["Low"] <= position["stop_loss"]
-                hit_target = bar["High"] >= position["target"]
+                hit_stop, hit_target = _check_exit(
+                    position["direction"], float(bar["Low"]), float(bar["High"]),
+                    position["stop_loss"], position["target"],
+                )
                 if hit_stop or hit_target:
                     exit_price = position["stop_loss"] if hit_stop else position["target"]
                     exit_reason = "stop_loss" if hit_stop else "target"
@@ -143,12 +176,13 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
                     exit_reason = "eod_square_off"
                 else:
                     continue
-                pnl = (exit_price - position["entry_price"]) * position["quantity"]
+                pnl = _trade_pnl(position["direction"], position["entry_price"], exit_price,
+                                  position["quantity"])
                 trades.append(Trade(
                     symbol=symbol, entry_date=trade_date, exit_date=trade_date,
                     entry_price=position["entry_price"], exit_price=exit_price,
                     quantity=position["quantity"], pnl=pnl, exit_reason=exit_reason,
-                    entry_hour=position["entry_hour"],
+                    entry_hour=position["entry_hour"], direction=position["direction"],
                 ))
                 trades_today += 1
                 realized_pnl_today += pnl
@@ -166,16 +200,16 @@ def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,
             signal = strategy.generate_signal(todays_bars_so_far, day_context)
             if signal is None:
                 continue
-            risk_per_share = signal.entry_price - signal.stop_loss
+            risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
-                continue
+                continue  # invalid stop for this direction (e.g. a BUY stop placed above entry)
             quantity = int((capital * risk_per_trade_pct) / risk_per_share)
             if quantity <= 0:
                 continue
             entry_timestamp = todays_bars_so_far.index[-1]
             position = {
                 "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
-                "target": signal.target, "quantity": quantity,
+                "target": signal.target, "quantity": quantity, "direction": signal.direction,
                 "entry_hour": entry_timestamp.hour + entry_timestamp.minute / 60,
             }
 
