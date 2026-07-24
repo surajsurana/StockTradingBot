@@ -142,7 +142,10 @@ def propose_hypotheses(api_key: str, n: int = 8, call_fn: Optional[Callable[[str
     # max_tokens raised well above call_claude's 1024 default -- a batch of
     # n detailed, multi-field hypotheses is a much longer expected output
     # than anything else that calls this function (see call_claude's
-    # docstring for the real 2026-07-24 incident this fixes).
-    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=4096))
+    # docstring for the real 2026-07-24 incident this fixes). Even 4096
+    # wasn't enough once the prompt grew to include both Knowledge Base
+    # history AND Research Director conclusions -- raised again after a
+    # second real "thinking block only" failure at 4096.
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=8192))
     raw_response = call(prompt)
     return parse_hypotheses_response(raw_response)

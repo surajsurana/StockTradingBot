@@ -106,5 +106,5 @@ def explain(hypothesis_name: str, verdict: dict, metrics: dict, sector_breakdown
     rather than silently produce an empty observations.md."""
     prompt = build_narrative_prompt(hypothesis_name, verdict, metrics, sector_breakdown,
                                      time_of_day_breakdown, regime_breakdown)
-    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=1536))
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=2048))
     return call(prompt)
