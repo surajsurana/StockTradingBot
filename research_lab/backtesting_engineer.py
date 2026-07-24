@@ -87,31 +87,49 @@ def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int 
 
     prior_close: previous trading day's last Close, or None if there's no
     earlier data (e.g. the very first day in the fetched window).
+    prior_high: previous trading day's max High, or None (same
+    availability rule as prior_close) -- added for EXP-003's Prior-Day-High
+    reference-level hypothesis.
     avg_first_15min_volume_20d: average of the first-15-minutes' total
     Volume (first 3 bars at 5-min candles) over up to the last
     `lookback_days` trading days before trade_date, or None if fewer than
     5 prior days are available (too small a sample to call "average").
+    avg_volume_by_slot_20d: {bar_index: average Volume at that bar index
+    across up to `lookback_days` prior days}, or {} if fewer than 5 prior
+    days available -- lets a strategy check "is THIS specific 10:35am
+    candle's volume unusually high for a 10:35am candle", not just the
+    opening range, since a hypothesis's reference event can occur anywhere
+    in the morning (e.g. EXP-003's PDH poke, checked up to 90 min in).
     """
     prior_bars = df[df.index.date < trade_date]
     if prior_bars.empty:
-        return {"prior_close": None, "avg_first_15min_volume_20d": None}
+        return {"prior_close": None, "prior_high": None, "avg_first_15min_volume_20d": None,
+                "avg_volume_by_slot_20d": {}}
 
     prior_close = float(prior_bars.iloc[-1]["Close"])
+    last_day = sorted(prior_bars.index.date)[-1]
+    prior_high = float(prior_bars[prior_bars.index.date == last_day]["High"].max())
 
     prior_bars = prior_bars.copy()
     prior_bars["trade_date"] = prior_bars.index.date
     prior_days = sorted(prior_bars["trade_date"].unique())[-lookback_days:]
     if len(prior_days) < 5:
-        return {"prior_close": prior_close, "avg_first_15min_volume_20d": None}
+        return {"prior_close": prior_close, "prior_high": prior_high,
+                "avg_first_15min_volume_20d": None, "avg_volume_by_slot_20d": {}}
 
     first_15min_volumes = []
+    volumes_by_slot = {}
     for d in prior_days:
         day_bars = prior_bars[prior_bars["trade_date"] == d]
         if len(day_bars) >= 3:
             first_15min_volumes.append(float(day_bars.iloc[:3]["Volume"].sum()))
+        for slot_idx, vol in enumerate(day_bars["Volume"].tolist()):
+            volumes_by_slot.setdefault(slot_idx, []).append(float(vol))
     avg_volume = sum(first_15min_volumes) / len(first_15min_volumes) if first_15min_volumes else None
+    avg_volume_by_slot = {slot: sum(vols) / len(vols) for slot, vols in volumes_by_slot.items()}
 
-    return {"prior_close": prior_close, "avg_first_15min_volume_20d": avg_volume}
+    return {"prior_close": prior_close, "prior_high": prior_high,
+            "avg_first_15min_volume_20d": avg_volume, "avg_volume_by_slot_20d": avg_volume_by_slot}
 
 
 def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,

@@ -50,10 +50,13 @@ class Strategy:
         signal has no other way to know things like "yesterday's close" or
         "this stock's typical volume at this time of day" -- it only ever
         sees today's bars in price_history. Currently provided keys:
-        "prior_close" (float or None if unavailable) and
-        "avg_first_15min_volume_20d" (float or None). None if a strategy
-        doesn't need any multi-day context (e.g. a pure intraday
-        opening-range strategy).
+        "prior_close" (float or None), "prior_high" (float or None),
+        "avg_first_15min_volume_20d" (float or None), and
+        "avg_volume_by_slot_20d" (dict {bar_index: avg_volume}, or {} if
+        unavailable) -- for checking whether a specific candle later in the
+        morning has unusual volume for ITS time slot, not just the opening
+        range. None if a strategy doesn't need any multi-day context (e.g.
+        a pure intraday opening-range strategy).
 
         Return a Signal if this strategy wants to open a position right
         now, otherwise return None.

@@ -214,6 +214,31 @@ class TestComputeDayContext(unittest.TestCase):
         ctx = _compute_day_context(full_df, date(2026, 1, 11))
         self.assertEqual(ctx["prior_close"], 100.0)  # not 999.0
 
+    def test_prior_high_is_previous_days_max_high(self):
+        # _multi_day_df sets High = close + 0.2 for every bar that day
+        df = self._multi_day_df(n_days=10, last_day_close=123.0)
+        ctx = _compute_day_context(df, date(2026, 1, 11))
+        self.assertEqual(ctx["prior_high"], 123.2)
+
+    def test_prior_high_none_when_no_prior_data(self):
+        df = self._multi_day_df(n_days=5)
+        ctx = _compute_day_context(df, date(2026, 1, 1))
+        self.assertIsNone(ctx["prior_high"])
+
+    def test_avg_volume_by_slot_hand_calculated(self):
+        # constant 500 volume on every bar/day in the helper -> every slot's
+        # 20-day average should also be exactly 500
+        df = self._multi_day_df(n_days=25, first_15min_volume_per_bar=500)
+        ctx = _compute_day_context(df, date(2026, 1, 26))
+        self.assertEqual(len(ctx["avg_volume_by_slot_20d"]), 10)  # 10 bars/day in the helper
+        for slot, avg in ctx["avg_volume_by_slot_20d"].items():
+            self.assertEqual(avg, 500.0)
+
+    def test_avg_volume_by_slot_empty_when_fewer_than_5_prior_days(self):
+        df = self._multi_day_df(n_days=3)
+        ctx = _compute_day_context(df, date(2026, 1, 4))
+        self.assertEqual(ctx["avg_volume_by_slot_20d"], {})
+
 
 class TestWalkForwardSplit(unittest.TestCase):
     def test_splits_into_requested_number_of_windows(self):
