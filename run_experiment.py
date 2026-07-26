@@ -18,11 +18,15 @@ research_lab/research_director.py's module docstring for why):
     subclass in research_lab/strategies/<name>.py)
 
     python run_experiment.py --continue --strategy-module=research_lab.strategies.<name> \\
-        --strategy-class=<ClassName> [--days=180] [--limit=30] [--windows=4]
+        --strategy-class=<ClassName> [--days=180] [--limit=30] [--windows=4] [--cross-sectional]
         Fetches real Kite intraday data for the already-implemented
         strategy, runs the full backtest -> walk-forward -> Statistical
         Audit -> Performance Analyst narrative -> Experiment Manager save
-        pipeline, reports the real verdict (pass or reject).
+        pipeline, reports the real verdict (pass or reject). Pass
+        --cross-sectional for a Strategy whose generate_signal() reads the
+        market_state param (breadth/relative-strength/leader-laggard) --
+        routes through research_lab/market_simulator.py instead of the
+        single-symbol engine, and also fetches NIFTY intraday data.
 """
 
 import argparse
@@ -147,7 +151,7 @@ def run_propose(n: int):
 
 
 def run_continue(strategy_module: str, strategy_class: str, days: int, limit: int, windows: int,
-                  from_experiment: str = None):
+                  from_experiment: str = None, cross_sectional: bool = False):
     from research_lab.research_director import run_experiment_phase2
     from research_lab.risk_manager_research import RiskParameters
     from data.fetch_kite_intraday import fetch_all_intraday
@@ -200,6 +204,12 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
     start_date = min(df.index.date.min() for df in data.values())
     end_date = max(df.index.date.max() for df in data.values())
 
+    nifty_data = None
+    if cross_sectional:
+        from data.fetch_kite_intraday import fetch_nifty_intraday
+        print("Cross-sectional mode: fetching NIFTY 50 intraday candles for market_state...")
+        nifty_data = fetch_nifty_intraday("5minute", from_date, to_date, settings)
+
     exp_id = run_experiment_phase2(
         hypothesis=winner, strategy=strategy, data=data,
         capital_per_symbol=settings.RESEARCH_LAB_VIRTUAL_CAPITAL,
@@ -207,6 +217,7 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
         selection_reasoning=selection_reasoning,
         risk_params=RiskParameters(), n_walk_forward_windows=windows,
         narrative_api_key=settings.ANTHROPIC_API_KEY,
+        use_cross_sectional=cross_sectional, nifty_data=nifty_data,
     )
 
     from research_lab.experiment_manager import load_experiment
@@ -231,6 +242,11 @@ def main():
     parser.add_argument("--from-experiment", type=str, default=None,
                          help="Re-validate an already-selected hypothesis (e.g. EXP-001) against "
                               "new data, instead of consuming pending_proposal.json.")
+    parser.add_argument("--cross-sectional", action="store_true",
+                         help="Run the strategy through market_simulator.simulate_universe_cross_sectional() "
+                              "instead of the single-symbol engine, and fetch NIFTY intraday data for "
+                              "market_state.nifty_return_since_open_pct. Required for a Strategy whose "
+                              "generate_signal() actually reads the market_state param.")
     args = parser.parse_args()
 
     if args.propose:
@@ -240,7 +256,7 @@ def main():
             print("--continue requires --strategy-module and --strategy-class")
             sys.exit(1)
         run_continue(args.strategy_module, args.strategy_class, args.days, args.limit, args.windows,
-                     from_experiment=args.from_experiment)
+                     from_experiment=args.from_experiment, cross_sectional=args.cross_sectional)
     else:
         print(__doc__)
 

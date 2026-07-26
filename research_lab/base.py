@@ -37,7 +37,8 @@ class Strategy:
 
     name = "base"
 
-    def generate_signal(self, price_history: pd.DataFrame, context: Optional[dict] = None) -> Optional[Signal]:
+    def generate_signal(self, price_history: pd.DataFrame, context: Optional[dict] = None,
+                         market_state: Optional["MarketState"] = None) -> Optional[Signal]:
         """
         price_history: DataFrame with columns Open, High, Low, Close,
         Volume. TODAY's bars only, from market open up to the current bar
@@ -57,6 +58,16 @@ class Strategy:
         morning has unusual volume for ITS time slot, not just the opening
         range. None if a strategy doesn't need any multi-day context (e.g.
         a pure intraday opening-range strategy).
+
+        market_state: a research_lab.market_state.MarketState snapshot of
+        the WHOLE universe at this same bar (breadth, sector breadth,
+        relative-strength leaders/laggards, Nifty return-since-open) --
+        None when this strategy is run through the single-symbol engine
+        (backtesting_engineer.simulate_symbol(), which has no cross-symbol
+        awareness), populated when run through
+        market_simulator.py's cross-sectional engine. A strategy that
+        needs this should return None gracefully if it's ever called with
+        market_state=None, rather than assuming it's always present.
 
         Return a Signal if this strategy wants to open a position right
         now, otherwise return None.

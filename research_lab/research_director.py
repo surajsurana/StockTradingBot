@@ -35,7 +35,10 @@ hypothesis has an actual Strategy implementation).
 import re
 from typing import Callable, Optional
 
-from research_lab import backtesting_engineer, experiment_manager, performance_analyst, statistical_auditor
+import pandas as pd
+
+from research_lab import backtesting_engineer, experiment_manager, market_simulator, performance_analyst, \
+    statistical_auditor
 from research_lab.base import Strategy
 from research_lab.knowledge_base import load_entries, record_conclusion, rejected_mechanisms
 from research_lab.performance_analyst import compute_regime_breakdown, compute_sector_breakdown, \
@@ -260,14 +263,30 @@ def rank_and_select(hypotheses: list, knowledge_base_path: Optional[str] = None,
 
 def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: float,
                              risk_params: RiskParameters, start_date, end_date,
-                             n_walk_forward_windows: int = 4) -> dict:
+                             n_walk_forward_windows: int = 4, use_cross_sectional: bool = False,
+                             sector_map: Optional[dict] = None,
+                             nifty_data: Optional[pd.DataFrame] = None,
+                             leader_laggard_n: int = 5) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via backtesting_engineer.walk_forward_split(). The LAST window
     is the true out-of-sample holdout -- never touched while selecting or
     describing the hypothesis, only evaluated once here. The rest are the
     walk-forward consistency windows the Statistical Auditor checks.
+
+    use_cross_sectional: routes each window through
+    market_simulator.simulate_universe_cross_sectional() instead of
+    backtesting_engineer.run_backtest() -- for a Strategy whose
+    generate_signal() actually uses the market_state param (breadth,
+    relative strength, leaders/laggards). sector_map is then required;
+    nifty_data (NIFTY intraday bars) is optional, only used for
+    MarketState.nifty_return_since_open_pct. Output shape is identical
+    either way, so everything downstream (metrics/audit) is unaffected by
+    which engine ran.
     """
+    if use_cross_sectional and not sector_map:
+        raise ValueError("use_cross_sectional=True requires a sector_map.")
+
     windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
     walk_forward_metrics = []
     all_trades_by_window = []
@@ -277,9 +296,17 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
             sym: df[(df.index.date >= w_start) & (df.index.date <= w_end)]
             for sym, df in data.items()
         }
-        result = backtesting_engineer.run_backtest(
-            strategy, windowed_data, capital_per_symbol, risk_params.risk_per_trade_pct, risk_params,
-        )
+        if use_cross_sectional:
+            windowed_nifty = (nifty_data[(nifty_data.index.date >= w_start) & (nifty_data.index.date <= w_end)]
+                               if nifty_data is not None else None)
+            result = market_simulator.simulate_universe_cross_sectional(
+                windowed_data, strategy, capital_per_symbol, risk_params.risk_per_trade_pct, sector_map,
+                risk_params=risk_params, nifty_data=windowed_nifty, leader_laggard_n=leader_laggard_n,
+            )
+        else:
+            result = backtesting_engineer.run_backtest(
+                strategy, windowed_data, capital_per_symbol, risk_params.risk_per_trade_pct, risk_params,
+            )
         metrics = backtesting_engineer.compute_metrics(
             result["trades"], capital_per_symbol * len(data), result["trading_calendar"],
         )
@@ -306,7 +333,8 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
                            n_walk_forward_windows: int = 4, narrative_api_key: str = "",
                            narrative_call_fn: Optional[Callable[[str], str]] = None,
                            experiments_dir: Optional[str] = None, knowledge_base_path: Optional[str] = None,
-                           skip_regime_breakdown: bool = False) -> str:
+                           skip_regime_breakdown: bool = False, use_cross_sectional: bool = False,
+                           nifty_data: Optional[pd.DataFrame] = None, leader_laggard_n: int = 5) -> str:
     """
     Phase 2: given an already-implemented Strategy for the already-selected
     hypothesis, runs the full backtest -> audit -> narrative -> save
@@ -321,10 +349,17 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
     import time and won't pick up a later patch.
     skip_regime_breakdown: for tests -- avoids a real network call to
     fetch_nifty() when regime breakdown isn't what's being tested.
+    use_cross_sectional/nifty_data/leader_laggard_n: see
+    run_backtest_with_audit() -- for a Strategy that uses market_state.
+    sector_map is loaded once, below, and reused for both this and the
+    (unrelated) post-backtest sector P&L breakdown.
     """
     risk_params = risk_params or RiskParameters()
+    sector_map = load_sector_map()
     backtest_result = run_backtest_with_audit(
         strategy, data, capital_per_symbol, risk_params, start_date, end_date, n_walk_forward_windows,
+        use_cross_sectional=use_cross_sectional, sector_map=sector_map if use_cross_sectional else None,
+        nifty_data=nifty_data, leader_laggard_n=leader_laggard_n,
     )
     verdict = backtest_result["verdict"]
 
@@ -333,7 +368,6 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
         sorted({d for df in data.values() for d in df.index.date}),
     )
 
-    sector_map = load_sector_map()
     sector_breakdown = compute_sector_breakdown(backtest_result["all_trades"], sector_map)
     time_of_day_breakdown = compute_time_of_day_breakdown(backtest_result["all_trades"])
     regime_breakdown = {}

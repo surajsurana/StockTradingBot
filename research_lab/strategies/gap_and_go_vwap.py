@@ -46,7 +46,8 @@ class GapAndGoVWAPStrategy(Strategy):
         self.range_candles = max(1, range_minutes // candle_minutes)
         self.target_gap_multiple = target_gap_multiple
 
-    def generate_signal(self, todays_bars_so_far: pd.DataFrame, context: Optional[dict] = None) -> Optional[Signal]:
+    def generate_signal(self, todays_bars_so_far: pd.DataFrame, context: Optional[dict] = None,
+                         market_state=None) -> Optional[Signal]:
         context = context or {}
         prior_close = context.get("prior_close")
         avg_first_15min_volume = context.get("avg_first_15min_volume_20d")

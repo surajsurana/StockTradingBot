@@ -77,7 +77,7 @@ class _RangeBreakoutOnceADayStrategy(Strategy):
     simulate_symbol()'s one-trade-per-day and risk_params tests."""
     name = "test_strategy"
 
-    def generate_signal(self, todays_bars_so_far, context=None):
+    def generate_signal(self, todays_bars_so_far, context=None, market_state=None):
         if len(todays_bars_so_far) != 4:
             return None
         entry = float(todays_bars_so_far.iloc[-1]["Close"])
@@ -124,7 +124,7 @@ class TestSimulateSymbol(unittest.TestCase):
         class _AlwaysFiresStrategy(Strategy):
             name = "always_fires"
 
-            def generate_signal(self, todays_bars_so_far, context=None):
+            def generate_signal(self, todays_bars_so_far, context=None, market_state=None):
                 if len(todays_bars_so_far) < 2:
                     return None
                 entry = float(todays_bars_so_far.iloc[-1]["Close"])
@@ -315,7 +315,7 @@ class _ShortOnceADayStrategy(Strategy):
     _RangeBreakoutOnceADayStrategy above but on the sell side."""
     name = "test_short_strategy"
 
-    def generate_signal(self, todays_bars_so_far, context=None):
+    def generate_signal(self, todays_bars_so_far, context=None, market_state=None):
         if len(todays_bars_so_far) != 4:
             return None
         entry = float(todays_bars_so_far.iloc[-1]["Close"])

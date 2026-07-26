@@ -191,7 +191,7 @@ SELECTION_REASONING: Best mechanism."""
 class _NeverFiresStrategy(Strategy):
     name = "never_fires"
 
-    def generate_signal(self, todays_bars_so_far, context=None):
+    def generate_signal(self, todays_bars_so_far, context=None, market_state=None):
         return None
 
 

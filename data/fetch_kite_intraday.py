@@ -50,6 +50,12 @@ MAX_SPAN_DAYS = {
 INSTRUMENTS_URL = "https://api.kite.trade/instruments/NSE"
 HISTORICAL_URL_TEMPLATE = "https://api.kite.trade/instruments/historical/{instrument_token}/{interval}"
 
+# Confirmed via a real API call (2026-07-25): NIFTY 50's instrument_token
+# is stable at 256265 (segment "INDICES", exchange "NSE" -- excluded from
+# _load_instrument_tokens()'s "segment == NSE" equity-only filter above,
+# so looked up separately here rather than broadening that filter).
+NIFTY_50_INSTRUMENT_TOKEN = 256265
+
 _instrument_token_cache: dict = {}
 
 
@@ -168,6 +174,21 @@ def fetch_all_intraday(symbols: list[str], interval: str, from_date: date, to_da
             print(f"WARNING: could not fetch intraday data for {symbol}: {e}")
         time.sleep(rate_limit_delay)
     return data
+
+
+def fetch_nifty_intraday(interval: str, from_date: date, to_date: date, settings,
+                          rate_limit_delay: float = 0.35) -> pd.DataFrame:
+    """
+    NIFTY 50 index intraday candles -- for cross-sectional MarketState's
+    nifty_return_since_open_pct (research_lab/market_state.py), distinct
+    from data/fetch_historical.py's fetch_nifty() (daily bars only, used
+    for the existing swing regime filter). Volume is 0 on index candles
+    (confirmed via real API call, 2026-07-25) -- expected, indices don't
+    have their own traded volume the way a stock does.
+    """
+    headers = get_market_data_session(settings)
+    return fetch_intraday_candles(NIFTY_50_INSTRUMENT_TOKEN, interval, from_date, to_date, headers,
+                                   rate_limit_delay=rate_limit_delay)
 
 
 if __name__ == "__main__":
