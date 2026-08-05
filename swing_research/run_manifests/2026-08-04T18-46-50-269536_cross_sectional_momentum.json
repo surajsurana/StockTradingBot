@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-08-04T18:46:50.269536",
+  "strategy_name": "cross_sectional_momentum",
+  "strategy_variant": "Cross-Sectional Momentum (J=6mo formation, top-decile percentile, K=6mo single-vintage, no percentile-based early exit)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "ac026c1a8891266d9b6f5053860cff1f9d66cde3",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M test_trailing_stop.py",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? deployment/",
+      "?? reporting/telegram_templates.py",
+      "?? run_certification.py",
+      "?? run_paper_trading.py",
+      "?? run_swing_experiment.py",
+      "?? run_swing_robustness.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/",
+      "?? test_acceptance_criteria.py",
+      "?? test_certification.py",
+      "?? test_cross_sectional.py",
+      "?? test_cross_sectional_momentum.py",
+      "?? test_cross_strategy_review.py",
+      "?? test_deployment.py",
+      "?? test_deployment_operational.py",
+      "?? test_deployment_operational_v2.py",
+      "?? test_evidence_quality.py",
+      "?? test_fifty_two_week_high_momentum.py",
+      "?? test_kite_connection.py",
+      "?? test_minervini_trend_template_filter.py",
+      "?? test_swing_backtesting_engine.py",
+      "?? test_turtle_system2.py"
+    ]
+  }
+}

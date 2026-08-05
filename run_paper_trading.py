@@ -1,0 +1,198 @@
+"""
+Daily Paper Trading Runner -- the script referenced by
+deployment/paper_trading_engine.py's module docstring. Safe to run
+manually, or from a scheduled task (Windows Task Scheduler or equivalent)
+once per trading day, AFTER market close.
+
+    python run_paper_trading.py --strategy=fifty_two_week_high_momentum
+    python run_paper_trading.py --all-due
+
+--all-due iterates every registered strategy currently due per
+deployment/scheduler.py's metadata-driven logic (deployment_status is an
+active trading status, and -- for End-of-Day strategies -- the market is
+currently closed). A single --strategy invocation is ALSO subject to the
+same scheduler guard: it refuses to run an End-of-Day strategy while the
+market is open, per explicit requirement. After ALL strategies run in
+--all-due mode, ONE additional daily summary Telegram message is sent
+(in addition to, never replacing, each strategy's own message).
+
+IDEMPOTENT: safe to run more than once for the same day (a repeat call is
+a no-op, see deployment/paper_trading_engine.py's run_daily()). Safe to
+run from Task Scheduler with no additional duplicate-run protection of
+its own.
+
+TELEGRAM: sends ONE separate message per strategy (never combined),
+via the shared reporting/telegram_templates.py formatter with mode="PAPER"
+-- visually identical to a future LIVE message except the header, per
+explicit direction. Each message includes the strategy's permanent
+strategy_id and links to its generated reports. Uses
+reporting.telegram_notifier.send_telegram_message() unmodified.
+Credentials come from deployment.settings's narrow, explicit
+TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID re-export (the only thing deployment/
+ever reads from config/settings.py).
+
+RECOMMENDED SCHEDULE (not built or enforced by this program -- set up
+manually): once per NSE trading day, after 15:30 IST market close, e.g.
+16:30 IST to allow for EOD data availability from the data provider.
+Example Windows Task Scheduler action:
+    Program:   C:\\path\\to\\python.exe
+    Arguments: C:\\path\\to\\run_paper_trading.py --all-due
+    Trigger:   Daily, 16:30, weekdays only (the scheduler guard makes a
+               spurious weekend/holiday trigger harmlessly no-op)
+
+NEVER sends a broker order, NEVER touches execution/ or cio/ -- see
+deployment/paper_trading_engine.py's module docstring for the full
+isolation/execution-assumption disclosure.
+"""
+
+import argparse
+
+from data.fetch_historical import fetch_all
+from swing_research.universe import get_swing_universe
+from reporting.telegram_notifier import send_telegram_message
+from reporting.telegram_templates import format_daily_summary, format_strategy_notification
+
+from deployment.deployment_manager import get_strategy, list_strategies
+from deployment.paper_trading_engine import compute_live_metrics, generate_report, load_portfolio, run_daily
+from deployment.scheduler import is_due_now, strategies_due_now
+from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+_STRATEGY_FACTORIES = {
+    "fifty_two_week_high_momentum": {
+        "display_name": "52-Week High Momentum",
+        "strategy_factory": lambda: __import__(
+            "swing_research.strategies.fifty_two_week_high_momentum", fromlist=["FiftyTwoWeekHighMomentumStrategy"]
+        ).FiftyTwoWeekHighMomentumStrategy(),
+        "compute_extra_columns_fn": lambda data: __import__(
+            "swing_research.cross_sectional", fromlist=["compute_52w_high_nearness_percentile_ranks"]
+        ).compute_52w_high_nearness_percentile_ranks(data),
+    },
+}
+
+
+def _report_links(strategy_key: str, record, result: dict) -> dict:
+    links = {}
+    if record.primary_experiment_id:
+        links["Experiment"] = record.primary_experiment_id
+    links["Daily Report"] = f"deployment/reports/{strategy_key}/{result['as_of_date']}.md"
+    links["Drift Report"] = f"deployment/reports/{strategy_key}/DRIFT_REPORT.md"
+    return links
+
+
+def _send_notification(strategy_key: str, record, result: dict) -> None:
+    metrics = compute_live_metrics(strategy_key)
+    portfolio = load_portfolio(strategy_key)
+    daily_pnl = round(sum(x["pnl"] for x in result["new_exits"]), 2)
+    open_positions = [{"symbol": sym, **pos} for sym, pos in portfolio["positions"].items()]
+
+    text = format_strategy_notification(
+        mode="PAPER", strategy_display_name=record.display_name,
+        new_entries=result["new_entries"], new_exits=result["new_exits"], open_positions=open_positions,
+        daily_pnl=daily_pnl, total_equity=result["mark_to_market_equity"],
+        drawdown_pct=metrics.get("max_drawdown_pct"), win_rate=metrics.get("win_rate"),
+        expectancy=metrics.get("expectancy"), strategy_id=record.strategy_id,
+        report_links=_report_links(strategy_key, record, result),
+    )
+    send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+
+def _run_one(strategy_key: str, force: bool = False) -> dict:
+    """Returns a dict describing what happened, or None if skipped --
+    used by --all-due to build the end-of-day summary."""
+    config = _STRATEGY_FACTORIES[strategy_key]
+    record = get_strategy(strategy_key)
+    if record is None:
+        print(f"ERROR: '{strategy_key}' is not registered in the deployment registry -- "
+              f"call deployment.deployment_manager.register_strategy() first.")
+        return None
+
+    due, reason = is_due_now(record)
+    if not due and not force:
+        print(f"Skipping '{strategy_key}': {reason}")
+        return None
+
+    symbols = get_swing_universe()
+    print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
+    data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
+    print(f"[{strategy_key}] Data available for {len(data)} symbol(s)")
+
+    strategy = config["strategy_factory"]()
+    extra_fn = config.get("compute_extra_columns_fn")
+
+    result = run_daily(
+        strategy_key, strategy, fetch_data_fn=lambda: data,
+        compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
+        force=force,
+    )
+    print(f"[{strategy_key}] {result}")
+
+    if result["status"] != "processed":
+        return None
+
+    report_path = generate_report(strategy_key, config["display_name"], strategy_id=record.strategy_id)
+    print(f"[{strategy_key}] Report saved: {report_path}")
+    _send_notification(strategy_key, record, result)
+
+    return {"strategy_key": strategy_key, "display_name": record.display_name, "result": result}
+
+
+def _send_daily_summary(run_results: list) -> None:
+    strategy_results = [{"display_name": r["display_name"], "new_entries": r["result"]["new_entries"],
+                         "new_exits": r["result"]["new_exits"]} for r in run_results]
+
+    closed_trades_today = sum(len(r["result"]["new_exits"]) for r in run_results)
+    daily_pnl_total = round(sum(x["pnl"] for r in run_results for x in r["result"]["new_exits"]), 2)
+    portfolio_equity_total = round(sum(r["result"]["mark_to_market_equity"] for r in run_results), 2)
+
+    open_positions_total = 0
+    total_wins, total_trades = 0, 0
+    for r in run_results:
+        portfolio = load_portfolio(r["strategy_key"])
+        open_positions_total += len(portfolio["positions"])
+        metrics = compute_live_metrics(r["strategy_key"])
+        n = metrics.get("total_trades", 0)
+        if n:
+            total_trades += n
+            total_wins += round(metrics.get("win_rate", 0.0) * n)
+    blended_win_rate = round(total_wins / total_trades, 4) if total_trades else None
+
+    text = format_daily_summary(
+        strategy_results=strategy_results, closed_trades_today=closed_trades_today,
+        open_positions_total=open_positions_total, daily_pnl_total=daily_pnl_total,
+        portfolio_equity_total=portfolio_equity_total, blended_win_rate=blended_win_rate,
+    )
+    send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--strategy", type=str, choices=list(_STRATEGY_FACTORIES.keys()))
+    parser.add_argument("--all-due", action="store_true",
+                        help="run every registered, currently-due strategy per deployment/scheduler.py, "
+                             "then send one additional daily summary message")
+    parser.add_argument("--force", action="store_true", help="bypass the scheduler guard and idempotency check")
+    args = parser.parse_args()
+
+    if args.all_due:
+        due_records = strategies_due_now(list_strategies())
+        due_keys = [r.strategy_key for r in due_records if r.strategy_key in _STRATEGY_FACTORIES]
+        if not due_keys:
+            print("No registered, runnable strategies are due right now.")
+            return
+        run_results = []
+        for strategy_key in due_keys:
+            run_result = _run_one(strategy_key, force=args.force)
+            if run_result is not None:
+                run_results.append(run_result)
+        if run_results:
+            _send_daily_summary(run_results)
+        else:
+            print("No strategy actually processed today (all skipped/already done) -- no summary sent.")
+    elif args.strategy:
+        _run_one(args.strategy, force=args.force)
+    else:
+        parser.error("Pass either --strategy=<key> or --all-due")
+
+
+if __name__ == "__main__":
+    main()

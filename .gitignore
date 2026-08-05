@@ -11,6 +11,18 @@ data/monthly_plan.json
 data/nse_tick_sizes.json
 *.log
 
+# Research Deployment system (deployment/) -- environment-specific
+# generated output, regenerated fresh wherever it runs (local dev, VPS).
+# deployment/state/strategy_registry.json IS tracked (shared reference
+# config: strategy IDs, research verdicts, deployment statuses) -- only
+# per-strategy runtime trading state and generated reports are excluded.
+deployment/state/paper_trading/
+deployment/reports/
+deployment/certification_experiments/
+deployment/certification_knowledge_base.jsonl
+deployment/lifecycle_reviews/
+deployment/UNIFIED_STRATEGY_LIBRARY.md
+
 # Python
 __pycache__/
 *.pyc

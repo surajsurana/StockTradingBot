@@ -1,0 +1,41 @@
+{
+  "generated_at": "2026-08-03T09:54:01.630908",
+  "strategy_name": "turtle_system2",
+  "strategy_variant": "System 2 (55-day entry / 20-day exit, long-only)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "ac026c1a8891266d9b6f5053860cff1f9d66cde3",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M test_trailing_stop.py",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? run_swing_experiment.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/",
+      "?? test_kite_connection.py",
+      "?? test_swing_backtesting_engine.py",
+      "?? test_turtle_system2.py"
+    ]
+  }
+}

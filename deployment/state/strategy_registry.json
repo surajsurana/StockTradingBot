@@ -1,0 +1,121 @@
+{
+  "turtle_system2": {
+    "strategy_key": "turtle_system2",
+    "display_name": "Turtle Trading -- System 2",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-001..EXP-006",
+    "deployment_status": "ARCHIVED",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "ARCHIVED",
+        "timestamp": 1785834065.945583,
+        "reason": "Rejected for paper trading per research conclusion (temporal robustness failure)"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-001",
+    "primary_experiment_id": "EXP-002"
+  },
+  "minervini_trend_template_filter": {
+    "strategy_key": "minervini_trend_template_filter",
+    "display_name": "Minervini Trend Template Filter",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "INCONCLUSIVE",
+    "research_verdict_source": "EXP-007..EXP-011",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-002",
+    "primary_experiment_id": "EXP-008"
+  },
+  "fifty_two_week_high_momentum": {
+    "strategy_key": "fifty_two_week_high_momentum",
+    "display_name": "52-Week High Momentum",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-012..EXP-014",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1785834079.318454,
+        "reason": "Phase 2 -- first strategy to pass both research checks cleanly, per explicit direction 2026-08-04"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-003",
+    "primary_experiment_id": "EXP-013"
+  },
+  "ma_crossover": {
+    "strategy_key": "ma_crossover",
+    "display_name": "MA Crossover",
+    "strategy_family": "production strategy",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-001, EXP-002",
+    "deployment_status": "PRODUCTION",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PRODUCTION",
+        "timestamp": 1785834066.0020533,
+        "reason": "Already live in production prior to this Research Deployment program -- reflects existing operational reality, not a research-driven promotion"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-004",
+    "primary_experiment_id": "EXP-001"
+  },
+  "mean_reversion": {
+    "strategy_key": "mean_reversion",
+    "display_name": "Mean Reversion",
+    "strategy_family": "production strategy",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-003, EXP-004",
+    "deployment_status": "PRODUCTION",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PRODUCTION",
+        "timestamp": 1785834066.0213277,
+        "reason": "Already live in production prior to this Research Deployment program -- reflects existing operational reality, not a research-driven promotion"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-005",
+    "primary_experiment_id": "EXP-003"
+  },
+  "cross_sectional_momentum": {
+    "strategy_key": "cross_sectional_momentum",
+    "display_name": "Cross-Sectional Momentum",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-016, EXP-017",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "RESEARCH",
+        "timestamp": 1785863081.4744153,
+        "reason": "HOLD at RESEARCH, per explicit human decision 2026-08-04. Although the official frozen acceptance framework produced PASS (base EXP-016 + recent-period EXP-017, both PASS, no conflict), the supplementary post-COVID robustness run (EXP-018, additional evidence only, does not alter the Research Verdict) produced REJECT on a high-quality 224-trade sample (evidence quality HIGH, 90.0/100) -- negative out-of-sample expectancy specifically in the most recent structural regime. The strategy also underperformed the existing paper-trading strategy 52-Week High Momentum (SW-003) on every primary performance metric (CAGR, Sharpe, MaxDD, profit factor, win rate, expectancy, at both the base and recent-period horizon). The diversification comparison (genuine sector-exposure divergence from SW-003, see swing_research/strategy_library/cross_sectional_momentum.md) is preserved as real evidence but is judged insufficient on its own to justify paper trading at this stage. May be reconsidered later if additional published strategies (e.g. PEAD) demonstrate complementary behavior that changes the overall portfolio decision. Research Verdict (PASS) is unaffected by this Deployment Status decision -- the two remain fully independent."
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-006",
+    "primary_experiment_id": ""
+  }
+}

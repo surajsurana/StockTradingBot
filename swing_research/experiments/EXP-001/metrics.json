@@ -1,0 +1,367 @@
+{
+  "total_trades": 40,
+  "win_rate": 0.375,
+  "profit_factor": 1.4157252299005965,
+  "expectancy": 417.54,
+  "cagr": 8.06,
+  "sharpe_ratio": 0.428,
+  "sortino_ratio": 1.27,
+  "max_drawdown_pct": 19.4,
+  "recovery_factor": 0.738,
+  "avg_holding_period_days": 47.2,
+  "exposure_pct": 14.57,
+  "monthly_returns_pct": {
+    "2024-10": -1.832,
+    "2024-11": -1.9551,
+    "2025-01": -8.5338,
+    "2025-02": -4.8011,
+    "2025-04": -1.4741,
+    "2025-06": -0.805,
+    "2025-07": 9.2958,
+    "2025-08": -3.4994,
+    "2025-09": 0.0551,
+    "2025-12": 15.3609,
+    "2026-02": -2.039,
+    "2026-03": -4.4013,
+    "2026-04": -2.5358,
+    "2026-05": 3.8432,
+    "2026-06": -1.9677,
+    "2026-08": 21.9909
+  },
+  "annual_returns_pct": {
+    "2024": -3.7871,
+    "2025": 5.5985,
+    "2026": 14.8903
+  },
+  "rolling_annual_returns_pct": {
+    "2025-09": -13.6046,
+    "2025-10": -13.5495,
+    "2025-11": -13.5495,
+    "2025-12": -10.1467,
+    "2026-01": 5.8188,
+    "2026-02": 13.7151,
+    "2026-03": 20.3846,
+    "2026-04": 12.0143,
+    "2026-05": 14.0427,
+    "2026-06": 16.3466,
+    "2026-07": 17.5086,
+    "2026-08": 29.8203
+  },
+  "total_pnl": 16701.7,
+  "return_on_capital_pct": 16.7,
+  "walk_forward_metrics": [
+    {
+      "total_trades": 16,
+      "win_rate": 0.25,
+      "profit_factor": 0.4685346012093161,
+      "expectancy": -609.07,
+      "cagr": -14.34,
+      "sharpe_ratio": -1.098,
+      "sortino_ratio": -1.455,
+      "max_drawdown_pct": 17.12,
+      "recovery_factor": -0.569,
+      "avg_holding_period_days": 27.6,
+      "exposure_pct": 21.92,
+      "monthly_returns_pct": {
+        "2024-10": -1.832,
+        "2024-11": -1.9551,
+        "2025-01": -8.5338,
+        "2025-02": -4.8011,
+        "2025-04": 7.3768
+      },
+      "annual_returns_pct": {
+        "2024": -3.7871,
+        "2025": -5.9581
+      },
+      "rolling_annual_returns_pct": {},
+      "total_pnl": -9745.12,
+      "return_on_capital_pct": -9.75
+    },
+    {
+      "total_trades": 13,
+      "win_rate": 0.5385,
+      "profit_factor": 3.679569056460861,
+      "expectancy": 1962.92,
+      "cagr": 40.72,
+      "sharpe_ratio": 0.983,
+      "sortino_ratio": 3.549,
+      "max_drawdown_pct": 6.84,
+      "recovery_factor": 2.974,
+      "avg_holding_period_days": 46.7,
+      "exposure_pct": 52.55,
+      "monthly_returns_pct": {
+        "2025-07": -2.88,
+        "2025-08": -2.4773,
+        "2025-09": -1.4796,
+        "2025-12": 32.3548
+      },
+      "annual_returns_pct": {
+        "2025": 25.5179
+      },
+      "rolling_annual_returns_pct": {},
+      "total_pnl": 25517.9,
+      "return_on_capital_pct": 25.52
+    }
+  ],
+  "out_of_sample_metrics": {
+    "total_trades": 19,
+    "win_rate": 0.4737,
+    "profit_factor": 1.6051614968459706,
+    "expectancy": 512.32,
+    "cagr": 14.98,
+    "sharpe_ratio": 0.865,
+    "sortino_ratio": 2.522,
+    "max_drawdown_pct": 5.86,
+    "recovery_factor": 1.428,
+    "avg_holding_period_days": 31.2,
+    "exposure_pct": 32.28,
+    "monthly_returns_pct": {
+      "2026-03": -2.7327,
+      "2026-05": 1.1263,
+      "2026-06": -1.0715,
+      "2026-07": 12.2392,
+      "2026-08": 0.1728
+    },
+    "annual_returns_pct": {
+      "2026": 9.7341
+    },
+    "rolling_annual_returns_pct": {},
+    "total_pnl": 9734.14,
+    "return_on_capital_pct": 9.73
+  },
+  "audit_checks": {
+    "total_trades": 48,
+    "out_of_sample_trades": 19,
+    "walk_forward_consistency_fraction": 0.5,
+    "out_of_sample_expectancy": 512.32
+  },
+  "sector_breakdown": {
+    "Oil Gas & Consumable Fuels": 18854.82,
+    "Consumer Services": 17359.2,
+    "Financial Services": 6835.73,
+    "Metals & Mining": 622.67,
+    "Fast Moving Consumer Goods": -1424.01,
+    "Automobile and Auto Components": -1852.79,
+    "Capital Goods": -4022.96,
+    "Services": -4607.88,
+    "Healthcare": -7531.27,
+    "Information Technology": -7531.82
+  },
+  "holding_period_breakdown": {
+    "<=10d": -13235.02,
+    "<=40d": -5653.0,
+    "<=80d": 23815.83,
+    "<=5d": -10439.67,
+    ">80d": 29189.38,
+    "<=20d": -6975.82
+  },
+  "regime_breakdown": {
+    "bullish": 7581.45,
+    "bearish": 9120.26,
+    "unknown": 0.0
+  },
+  "comparison_vs_benchmarks": {
+    "turtle_system2": {
+      "total_trades": 40,
+      "win_rate": 0.375,
+      "profit_factor": 1.4157252299005965,
+      "expectancy": 417.54,
+      "cagr": 8.06,
+      "sharpe_ratio": 0.428,
+      "sortino_ratio": 1.27,
+      "max_drawdown_pct": 19.4,
+      "recovery_factor": 0.738,
+      "avg_holding_period_days": 47.2,
+      "exposure_pct": 14.57,
+      "monthly_returns_pct": {
+        "2024-10": -1.832,
+        "2024-11": -1.9551,
+        "2025-01": -8.5338,
+        "2025-02": -4.8011,
+        "2025-04": -1.4741,
+        "2025-06": -0.805,
+        "2025-07": 9.2958,
+        "2025-08": -3.4994,
+        "2025-09": 0.0551,
+        "2025-12": 15.3609,
+        "2026-02": -2.039,
+        "2026-03": -4.4013,
+        "2026-04": -2.5358,
+        "2026-05": 3.8432,
+        "2026-06": -1.9677,
+        "2026-08": 21.9909
+      },
+      "annual_returns_pct": {
+        "2024": -3.7871,
+        "2025": 5.5985,
+        "2026": 14.8903
+      },
+      "rolling_annual_returns_pct": {
+        "2025-09": -13.6046,
+        "2025-10": -13.5495,
+        "2025-11": -13.5495,
+        "2025-12": -10.1467,
+        "2026-01": 5.8188,
+        "2026-02": 13.7151,
+        "2026-03": 20.3846,
+        "2026-04": 12.0143,
+        "2026-05": 14.0427,
+        "2026-06": 16.3466,
+        "2026-07": 17.5086,
+        "2026-08": 29.8203
+      },
+      "total_pnl": 16701.7,
+      "return_on_capital_pct": 16.7
+    },
+    "ma_crossover_production": {
+      "total_trades": 100,
+      "win_rate": 0.27,
+      "profit_factor": 0.7178807035615873,
+      "expectancy": -94.15,
+      "cagr": -4.84,
+      "sharpe_ratio": -0.83,
+      "sortino_ratio": -0.775,
+      "max_drawdown_pct": 10.39,
+      "recovery_factor": -0.897,
+      "avg_holding_period_days": 25.9,
+      "exposure_pct": 5.71,
+      "monthly_returns_pct": {
+        "2024-11": 0.1863,
+        "2024-12": -4.5665,
+        "2025-01": -1.9475,
+        "2025-05": 0.2216,
+        "2025-06": 5.6867,
+        "2025-07": -2.7847,
+        "2025-08": -0.7812,
+        "2025-09": 1.8853,
+        "2025-10": 0.6589,
+        "2025-11": -3.4275,
+        "2025-12": 0.547,
+        "2026-01": -1.7925,
+        "2026-02": -0.0999,
+        "2026-03": -3.2008
+      },
+      "annual_returns_pct": {
+        "2024": -4.3802,
+        "2025": 0.0588,
+        "2026": -5.0932
+      },
+      "rolling_annual_returns_pct": {
+        "2025-09": -3.9853,
+        "2025-10": -2.1,
+        "2025-11": -1.441,
+        "2025-12": -5.8879,
+        "2026-01": 0.0039,
+        "2026-02": -0.6349,
+        "2026-03": -1.1384,
+        "2026-04": -3.2955,
+        "2026-05": -3.2955,
+        "2026-06": -3.3035,
+        "2026-07": -7.9221,
+        "2026-08": -6.4162
+      },
+      "total_pnl": -9414.69,
+      "return_on_capital_pct": -9.41
+    },
+    "mean_reversion_production": {
+      "total_trades": 544,
+      "win_rate": 0.2978,
+      "profit_factor": 0.9794690341464948,
+      "expectancy": -3.15,
+      "cagr": -0.86,
+      "sharpe_ratio": -0.049,
+      "sortino_ratio": -0.077,
+      "max_drawdown_pct": 17.23,
+      "recovery_factor": -0.091,
+      "avg_holding_period_days": 9.8,
+      "exposure_pct": 4.26,
+      "monthly_returns_pct": {
+        "2024-10": -0.8416,
+        "2024-11": -3.4784,
+        "2024-12": 1.7491,
+        "2025-01": -2.9824,
+        "2025-02": -5.8175,
+        "2025-03": 6.6361,
+        "2025-04": 2.1099,
+        "2025-05": 4.0625,
+        "2025-06": 0.9813,
+        "2025-07": 2.4117,
+        "2025-08": 1.3517,
+        "2025-09": 1.3096,
+        "2025-10": -0.1188,
+        "2025-11": -1.6849,
+        "2025-12": -0.9253,
+        "2026-01": -2.7944,
+        "2026-02": -3.833,
+        "2026-03": -6.9184,
+        "2026-04": 7.3468,
+        "2026-05": -0.5396,
+        "2026-06": -0.0509,
+        "2026-07": -0.8658,
+        "2026-08": 1.1783
+      },
+      "annual_returns_pct": {
+        "2024": -2.5709,
+        "2025": 7.334,
+        "2026": -6.4771
+      },
+      "rolling_annual_returns_pct": {
+        "2025-09": 5.4885,
+        "2025-10": 7.492,
+        "2025-11": 8.2533,
+        "2025-12": 11.8191,
+        "2026-01": 8.9923,
+        "2026-02": 6.8116,
+        "2026-03": 6.8326,
+        "2026-04": -2.5653,
+        "2026-05": 1.8247,
+        "2026-06": -3.7819,
+        "2026-07": -4.6902,
+        "2026-08": -6.538
+      },
+      "total_pnl": -1714.0,
+      "return_on_capital_pct": -1.71
+    },
+    "buy_and_hold": {
+      "total_trades": 69,
+      "win_rate": 0.5507,
+      "profit_factor": 2.402339290651211,
+      "expectancy": 29.33,
+      "cagr": 8.18,
+      "sharpe_ratio": 0.48,
+      "sortino_ratio": 0.669,
+      "max_drawdown_pct": 23.46,
+      "recovery_factor": 0.615,
+      "avg_holding_period_days": 697.4,
+      "exposure_pct": 140.03,
+      "monthly_returns_pct": {
+        "2026-08": 13.4028
+      },
+      "annual_returns_pct": {
+        "2026": 13.4028
+      },
+      "rolling_annual_returns_pct": {
+        "2025-09": -3.3262,
+        "2025-10": 1.297,
+        "2025-11": 17.1841,
+        "2025-12": 14.4772,
+        "2026-01": 17.3091,
+        "2026-02": 19.2066,
+        "2026-03": 22.6962,
+        "2026-04": 9.1529,
+        "2026-05": 19.6421,
+        "2026-06": 11.004,
+        "2026-07": 11.0378,
+        "2026-08": 13.3985
+      },
+      "total_pnl": 2023.62,
+      "return_on_capital_pct": 13.4
+    },
+    "index_benchmark_^CRSLDX": {
+      "cagr": 11.96,
+      "sharpe_ratio": 0.67,
+      "sortino_ratio": 0.828,
+      "max_drawdown_pct": 64.26
+    }
+  }
+}

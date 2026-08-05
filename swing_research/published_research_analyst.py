@@ -1,0 +1,322 @@
+"""
+Published Research Analyst -- the Swing Research Program's replacement for
+research_lab/quant_researcher.py's role. Where the Quant Researcher asks
+Claude to INVENT hypotheses, the Published Research Analyst's job is to
+find, study, and faithfully RECORD an already-published, credible
+methodology -- no generation, no invention.
+
+Scope for this first experiment: a structured, source-cited record of
+Turtle Trading (the strategy already selected by the user from the
+published-research candidate report), saved into the Knowledge Base the
+same way a Hypothesis would be -- establishing the pattern for future
+strategies. Full Claude-automated "search for the next candidate" tooling
+(mirroring quant_researcher.propose_hypotheses()) is a natural fast-follow
+once this first faithful implementation is validated -- explicitly not
+built here, since it isn't needed to complete Turtle Trading and the user
+already did the candidate search/selection for this round via the report
+this program's earlier research produced.
+"""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class PublishedStrategy:
+    name: str
+    source_citation: str       # book/paper, author(s), year
+    mechanism: str              # plain-language description of the causal/behavioral story
+    rules: str                  # the complete, faithfully-documented trading rules
+    variant_chosen: str         # which documented variant, and why (if multiple exist)
+    scope_reductions: str       # any DISCLOSED adaptation from the original (e.g. long-only)
+    distinctiveness: str = ""   # vs. anything already tried in this program or research_lab
+    assumptions_impact: str = ""  # per-assumption estimate of how much each undocumented-rule
+                                   # substitution could move the result, and in which direction
+                                   # (required for every strategy since 2026-08-03, per the
+                                   # Minervini implementation approval -- "explicitly distinguish
+                                   # documented rules from implementation assumptions and estimate
+                                   # the potential impact of those assumptions on the final results")
+
+
+TURTLE_SYSTEM_2 = PublishedStrategy(
+    name="Turtle Trading -- System 2 (Donchian Channel Breakout, long-term)",
+    source_citation=(
+        "Richard Dennis / William Eckhardt's 1983-84 trading program, documented by "
+        "Curtis Faith in \"Way of the Turtle\" (2007) and the publicly-archived original "
+        "Turtle Rules."
+    ),
+    mechanism=(
+        "Pure trend-following: markets trend more often and longer than a random walk "
+        "would predict. Volatility-normalized position sizing (via N, the 20-day Wilder-"
+        "smoothed True Range) keeps risk constant per unit regardless of how volatile a "
+        "given instrument currently is."
+    ),
+    rules=(
+        "Entry: Close breaks above the highest High of the prior 55 days. "
+        "Exit: Close breaks below the lowest Low of the prior 20 days. "
+        "Stop-loss: 2N below the most recent unit's entry price, whole-position stop rises "
+        "with each pyramid unit, never lowered. "
+        "Position sizing: 1 Unit = floor(equity x 1% / N) shares (dollar-value-per-point=1 "
+        "for cash equities, vs. a futures contract multiplier in the original). "
+        "Pyramiding: add 1 unit per +0.5N favorable move from the last unit's entry, up to "
+        "4 units per symbol. "
+        "Portfolio limits: max 4 units/symbol, 6 units per correlated group (sector proxy "
+        "for NSE equities), 10 units total (long-only collapses the original's separate "
+        "10/12 caps into one)."
+    ),
+    variant_chosen=(
+        "System 2 (55-day entry / 20-day exit, no whipsaw filter) over System 1 (20-day "
+        "entry / 10-day exit, skips a signal if the prior signal in that market won). "
+        "System 1's filter requires tracking each symbol's own prior-signal outcome across "
+        "the whole backtest -- more state, more implementation-risk surface. System 2 is "
+        "purely mechanical per-signal. Recommended and approved as the first, cleaner test; "
+        "System 1 documented in the implementation plan as a fast-follow, not started."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed) -- NSE cash equities lack the SLB infrastructure "
+        "for a genuine multi-week short. Single asset class (NSE cash equities only) vs. "
+        "the original's ~20+ diversified, historically low-correlated futures markets -- "
+        "this is the transferability question the experiment exists to answer, not a gap "
+        "being patched."
+    ),
+    distinctiveness=(
+        "First strategy in the Swing Research Program; no prior swing-horizon experiments "
+        "exist to overlap with. Distinct from every research_lab intraday strategy tried so "
+        "far (all EOD-square-off, none breakout-with-pyramiding)."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- omits the short side "
+        "entirely rather than biasing the long side's own measured performance; the real "
+        "question (does the short side also work on NSE) is simply untested, not answered. "
+        "Single-asset-class universe (vs. original's ~20+ diversified futures markets): "
+        "LIKELY UNDERSTATES real-world risk-adjusted performance, since the original edge "
+        "partly depends on cross-market diversification this NSE-only test can't capture -- "
+        "confirmed material by the robustness analysis's own recent-period REJECT. Sector-"
+        "as-correlation-group proxy (vs. futures asset-class grouping): MINOR, a reasonable "
+        "structural analogue, not expected to materially change results either direction."
+    ),
+)
+
+
+MINERVINI_TREND_TEMPLATE_FILTER = PublishedStrategy(
+    name="Minervini Trend Template Filter",
+    source_citation=(
+        "Mark Minervini, \"Trade Like a Stock Market Wizard\" (2013) and \"Think & Trade Like "
+        "a Champion\" (2016)."
+    ),
+    mechanism=(
+        "Trend + relative-strength screening as a proxy for institutional accumulation "
+        "already underway: a stock satisfying all 8 Trend Template criteria simultaneously "
+        "(price/moving-average alignment, proximity to 52-week high, distance from 52-week "
+        "low, top-30% relative strength vs. the universe) is in a confirmed, broad-based "
+        "uptrend rather than a speculative or lagging one."
+    ),
+    rules=(
+        "8 criteria, ALL must pass: (1) price above both 150-day and 200-day MA; (2) 150-day "
+        "MA above 200-day MA; (3) 200-day MA trending up >=1 month; (4) 50-day MA above both "
+        "150-day and 200-day MA; (5) price above 50-day MA; (6) price >=30% above 52-week low; "
+        "(7) price within 25% of 52-week high; (8) Relative Strength ranking >=70th percentile "
+        "vs. the universe. Stop-loss: 7-8% max from entry. Position sizing: 1.25-2.5% of "
+        "equity at risk per trade. Pyramids into confirmed winners (trigger undocumented)."
+    ),
+    variant_chosen=(
+        "Named 'Trend Template Filter', deliberately NOT 'SEPA' or 'VCP breakout' (per "
+        "explicit approval 2026-08-03) -- this tests the 8-criterion screen exactly as "
+        "documented, with a disclosed mechanical entry trigger standing in for Minervini's "
+        "real VCP base/pivot selection, which has no publicly documented canonical numeric "
+        "form. See assumptions_impact below and swing_research/strategy_library/ for the "
+        "full documented-rules-vs-assumptions breakdown."
+    ),
+    scope_reductions=(
+        "No pyramiding this round (undocumented trigger/sizing -- inventing one would violate "
+        "the no-invented-hybrid-rules mandate). Entry trigger is a state-transition proxy for "
+        "VCP breakout selection. Exit rule (50-day MA violation) is our own interpretation, "
+        "the least-documented part of the source material in every version found. Relative "
+        "Strength uses an open academic approximation, not IBD's proprietary formula."
+    ),
+    distinctiveness=(
+        "First strategy in this program requiring a genuinely CROSS-SECTIONAL computation "
+        "(RS percentile vs. the whole universe, swing_research/cross_sectional.py) rather "
+        "than a per-symbol-independent one -- Turtle's portfolio caps were cross-sectional in "
+        "effect (unit limits) but its signal generation was still purely per-symbol."
+    ),
+    assumptions_impact=(
+        "Entry trigger (Template-qualification transition vs. real VCP pivot breakout): "
+        "LIKELY MATERIAL, probably UNDERSTATES real SEPA -- a raw qualification day is likely "
+        "noisier/earlier than a properly-formed VCP pivot breakout, so a weak or REJECT result "
+        "here should be read as inconclusive about real SEPA, not a refutation of it. "
+        "Exit rule (50-day MA close-below): MODERATE impact on holding period/win rate, "
+        "directionally unverified against Minervini's own (undocumented) practice. "
+        "Stop-loss (8% vs. documented 7-8% range): MINOR, within the documented range. "
+        "No pyramiding: MODERATE, ONE-DIRECTIONAL -- can only understate real returns "
+        "(the source explicitly adds to winners), never overstate them. "
+        "Relative Strength substitute (open 3/6/9/12-month blend vs. IBD's proprietary "
+        "formula): LIKELY MATERIAL, DIRECTIONALLY UNKNOWN -- the single biggest fidelity gap; "
+        "criterion 8 may admit a meaningfully different symbol set than the real IBD screen."
+    ),
+)
+
+
+FIFTY_TWO_WEEK_HIGH_MOMENTUM = PublishedStrategy(
+    name="52-Week High Momentum",
+    source_citation=(
+        "George, T.J. and Hwang, C-Y. (2004), \"The 52-Week High and Momentum Investing,\" "
+        "The Journal of Finance, Vol. 59, No. 5."
+    ),
+    mechanism=(
+        "A stock's nearness to its own 52-week high, cross-sectionally ranked against the "
+        "universe, is a better predictor of future returns than standard past-return "
+        "(Jegadeesh-Titman) momentum -- stocks near their 52-week high continue to outperform, "
+        "stocks far from it continue to underperform, an anchoring/reference-point effect "
+        "distinct from pure trend-following."
+    ),
+    rules=(
+        "Nearness ratio, each formation date: ratio = Price / 52-week-high price. "
+        "Cross-sectional decile sort by nearness ratio at each formation date. "
+        "Long the top decile (nearest to the 52-week high); the paper's factor construction "
+        "shorts the bottom decile. "
+        "Holding period K, tested at K=3,6,9,12 months in the paper; K=6 months is the most "
+        "commonly cited/replicated specification. "
+        "Standard Jegadeesh-Titman overlapping-portfolio construction: a new K-month position "
+        "initiated every month, K simultaneous 1/K-weighted vintages held at any time, realized "
+        "return = equal-weighted average across active vintages."
+    ),
+    variant_chosen=(
+        "K=6 months (the most commonly cited/replicated specification), top decile = nearness "
+        "percentile >= 90 (a direct restatement of 'top decile' in this program's existing "
+        "0-100 percentile convention, already used by Minervini's RS percentile). Single-"
+        "vintage holding, not the paper's overlapping-portfolio construction -- see "
+        "scope_reductions and assumptions_impact below for why, and the magnitude of the "
+        "resulting deviation."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as Turtle -- no NSE SLB infrastructure "
+        "for a genuine multi-month short). SINGLE-VINTAGE HOLDING instead of the paper's "
+        "overlapping-portfolio construction (a new K-month position every month, K simultaneous "
+        "vintages) -- the single largest structural deviation from the source methodology in "
+        "this experiment, approved 2026-08-04. EXIT RULE is ONLY the 126-trading-day time-stop "
+        "(the direct single-vintage analogue of the K=6-month holding period) or the synthetic "
+        "protective stop -- deliberately NO percentile-based early exit, which was in an "
+        "earlier draft of the implementation plan and was explicitly removed before "
+        "implementation began, since it would have been an invented rule with no basis in the "
+        "source paper. A percentile-based-exit variant is reserved for a future, separately "
+        "labeled research iteration, never folded into this baseline. PROTECTIVE STOP-LOSS "
+        "(8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL METHODOLOGY "
+        "AT ALL -- the source paper is a factor-return study with no position-level risk "
+        "management whatsoever; both are required to run this through this program's "
+        "position-based backtesting engine at all."
+    ),
+    distinctiveness=(
+        "Second strategy in this program (after Minervini) requiring a genuinely "
+        "cross-sectional computation -- reuses swing_research/cross_sectional.py's existing "
+        "vectorized .rank(pct=True, axis=1) pattern via a new "
+        "compute_52w_high_nearness_percentile_ranks() function, not a framework change. "
+        "Mechanistically distinct from Minervini (a single cross-sectional signal driving "
+        "entry directly, vs. Minervini's 8-criterion filter where RS percentile is only one "
+        "of 8 gates) and from Turtle (no volatility-normalized sizing, no pyramiding, no "
+        "portfolio-level correlation-group caps)."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- omits the short side "
+        "entirely, doesn't bias the long side's own measured performance. "
+        "Single-vintage holding (vs. the paper's overlapping-portfolio construction): "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- a single-vintage system realizes ONE "
+        "entry point's path per qualifying episode, with materially higher variance than the "
+        "paper's smoothed multi-vintage average; could realize a better OR worse outcome than "
+        "the academic average on any given episode. This is the single largest structural "
+        "deviation from the source methodology in this experiment -- any REJECT or weak result "
+        "should be read with this in mind, not as a refutation of the underlying 52-week-high "
+        "effect itself. "
+        "Exit rule (126-trading-day time-stop only, no percentile-based early exit): N/A for "
+        "the time-stop itself (direct analogue of the documented K=6-month holding period); "
+        "the ABSENCE of an early-exit rule means positions ride the full holding period "
+        "regardless of interim nearness-percentile deterioration, a deliberate choice to avoid "
+        "hybridizing the baseline with an invented rule. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves "
+        "(standard conventions already used elsewhere in this program), but structurally "
+        "significant in that NEITHER exists in the source paper at all -- the original is a "
+        "factor-return study, not a trading system, and has zero position-level risk "
+        "management; this is the most significant 'not really in the source material' "
+        "addition of any strategy in this program so far."
+    ),
+)
+
+
+CROSS_SECTIONAL_MOMENTUM = PublishedStrategy(
+    name="Cross-Sectional Momentum",
+    source_citation=(
+        "Jegadeesh, N. and Titman, S. (1993), \"Returns to Buying Winners and Selling Losers: "
+        "Implications for Stock Market Efficiency,\" The Journal of Finance, Vol. 48, No. 1."
+    ),
+    mechanism=(
+        "Stocks with the highest returns over a J-month formation period continue to "
+        "outperform over a subsequent K-month holding period -- the foundational cross-"
+        "sectional momentum anomaly, the origin of the 'momentum' factor itself, and the "
+        "paper 52-Week High Momentum's own source (George & Hwang 2004) explicitly built on "
+        "and partly subsumed."
+    ),
+    rules=(
+        "Formation-period return: cumulative return over the prior J months (J=3,6,9,12 "
+        "tested). Cross-sectional decile sort by formation-period return at each formation "
+        "date. Long the top decile (past winners); the paper's zero-cost portfolio shorts the "
+        "bottom decile (past losers). Holding period K months (K=3,6,9,12 tested); J=6,K=6 is "
+        "the specification the paper highlights as generating the strongest, most-cited "
+        "result. Standard overlapping-portfolio construction: a new K-month portfolio formed "
+        "every month, K simultaneous vintages held at once. The paper notes a 1-week skip "
+        "between formation and holding as a refinement that avoids some short-term bid-ask/"
+        "reversal contamination -- not part of the headline J=6/K=6 result."
+    ),
+    variant_chosen=(
+        "J=6 months formation, K=6 months holding -- the paper's own most-cited "
+        "specification. Single-vintage holding, not the paper's overlapping-portfolio "
+        "construction -- identical structural adaptation to 52-Week High Momentum, approved "
+        "2026-08-04 for the identical underlying reason (see scope_reductions below)."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy -- no NSE SLB "
+        "infrastructure for a genuine multi-month short). SINGLE-VINTAGE HOLDING instead of "
+        "the paper's overlapping-portfolio construction (a new K-month position every month, "
+        "K simultaneous vintages) -- mirrors 52-Week High Momentum's own approved deviation "
+        "exactly, for the same reason: full overlapping-portfolio construction is an academic "
+        "factor-fund construction, not a swing-trader's position rule. NO SKIP PERIOD between "
+        "formation and holding -- the paper's own headline J=6/K=6 result doesn't require one; "
+        "it's a secondary refinement, not the primary specification. EXIT RULE is ONLY the "
+        "126-trading-day time-stop or the synthetic protective stop -- deliberately no "
+        "percentile-based early exit, same discipline established for 52-Week High Momentum. "
+        "PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- the source paper is a factor-return study with no "
+        "position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "Third strategy in this program requiring a genuinely cross-sectional computation "
+        "(after Minervini's RS percentile and 52-Week High Momentum's nearness percentile) -- "
+        "reuses swing_research/cross_sectional.py's existing vectorized "
+        ".rank(pct=True, axis=1) pattern via a new compute_momentum_percentile_ranks() "
+        "function (a SINGLE J=6-month formation return, distinct from Minervini's multi-"
+        "horizon 3/6/9/12-month blended RS-Rating substitute -- a different signal for a "
+        "different, faithfully-replicated paper). Structurally the closest strategy in this "
+        "program to 52-Week High Momentum -- both are academic decile-sort factor studies "
+        "from the same research lineage, sharing the identical single-vintage/no-skip-exit "
+        "adaptation pattern; see the Strategy Library entry for an explicit diversification "
+        "comparison between the two."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- omits the short side "
+        "entirely, doesn't bias the long side's own measured performance. "
+        "J=6-month formation: MINOR, a direct restatement of the paper's own most-cited "
+        "specification. "
+        "Single-vintage holding (vs. the paper's overlapping-portfolio construction): "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to 52-Week High "
+        "Momentum's own single-vintage deviation; a single-vintage system realizes ONE entry "
+        "point's path per qualifying episode, with materially higher variance than the "
+        "paper's smoothed multi-vintage average. "
+        "No skip period between formation and holding: MINOR-to-MODERATE, DIRECTIONALLY "
+        "UNKNOWN -- the paper suggests a skip period reduces short-term reversal "
+        "contamination, so omitting it could slightly understate net momentum performance, "
+        "but this is a secondary refinement in the source material, not the headline result. "
+        "Exit rule (126-trading-day time-stop only, no percentile-based early exit): N/A for "
+        "the time-stop itself (direct analogue of the documented K=6-month holding period). "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, "
+        "but structurally significant in that NEITHER exists in the source paper at all -- "
+        "the original is a factor-return study with zero position-level risk management."
+    ),
+)
