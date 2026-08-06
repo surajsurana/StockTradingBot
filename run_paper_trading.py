@@ -105,9 +105,34 @@ def _send_notification(strategy_key: str, record, result: dict) -> None:
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
 
+def _send_error_notification(strategy_key: str, display_name: str, error: Exception) -> None:
+    """Best-effort failure alert -- this itself must never raise, or a
+    strategy failure could take down the run a second time on the way out."""
+    text = (
+        f"*PAPER strategy run FAILED -- {display_name}*\n\n"
+        f"`{strategy_key}` raised an exception during today's run and was "
+        f"skipped. No trades were processed for this strategy today.\n\n"
+        f"Other strategies in this run are not affected.\n\n"
+        f"```\n{type(error).__name__}: {error}\n```"
+    )
+    try:
+        send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    except Exception as notify_error:
+        print(f"ERROR: also failed to send the failure notification for '{strategy_key}': "
+              f"{type(notify_error).__name__}: {notify_error}")
+
+
 def _run_one(strategy_key: str, force: bool = False) -> dict:
-    """Returns a dict describing what happened, or None if skipped --
-    used by --all-due to build the end-of-day summary."""
+    """Returns a dict describing what happened, or None if skipped or failed --
+    used by --all-due to build the end-of-day summary.
+
+    Isolation: everything from data-fetch through the Telegram send is
+    wrapped in a single try/except. A failure here (data provider outage,
+    a bug in one strategy's precompute/signal logic, even a Telegram API
+    error) is caught, reported via its own failure notification, and
+    returned as None -- it must never propagate out of this function, so
+    that --all-due's loop can keep going and still send the daily summary
+    for whichever strategies DID succeed."""
     config = _STRATEGY_FACTORIES[strategy_key]
     record = get_strategy(strategy_key)
     if record is None:
@@ -120,29 +145,34 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
         print(f"Skipping '{strategy_key}': {reason}")
         return None
 
-    symbols = get_swing_universe()
-    print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
-    data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
-    print(f"[{strategy_key}] Data available for {len(data)} symbol(s)")
+    try:
+        symbols = get_swing_universe()
+        print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
+        data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
+        print(f"[{strategy_key}] Data available for {len(data)} symbol(s)")
 
-    strategy = config["strategy_factory"]()
-    extra_fn = config.get("compute_extra_columns_fn")
+        strategy = config["strategy_factory"]()
+        extra_fn = config.get("compute_extra_columns_fn")
 
-    result = run_daily(
-        strategy_key, strategy, fetch_data_fn=lambda: data,
-        compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
-        force=force,
-    )
-    print(f"[{strategy_key}] {result}")
+        result = run_daily(
+            strategy_key, strategy, fetch_data_fn=lambda: data,
+            compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
+            force=force,
+        )
+        print(f"[{strategy_key}] {result}")
 
-    if result["status"] != "processed":
+        if result["status"] != "processed":
+            return None
+
+        report_path = generate_report(strategy_key, config["display_name"], strategy_id=record.strategy_id)
+        print(f"[{strategy_key}] Report saved: {report_path}")
+        _send_notification(strategy_key, record, result)
+
+        return {"strategy_key": strategy_key, "display_name": record.display_name, "result": result}
+    except Exception as e:
+        print(f"ERROR: '{strategy_key}' failed during today's paper trading run: {type(e).__name__}: {e}")
+        _send_error_notification(strategy_key, config["display_name"], e)
         return None
-
-    report_path = generate_report(strategy_key, config["display_name"], strategy_id=record.strategy_id)
-    print(f"[{strategy_key}] Report saved: {report_path}")
-    _send_notification(strategy_key, record, result)
-
-    return {"strategy_key": strategy_key, "display_name": record.display_name, "result": result}
 
 
 def _send_daily_summary(run_results: list) -> None:
@@ -190,11 +220,17 @@ def main():
             return
         run_results = []
         for strategy_key in due_keys:
+            # Each strategy's own try/except lives inside _run_one() -- a
+            # failure there is already caught and reported, so this loop
+            # keeps going regardless of what happened to any prior strategy.
             run_result = _run_one(strategy_key, force=args.force)
             if run_result is not None:
                 run_results.append(run_result)
         if run_results:
-            _send_daily_summary(run_results)
+            try:
+                _send_daily_summary(run_results)
+            except Exception as e:
+                print(f"ERROR: failed to send the daily summary: {type(e).__name__}: {e}")
         else:
             print("No strategy actually processed today (all skipped/already done) -- no summary sent.")
     elif args.strategy:
