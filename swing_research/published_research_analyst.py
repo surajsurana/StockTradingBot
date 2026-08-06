@@ -320,3 +320,82 @@ CROSS_SECTIONAL_MOMENTUM = PublishedStrategy(
         "the original is a factor-return study with zero position-level risk management."
     ),
 )
+
+
+SHORT_TERM_REVERSAL = PublishedStrategy(
+    name="Short-Term Reversal",
+    source_citation=(
+        "Jegadeesh, N. (1990), \"Evidence of Predictable Behavior of Security Returns,\" "
+        "The Journal of Finance, Vol. 45, No. 3."
+    ),
+    mechanism=(
+        "Significant NEGATIVE autocorrelation in individual stock returns at short "
+        "(weekly-to-monthly) lags -- the opposite sign from the 3-12 month momentum effect "
+        "(Jegadeesh & Titman 1993). Stocks with the worst returns over the prior month "
+        "subsequently outperform, and vice versa -- the mirror image of every momentum "
+        "strategy already tested in this program."
+    ),
+    rules=(
+        "Formation period: prior ONE MONTH return (the paper's headline, most-replicated "
+        "lag; other lags examined but 1-month is primary). Cross-sectional decile sort by "
+        "formation-period return at each formation date. Long the BOTTOM decile (worst "
+        "performers / 'losers'); the paper's zero-cost portfolio shorts the top decile "
+        "(best performers / 'winners'). Holding period: one month, standard Jegadeesh-style "
+        "overlapping-portfolio construction (new position formed every month)."
+    ),
+    variant_chosen=(
+        "1-month formation / 1-month holding -- the paper's own headline, most-cited "
+        "specification. Single-vintage holding, not the paper's overlapping-portfolio "
+        "construction -- identical structural adaptation to every prior cross-sectional "
+        "strategy in this program, approved 2026-08-05, polarity reversed and horizon "
+        "shortened vs. the momentum strategies."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy -- no NSE SLB "
+        "infrastructure for a genuine short). SINGLE-VINTAGE HOLDING instead of the paper's "
+        "overlapping-portfolio construction -- mirrors every prior cross-sectional "
+        "strategy's own approved deviation. EXIT RULE is ONLY the 21-trading-day time-stop "
+        "or the synthetic protective stop -- deliberately no percentile-based early exit, "
+        "same discipline established for every prior strategy. PROTECTIVE STOP-LOSS (8%) "
+        "and POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT "
+        "ALL -- the source paper is a factor-return study with no position-level risk "
+        "management whatsoever. NAMING: explicitly distinguished from the unrelated "
+        "existing production strategy strategies/mean_reversion.py (an RSI/Bollinger-based "
+        "per-symbol technical signal, a completely different mechanism) -- this strategy's "
+        "key is short_term_reversal, never mean_reversion, to avoid any confusion between "
+        "the two."
+    ),
+    distinctiveness=(
+        "Fourth strategy in this program requiring a genuinely cross-sectional computation "
+        "-- reuses swing_research/cross_sectional.py's existing vectorized "
+        ".rank(pct=True, axis=1) pattern via a new compute_short_term_reversal_percentile_ranks() "
+        "function (a 21-day single-period formation return, distinct from Cross-Sectional "
+        "Momentum's 126-day version and Minervini's multi-horizon blend). Mechanistically "
+        "the OPPOSITE of every momentum strategy already tested in this program -- buys "
+        "recent losers (bottom decile, percentile <=10) rather than recent winners, over a "
+        "much shorter horizon (1 month vs. 6 months) -- the strongest genuine-diversification "
+        "candidate available from price data alone. See the Strategy Library entry for the "
+        "full comparison against every strategy researched so far and the Portfolio Impact "
+        "Analysis."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. "
+        "1-month formation period: MINOR, a direct restatement of the paper's own headline "
+        "specification. "
+        "Single-vintage holding (vs. the paper's overlapping-portfolio construction): "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior "
+        "cross-sectional strategy's own single-vintage deviation; note the much shorter "
+        "holding period (1 month vs. 6 months) means meaningfully more trade turnover than "
+        "the momentum strategies, a genuine behavioral difference worth weighing in the "
+        "eventual portfolio-impact analysis, not just a weaker/stronger version of the same "
+        "mechanism. "
+        "Exit rule (21-trading-day time-stop only, no percentile-based early exit): N/A for "
+        "the time-stop itself. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, "
+        "but structurally significant in that NEITHER exists in the source paper at all -- "
+        "worth noting that buying stocks which just fell sharply places entries inherently "
+        "closer (in percentage terms) to a plausible further-decline scenario than a "
+        "momentum strategy's entries, though the SAME 8% convention is used regardless, "
+        "disclosed as a point of interpretive difference, not a rule change."
+    ),
+)

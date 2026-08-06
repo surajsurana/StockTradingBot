@@ -32,6 +32,7 @@ _STRATEGY_VARIANTS = {
     "minervini_trend_template_filter": "Trend Template Filter (8-criterion screen, disclosed mechanical entry trigger, no pyramiding)",
     "52_week_high_momentum": "52-Week High Momentum (top-decile nearness percentile, K=6mo single-vintage, no percentile-based early exit)",
     "cross_sectional_momentum": "Cross-Sectional Momentum (J=6mo formation, top-decile percentile, K=6mo single-vintage, no percentile-based early exit)",
+    "short_term_reversal": "Short-Term Reversal (1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
 }
 
 
@@ -44,6 +45,8 @@ def run_strategy(strategy_key: str, years: int, limit: int, windows: int):
         from swing_research.research_director import run_52_week_high_momentum_experiment as run_experiment_fn
     elif strategy_key == "cross_sectional_momentum":
         from swing_research.research_director import run_cross_sectional_momentum_experiment as run_experiment_fn
+    elif strategy_key == "short_term_reversal":
+        from swing_research.research_director import run_short_term_reversal_experiment as run_experiment_fn
     else:
         raise ValueError(f"Unknown strategy: {strategy_key}")
 
@@ -117,7 +120,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", type=str, default="turtle_system2",
                          choices=["turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
-                                  "cross_sectional_momentum"])
+                                  "cross_sectional_momentum", "short_term_reversal"])
     parser.add_argument("--years", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0, help="0 = full frozen universe")
     parser.add_argument("--windows", type=int, default=3)

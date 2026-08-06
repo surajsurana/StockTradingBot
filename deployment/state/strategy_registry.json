@@ -60,14 +60,20 @@
     "display_name": "MA Crossover",
     "strategy_family": "production strategy",
     "research_verdict": "REJECT",
-    "research_verdict_source": "EXP-001, EXP-002",
-    "deployment_status": "PRODUCTION",
+    "research_verdict_source": "EXP-002",
+    "deployment_status": "ARCHIVED",
     "deployment_status_history": [
       {
         "from_status": "RESEARCH",
         "to_status": "PRODUCTION",
         "timestamp": 1785834066.0020533,
         "reason": "Already live in production prior to this Research Deployment program -- reflects existing operational reality, not a research-driven promotion"
+      },
+      {
+        "from_status": "PRODUCTION",
+        "to_status": "ARCHIVED",
+        "timestamp": 1786006868.073125,
+        "reason": "Governance retirement following formal research certification under the frozen research framework -- Research Verdict = REJECT (EXP-002 for ma_crossover, EXP-004 for mean_reversion), both HIGH evidence quality (90/100). Retirement is due to governance/certification outcome, not an implementation failure. Strategy was live in production prior to this research program existing and always ran with a small amount of experimental capital. No open positions existed at time of retirement (2026-08-06). Code, historical trades, logs, and reports are preserved unmodified. ARCHIVED is used as the terminal governance-retirement state -- no separate RETIRED status exists in the frozen DeploymentStatus enum, and the enum was not modified to add one."
       }
     ],
     "notes": "",
@@ -81,14 +87,20 @@
     "display_name": "Mean Reversion",
     "strategy_family": "production strategy",
     "research_verdict": "REJECT",
-    "research_verdict_source": "EXP-003, EXP-004",
-    "deployment_status": "PRODUCTION",
+    "research_verdict_source": "EXP-004",
+    "deployment_status": "ARCHIVED",
     "deployment_status_history": [
       {
         "from_status": "RESEARCH",
         "to_status": "PRODUCTION",
         "timestamp": 1785834066.0213277,
         "reason": "Already live in production prior to this Research Deployment program -- reflects existing operational reality, not a research-driven promotion"
+      },
+      {
+        "from_status": "PRODUCTION",
+        "to_status": "ARCHIVED",
+        "timestamp": 1786006868.1017482,
+        "reason": "Governance retirement following formal research certification under the frozen research framework -- Research Verdict = REJECT (EXP-002 for ma_crossover, EXP-004 for mean_reversion), both HIGH evidence quality (90/100). Retirement is due to governance/certification outcome, not an implementation failure. Strategy was live in production prior to this research program existing and always ran with a small amount of experimental capital. No open positions existed at time of retirement (2026-08-06). Code, historical trades, logs, and reports are preserved unmodified. ARCHIVED is used as the terminal governance-retirement state -- no separate RETIRED status exists in the frozen DeploymentStatus enum, and the enum was not modified to add one."
       }
     ],
     "notes": "",
@@ -116,6 +128,48 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-006",
+    "primary_experiment_id": ""
+  },
+  "pead": {
+    "strategy_key": "pead",
+    "display_name": "Post-Earnings Announcement Drift (PEAD)",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "RESEARCH",
+        "timestamp": 1785943962.3743908,
+        "reason": "DEFERRED -- historical earnings surprise dataset unavailable, per explicit decision 2026-08-05. PEAD (Bernard and Thomas 1989/1990; Foster, Olsen and Shevlin 1984) requires Standardized Unexpected Earnings (SUE) computed from ~8-10 years of quarterly earnings-surprise events per symbol across the 457-symbol frozen universe, to support the standard 2-year validation + 10-year evaluation + recent-period + post-COVID robustness pipeline used for every other strategy. Investigated: (1) fundamentals/fundamental_agent.py -- point-in-time-only snapshot (trailing P/E, ROE, debt/equity), no earnings-surprise or historical time-series capability. (2) yfinance (the only data source integrated anywhere in this program) -- live-tested against real NSE symbols (RELIANCE.NS, TCS.NS): Ticker.earnings_history returns the right FIELDS (epsActual, epsEstimate, epsDifference, surprisePercent) but only ~4 trailing quarters (~1 year); quarterly_income_stmt/quarterly_financials EPS rows are similarly capped at ~5 quarters; Ticker.calendar is forward-looking only (next unannounced earnings date). No analyst-consensus-estimate history exists via any available source. (3) No cached or alternative earnings/fundamentals dataset exists anywhere in this repository. CONCLUSION: faithful implementation is not currently possible -- not a disclosed-assumption situation like every other strategys NSE adaptations, but a hard data-availability ceiling (~1 year available vs ~8-10 years required). Per explicit direction: do not implement using incomplete data, do not reduce the evaluation period, do not substitute a different signal, do not create an approximation that changes the published strategy. No backtest was run; no Research Verdict applies (remains NOT_YET_EVALUATED). REVISIT CONDITION: if a historical earnings/analyst-consensus dataset covering the Nifty 500 for approximately 10 years becomes available (e.g. a paid data vendor, or a dataset the user sources independently), PEAD can be reconsidered under the same frozen research protocol used for every other strategy."
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-007",
+    "primary_experiment_id": ""
+  },
+  "short_term_reversal": {
+    "strategy_key": "short_term_reversal",
+    "display_name": "Short-Term Reversal",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-020, EXP-021",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1785994650.0247953,
+        "reason": "Approved for PAPER_TRADING alongside SW-003 (52-Week High Momentum), 2026-08-05. Basis: clean PASS on base run, recent-period check, and supplementary post-COVID robustness run (zero conflicting evidence anywhere); moderate (0.392) monthly-return correlation with SW-003 indicates genuine, not complete, diversification. Paper portfolio allocation: SW-003 60% / SW-008 40%, reflecting the deeper drawdown profile (45.58% vs 30.8%). Paper-trading allocation only -- no production capital allocation changed."
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-008",
     "primary_experiment_id": ""
   }
 }

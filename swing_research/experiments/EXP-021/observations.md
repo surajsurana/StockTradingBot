@@ -1,0 +1,9 @@
+# Analysis: Short-Term Reversal — PASS
+
+**Mechanism fit.** The strategy buys names after sharp short-term declines, expecting mean reversion within a 21-day window. The numbers are consistent with that mechanism: modest win rate (45.7%) but profit factor >1.3 and expectancy of +₹180.65/trade — the classic reversal signature of many small losers offset by fewer, larger snap-back winners. Low exposure (6.95%) and short avg holding (24.3 days) confirm this is a fast-turnover, single-vintage book rather than a persistent-carry strategy, consistent with the disclosed 1-month formation/single-vintage deviation from the paper's overlapping design.
+
+**Regime dependency.** The bulk of P&L (₹43,005 of ₹65,216, ~66%) came from **bearish-regime entries** — i.e., buying dips precisely when the broader Nifty tape was already weak, which is exactly when a genuine reversal edge should show up (oversold conditions are more extreme, snapbacks sharper). Bullish-regime entries contributed less per unit of opportunity, suggesting the edge is regime-conditional, not universal. This is also visible in monthly returns: sharp drawdown months (Mar-2024 -12.7%, Mar-2026 -13.0%) sit alongside strong recovery months (Apr-2024 +10.8%, Apr-2026 +15.5%), a pattern typical of reversal strategies whipsawing around volatile turns.
+
+**Sector concentration.** P&L is broad-based but top-heavy in Auto, Financial Services, and Healthcare (~₹33.4k combined), while Capital Goods, Consumer Services, and Construction were net negative — plausibly sectors where "falling knife" continuation dominated reversal.
+
+**Follow-ups.** (1) Condition entries explicitly on bearish-regime days given the 2:1 P&L skew observed. (2) Given the long-only constraint and inherently closer-to-stop entries (buying already-declining names), test sensitivity of the 8% stop width specifically for this hypothesis vs. the momentum strategies' shared convention.

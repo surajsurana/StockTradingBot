@@ -1,0 +1,9 @@
+# Analysis: Short-Term Reversal (PASS)
+
+**Mechanism fit.** This is a long-only bet that recent losers bounce over ~1 month (avg holding 23.9 days matches the 21-day time-stop closely, so most trades ran to term rather than stopping out early). The edge is thin but real: 44.3% win rate with PF 1.31 is the classic reversal signature — more losers than winners, but winners pay enough to clear the 8% stop-loss (a convention borrowed from the momentum strategies, not the source paper, and arguably a tighter relative cushion here since entries are bought *into* recent weakness).
+
+**Regime dependence is the dominant story.** Bearish-day entries produced +37,428 in P&L versus -6,300 on bullish days — the entire return is concentrated in down-market entries, exactly consistent with a reversal mechanism that needs oversold conditions to buy into. This is not diversified conviction; it's a single regime doing all the work, and the 2026 annual return (+27.6%) vs. 2024 (-0.3%) and 2025 (+3.9%) shows the strategy only became profitable once bearish-entry opportunities became more frequent/severe.
+
+**Sector concentration.** Capital Goods, IT, and Consumer Durables drove ~24.8k of the 31.1k total P&L; Construction, Realty, and Consumer Services were net negative, suggesting reversal works better in liquid, institutionally-owned names and poorly in sentiment-driven or illiquid segments.
+
+**Follow-ups:** (1) test whether the bearish-day dependency survives if entries are gated/filtered by Nifty regime rather than left unconditional — it may reveal this is really a disguised regime-timing strategy; (2) given single-vintage vs. paper's overlapping-portfolio construction and short 1-month holds, rerun with overlapping vintages to see if turnover/frequency, not selection, explains dispersion across months.

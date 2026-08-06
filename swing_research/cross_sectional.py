@@ -116,6 +116,52 @@ def compute_momentum_percentile_ranks(data: dict) -> dict:
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+SHORT_TERM_REVERSAL_FORMATION_DAYS = 21  # 1 month -- Jegadeesh (1990)'s headline lag
+
+
+def compute_short_term_reversal_score(price_history: pd.DataFrame) -> pd.Series:
+    """
+    Jegadeesh (1990)'s 1-month formation-period return -- same single-
+    period cumulative-return construction as compute_momentum_score(),
+    just a much shorter (21 trading day) lookback. Kept as its own
+    dedicated function (not a shared/parametrized helper) per this
+    program's established precedent -- each strategy's cross-sectional
+    signal is independently named and disclosed, never silently shared
+    between strategies even when the underlying math is structurally
+    similar. No .shift() needed before .rolling() -- no lookahead.
+    """
+    close = price_history["Close"]
+    return close / close.shift(SHORT_TERM_REVERSAL_FORMATION_DAYS) - 1
+
+
+def compute_short_term_reversal_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of reversal_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN, i.e. >=21 bars of history) formation
+    return that day, of its own 1-month formation-period return. Same
+    vectorized .rank(axis=1, pct=True) construction as every other
+    cross-sectional signal in this module -- LOW percentile here means a
+    WORSE recent return (this strategy's entry condition is percentile
+    <=10, the bottom decile, the reverse polarity of every momentum
+    strategy's >=90 threshold).
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_short_term_reversal_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 LOOKBACK_52W = 252  # trading days -- same convention as
                      # strategies/minervini_trend_template_filter.py's own LOOKBACK_52W
 

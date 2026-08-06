@@ -14,6 +14,7 @@ from swing_research.cross_sectional import (
     compute_52w_high_nearness_percentile_ranks, compute_52w_high_nearness_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
     compute_rs_percentile_ranks, compute_rs_score,
+    compute_short_term_reversal_percentile_ranks, compute_short_term_reversal_score,
 )
 
 
@@ -230,6 +231,68 @@ class TestComputeMomentumPercentileRanks(unittest.TestCase):
         ranks = compute_momentum_percentile_ranks(data)
         last_date = data["B"].index[-1]
         self.assertAlmostEqual(ranks["B"].loc[last_date], 100.0)
+
+
+class TestComputeShortTermReversalScore(unittest.TestCase):
+    def test_flat_series_has_zero_score(self):
+        df = _flat_then_final_jump(0.0)
+        score = compute_short_term_reversal_score(df)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=6)
+
+    def test_negative_jump_gives_negative_score_matching_hand_calculation(self):
+        df = _flat_then_final_jump(-0.15)  # -15% on the final day
+        score = compute_short_term_reversal_score(df)
+        self.assertAlmostEqual(score.iloc[-1], -0.15, places=6)
+
+    def test_positive_jump_gives_positive_score(self):
+        df = _flat_then_final_jump(0.10)
+        score = compute_short_term_reversal_score(df)
+        self.assertAlmostEqual(score.iloc[-1], 0.10, places=6)
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        df = _flat_then_final_jump(0.10, n=15)  # short of the 21-day formation window
+        score = compute_short_term_reversal_score(df)
+        self.assertTrue(pd.isna(score.iloc[-1]))
+
+
+class TestComputeShortTermReversalPercentileRanks(unittest.TestCase):
+    def test_worse_return_symbol_ranks_lower(self):
+        # This is the INVERSE relationship of momentum -- a strategy that
+        # buys the bottom decile cares about LOW percentile = worst return.
+        data = {
+            "WORST": _flat_then_final_jump(-0.30),
+            "MIDDLE": _flat_then_final_jump(0.0),
+            "BEST": _flat_then_final_jump(0.30),
+        }
+        ranks = compute_short_term_reversal_percentile_ranks(data)
+        last_date = data["WORST"].index[-1]
+        self.assertLess(ranks["WORST"].loc[last_date], ranks["MIDDLE"].loc[last_date])
+        self.assertLess(ranks["MIDDLE"].loc[last_date], ranks["BEST"].loc[last_date])
+
+    def test_percentiles_are_between_0_and_100(self):
+        data = {
+            "A": _flat_then_final_jump(0.10), "B": _flat_then_final_jump(-0.40),
+            "C": _flat_then_final_jump(-0.10), "D": _flat_then_final_jump(0.05),
+        }
+        ranks = compute_short_term_reversal_percentile_ranks(data)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        self.assertEqual(compute_short_term_reversal_percentile_ranks({}), {})
+
+    def test_worst_symbol_lands_at_lowest_percentile(self):
+        data = {
+            "A": _flat_then_final_jump(0.10), "B": _flat_then_final_jump(-0.40),
+            "C": _flat_then_final_jump(-0.10), "D": _flat_then_final_jump(0.05),
+        }
+        ranks = compute_short_term_reversal_percentile_ranks(data)
+        last_date = data["B"].index[-1]
+        # B has the lowest (most negative) return of the four -> rank 1/4 -> 25th pct
+        self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
 
 
 if __name__ == "__main__":

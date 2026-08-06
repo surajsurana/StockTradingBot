@@ -67,6 +67,15 @@ _STRATEGY_FACTORIES = {
             "swing_research.cross_sectional", fromlist=["compute_52w_high_nearness_percentile_ranks"]
         ).compute_52w_high_nearness_percentile_ranks(data),
     },
+    "short_term_reversal": {
+        "display_name": "Short-Term Reversal",
+        "strategy_factory": lambda: __import__(
+            "swing_research.strategies.short_term_reversal", fromlist=["ShortTermReversalStrategy"]
+        ).ShortTermReversalStrategy(),
+        "compute_extra_columns_fn": lambda data: __import__(
+            "swing_research.cross_sectional", fromlist=["compute_short_term_reversal_percentile_ranks"]
+        ).compute_short_term_reversal_percentile_ranks(data),
+    },
 }
 
 

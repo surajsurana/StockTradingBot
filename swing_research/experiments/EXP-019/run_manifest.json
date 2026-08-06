@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-08-05T21:48:01.134054",
+  "strategy_name": "short_term_reversal",
+  "strategy_variant": "Short-Term Reversal (1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "52260dca4dd0cc166192fed0b4d97485a1891f92",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M deployment/state/strategy_registry.json",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M run_swing_experiment.py",
+      " M swing_research/cross_sectional.py",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_conclusions.jsonl",
+      " M swing_research/research_director.py",
+      " M test_cross_sectional.py",
+      " M test_trailing_stop.py",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/run_manifests/2026-08-05T21-22-22-091867_short_term_reversal.json",
+      "?? swing_research/strategies/short_term_reversal.py",
+      "?? swing_research/strategy_library/pead.md",
+      "?? test_kite_connection.py",
+      "?? test_short_term_reversal.py"
+    ]
+  }
+}
