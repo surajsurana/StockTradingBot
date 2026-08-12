@@ -51,7 +51,13 @@ from backtest.backtester import BacktestResult
 # Extend this whenever a new strategy module is added to strategies/ and
 # registered in main.py's STRATEGY_REGISTRY -- keeps the CIO from ever
 # recommending a strategy that doesn't actually exist in the codebase.
-KNOWN_STRATEGIES = {"ma_crossover", "mean_reversion"}
+# ma_crossover (SW-004) and mean_reversion (SW-005) were retired from LIVE
+# production on 2026-08-06 -- governance retirement after formal research
+# certification returned Research Verdict = REJECT for both (see
+# deployment/state/strategy_registry.json, RETIREMENT_REPORT.md). Removed
+# here so the CIO never proposes future capital allocations to them; their
+# historical performance remains fully visible in existing logs/reports.
+KNOWN_STRATEGIES = set()
 
 MAX_MONTHLY_CAPITAL_CHANGE_PCT = 0.20   # capital can move at most +/-20% month over month
 MIN_TARGET_RETURN_PCT = 0.5             # don't let a quiet month's reasoning produce a near-zero target
