@@ -520,6 +520,61 @@ def run_cross_sectional_momentum_experiment(data: dict, start_date: date, end_da
     )
 
 
+def run_betting_against_beta_experiment(data: dict, start_date: date, end_date: date,
+                                         starting_capital: float = 1_000_000,
+                                         n_walk_forward_windows: int = 3,
+                                         narrative_api_key: str = "",
+                                         narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                         experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                         knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                         skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for Betting Against
+    Beta -- computes the shrunk-beta cross-sectional percentile ONCE up
+    front (same pattern as every prior cross-sectional strategy), reused
+    across every walk-forward window by run_walk_forward_generic()'s own
+    per-window slicing of extra_columns_by_symbol.
+
+    First strategy in this program needing an EXTERNAL market-index series
+    (Nifty 50) as an input to its own cross-sectional signal, not just each
+    symbol's own price history -- fetched here via data.fetch_historical.fetch_nifty()
+    (period="max", read-only reuse, same source already used for the regime
+    gate/breakdown elsewhere in this function), independent of whatever
+    period `data` itself covers (compute_shrunk_beta_percentile_ranks()
+    reindexes the market series to each symbol's own dates, so a shorter
+    `data` window -- e.g. the recent-period check's 3-year slice -- is
+    handled correctly without a second, differently-windowed Nifty fetch).
+    """
+    from swing_research.strategies.betting_against_beta import BettingAgainstBetaStrategy
+    from swing_research.published_research_analyst import BETTING_AGAINST_BETA
+    from swing_research.cross_sectional import compute_shrunk_beta_percentile_ranks
+    from data.fetch_historical import fetch_nifty
+
+    nifty = fetch_nifty(period="max")
+    beta_percentiles = compute_shrunk_beta_percentile_ranks(data, nifty["Close"])
+    extra_columns = {symbol: series.rename("beta_percentile") for symbol, series in beta_percentiles.items()}
+
+    strategy = BettingAgainstBetaStrategy()
+    return run_generic_swing_experiment(
+        strategy, BETTING_AGAINST_BETA, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "betting_against_beta_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "betting_against_beta_stop_loss_pct": 0.08,
+            "betting_against_beta_percentile_threshold": 10.0,
+            "betting_against_beta_lookback_days": 252,
+            "betting_against_beta_correlation_return_lag_days": 3,
+            "betting_against_beta_shrinkage_weight": 0.6,
+            "betting_against_beta_holding_period_trading_days": 21,
+            "betting_against_beta_single_vintage": True,
+            "betting_against_beta_percentile_based_early_exit": False,
+        },
+    )
+
+
 def run_short_term_reversal_experiment(data: dict, start_date: date, end_date: date,
                                         starting_capital: float = 1_000_000,
                                         n_walk_forward_windows: int = 3,

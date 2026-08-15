@@ -167,6 +167,7 @@ EXISTING_STRATEGY_TAGS = {
     "cross_sectional_momentum": {"momentum_cross_sectional"},
     "pead": {"earnings_drift"},
     "short_term_reversal": {"reversal_short_horizon"},
+    "betting_against_beta": {"risk_based"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -313,34 +314,14 @@ def score_candidate(candidate: CandidateProfile, portfolio_records: list,
 # genuinely-published strategies).
 # =====================================================================
 CANDIDATES = [
-    CandidateProfile(
-        key="betting_against_beta",
-        name="Betting Against Beta (Low-Beta Anomaly)",
-        authors="Frazzini, A. and Pedersen, L.H.",
-        publication="\"Betting Against Beta\", Journal of Financial Economics, Vol. 111, No. 1",
-        year=2014,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-short in the original (long low-beta, short high-beta, leveraged to match "
-                   "market beta); this platform would run LONG-ONLY top-decile (lowest trailing beta), "
-                   "same disclosed reduction as every strategy already in this program.",
-        factor_family="Risk-based / low-risk anomaly",
-        factor_tags={"risk_based"},
-        mechanism="Leverage-constrained investors overpay for high-beta stocks to get market exposure "
-                  "without borrowing, compressing high-beta expected returns and leaving low-beta "
-                  "stocks underpriced relative to their risk -- a risk-based, not momentum-based, story.",
-        typical_holding_period="Monthly rebalance (rolling beta re-ranked each month)",
-        expected_trade_frequency="Moderate -- monthly cross-sectional re-rank, similar cadence to SW-003/SW-006",
-        data_requirements=["daily_ohlcv_history"],
-        known_strengths="One of the most replicated risk-based anomalies of the last decade; live AQR "
-                         "products track it; needs only price history already fetched for every strategy.",
-        known_weaknesses="Original edge is largest for the LONG low-beta + SHORT high-beta, LEVERED "
-                          "pair -- our long-only, unlevered adaptation captures only part of the "
-                          "documented spread, a real and disclosed dilution, not a free lunch.",
-        academic_replication_quality="Extensively replicated across asset classes and international markets (incl. emerging markets).",
-        evidence_sufficiency_note="Sufficient -- top-tier journal, 10+ years of independent replication.",
-        academic_evidence_score=9, expected_robustness_score=7, operational_simplicity_score=7,
-        research_value_score=8, data_availability_score=10, implementation_feasibility_score=9,
-    ),
+    # NOTE: Betting Against Beta (Frazzini & Pedersen 2014) is no longer a
+    # candidate here -- it was researched 2026-08-15 (SW-009) and REJECTed
+    # (temporal robustness failure, EXP-024/EXP-025/EXP-026 -- see
+    # swing_research/strategy_library/betting_against_beta.md). Removed
+    # from CANDIDATES since it's no longer "not yet implemented"; its
+    # "risk_based" tag is now tracked in EXISTING_STRATEGY_TAGS above so
+    # future risk-based candidates (idiosyncratic volatility, downside
+    # beta, MAX effect) score their diversification against it correctly.
     CandidateProfile(
         key="idiosyncratic_volatility",
         name="Idiosyncratic Volatility Anomaly",

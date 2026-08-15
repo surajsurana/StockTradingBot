@@ -21,6 +21,7 @@ cross-sectional work, where per-day loops over hundreds of symbols were the
 actual performance bottleneck.
 """
 
+import numpy as np
 import pandas as pd
 
 # Recency-weighted blend, matching the commonly-cited open approximation of
@@ -153,6 +154,96 @@ def compute_short_term_reversal_percentile_ranks(data: dict) -> dict:
         if df is None or df.empty:
             continue
         scores[symbol] = compute_short_term_reversal_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+# Frazzini & Pedersen (2014) beta estimator: beta = rho x (sigma_i / sigma_m),
+# shrunk 0.6/0.4 toward 1.0. BETA_LOOKBACK_DAYS is an APPROVED DEVIATION
+# (2026-08-15) from the paper's own preferred 5-year (minimum 3-year)
+# volatility window -- that window is structurally incompatible with this
+# program's frozen 3-year recent-period check (acceptance_criteria.py,
+# RECENT_PERIOD_YEARS=3, never modified): a 3-5 year warm-up would consume
+# the entire recent-period slice with zero days left to trade. 1 year
+# (matching the paper's own correlation window) is the shortest choice that
+# still lets the frozen _feasible_window_count machinery produce a
+# meaningful recent-period result. See
+# swing_research/strategy_library/betting_against_beta.md and
+# swing_research/published_research_analyst.py's BETTING_AGAINST_BETA record
+# for the full disclosed reasoning.
+BETA_LOOKBACK_DAYS = 252            # 1 year -- both sigma AND rho windows (approved deviation for sigma)
+BETA_CORRELATION_RETURN_LAG_DAYS = 3  # overlapping 3-day log returns, paper-exact (approved 2026-08-15)
+BETA_SHRINKAGE_WEIGHT = 0.6         # w in beta = w*beta_TS + (1-w)*1 -- the paper's own stated constant
+
+
+def _overlapping_log_returns(close: pd.Series, lag_days: int) -> pd.Series:
+    """log(Close_t) - log(Close_{t-lag_days}) computed for every day t --
+    an OVERLAPPING series (each value shares lag_days-1 days with its
+    neighbors), the paper's own deliberate construction to correct for
+    non-synchronous/thin-trading understatement of correlation, not a
+    naive/accidental overlap."""
+    log_close = np.log(close)
+    return log_close - log_close.shift(lag_days)
+
+
+def compute_shrunk_beta_score(price_history: pd.DataFrame, market_close: pd.Series) -> pd.Series:
+    """
+    Frazzini & Pedersen (2014) beta, faithful to the paper's rho x
+    (sigma_i/sigma_m) construction and 0.6/0.4 shrinkage, with the
+    volatility/correlation lookback shortened to 1 year (BETA_LOOKBACK_DAYS
+    -- see module-level comment above for why). No .shift() needed before
+    .rolling()/.corr() -- consistent with every other score function in
+    this module, the value at row i uses only data up to and including row
+    i's own Close, no lookahead.
+
+    market_close: the market index's (Nifty 50) own daily Close series,
+    reindexed to price_history's own dates and forward-filled for any date
+    the index itself is missing but the stock traded -- this is the first
+    function in this module needing an EXTERNAL series alongside a single
+    symbol's own price_history (every prior compute_*_score() function is
+    self-contained).
+    """
+    stock_close = price_history["Close"]
+    aligned_market = market_close.reindex(stock_close.index).ffill()
+
+    stock_r3 = _overlapping_log_returns(stock_close, BETA_CORRELATION_RETURN_LAG_DAYS)
+    market_r3 = _overlapping_log_returns(aligned_market, BETA_CORRELATION_RETURN_LAG_DAYS)
+    rho = stock_r3.rolling(BETA_LOOKBACK_DAYS).corr(market_r3)
+
+    stock_r1 = np.log(stock_close) - np.log(stock_close.shift(1))
+    market_r1 = np.log(aligned_market) - np.log(aligned_market.shift(1))
+    sigma_i = stock_r1.rolling(BETA_LOOKBACK_DAYS).std()
+    sigma_m = market_r1.rolling(BETA_LOOKBACK_DAYS).std()
+
+    beta_ts = rho * (sigma_i / sigma_m)
+    return BETA_SHRINKAGE_WEIGHT * beta_ts + (1 - BETA_SHRINKAGE_WEIGHT) * 1.0
+
+
+def compute_shrunk_beta_percentile_ranks(data: dict, market_close: pd.Series) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}. market_close: the
+    market index's own daily Close series (see compute_shrunk_beta_score()).
+
+    Returns {symbol: pd.Series of beta_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN) shrunk beta that day, of its own
+    estimated systematic risk. LOW percentile means LOW beta -- this
+    strategy's entry condition is percentile <=10 (bottom decile, lowest
+    beta), the same polarity convention as
+    compute_short_term_reversal_percentile_ranks()'s bottom-decile
+    threshold. Same vectorized .rank(axis=1, pct=True) construction as
+    every other cross-sectional signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_shrunk_beta_score(df.sort_index(), market_close)
 
     if not scores:
         return {}

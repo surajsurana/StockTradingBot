@@ -322,6 +322,109 @@ CROSS_SECTIONAL_MOMENTUM = PublishedStrategy(
 )
 
 
+BETTING_AGAINST_BETA = PublishedStrategy(
+    name="Betting Against Beta (Low-Beta Anomaly)",
+    source_citation=(
+        "Frazzini, A. and Pedersen, L.H. (2014), \"Betting Against Beta,\" "
+        "The Journal of Financial Economics, Vol. 111, No. 1."
+    ),
+    mechanism=(
+        "Leverage-constrained investors overpay for high-beta stocks to get leveraged-like market "
+        "exposure without borrowing, compressing high-beta expected returns and leaving low-beta "
+        "stocks underpriced relative to their risk -- a risk-based, not momentum-based, story. "
+        "First risk-based (as opposed to price-pattern-based) mechanism in this program."
+    ),
+    rules=(
+        "The BAB factor is a beta-neutral long-short construction: long (1/beta_L) x [low-beta "
+        "portfolio], short (1/beta_H) x [high-beta portfolio], each leg rescaled so its OWN beta "
+        "is exactly 1 at formation (long leg levered up, short leg de-levered), funded/financed at "
+        "the risk-free rate. "
+        "Beta estimation (the paper's own specific estimator, distinct from a plain OLS regression "
+        "beta): beta_hat = rho_hat x (sigma_hat_i / sigma_hat_m), where rho_hat (correlation) is "
+        "estimated from OVERLAPPING 3-DAY LOG RETURNS over a trailing 1-year window (deliberately "
+        "using multi-day overlapping returns to correct for non-synchronous/thin-trading understatement "
+        "of correlation), and sigma_hat (volatility, for both the stock and the market) is estimated "
+        "from 1-day log returns over a trailing 5-year window (the paper's own stated minimum is 3 "
+        "years for stocks with a shorter history). The raw estimate is then SHRUNK toward the "
+        "cross-sectional mean of 1.0: beta = 0.6 x beta_hat + 0.4 x 1 -- a fixed 0.6/0.4 weighting "
+        "the paper states explicitly. Rebalanced monthly."
+    ),
+    variant_chosen=(
+        "Long-only, unlevered, bottom-decile (lowest shrunk beta) selection -- see scope_reductions "
+        "below for why the leverage-scaled, beta-neutral long-short construction itself is not "
+        "attempted. Beta ESTIMATOR kept faithful to the paper's specific rho x (sigma_i/sigma_m), "
+        "0.6/0.4-shrunk construction -- not simplified to a plain OLS regression beta. Correlation "
+        "estimation kept faithful to the paper's overlapping-3-day-log-return method (approved "
+        "2026-08-15, over a simpler plain-daily-return alternative) specifically because NSE's Nifty "
+        "500 spans a wide liquidity range where the paper's own thin-trading correction is relevant, "
+        "not a formality."
+    ),
+    scope_reductions=(
+        "LONG ONLY, UNLEVERED (approved, disclosed) -- no margin/leverage infrastructure anywhere in "
+        "this platform and no NSE SLB infrastructure for a genuine short (same reason as every prior "
+        "strategy). This is a LARGER interpretive gap than every prior strategy's long-only reduction: "
+        "we capture only the long, unlevered, low-beta STOCK-SELECTION half of the paper's construction, "
+        "not the leverage-scaled, beta-neutral, zero-cost factor itself -- the backtest answers 'do "
+        "low-beta NSE stocks outperform?' rather than the paper's own headline claim ('does a "
+        "leverage-scaled bet against beta earn a return?'), a related but distinct question. "
+        "VOLATILITY (and, to keep both windows consistent, CORRELATION) LOOKBACK SHORTENED FROM THE "
+        "PAPER'S 5-YEAR (MINIMUM 3-YEAR) WINDOW TO 1 YEAR (approved 2026-08-15) -- the paper's own "
+        "preferred sigma-estimation window is structurally incompatible with this program's frozen "
+        "3-year recent-period check (swing_research/acceptance_criteria.py, RECENT_PERIOD_YEARS=3, "
+        "never modified): a 5-year (or even the paper's stated 3-year minimum) warm-up requirement "
+        "would consume the ENTIRE 3-year recent-period slice with zero days left to trade, guaranteeing "
+        "an uninformative empty/REJECT result regardless of whether the strategy actually works. "
+        "Shortening to 1 year (matching rho's own window) is the only choice compatible with the "
+        "existing frozen _feasible_window_count machinery producing a meaningful recent-period result "
+        "at all -- a real, disclosed deviation from the paper's preferred window, made specifically to "
+        "fit this platform's mandatory recency gate, not an arbitrary simplification. "
+        "RAW DAILY RETURNS used in place of returns in excess of a risk-free rate for beta estimation "
+        "(no risk-free-rate time series is integrated anywhere in this platform) -- standard, "
+        "negligible-impact simplification at daily frequency. "
+        "SINGLE-VINTAGE HOLDING instead of continuous monthly rebalancing into overlapping positions "
+        "-- mirrors every prior cross-sectional strategy's own approved deviation. PROTECTIVE "
+        "STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL "
+        "METHODOLOGY AT ALL -- the source paper is a return-predictability/factor-construction study "
+        "with no position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "First RISK-BASED (not price-pattern-based) mechanism in this program -- every prior strategy "
+        "(Turtle, Minervini, 52-Week High, Cross-Sectional Momentum, Short-Term Reversal) selects on "
+        "some function of past price/return; this selects on estimated systematic risk (beta) itself, "
+        "a structurally different signal family with no overlap in EXISTING deployment-registry tags "
+        "(risk_based vs. trend_following/momentum_cross_sectional/reversal_short_horizon/earnings_drift). "
+        "Reuses swing_research/cross_sectional.py's established vectorized .rank(pct=True, axis=1) "
+        "percentile pattern via a new compute_shrunk_beta_percentile_ranks() function, but is the "
+        "first strategy in this program needing an EXTERNAL market-index series (Nifty 50 daily "
+        "closes, via data/fetch_historical.fetch_nifty(), already reused elsewhere for the regime "
+        "gate/breakdown) as an input to its own cross-sectional signal, not just each symbol's own "
+        "price history."
+    ),
+    assumptions_impact=(
+        "Long-only, unlevered (no beta-neutral long-short construction): LIKELY UNDERSTATES the "
+        "paper's own headline factor return -- the original edge is specifically largest for the "
+        "LEVERED low-beta + DE-LEVERED high-beta PAIR; this measures only the long, unlevered "
+        "low-beta leg's own stock-selection return, which the paper itself would predict to be a "
+        "smaller, one-sided fraction of the full documented spread, not the spread itself. "
+        "Volatility/correlation lookback shortened from 5yr(paper)/3yr(paper minimum) to 1yr: "
+        "MODERATE, DIRECTIONALLY UNKNOWN -- a shorter window makes the beta estimate noisier "
+        "(more sensitive to a single volatile year) and more reactive to recent regime shifts than "
+        "the paper's own preferred longer, more stable estimate; this is a genuine fidelity cost "
+        "accepted specifically to make the strategy testable under this platform's frozen recency "
+        "gate, disclosed here rather than silently absorbed. "
+        "Overlapping-3-day-return correlation (kept faithful, not simplified): MINOR positive -- "
+        "preserves the paper's own thin-trading correction, plausibly more accurate for NSE's wide "
+        "liquidity range than a plain daily-return correlation would be. "
+        "Raw returns vs. excess-of-risk-free returns: NEGLIGIBLE at daily frequency, standard "
+        "simplification. "
+        "Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning "
+        "to every prior cross-sectional strategy's own single-vintage deviation. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all."
+    ),
+)
+
+
 SHORT_TERM_REVERSAL = PublishedStrategy(
     name="Short-Term Reversal",
     source_citation=(

@@ -1,0 +1,9 @@
+# Analysis: Betting Against Beta — Why REJECT
+
+**Mechanism mismatch drove the outcome.** This backtest measures only the long, unlevered, low-beta stock-selection leg — not the paper's actual claim (a leverage-scaled, beta-neutral long-low-beta/short-high-beta spread). With just 209 trades collapsed into a single walk-forward window, the auditor correctly flagged 0/1 positive-expectancy windows as statistically meaningless — one sample cannot distinguish skill from noise, exactly the SEED-ORB-2 trap. A profit factor of 1.095 and Sharpe of 0.308 sit in marginal, unconvincing territory even before the single-window problem.
+
+**Regime dependence:** the strategy actually did *better* in bearish regimes (P&L 4,332 vs. 3,266 bullish) — intuitively consistent with low-beta stocks cushioning drawdowns — but this defensive character is precisely what a long-only construction can't monetize the way the paper intends (which profits from shorting high-beta simultaneously). The monthly return series shows no stable pattern (7 losing months of 23, including a -8.98% March 2026), consistent with a weak, regime-dependent signal rather than a robust anomaly.
+
+**Sector concentration:** gains clustered in Healthcare, Textiles, and Auto (4,566 / 3,638 / 3,312) while Capital Goods, Chemicals, Services, and Construction Materials bled over -1,100 to -2,571 each — suggesting the "low-beta" signal is really proxying for defensive-sector membership rather than a cross-sectional beta effect, which would explain fragility across a single window.
+
+**Follow-up ideas:** (1) Test sector-neutralized beta ranking to isolate whether the edge is genuinely beta-driven or sector-driven; (2) if infrastructure ever supports SLB/leverage, re-test the true beta-neutral spread — the long-only leg alone was never expected to carry the paper's full documented return.

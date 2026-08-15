@@ -16,6 +16,7 @@ Maintained by `swing_research/research_roadmap.py` (Published Research Analyst's
 | Cross-Sectional Momentum | SW-006 | PASS | RESEARCH |
 | Post-Earnings Announcement Drift (PEAD) | SW-007 | NOT_YET_EVALUATED | RESEARCH |
 | Short-Term Reversal | SW-008 | PASS | PAPER_TRADING |
+| Betting Against Beta | SW-009 | REJECT | RESEARCH |
 
 ## Scoring Methodology
 
@@ -33,37 +34,35 @@ Weighted 0-10 axes, summing to a 0-10 total score:
 
 Diversification is scored dynamically against the live portfolio above (a strategy sharing a factor family with something already PASS+PAPER_TRADING costs far more diversification credit than one sharing a family with something REJECTed/ARCHIVED). Data availability and implementation feasibility are gated by `classify_data_feasibility()` -- any candidate needing data this platform doesn't have is moved out of the ranked roadmap entirely into 'Deferred Pending Better Data' below, regardless of how well it would otherwise score.
 
-## Ranked Research Roadmap (Top 13)
+## Ranked Research Roadmap (Top 12)
 
 | Rank | Strategy | Author(s), Year | Factor Family | Total Score | Diversification |
 |---|---|---|---|---|---|
 | 1 | Amihud Illiquidity Premium | Amihud, 2002 | Liquidity risk premium | 9.05/10 | 10.0/10 |
-| 2 | Betting Against Beta (Low-Beta Anomaly) | Frazzini, 2014 | Risk-based / low-risk anomaly | 8.8/10 | 10.0/10 |
-| 3 | MAX Effect (Lottery-Demand Anomaly) | Bali, 2011 | Behavioral / lottery-demand anomaly | 8.7/10 | 10.0/10 |
-| 4 | Overnight Return Anomaly | Lou, 2019 | Market microstructure / attention-driven | 8.5/10 | 10.0/10 |
-| 5 | Long-Term (De Bondt-Thaler) Reversal | De Bondt, 1985 | Reversal (long-horizon overreaction) | 8.2/10 | 10.0/10 |
-| 6 | Idiosyncratic Volatility Anomaly | Ang, 2006 | Risk-based / low-volatility anomaly | 8.15/10 | 10.0/10 |
-| 7 | Turn-of-the-Month Effect | Ariel, 1987 | Calendar seasonality | 7.9/10 | 10.0/10 |
-| 8 | Downside Beta / Downside Risk | Ang, 2006 | Risk-based (downside-conditional) | 7.85/10 | 10.0/10 |
-| 9 | High-Volume Return Premium | Gervais, 2001 | Volume-driven attention/visibility premium | 7.8/10 | 10.0/10 |
-| 10 | Turn-of-the-Year / January Effect | Keim, 1983 | Calendar seasonality | 7.4/10 | 10.0/10 |
-| 11 | Day-of-the-Week (Weekend) Effect | French, 1980 | Calendar seasonality | 7.3/10 | 10.0/10 |
-| 12 | Turnover / Liquidity Anomaly | Datar, 1998 | Liquidity risk premium | 7.25/10 | 10.0/10 |
-| 13 | Industry Momentum | Moskowitz, 1999 | Momentum (industry-level, not stock-level) | 6.15/10 | 4.0/10 |
+| 2 | MAX Effect (Lottery-Demand Anomaly) | Bali, 2011 | Behavioral / lottery-demand anomaly | 8.7/10 | 10.0/10 |
+| 3 | Overnight Return Anomaly | Lou, 2019 | Market microstructure / attention-driven | 8.5/10 | 10.0/10 |
+| 4 | Long-Term (De Bondt-Thaler) Reversal | De Bondt, 1985 | Reversal (long-horizon overreaction) | 8.2/10 | 10.0/10 |
+| 5 | Idiosyncratic Volatility Anomaly | Ang, 2006 | Risk-based / low-volatility anomaly | 8.05/10 | 9.5/10 |
+| 6 | Turn-of-the-Month Effect | Ariel, 1987 | Calendar seasonality | 7.9/10 | 10.0/10 |
+| 7 | High-Volume Return Premium | Gervais, 2001 | Volume-driven attention/visibility premium | 7.8/10 | 10.0/10 |
+| 8 | Downside Beta / Downside Risk | Ang, 2006 | Risk-based (downside-conditional) | 7.75/10 | 9.5/10 |
+| 9 | Turn-of-the-Year / January Effect | Keim, 1983 | Calendar seasonality | 7.4/10 | 10.0/10 |
+| 10 | Day-of-the-Week (Weekend) Effect | French, 1980 | Calendar seasonality | 7.3/10 | 10.0/10 |
+| 11 | Turnover / Liquidity Anomaly | Datar, 1998 | Liquidity risk premium | 7.25/10 | 10.0/10 |
+| 12 | Industry Momentum | Moskowitz, 1999 | Momentum (industry-level, not stock-level) | 6.15/10 | 4.0/10 |
 
 ## Full Comparison Table (every candidate, every score)
 
 | Strategy | Feasibility | Evidence | Data Avail. | Feasibility Score | Diversification | Robustness | Simplicity | Research Value | Total |
 |---|---|---|---|---|---|---|---|---|---|
 | Amihud Illiquidity Premium | IMPLEMENTABLE | 9/10 | 10/10 | 9/10 | 10.0/10 | 8/10 | 8/10 | 8/10 | 9.05/10 |
-| Betting Against Beta (Low-Beta Anomaly) | IMPLEMENTABLE | 9/10 | 10/10 | 9/10 | 10.0/10 | 7/10 | 7/10 | 8/10 | 8.8/10 |
 | MAX Effect (Lottery-Demand Anomaly) | IMPLEMENTABLE | 8/10 | 10/10 | 9/10 | 10.0/10 | 7/10 | 8/10 | 8/10 | 8.7/10 |
 | Overnight Return Anomaly | IMPLEMENTABLE | 8/10 | 10/10 | 8/10 | 10.0/10 | 6/10 | 9/10 | 8/10 | 8.5/10 |
 | Long-Term (De Bondt-Thaler) Reversal | IMPLEMENTABLE | 9/10 | 10/10 | 7/10 | 10.0/10 | 6/10 | 5/10 | 9/10 | 8.2/10 |
-| Idiosyncratic Volatility Anomaly | IMPLEMENTABLE | 8/10 | 10/10 | 8/10 | 10.0/10 | 6/10 | 6/10 | 7/10 | 8.15/10 |
+| Idiosyncratic Volatility Anomaly | IMPLEMENTABLE | 8/10 | 10/10 | 8/10 | 9.5/10 | 6/10 | 6/10 | 7/10 | 8.05/10 |
 | Turn-of-the-Month Effect | IMPLEMENTABLE | 6/10 | 10/10 | 10/10 | 10.0/10 | 4/10 | 9/10 | 4/10 | 7.9/10 |
-| Downside Beta / Downside Risk | IMPLEMENTABLE | 7/10 | 10/10 | 8/10 | 10.0/10 | 6/10 | 6/10 | 5/10 | 7.85/10 |
 | High-Volume Return Premium | IMPLEMENTABLE | 6/10 | 10/10 | 9/10 | 10.0/10 | 5/10 | 7/10 | 6/10 | 7.8/10 |
+| Downside Beta / Downside Risk | IMPLEMENTABLE | 7/10 | 10/10 | 8/10 | 9.5/10 | 6/10 | 6/10 | 5/10 | 7.75/10 |
 | Turn-of-the-Year / January Effect | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 10.0/10 | 3/10 | 9/10 | 3/10 | 7.4/10 |
 | Day-of-the-Week (Weekend) Effect | IMPLEMENTABLE | 5/10 | 10/10 | 10/10 | 10.0/10 | 2/10 | 9/10 | 2/10 | 7.3/10 |
 | Turnover / Liquidity Anomaly | IMPLEMENTABLE | 7/10 | 8/10 | 6/10 | 10.0/10 | 6/10 | 6/10 | 5/10 | 7.25/10 |
@@ -91,16 +90,7 @@ Diversification is scored dynamically against the live portfolio above (a strate
 **Known risk:** A pure long-only illiquidity tilt raises real EXECUTION risk (wide spreads, slippage) that this platform's own Execution Realism Study already flagged as a modeling gap -- this strategy would stress-test that gap harder than any strategy tried so far.
 
 
-### 2. Betting Against Beta (Low-Beta Anomaly) (Frazzini, A. and Pedersen, L.H., 2014)
-
-**Why this:** One of the most replicated risk-based anomalies of the last decade; live AQR products track it; needs only price history already fetched for every strategy.
-
-**Portfolio overlap:** None -- no existing strategy shares this factor family.
-
-**Known risk:** Original edge is largest for the LONG low-beta + SHORT high-beta, LEVERED pair -- our long-only, unlevered adaptation captures only part of the documented spread, a real and disclosed dilution, not a free lunch.
-
-
-### 3. MAX Effect (Lottery-Demand Anomaly) (Bali, T.G., Cakici, N. and Whitelaw, R.F., 2011)
+### 2. MAX Effect (Lottery-Demand Anomaly) (Bali, T.G., Cakici, N. and Whitelaw, R.F., 2011)
 
 **Why this:** Well-cited, robust behavioral finding, purely price-data-based, and offers a genuinely distinct behavioral mechanism (gambling preference) never touched by this program.
 
@@ -109,7 +99,7 @@ Diversification is scored dynamically against the live portfolio above (a strate
 **Known risk:** Meaningful conceptual overlap with idiosyncratic volatility -- if both were eventually implemented, their overlap should be disclosed, not treated as two fully independent diversification wins.
 
 
-### 4. Overnight Return Anomaly (Lou, D., Polk, C. and Skouras, S. (see also Berkman, Koch, Tuttle and Zhang 2012), 2019)
+### 3. Overnight Return Anomaly (Lou, D., Polk, C. and Skouras, S. (see also Berkman, Koch, Tuttle and Zhang 2012), 2019)
 
 **Why this:** Needs literally ZERO new data -- Open and Close are already columns in every OHLCV pull this program already makes; a genuinely novel mechanism no strategy in this program has touched.
 
@@ -118,13 +108,22 @@ Diversification is scored dynamically against the live portfolio above (a strate
 **Known risk:** A newer finding (2019) with less multi-decade replication than the classics; and unusually SENSITIVE to exactly the fill-timing assumption this platform's own Execution Realism Study already flagged as unmodeled (same-day-close fills, not realistic next-day-open fills) -- this strategy's entire edge lives inside that exact gap, so it should not be seriously evaluated before that framework recommendation is addressed.
 
 
-### 5. Long-Term (De Bondt-Thaler) Reversal (De Bondt, W.F.M. and Thaler, R., 1985)
+### 4. Long-Term (De Bondt-Thaler) Reversal (De Bondt, W.F.M. and Thaler, R., 1985)
 
 **Why this:** One of the foundational behavioral-finance papers; genuinely orthogonal horizon regime to every existing strategy in this program (all of which are 1 month to 6 months).
 
 **Portfolio overlap:** None -- no existing strategy shares this factor family.
 
 **Known risk:** Multi-decade replications show the effect has WEAKENED since discovery and concentrates in small/illiquid names -- a real concern for NSE liquidity; the 10-year history this platform holds fits only 2-3 non-overlapping 3-5yr eras, which strains the walk-forward pipeline's window mechanics (few, long windows rather than many, short ones).
+
+
+### 5. Idiosyncratic Volatility Anomaly (Ang, A., Hodrick, R.J., Xing, Y. and Zhang, X., 2006)
+
+**Why this:** Extremely well-known 'low-vol puzzle', directly computable from daily returns already fetched, no new data source needed at all.
+
+**Portfolio overlap:** Betting Against Beta (SW-009, REJECT/RESEARCH) shares: risk_based
+
+**Known risk:** The original measure is sensitive to the exact estimation window and known to interact with short-term reversal if not controlled for -- a genuine implementation-risk area, not just a data gap.
 
 
 **Why not the rest of the top 20:** lower total score, driven variously by family overlap with existing strategies (e.g. Industry Momentum vs. SW-003/SW-006), documented historical decay (the calendar-seasonality cluster), or a thinner academic replication record than the candidates above -- see the full comparison table for the exact scores behind each.
