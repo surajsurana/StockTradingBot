@@ -106,6 +106,31 @@ DATA_CAPABILITIES = {
     "index_membership_history": False,
     # swing_research/universe.py freezes CURRENT constituents only --
     # disclosed survivorship-bias caveat in that file already.
+
+    # --- Added 2026-08-15, India-specific discovery pass ---
+    "index_reconstitution_history": False,
+    # NSE publishes Nifty 50/200/500 addition/deletion circulars publicly,
+    # but nothing in this program compiles or stores them as a queryable
+    # historical dataset.
+    "promoter_pledge_disclosure_history": False,
+    # SEBI-mandated quarterly shareholding-pattern disclosures (promoter
+    # pledge %) are public filings, not integrated anywhere here.
+    "fii_dii_flow_history": False,
+    # NSE/SEBI publish daily FII/DII net-flow figures publicly; not
+    # integrated. Also NOTE: this would be a portfolio-level MARKET-TIMING
+    # input, not a per-symbol signal -- a structural mismatch with this
+    # program's Strategy interface (entry_signal_at is per-symbol), a
+    # second, non-data blocker even if the data gap were closed.
+    "bonus_issue_announcement_history": False,
+    # Historical corporate-action announcement dates/text are not
+    # integrated anywhere in this program.
+    "india_vix_history": False,
+    # NOT CONFIRMED available via yfinance/any integrated source -- unlike
+    # every other False flag above (which are confirmed-absent via direct
+    # investigation, e.g. the 2026-08-05 PEAD probe), this one is simply
+    # UNVERIFIED. Plausibly one of the cheaper gaps to close (a single
+    # index ticker, not a new vendor) -- worth a quick check before
+    # assuming it's unavailable, disclosed here rather than guessed either way.
 }
 
 
@@ -322,6 +347,580 @@ CANDIDATES = [
     # "risk_based" tag is now tracked in EXISTING_STRATEGY_TAGS above so
     # future risk-based candidates (idiosyncratic volatility, downside
     # beta, MAX effect) score their diversification against it correctly.
+
+    # =================================================================
+    # India-specific discovery pass (2026-08-15) -- NSE/India-market-
+    # focused candidates, researched via WebSearch/WebFetch against real,
+    # verifiable sources (NSE Indices' own published methodology PDFs,
+    # peer-reviewed Indian-market journal papers, and Saurabh Mukherjea/
+    # Ambit Capital's published book methodology). Not automatically
+    # favored over the global candidates above -- scored on the identical
+    # weighted rubric, including diversification against strategies
+    # already tested in THIS program (not against each other).
+    # =================================================================
+    CandidateProfile(
+        key="nifty_momentum_30_style",
+        name="Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty200 Momentum 30 Index Methodology (official NSE Indices methodology document, "
+                     "nsearchives.nseindia.com) -- verified via WebFetch/WebSearch 2026-08-15, not from memory",
+        year=2019,
+        asset_class="Single-stock equities (Nifty 200 constituents), cross-sectional",
+        direction="Long-only by construction (an index, not a long-short factor).",
+        factor_family="Momentum (risk-adjusted, blended horizon)",
+        factor_tags={"momentum_cross_sectional"},
+        mechanism="A 'Normalised Momentum Score' blends 6-month AND 12-month price return, each divided "
+                  "by the stock's own daily-return volatility (a Sharpe-ratio-like risk adjustment) -- a "
+                  "genuinely more sophisticated construction than a single-horizon raw-return momentum "
+                  "score. Real, live product: multiple AMCs (SBI, HDFC, etc.) run index funds/ETFs "
+                  "tracking this exact methodology.",
+        typical_holding_period="Semi-annual reconstitution (per the index's own methodology)",
+        expected_trade_frequency="Low-moderate -- twice-yearly rebalance is less frequent than every "
+                                  "other cross-sectional strategy in this program",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Exact, publicly documented, currently-live methodology with real institutional "
+                         "capital tracking it -- about as strong a 'this is real and used' signal as exists "
+                         "outside academic replication; fully implementable from data already fetched.",
+        known_weaknesses="Same broad momentum family already represented twice in this portfolio (SW-003 "
+                          "PASS/PAPER, SW-006 PASS/HOLD) -- the volatility-adjustment and dual-horizon "
+                          "blend are real refinements, but the marginal diversification value of a THIRD "
+                          "momentum-family candidate is limited, same reasoning already applied to "
+                          "Industry Momentum on the global roadmap.",
+        academic_replication_quality="Not an academic paper -- an official index-provider methodology, "
+                                      "live since 2019, semi-annually audited and rebalanced by NSE Indices "
+                                      "itself. Different credibility TYPE than a peer-reviewed paper "
+                                      "(institutional/regulatory rather than academic), explicitly permitted "
+                                      "under 'well-known quantitative finance research.'",
+        evidence_sufficiency_note="Sufficient as a real, live, audited methodology -- though it is a "
+                                   "PRODUCT specification, not a research finding making a causal claim; "
+                                   "treat 'the index exists and has AUM' as different evidence than 'a "
+                                   "paper found a statistically significant premium.'",
+        academic_evidence_score=6, expected_robustness_score=6, operational_simplicity_score=7,
+        research_value_score=4, data_availability_score=10, implementation_feasibility_score=8,
+    ),
+    CandidateProfile(
+        key="nifty_alpha_jensens",
+        name="Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty Alpha 50 / Nifty200 Alpha 30 Index Methodology (official NSE Indices "
+                     "methodology document) -- verified via WebSearch 2026-08-15",
+        year=2011,
+        asset_class="Single-stock equities (Nifty 100/200 constituents), cross-sectional",
+        direction="Long-only by construction.",
+        factor_family="Risk-adjusted regression alpha",
+        # Tagged with BOTH "risk_based_alpha" and "risk_based" (not just the
+        # former) -- it shares real regression machinery and conceptual
+        # lineage with Betting Against Beta's (SW-009, REJECT) shrunk-beta
+        # estimator, per this candidate's own known_weaknesses below. Tags
+        # must carry the mechanical overlap themselves (compute_diversification_score()
+        # does exact-set intersection, not fuzzy matching) -- describing an
+        # overlap in prose without tagging it would silently score this as
+        # fully independent (10/10), contradicting the analysis below.
+        factor_tags={"risk_based_alpha", "risk_based"},
+        mechanism="Selects and weights stocks by Jensen's Alpha -- the INTERCEPT term of a CAPM-style "
+                  "regression of each stock's returns against the market (Nifty), i.e. risk-adjusted "
+                  "outperformance NOT explained by market beta. Mechanically related to (reuses similar "
+                  "rolling-regression machinery as) Betting Against Beta's shrunk-beta estimator, but "
+                  "selects on the regression's INTERCEPT rather than its SLOPE -- a genuinely different "
+                  "economic claim ('this stock beats what its risk alone would predict') from BAB's "
+                  "('this stock's risk itself is underpriced').",
+        typical_holding_period="Semi-annual reconstitution",
+        expected_trade_frequency="Low-moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="A real, live, currently-tracked NSE methodology; distinct economic claim from "
+                         "every strategy tested so far, including the just-REJECTed BAB; reuses "
+                         "infrastructure (rolling market-model regression) already built for BAB, so "
+                         "implementation cost is lower than a from-scratch signal.",
+        known_weaknesses="Shares computational machinery and the 'risk-based/regression' family with "
+                          "Betting Against Beta (SW-009, REJECT) -- not the same signal, but enough "
+                          "conceptual/methodological overlap that a moderate, not full, diversification "
+                          "credit is warranted. Also, BAB's own REJECT was specifically a temporal-"
+                          "robustness failure possibly linked to a SHORTENED regression lookback (see "
+                          "SW-009's Strategy Library doc) -- the same lookback-length tension would need "
+                          "to be resolved again here before implementation, not assumed solved.",
+        academic_replication_quality="Official, live, audited index-provider methodology (institutional "
+                                      "credibility, not peer-reviewed-academic credibility).",
+        evidence_sufficiency_note="Sufficient as a real, live, audited methodology, same caveat as the "
+                                   "Momentum 30 entry above about product-vs-research evidence type.",
+        academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=7,
+    ),
+    CandidateProfile(
+        key="nifty_low_volatility_30",
+        name="Realized Low Volatility (Nifty100 Low Volatility 30 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty100 Low Volatility 30 Index Methodology -- verified via WebSearch 2026-08-15",
+        year=2016,
+        asset_class="Single-stock equities (Nifty 100 constituents), cross-sectional",
+        direction="Long-only by construction.",
+        factor_family="Risk-based (realized volatility, not beta)",
+        factor_tags={"risk_based"},
+        mechanism="Selects and inverse-volatility-weights the lowest-realized-volatility stocks, using "
+                  "1-year daily log-return standard deviation directly -- NO market-model regression at "
+                  "all, unlike BAB (beta) or the Alpha index above (regression intercept). The simplest, "
+                  "most directly comparable candidate to Betting Against Beta on this roadmap.",
+        typical_holding_period="Semi-annual reconstitution",
+        expected_trade_frequency="Low-moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Real, live, audited methodology; trivially simple to compute (a rolling standard "
+                         "deviation, no regression machinery needed at all) -- the lowest implementation "
+                         "risk of any candidate in this India-specific batch.",
+        known_weaknesses="Shares this program's 'risk_based' tag directly with Betting Against Beta "
+                          "(SW-009, REJECT) -- raw volatility and beta are correlated risk measures "
+                          "(a low-vol stock is very often also a low-beta stock), so this candidate should "
+                          "be read as a CLOSE cousin of the just-rejected strategy, not an independent test. "
+                          "A REJECT on BAB is meaningful, but non-trivial, prior evidence about how this "
+                          "family performs on this exact universe/period, not proof this specific measure fails too.",
+        academic_replication_quality="Official, live, audited index-provider methodology.",
+        evidence_sufficiency_note="Sufficient as a live methodology; given the direct family overlap with "
+                                   "SW-009's REJECT, this is better framed as 'worth a quick look given how "
+                                   "cheap it is to test' than a high-conviction independent candidate.",
+        academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=9,
+        research_value_score=3, data_availability_score=10, implementation_feasibility_score=9,
+    ),
+    CandidateProfile(
+        key="nifty_alpha_low_volatility_30",
+        name="Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty Alpha Low-Volatility 30 Index Methodology -- verified via WebSearch 2026-08-15",
+        year=2017,
+        asset_class="Single-stock equities, cross-sectional",
+        direction="Long-only by construction.",
+        factor_family="Combined risk-based (alpha + volatility)",
+        factor_tags={"risk_based_alpha", "risk_based"},
+        mechanism="A real, separately-published NSE index combining the Alpha selection above with a "
+                  "low-volatility screen/weighting overlay -- included for completeness since it is a "
+                  "genuinely distinct, separately-tracked product, not merely 'the average of two rows above.'",
+        typical_holding_period="Semi-annual reconstitution",
+        expected_trade_frequency="Low-moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Real, live, audited methodology; fully price-data-implementable.",
+        known_weaknesses="Touches BOTH risk-based tags already present in this program's tested history "
+                          "(Alpha-family overlap AND direct volatility/beta-family overlap with SW-009) -- "
+                          "the weakest diversification case of any candidate in this batch by construction, "
+                          "since it's explicitly a combination of two already-represented mechanisms.",
+        academic_replication_quality="Official, live, audited index-provider methodology.",
+        evidence_sufficiency_note="Sufficient as a live methodology; lowest research-priority in this batch "
+                                   "given the compounded family overlap.",
+        academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=2, data_availability_score=10, implementation_feasibility_score=7,
+    ),
+    CandidateProfile(
+        key="nifty_quality_30",
+        name="ROE/Leverage/Earnings-Stability Composite (Nifty200 Quality 30 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty200 Quality 30 Index Methodology -- verified via WebFetch/WebSearch 2026-08-15",
+        year=2018,
+        asset_class="Single-stock equities, cross-sectional",
+        direction="Long-only by construction.",
+        factor_family="Quality (fundamentals composite)",
+        factor_tags={"quality"},
+        mechanism="Quality score = Return on Equity + Financial Leverage (Debt/Equity) + Earnings (EPS) "
+                  "growth VARIABILITY, each measured over the PRIOR 5 YEARS -- a shorter fundamentals "
+                  "window than Piotroski/QMJ's typical multi-year point-in-time comparisons, but still a "
+                  "genuine historical (not snapshot) fundamentals requirement.",
+        typical_holding_period="Semi-annual reconstitution",
+        expected_trade_frequency="Low",
+        data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
+        known_strengths="Real, live, currently-tracked NSE methodology (multiple AMC index funds track it) "
+                         "-- strong evidence this is a credible, institutionally-accepted India-specific "
+                         "quality construction, not a hypothetical.",
+        known_weaknesses="Blocked by the same point-in-time fundamentals-history gap as every "
+                          "quality/value candidate on the global roadmap -- being India-specific does not "
+                          "change this platform's underlying yfinance data ceiling at all.",
+        academic_replication_quality="Official, live, audited index-provider methodology.",
+        evidence_sufficiency_note="Sufficient as a live methodology; blocked purely by data access, "
+                                   "identical situation to the global roadmap's Quality/Value bucket.",
+        academic_evidence_score=6, expected_robustness_score=6, operational_simplicity_score=4,
+        research_value_score=5, data_availability_score=2, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="nifty_value_20",
+        name="Earnings/Book/Dividend Value Composite (Nifty50 Value 20 methodology)",
+        authors="NSE Indices Limited",
+        publication="Nifty50 Value 20 Index Methodology (general index-family description; exact current "
+                     "weighting formula not independently re-verified beyond the general value-composite "
+                     "description found via WebSearch 2026-08-15 -- disclosed as lower-confidence than the "
+                     "Momentum/Alpha/Low-Vol/Quality entries above, which were directly confirmed)",
+        year=2009,
+        asset_class="Single-stock equities, cross-sectional",
+        direction="Long-only by construction.",
+        factor_family="Value",
+        factor_tags={"value"},
+        mechanism="A value composite drawing on earnings yield (P/E), price-to-book, dividend yield, and "
+                  "return on capital -- the same broad value construction as the global roadmap's Basu/"
+                  "Fama-French value candidate, applied to the Nifty 50 specifically.",
+        typical_holding_period="Semi-annual reconstitution",
+        expected_trade_frequency="Low",
+        data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
+        known_strengths="A real, live NSE product; India-specific evidence that a value tilt is considered "
+                         "institutionally investable here.",
+        known_weaknesses="Same fundamentals-history block as Quality above. Also the single candidate in "
+                          "this India-specific batch with the lowest source-verification confidence -- the "
+                          "exact scoring formula should be re-confirmed against NSE's own methodology "
+                          "document before any implementation, not just this summary.",
+        academic_replication_quality="Official index-provider methodology (confidence on exact formula "
+                                      "details lower than other NSE-index entries in this batch).",
+        evidence_sufficiency_note="Directionally sufficient (value-in-India is extremely well-established "
+                                   "generally), but THIS specific index's exact formula should be "
+                                   "re-verified, not taken from this summary alone, before implementation.",
+        academic_evidence_score=5, expected_robustness_score=6, operational_simplicity_score=4,
+        research_value_score=4, data_availability_score=2, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="sehgal_long_term_contrarian_india",
+        name="Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002)",
+        authors="Sehgal, S. and Balakrishnan, A.",
+        publication="\"Contrarian and Momentum Strategies in the Indian Capital Market,\" Vikalpa, 27(1), "
+                     "13-19 (2002) -- verified real via WebSearch 2026-08-15",
+        year=2002,
+        asset_class="Single-stock equities (Indian capital market), cross-sectional",
+        direction="Long-short in the original (contrarian long-short portfolio); long-only bottom-decile "
+                   "here, same disclosed reduction as every strategy in this program.",
+        factor_family="Reversal (long-horizon, India-specific evidence)",
+        factor_tags={"reversal_long_horizon"},
+        mechanism="Tests BOTH short-term momentum (continuation) and long-term contrarian (reversal) "
+                  "specifically on Indian data, finding momentum in short-term returns and reversal in "
+                  "long-term returns -- but critically, the long-term contrarian test explicitly inserts "
+                  "a ONE-YEAR SKIP PERIOD between the formation period and the holding period (to avoid "
+                  "short-term momentum/microstructure effects contaminating the long-horizon reversal "
+                  "measurement) -- a specific methodological detail the global roadmap's De Bondt-Thaler "
+                  "candidate does not itself specify, and this program's existing momentum strategies "
+                  "(SW-003, SW-006) explicitly do NOT use a skip period at all (a disclosed omission in "
+                  "both).",
+        typical_holding_period="Long-horizon (multi-year, consistent with the global De Bondt-Thaler entry)",
+        expected_trade_frequency="Very low",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Direct India-specific evidence for the long-term reversal effect already on the "
+                         "global roadmap (De Bondt-Thaler) -- corroborating, independent confirmation "
+                         "rather than a purely US/global finding being assumed to transfer. The 1-year "
+                         "skip-period detail is a genuine, disclosed methodological refinement worth "
+                         "carrying into whichever long-term-reversal implementation is eventually built.",
+        known_weaknesses="Same factor family (reversal_long_horizon) as the global roadmap's De Bondt-"
+                          "Thaler candidate -- this is best treated as ADDITIONAL EVIDENCE for that same "
+                          "candidate (and its skip-period detail folded into that implementation), not a "
+                          "fully independent second candidate to implement separately.",
+        academic_replication_quality="A single, older (2002) India-specific paper -- real and "
+                                      "peer-reviewed-adjacent (Vikalpa is IIM Ahmedabad's management "
+                                      "journal), but a thinner, less-replicated evidence base than the "
+                                      "original De Bondt-Thaler (1985) or its decades of international "
+                                      "replication.",
+        evidence_sufficiency_note="Sufficient as corroborating evidence, not as a standalone primary source "
+                                   "-- strengthens the case for the existing global candidate rather than "
+                                   "standing alone.",
+        academic_evidence_score=6, expected_robustness_score=6, operational_simplicity_score=5,
+        research_value_score=5, data_availability_score=10, implementation_feasibility_score=8,
+    ),
+    CandidateProfile(
+        key="volume_weighted_momentum_india",
+        name="Volume-Based Momentum and Contrarian Strategies (Maheshwari & Dhankar 2017)",
+        authors="Maheshwari, S. and Dhankar, R.S.",
+        publication="\"Profitability of Volume-based Momentum and Contrarian Strategies in the Indian "
+                     "Stock Market,\" published in a peer-reviewed journal (SAGE) -- verified real via "
+                     "WebSearch 2026-08-15",
+        year=2017,
+        asset_class="Single-stock equities (Indian stock market), cross-sectional",
+        direction="Long-short in the original; long-only here, same disclosed reduction.",
+        factor_family="Momentum/reversal, VOLUME-conditioned",
+        factor_tags={"momentum_cross_sectional", "volume_attention"},
+        mechanism="Forms momentum/contrarian portfolios using TRADING VOLUME as a screen or weighting "
+                  "input alongside past return, rather than a pure price-return formation score -- "
+                  "genuinely distinct signal CONSTRUCTION from every price-only momentum/reversal "
+                  "candidate already tested in this program, even though the broad economic story "
+                  "(continuation/reversal) is related.",
+        typical_holding_period="Not independently re-confirmed here (would need the full paper); assumed "
+                                "comparable to other Indian momentum studies (months, not years)",
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Genuinely different signal construction (volume-conditioned) from every existing "
+                         "momentum/reversal strategy in this program; fully implementable from data already "
+                         "fetched (Volume is already an OHLCV column); India-specific evidence.",
+        known_weaknesses="Still broadly in the momentum/reversal family by mechanism, so meaningful (if not "
+                          "complete) tag overlap with SW-003/SW-006/SW-008; the exact volume-weighting "
+                          "formula was not independently re-verified here beyond the paper's existence and "
+                          "abstract-level description -- would need the full paper before implementation.",
+        academic_replication_quality="Single peer-reviewed paper (SAGE journal) -- real, but not yet "
+                                      "independently replicated elsewhere the way this module's global "
+                                      "candidates' foundational papers have been.",
+        evidence_sufficiency_note="Directionally sufficient to justify a closer read of the full paper "
+                                   "before committing research time; not yet at the same evidentiary bar "
+                                   "as the global roadmap's top-ranked candidates.",
+        academic_evidence_score=5, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=7,
+    ),
+    CandidateProfile(
+        key="nifty_index_inclusion_effect",
+        name="Nifty Index Inclusion/Exclusion Effect",
+        authors="Multiple (e.g. Selvam, Indhumathi & Lydia 2012; more recent 2010-2024 studies)",
+        publication="Multiple peer-reviewed studies on CNX Nifty/Nifty 50 index addition and deletion "
+                     "effects (e.g. Journal of Business and Economic Studies-adjacent venues) -- verified "
+                     "real, multiple independent studies, via WebSearch 2026-08-15",
+        year=2012,
+        asset_class="Single-stock equities (index reconstitution events), event-driven",
+        direction="Long newly-added stocks around inclusion / avoid or short newly-removed stocks around "
+                   "exclusion; long-only-additions here.",
+        factor_family="Event-driven / forced institutional flow",
+        factor_tags={"index_flow_effect"},
+        mechanism="Stocks ADDED to the Nifty 50 (or other Nifty indices) see forced buying from index-"
+                  "tracking funds around the reconstitution date, producing abnormal positive returns; "
+                  "excluded stocks see the mirror-image forced selling. A STRUCTURALLY DIFFERENT "
+                  "mechanism from every other candidate in this program -- driven by mechanical fund "
+                  "flows, not price pattern, fundamentals, or risk.",
+        typical_holding_period="Short, event-window-based (days to ~60 days -- multiple studies found "
+                                "abnormal returns partially REVERSING within roughly 60 days of inclusion)",
+        expected_trade_frequency="Very low -- gated by how often the underlying index actually "
+                                  "reconstitutes (semi-annual for most Nifty indices), a handful of "
+                                  "genuine events per cycle",
+        data_requirements=["daily_ohlcv_history", "index_reconstitution_history"],
+        known_strengths="Genuinely distinct mechanism (forced flow, not signal-based) -- the strongest "
+                         "diversification candidate in this entire India-specific batch. Multiple "
+                         "independent Indian studies (2012 and 2010-2024 evidence) find a real, if "
+                         "DECAYING and PARTIALLY REVERSING, effect -- consistent with the well-documented "
+                         "global S&P 500 inclusion-effect literature this Indian evidence extends.",
+        known_weaknesses="Effect is explicitly documented as DECAYING over time (weaker in 2010-2018 than "
+                          "2000-2009 per one study) and PARTIALLY REVERSING within ~60 days in another -- "
+                          "this is not a clean, stable premium, and event count is inherently low (a "
+                          "handful of true reconstitution events per year across the frozen universe), "
+                          "meaning statistical power for this program's usual trade-count thresholds "
+                          "would be a real concern even if the data gap were closed.",
+        academic_replication_quality="Multiple independent Indian-market studies across different time "
+                                      "periods, with a consistent (though weakening) direction -- "
+                                      "reasonably well-replicated for an India-specific literature, though "
+                                      "not to the depth of the classic global anomalies.",
+        evidence_sufficiency_note="Sufficient to justify data investment, with the explicit caveat that "
+                                   "the effect's own literature describes it as weakening -- any future "
+                                   "implementation should test the MOST RECENT sub-period specifically, "
+                                   "not just the full historical record.",
+        academic_evidence_score=6, expected_robustness_score=4, operational_simplicity_score=5,
+        research_value_score=8, data_availability_score=1, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="promoter_pledge_governance_signal",
+        name="Promoter Share-Pledging as a Governance/Distress Signal",
+        authors="Multiple (e.g. recent Indian-listed-firm studies on promoter pledging and downside risk, "
+                 "2009-2023 SEBI disclosure-regime-based samples)",
+        publication="Multiple peer-reviewed/working-paper studies on promoter share pledging and Indian "
+                     "firm risk -- verified real via WebSearch 2026-08-15 (SEBI's post-2009 mandatory "
+                     "promoter-encumbrance disclosure regime is the underlying data source these studies use)",
+        year=2023,
+        asset_class="Single-stock equities, governance/distress signal",
+        direction="Avoid/underweight high-pledge names (long-only universe filter) or long low/no-pledge "
+                   "names -- not a classic long-short factor construction in the source literature.",
+        factor_family="Governance / distress risk (India-specific)",
+        factor_tags={"governance_distress_signal"},
+        mechanism="Firms whose promoters have pledged a large fraction of their shares as loan collateral "
+                  "show measurably elevated downside-risk exposure and behavioral distortions (reduced "
+                  "capex/R&D, forced-selling risk if margin calls trigger) -- a GENUINELY India-specific "
+                  "phenomenon at this scale (promoter share pledging is a much larger and more "
+                  "structurally embedded practice in Indian markets than in most developed markets), not "
+                  "an Indian replication of a Western anomaly.",
+        typical_holding_period="Not standardized in the literature -- would need to be defined as an "
+                                "implementation choice (e.g. quarterly, matching SEBI's own disclosure "
+                                "cadence) rather than taken directly from a single paper's holding period.",
+        expected_trade_frequency="Low -- pledge disclosures update quarterly, not daily",
+        data_requirements=["daily_ohlcv_history", "promoter_pledge_disclosure_history"],
+        known_strengths="The single most genuinely INDIA-SPECIFIC (not a replicated Western anomaly) "
+                         "candidate in this entire roadmap, global and India-specific batches combined -- "
+                         "no comparable large-scale promoter-pledging phenomenon exists in most developed "
+                         "markets this program's other sources study. Real, multi-study evidence (elevated "
+                         "downside risk, reduced investment) across a meaningful sample (1,452+ firms in "
+                         "one study).",
+        known_weaknesses="This is a RISK/AVOIDANCE signal (elevated distress risk), not a demonstrated "
+                          "POSITIVE-return-predicting factor the way momentum/value/quality are -- the "
+                          "literature supports 'these firms are riskier,' not yet clearly 'avoiding them "
+                          "or shorting them earns an documented, quantified excess return' in the same "
+                          "decile-sort-backtest sense as every other candidate here. Would need a more "
+                          "careful read of the source studies to confirm a genuinely tradeable, quantified "
+                          "claim exists before treating this as equivalent in evidentiary weight to a "
+                          "return-predictability anomaly paper.",
+        academic_replication_quality="Multiple independent recent studies (2023-2025 vintage), consistent "
+                                      "direction, but a young and still-developing literature relative to "
+                                      "the decades-old classics on the global roadmap.",
+        evidence_sufficiency_note="Sufficient to justify data investment and a closer literature read, but "
+                                   "NOT yet sufficient to treat as a proven return-predictability finding "
+                                   "the way the global roadmap's top candidates are -- flagged as a genuine "
+                                   "research-value opportunity specifically BECAUSE it's underexplored, not "
+                                   "because the return case is already made.",
+        academic_evidence_score=5, expected_robustness_score=5, operational_simplicity_score=5,
+        research_value_score=8, data_availability_score=1, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="fii_dii_flow_market_timing",
+        name="FII/DII Net-Flow Market-Timing Overlay",
+        authors="Multiple (e.g. Springer Future Business Journal 2020 causality study; MDPI JRFM 2024 "
+                 "FII-to-DII-dominance study; several others)",
+        publication="Multiple peer-reviewed studies on FII/DII flows and Indian stock market returns -- "
+                     "verified real via WebSearch 2026-08-15, including bidirectional Granger-causality "
+                     "findings between flows and returns",
+        year=2020,
+        asset_class="Market-level (Nifty/Sensex), not single-stock -- a portfolio-wide overlay",
+        direction="A regime/exposure adjustment (e.g. reduce net exposure when FII selling pressure is "
+                   "elevated), not a stock-selection long/short construction.",
+        factor_family="Institutional-flow market-timing",
+        factor_tags={"institutional_flow_market_timing"},
+        mechanism="Daily/monthly aggregate FII (Foreign Institutional Investor) and DII (Domestic "
+                  "Institutional Investor) net-flow figures, published publicly by NSE/SEBI, show "
+                  "documented (bidirectional) causal relationships with subsequent market-level returns "
+                  "and volatility -- a genuinely different SHAPE of strategy from every other candidate "
+                  "on this roadmap: a market-wide regime overlay, not a per-symbol cross-sectional signal.",
+        typical_holding_period="N/A in the per-symbol sense -- would operate as a portfolio-wide exposure "
+                                "adjustment, structurally closer to this platform's existing Macro "
+                                "Strategist (macro/macro_strategist.py) than to any swing_research Strategy.",
+        expected_trade_frequency="N/A -- not a per-symbol entry/exit signal",
+        data_requirements=["daily_ohlcv_history", "fii_dii_flow_history"],
+        known_strengths="A genuinely distinct MECHANISM TYPE, not just a distinct signal -- if implemented, "
+                         "it would be the first market-timing/regime overlay in the swing_research program "
+                         "(the existing Macro Strategist plays an analogous role in the LIVE daily pipeline, "
+                         "but reads news headlines via Claude, not a quantified flow time series). "
+                         "Multiple independent studies confirm the underlying flow-return relationship is real.",
+        known_weaknesses="IMPLEMENTATION-SHAPE MISMATCH, not just a data gap: this program's "
+                          "swing_research.base.Strategy interface is built around per-symbol "
+                          "entry_signal_at()/exit_signal_at() hooks -- a portfolio-level flow overlay "
+                          "doesn't fit that shape at all and would need a different architectural pattern "
+                          "(closer to the regime filter in strategies/market_regime.py) to even express, "
+                          "a second, structural blocker beyond the missing flow-history data itself. Also, "
+                          "the causality literature itself is genuinely mixed on DIRECTION (does flow "
+                          "predict returns, or do returns predict flow, or both) -- a real, disclosed "
+                          "ambiguity about whether this is actually a PREDICTIVE signal or just a "
+                          "correlated/coincident one.",
+        academic_replication_quality="Multiple independent, fairly recent (2020-2025) studies, generally "
+                                      "consistent on the existence of a relationship, genuinely mixed on "
+                                      "causal direction -- moderate replication quality with an important "
+                                      "open question.",
+        evidence_sufficiency_note="Sufficient to justify further investigation, explicitly NOT sufficient "
+                                   "to treat as a clean, directional, tradeable signal without resolving "
+                                   "the causality-direction ambiguity first.",
+        academic_evidence_score=5, expected_robustness_score=4, operational_simplicity_score=2,
+        research_value_score=6, data_availability_score=1, implementation_feasibility_score=0,
+    ),
+    CandidateProfile(
+        key="bonus_issue_announcement_drift",
+        name="Bonus Issue Announcement Drift",
+        authors="Multiple (e.g. Malhotra, Thenmozhi & ArunKumar; Mishra; Dhar & Chhaochharia; others)",
+        publication="Multiple SSRN/peer-reviewed working papers on Indian bonus-issue announcement market "
+                     "reactions -- verified real via WebSearch 2026-08-15, findings explicitly MIXED across "
+                     "studies",
+        year=2005,
+        asset_class="Single-stock equities, corporate-action event-driven",
+        direction="Long ahead of anticipated bonus announcements (if a reliable pre-announcement signal "
+                   "existed) -- the literature does not support a clean, agreed-upon trading rule.",
+        factor_family="Corporate-action event drift",
+        factor_tags={"corporate_action_event"},
+        mechanism="Some studies find positive abnormal returns in the days BEFORE a bonus-issue "
+                  "announcement (consistent with the announcement being partially anticipated/leaked); "
+                  "others find near-zero or even negative reaction ON the announcement day; at least one "
+                  "study concludes the Indian market shows semi-strong-form efficiency here (information "
+                  "already priced in) and finds NO exploitable reaction at all.",
+        typical_holding_period="Short, event-window (days around announcement, per the studies' own event-study design)",
+        expected_trade_frequency="Low -- gated by how often bonus issues actually occur in the universe",
+        data_requirements=["daily_ohlcv_history", "bonus_issue_announcement_history"],
+        known_strengths="A genuinely India-specific corporate-action pattern (bonus issues are far more "
+                         "common in India than the economically-similar US practice of stock splits/"
+                         "buybacks) -- if a real edge existed, it would be distinctly India-native.",
+        known_weaknesses="THE WEAKEST EVIDENTIARY CASE IN THIS ENTIRE INDIA-SPECIFIC BATCH -- the source "
+                          "studies directly CONTRADICT each other on both the sign and the existence of any "
+                          "abnormal return. This is not a case of 'real effect, decaying over time' (like "
+                          "index inclusion) -- it's a case of no clear consensus that a reliably tradeable "
+                          "effect exists at all. Included for completeness/transparency of the search, not "
+                          "because it clears this program's own evidence bar.",
+        academic_replication_quality="Multiple studies exist, but they DISAGREE with each other -- the "
+                                      "opposite of convergent replication.",
+        evidence_sufficiency_note="INSUFFICIENT -- mixed/contradictory findings across the available "
+                                   "studies mean this does not meet the bar of 'enough academic evidence to "
+                                   "justify spending research time,' independent of the data-availability "
+                                   "question.",
+        academic_evidence_score=2, expected_robustness_score=2, operational_simplicity_score=5,
+        research_value_score=1, data_availability_score=1, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="coffee_can_quality_growth",
+        name="Coffee Can Portfolio (decade-consistency quality-growth screen)",
+        authors="Mukherjea, S., Ranjan, R. and Uniyal, P.",
+        publication="\"Coffee Can Investing: The Low-Risk Road to Stupendous Wealth\" (2018), Ambit Capital "
+                     "/ Marcellus Investment Managers -- verified real via WebSearch 2026-08-15 including "
+                     "the exact quantitative screen",
+        year=2018,
+        asset_class="Single-stock equities, cross-sectional fundamentals screen",
+        direction="Long-only, buy-and-hold (explicitly a low-turnover, 'forget about it' philosophy).",
+        factor_family="Quality + growth (decade-consistency)",
+        factor_tags={"quality"},
+        mechanism="A simple, exact, quantifiable screen: minimum market cap Rs. 100 crore, revenue growth "
+                  "of AT LEAST 10% per year for EACH of the prior 10 years, and pre-tax Return on Capital "
+                  "Employed (ROCE) of AT LEAST 15% for EACH of the prior 10 years -- a genuinely simple "
+                  "rule (unlike most academic quality composites, no weighting/blending, just two hard "
+                  "thresholds sustained for a decade), widely followed by Indian retail and institutional "
+                  "investors alike (Ambit Capital and the author's later firm, Marcellus, run real, "
+                  "SEBI-registered PMS products on this philosophy).",
+        typical_holding_period="Very long (multi-year buy-and-hold by explicit design)",
+        expected_trade_frequency="Extremely low",
+        data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
+        known_strengths="An exact, simple, widely-known, India-native screen with real institutional "
+                         "capital following it (Marcellus PMS); 'widely accepted trading book' per this "
+                         "program's own research-universe rule, explicitly permitted alongside "
+                         "peer-reviewed papers.",
+        known_weaknesses="Requires a FULL DECADE of consistent, point-in-time (as-then-reported) annual "
+                          "revenue and ROCE figures for every candidate stock, at every formation date, "
+                          "across the backtest period -- the single MOST fundamentals-data-hungry candidate "
+                          "on this entire roadmap (more demanding than Piotroski, QMJ, or the NSE Quality/"
+                          "Value indices' own 5-year windows). Blocked by the exact same point-in-time "
+                          "fundamentals gap as every other quality/value candidate, just more severely.",
+        academic_replication_quality="Not peer-reviewed academic research -- a published, widely-read "
+                                      "practitioner book with real institutional capital deployed on the "
+                                      "underlying philosophy, explicitly the 'widely accepted trading book' "
+                                      "category this program's research universe already permits.",
+        evidence_sufficiency_note="Sufficient as a well-known, exact, India-native screen; blocked purely "
+                                   "by (an especially severe version of) this platform's existing data ceiling.",
+        academic_evidence_score=5, expected_robustness_score=6, operational_simplicity_score=3,
+        research_value_score=6, data_availability_score=1, implementation_feasibility_score=1,
+    ),
+    CandidateProfile(
+        key="india_vix_regime_overlay",
+        name="India VIX Regime Overlay (equity-only operationalization of the volatility risk premium)",
+        authors="N/A -- adapted from the general volatility-risk-premium literature (see the global "
+                 "roadmap's Options-Based Volatility Risk Premium entry) applied to India's own published "
+                 "implied-volatility index",
+        publication="India VIX (NSE's own implied-volatility index, methodology licensed from CBOE) -- "
+                     "the INDEX itself is a real, long-published NSE data series; no single dedicated "
+                     "India-VIX-trading paper verified here, this candidate is a scoped, honest adaptation, "
+                     "not a direct paper replication",
+        year=2008,
+        asset_class="Equity-only regime overlay (NOT an options strategy)",
+        direction="A portfolio-wide risk-reduction overlay (e.g. reduce new-entry risk when India VIX is "
+                   "elevated) -- not a per-symbol signal, not a genuine volatility-selling strategy.",
+        factor_family="Volatility regime (equity-only proxy)",
+        factor_tags={"volatility_regime"},
+        mechanism="The TRUE volatility-risk-premium trade (implied vol systematically exceeds realized "
+                  "vol) requires selling options -- blocked here exactly like the global roadmap's "
+                  "Options-Based Volatility Risk Premium candidate, no options data or infrastructure "
+                  "exists in this program. The only NSE-cash-equity-feasible operationalization is an "
+                  "EQUITY-ONLY regime overlay: use India VIX's LEVEL (not its risk premium) as a risk-off "
+                  "signal, conceptually similar to this program's own live Macro Strategist, but "
+                  "quantified from a real index series instead of Claude-read headlines.",
+        typical_holding_period="N/A -- a regime overlay, not a position-holding rule",
+        expected_trade_frequency="N/A",
+        data_requirements=["daily_ohlcv_history", "india_vix_history"],
+        known_strengths="India VIX is a REAL, long-published (since 2008), NSE-native index -- if it turns "
+                         "out to be fetchable from an existing or easily-added source, this would be one "
+                         "of the cheaper data gaps to close among the blocked candidates in this batch. "
+                         "Would give this program's research pipeline its first genuinely macro/volatility-"
+                         "timing input.",
+        known_weaknesses="This is an HONEST DOWNGRADE from the real volatility-risk-premium academic "
+                          "literature, not a faithful implementation of it -- without options, this can "
+                          "only ever be a coarse regime filter, structurally similar to the FII/DII "
+                          "candidate's implementation-shape mismatch with this program's per-symbol "
+                          "Strategy interface. india_vix_history's availability is UNVERIFIED (not "
+                          "confirmed-absent like most other False flags), so its feasibility classification "
+                          "here is conservative, not definitive -- worth a real check before ruling out.",
+        academic_replication_quality="The underlying volatility-risk-premium literature is well-established "
+                                      "globally; this specific India-equity-only adaptation has no dedicated "
+                                      "paper behind it -- an honest scoping exercise, not a citation.",
+        evidence_sufficiency_note="INSUFFICIENT as a standalone research candidate in its current form -- "
+                                   "flagged for completeness and because the underlying data series is "
+                                   "real and possibly cheap to access, not because a specific tradeable rule "
+                                   "has been established in the literature.",
+        academic_evidence_score=3, expected_robustness_score=3, operational_simplicity_score=4,
+        research_value_score=4, data_availability_score=2, implementation_feasibility_score=1,
+    ),
     CandidateProfile(
         key="idiosyncratic_volatility",
         name="Idiosyncratic Volatility Anomaly",
