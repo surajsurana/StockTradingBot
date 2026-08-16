@@ -322,6 +322,91 @@ CROSS_SECTIONAL_MOMENTUM = PublishedStrategy(
 )
 
 
+AMIHUD_ILLIQUIDITY_PREMIUM = PublishedStrategy(
+    name="Amihud Illiquidity Premium",
+    source_citation=(
+        "Amihud, Y. (2002), \"Illiquidity and Stock Returns: Cross-Section and Time-Series Effects,\" "
+        "Journal of Financial Markets, Vol. 5, No. 1."
+    ),
+    mechanism=(
+        "Investors demand compensation for holding hard-to-trade (price-impact-sensitive) stocks. "
+        "The ILLIQ ratio -- average |daily return| / daily rupee volume -- proxies this directly from "
+        "price and volume alone. Second risk/friction-based (not price-pattern-based) mechanism in "
+        "this program, after Betting Against Beta (SW-009, REJECT) -- but a genuinely different "
+        "friction: BAB prices SYSTEMATIC RISK (covariance with the market), this prices TRADING COST "
+        "ITSELF (how much a given trade moves the price)."
+    ),
+    rules=(
+        "ILLIQ_i = (1/D) x sum_t |R_i,t| / VOLD_i,t, averaged over a formation period (the paper's "
+        "headline measure uses the PRIOR YEAR, re-estimated annually). Cross-sectional decile sort "
+        "by ILLIQ at each formation date. Long the TOP decile (most illiquid) -- the paper's own "
+        "long-side framing of the premium, not a long-short zero-cost construction the way BAB's "
+        "own factor is (Amihud's headline test is a cross-sectional/Fama-MacBeth REGRESSION of returns "
+        "on lagged ILLIQ, not a literal decile-sort trading rule -- translating it into one is itself "
+        "an interpretive step, consistent with the pattern the follow-on tradeable-portfolio "
+        "literature, e.g. Amihud/Hameed/Kang/Zhang's emerging-market extensions, already uses)."
+    ),
+    variant_chosen=(
+        "252-trading-day (~1 year) ILLIQ formation window -- the paper's OWN preferred window, "
+        "UNCHANGED (unlike Betting Against Beta's beta lookback, this window fits comfortably within "
+        "the frozen 3-year recent-period check without shortening -- see "
+        "swing_research/cross_sectional.py's AMIHUD_ILLIQ_FORMATION_DAYS). Monthly single-vintage "
+        "reformation (21 trading days) -- matches how the follow-on tradeable-portfolio literature "
+        "operationalizes the paper's annual measure into an actual rebalanced portfolio, since Amihud's "
+        "own test re-estimates the cross-section monthly even though each ILLIQ value looks back a "
+        "full year. Rupee volume proxied as Close x Volume (no intraday VWAP available -- standard "
+        "practice in the empirical liquidity literature itself, not a platform-specific approximation)."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy). ZERO-VOLUME DAYS "
+        "excluded from the trailing ILLIQ average (not treated as infinite illiquidity) -- a "
+        "necessary, disclosed implementation detail for thinly-traded days, not a rule change. "
+        "SINGLE-VINTAGE HOLDING instead of a rolling monthly regression -- same disclosed structural "
+        "deviation as every cross-sectional strategy in this program. TOP-DECILE THRESHOLD "
+        "(percentile >=90, most illiquid) with an 8% protective stop-loss and 1% risk-per-unit sizing, "
+        "NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- same disclosed pattern as every other strategy. "
+        "EXECUTION-REALISM CONFIGURATION (approved 2026-08-16, the central methodological difference "
+        "from every prior strategy in this program): this is the FIRST strategy whose ACCEPTANCE "
+        "VERDICT is computed from execution-realism-adjusted trades, not a zero-cost, same-day-close "
+        "backtest -- a 5% trailing-20-day-ADV position-sizing cap, an ILLIQ-derived slippage cost "
+        "(calibrated ONCE via a disclosed anchor -- 10bps one-way for a median-ILLIQ universe stock at "
+        "a representative Rs.100,000 trade -- never tuned to this strategy's own results), and "
+        "next-day-open fill timing (see swing_research/execution_realism_engine.py and "
+        "execution_realism_framework_proposal.md). The RAW, zero-cost comparison is still computed and "
+        "saved for transparency, but explicitly NOT used for the verdict -- see this strategy's "
+        "Strategy Library entry for both sets of numbers side by side."
+    ),
+    distinctiveness=(
+        "First strategy in this program selecting on TRADING-COST/LIQUIDITY-RISK rather than either a "
+        "price pattern (every strategy except BAB) or systematic risk covariance (BAB specifically) -- "
+        "a third, structurally distinct signal family. Also the first strategy whose own backtest "
+        "models the execution friction its signal is theorized to be compensation for, rather than "
+        "assuming a frictionless fill -- a fidelity improvement uniquely relevant to THIS strategy, "
+        "since every prior strategy's edge doesn't structurally depend on the thing the zero-cost "
+        "assumption hides."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. "
+        "252-day formation: MINOR, a direct restatement of the paper's own preferred window. "
+        "Close x Volume rupee-volume proxy: MINOR, standard practice in the literature itself. "
+        "Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as every "
+        "prior cross-sectional strategy. "
+        "Regression-to-decile-sort translation: a genuine interpretive step beyond the paper's own "
+        "literal test design -- MODERATE, DIRECTIONALLY UNKNOWN, disclosed as a bigger fidelity gap "
+        "than a strategy whose source paper already IS a decile-sort/portfolio-construction design "
+        "(e.g. every Jegadeesh-family strategy already in this program). "
+        "Execution-realism configuration: by design, LIKELY UNDERSTATES the zero-cost backtest's own "
+        "apparent edge (that is the entire point) -- the SW-003/SW-008 validation found the "
+        "illiquidity-cost component specifically can be large for a strategy trading less-liquid names "
+        "even when that strategy wasn't designed to select on liquidity at all; Amihud selects on "
+        "liquidity DIRECTLY, so this effect is expected to be at least as large, plausibly larger. "
+        "This is treated as a FIDELITY IMPROVEMENT relative to every prior strategy's zero-cost "
+        "backtest, not an additional disclosed weakness -- the zero-cost number was the less faithful "
+        "one for this specific strategy."
+    ),
+)
+
+
 BETTING_AGAINST_BETA = PublishedStrategy(
     name="Betting Against Beta (Low-Beta Anomaly)",
     source_citation=(

@@ -185,5 +185,19 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-009",
     "primary_experiment_id": ""
+  },
+  "amihud_illiquidity": {
+    "strategy_key": "amihud_illiquidity",
+    "display_name": "Amihud Illiquidity Premium",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-029, EXP-030, EXP-031 (robustness, conflicting)",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-010",
+    "primary_experiment_id": ""
   }
 }

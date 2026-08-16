@@ -41,7 +41,7 @@ from typing import Optional
 
 import pandas as pd
 
-from swing_research.backtesting_engine import Trade
+from swing_research.backtesting_engine import Trade, simulate_portfolio
 
 DEFAULT_ADV_LOOKBACK_DAYS = 20
 DEFAULT_ILLIQ_COST_CAP_PCT = 0.05
@@ -273,3 +273,107 @@ def build_approximate_daily_equity(trades: list, starting_capital: float, tradin
         equity += pnl_by_exit_date.get(d, 0.0)
         daily_equity[d] = equity
     return daily_equity
+
+
+def run_walk_forward_execution_realistic(strategy, data: dict, starting_capital: float, sector_map: dict,
+                                          start_date: date, end_date: date, n_walk_forward_windows: int = 3,
+                                          extra_columns_by_symbol: Optional[dict] = None,
+                                          max_participation_pct_of_adv: Optional[float] = 0.05,
+                                          illiq_cost_k: Optional[float] = None,
+                                          fill_timing: str = "next_day_open",
+                                          min_trades_total: int = 15, min_out_of_sample_trades: int = 3,
+                                          min_consistent_window_fraction: float = 0.5) -> dict:
+    """
+    Execution-realism-aware counterpart to
+    research_director.run_walk_forward_generic() -- SAME walk-forward
+    windowing (research_lab.backtesting_engineer.walk_forward_split(),
+    imported unmodified, identical to the standard pipeline) and SAME
+    research_lab.statistical_auditor.audit() (imported unmodified,
+    frozen-adjacent), but computes each window's audited metrics from
+    apply_execution_realism()-adjusted trades instead of raw
+    simulate_portfolio() trades -- so the ACCEPTANCE VERDICT itself
+    reflects the volume cap + illiquidity cost + next-day-open fill
+    assumptions, per execution_realism_framework_proposal.md (approved
+    2026-08-15) and the SW-003/SW-008 validation that preceded any use of
+    this function on a real strategy.
+
+    Never modifies research_director.py's own run_walk_forward_generic()
+    -- a fully separate function, plugged in via
+    research_director.run_generic_swing_experiment()'s optional
+    walk_forward_fn parameter (functools.partial-bind this function's own
+    max_participation_pct_of_adv/illiq_cost_k/fill_timing kwargs before
+    passing it in, since the caller only ever invokes it with the
+    standard positional args).
+
+    illiq_cost_k: if None, calibrated ONCE via calibrate_illiq_cost_k(data)
+    using its own default target/anchor (10bps one-way at a representative
+    Rs.100,000 trade for a median-ILLIQ universe stock) -- this happens
+    ONCE per call, from the data, never re-tuned per-window or based on
+    any strategy's own results (that would defeat the purpose of a
+    disclosed, pre-declared cost methodology).
+
+    Returns the same shape as run_walk_forward_generic()'s result, PLUS
+    "diagnostic_walk_forward_metrics_zero_cost" (each window's RAW,
+    unadjusted metrics -- reported for transparency only, never used by
+    the audit above) and "illiq_cost_k_used".
+    """
+    from research_lab import backtesting_engineer, statistical_auditor
+    from swing_research.metrics import compute_metrics
+
+    if illiq_cost_k is None:
+        illiq_cost_k = calibrate_illiq_cost_k(data)
+
+    windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
+    walk_forward_metrics = []
+    diagnostic_walk_forward_metrics_zero_cost = []
+    all_trades_by_window = []
+
+    for w_start, w_end in windows:
+        windowed_data = {
+            sym: df[(df.index.date >= w_start) & (df.index.date <= w_end)]
+            for sym, df in data.items()
+        }
+        windowed_extra = None
+        if extra_columns_by_symbol:
+            windowed_extra = {
+                sym: series[(series.index.date >= w_start) & (series.index.date <= w_end)]
+                for sym, series in extra_columns_by_symbol.items()
+            }
+        result = simulate_portfolio(
+            windowed_data, strategy, starting_capital, sector_map=sector_map,
+            extra_columns_by_symbol=windowed_extra,
+        )
+        raw_trades = result["trades"]
+        calendar = result["trading_calendar"]
+
+        diagnostic_walk_forward_metrics_zero_cost.append(
+            compute_metrics(raw_trades, starting_capital, calendar, daily_equity=result["daily_equity"])
+        )
+
+        adjusted = apply_execution_realism(
+            raw_trades, windowed_data, max_participation_pct_of_adv=max_participation_pct_of_adv,
+            illiq_cost_k=illiq_cost_k, fill_timing=fill_timing,
+        )
+        adjusted_equity = build_approximate_daily_equity(adjusted["trades"], starting_capital, calendar)
+        metrics = compute_metrics(adjusted["trades"], starting_capital, calendar, daily_equity=adjusted_equity)
+        walk_forward_metrics.append(metrics)
+        all_trades_by_window.append(adjusted["trades"])
+
+    out_of_sample_metrics = walk_forward_metrics[-1] if walk_forward_metrics else {}
+    consistency_metrics = walk_forward_metrics[:-1]
+    out_of_sample_trades = all_trades_by_window[-1] if all_trades_by_window else []
+    all_trades = [t for trades in all_trades_by_window for t in trades]
+
+    verdict = statistical_auditor.audit(
+        consistency_metrics, out_of_sample_metrics,
+        min_trades_total=min_trades_total, min_out_of_sample_trades=min_out_of_sample_trades,
+        min_consistent_window_fraction=min_consistent_window_fraction,
+    )
+
+    return {
+        "verdict": verdict, "walk_forward_metrics": consistency_metrics,
+        "out_of_sample_metrics": out_of_sample_metrics, "out_of_sample_trades": out_of_sample_trades,
+        "all_trades": all_trades, "windows": windows,
+        "diagnostic_walk_forward_metrics_zero_cost": diagnostic_walk_forward_metrics_zero_cost,
+        "illiq_cost_k_used": illiq_cost_k,
+    }

@@ -186,7 +186,9 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
                                   experiments_dir: str = SWING_EXPERIMENTS_DIR,
                                   knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
                                   skip_regime_breakdown: bool = False,
-                                  extra_parameters: Optional[dict] = None) -> str:
+                                  extra_parameters: Optional[dict] = None,
+                                  walk_forward_fn: Callable = None,
+                                  full_period_trade_adjuster: Optional[Callable[[list, dict], list]] = None) -> str:
     """
     Full pipeline for one experiment run, for ANY swing_research.base.Strategy:
     walk-forward + audit on the strategy under test, then MA Crossover /
@@ -204,16 +206,38 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
     experiment's parameters.json (e.g. Turtle's unit-cap values, Minervini's
     RS threshold) -- kept generic here so this function doesn't need to
     know about any one strategy's specific knobs.
+
+    walk_forward_fn: defaults to run_walk_forward_generic (unchanged
+    behavior for every strategy that doesn't pass this) -- ADDED 2026-08-16
+    so Amihud (SW-010) can swap in
+    swing_research.execution_realism_engine.run_walk_forward_execution_realistic
+    (pre-bound via functools.partial with its own volume-cap/illiquidity-
+    cost/fill-timing parameters) instead, making the ACCEPTANCE VERDICT
+    itself reflect execution-realism adjustments rather than a zero-cost,
+    same-day-close backtest. Purely additive -- every prior strategy's
+    call site omits this parameter and gets IDENTICAL behavior to before
+    this change (verified by re-running an existing strategy's smoke test
+    and confirming byte-identical output).
+    full_period_trade_adjuster: if provided, applied to the continuous
+    full-period run's trades (via ADDED 2026-08-16 for the same reason as
+    walk_forward_fn above) BEFORE computing the comparison-table's
+    headline strategy_metrics -- the RAW (unadjusted) full-period metrics
+    are then saved separately under a "diagnostic_zero_cost_baseline" key
+    in the experiment's metrics, never used for the audit, purely for
+    transparency (see execution_realism_framework_proposal.md).
     """
     from strategies.ma_crossover import MACrossoverStrategy
     from strategies.mean_reversion import MeanReversionStrategy
     from strategies.market_regime import build_regime_series
     from data.fetch_historical import fetch_nifty
 
+    if walk_forward_fn is None:
+        walk_forward_fn = run_walk_forward_generic
+
     sector_map = _sector_map_for_trades(performance_analyst.load_sector_map())
 
     # --- Strategy under test: walk-forward + audit ---
-    result = run_walk_forward_generic(
+    result = walk_forward_fn(
         strategy, data, starting_capital, sector_map, start_date, end_date, n_walk_forward_windows,
         extra_columns_by_symbol=extra_columns_by_symbol,
     )
@@ -234,10 +258,22 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
     # strategy continuously across the full period once.
     full_result = simulate_portfolio(data, strategy, starting_capital, sector_map=sector_map,
                                       extra_columns_by_symbol=extra_columns_by_symbol)
-    strategy_metrics = compute_metrics(full_result["trades"], starting_capital,
-                                        full_result["trading_calendar"], daily_equity=full_result["daily_equity"])
-    strategy_sector_breakdown = performance_analyst.compute_sector_breakdown(full_result["trades"], sector_map)
-    strategy_holding_breakdown = compute_holding_period_breakdown(full_result["trades"])
+
+    diagnostic_zero_cost_baseline = None
+    full_trades = full_result["trades"]
+    full_daily_equity = full_result["daily_equity"]
+    if full_period_trade_adjuster is not None:
+        diagnostic_zero_cost_baseline = compute_metrics(
+            full_trades, starting_capital, full_result["trading_calendar"], daily_equity=full_daily_equity,
+        )
+        from swing_research.execution_realism_engine import build_approximate_daily_equity
+        full_trades = full_period_trade_adjuster(full_trades, data)
+        full_daily_equity = build_approximate_daily_equity(full_trades, starting_capital, full_result["trading_calendar"])
+
+    strategy_metrics = compute_metrics(full_trades, starting_capital,
+                                        full_result["trading_calendar"], daily_equity=full_daily_equity)
+    strategy_sector_breakdown = performance_analyst.compute_sector_breakdown(full_trades, sector_map)
+    strategy_holding_breakdown = compute_holding_period_breakdown(full_trades)
 
     # One Nifty fetch, reused for both the regime breakdown and the MA
     # Crossover benchmark's own regime gate -- avoids fetching the same
@@ -252,7 +288,7 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
 
     regime_breakdown = {}
     if nifty_regime is not None:
-        regime_breakdown = performance_analyst.compute_regime_breakdown(full_result["trades"], nifty_regime)
+        regime_breakdown = performance_analyst.compute_regime_breakdown(full_trades, nifty_regime)
 
     # --- Benchmarks: same data, same period, SAME STARTING CAPITAL POOL,
     # each under its own real, disclosed capital/portfolio discipline ---
@@ -370,6 +406,14 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
             "sector_breakdown": strategy_sector_breakdown, "holding_period_breakdown": strategy_holding_breakdown,
             "regime_breakdown": regime_breakdown, "comparison_vs_benchmarks": comparison,
             "evidence_quality": evidence_quality,
+            # Only present when full_period_trade_adjuster was used (added
+            # 2026-08-16 for Amihud/SW-010) -- the RAW, zero-cost,
+            # same-day-close comparison, reported for transparency ONLY.
+            # The verdict/audit above was never computed from this.
+            **({"diagnostic_zero_cost_baseline": diagnostic_zero_cost_baseline}
+               if diagnostic_zero_cost_baseline is not None else {}),
+            **({"walk_forward_diagnostic_zero_cost_metrics": result["diagnostic_walk_forward_metrics_zero_cost"]}
+               if "diagnostic_walk_forward_metrics_zero_cost" in result else {}),
         },
         observations=narrative,
         verdict={"decision": verdict.decision, "reasoning": verdict.reasoning},
@@ -516,6 +560,89 @@ def run_cross_sectional_momentum_experiment(data: dict, start_date: date, end_da
             "cross_sectional_momentum_single_vintage": True,
             "cross_sectional_momentum_skip_period": False,
             "cross_sectional_momentum_percentile_based_early_exit": False,
+        },
+    )
+
+
+def run_amihud_experiment(data: dict, start_date: date, end_date: date,
+                          starting_capital: float = 1_000_000,
+                          n_walk_forward_windows: int = 3,
+                          narrative_api_key: str = "",
+                          narrative_call_fn: Optional[Callable[[str], str]] = None,
+                          experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                          knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                          skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Amihud
+    Illiquidity Premium -- computes the 252-day ILLIQ cross-sectional
+    percentile ONCE up front (same pattern as every prior cross-sectional
+    strategy), reused across every walk-forward window.
+
+    UNLIKE every prior strategy: passes walk_forward_fn=
+    execution_realism_engine.run_walk_forward_execution_realistic (instead
+    of the default run_walk_forward_generic) and a
+    full_period_trade_adjuster, both pre-bound with the SAME fixed,
+    pre-declared configuration (5% trailing-20-day-ADV position cap,
+    ILLIQ-derived cost calibrated ONCE from this run's own data via
+    execution_realism_engine.calibrate_illiq_cost_k()'s default anchor,
+    next-day-open fills) -- so the ACCEPTANCE VERDICT and the headline
+    comparison-table metrics both reflect execution-realism, not a
+    zero-cost, same-day-close backtest. The raw zero-cost numbers are
+    still computed and saved (see run_generic_swing_experiment()'s
+    "diagnostic_zero_cost_baseline" / "walk_forward_diagnostic_zero_cost_metrics"
+    keys) but are explicitly NOT used for the verdict. illiq_cost_k is
+    calibrated once here and reused identically for every window and the
+    full-period run -- never re-tuned based on any result.
+    """
+    from functools import partial
+
+    from swing_research.strategies.amihud_illiquidity import AmihudIlliquidityStrategy
+    from swing_research.published_research_analyst import AMIHUD_ILLIQUIDITY_PREMIUM
+    from swing_research.cross_sectional import compute_amihud_illiq_percentile_ranks
+    from swing_research.execution_realism_engine import (
+        apply_execution_realism, calibrate_illiq_cost_k, run_walk_forward_execution_realistic,
+    )
+
+    illiq_percentiles = compute_amihud_illiq_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("illiq_percentile") for symbol, series in illiq_percentiles.items()}
+
+    illiq_cost_k = calibrate_illiq_cost_k(data)
+    execution_realism_kwargs = dict(max_participation_pct_of_adv=0.05, illiq_cost_k=illiq_cost_k,
+                                     fill_timing="next_day_open")
+
+    walk_forward_fn = partial(run_walk_forward_execution_realistic, **execution_realism_kwargs)
+
+    def full_period_trade_adjuster(trades: list, full_data: dict) -> list:
+        return apply_execution_realism(trades, full_data, **execution_realism_kwargs)["trades"]
+
+    strategy = AmihudIlliquidityStrategy()
+    return run_generic_swing_experiment(
+        strategy, AMIHUD_ILLIQUIDITY_PREMIUM, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        walk_forward_fn=walk_forward_fn, full_period_trade_adjuster=full_period_trade_adjuster,
+        extra_parameters={
+            "amihud_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "amihud_stop_loss_pct": 0.08,
+            "amihud_illiq_percentile_threshold": 90.0,
+            "amihud_formation_days": 252,
+            "amihud_holding_period_trading_days": 21,
+            "amihud_single_vintage": True,
+            "amihud_percentile_based_early_exit": False,
+            "transaction_costs_modeled": True, "slippage_modeled": True,
+            "execution_realism_config": {
+                "max_participation_pct_of_adv": 0.05, "illiq_cost_k": illiq_cost_k,
+                "illiq_cost_calibration_anchor": "10bps one-way at Rs.100,000 for a median-ILLIQ universe stock",
+                "fill_timing": "next_day_open",
+                "methodology_note": (
+                    "See execution_realism_framework_proposal.md and execution_realism_engine.py. "
+                    "Verdict and headline comparison-table metrics both reflect this configuration; "
+                    "the zero-cost baseline is saved separately for transparency only, under "
+                    "diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics."
+                ),
+            },
         },
     )
 

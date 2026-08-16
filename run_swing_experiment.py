@@ -34,6 +34,7 @@ _STRATEGY_VARIANTS = {
     "cross_sectional_momentum": "Cross-Sectional Momentum (J=6mo formation, top-decile percentile, K=6mo single-vintage, no percentile-based early exit)",
     "short_term_reversal": "Short-Term Reversal (1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
     "betting_against_beta": "Betting Against Beta (Frazzini-Pedersen shrunk beta, 1yr lookback, bottom-decile percentile, 1mo single-vintage, long-only unlevered)",
+    "amihud_illiquidity": "Amihud Illiquidity Premium (252d ILLIQ formation, top-decile percentile, 1mo single-vintage, EXECUTION-REALISTIC verdict: 5% ADV cap + ILLIQ-derived cost + next-day-open fills)",
 }
 
 
@@ -50,6 +51,8 @@ def run_strategy(strategy_key: str, years: int, limit: int, windows: int):
         from swing_research.research_director import run_short_term_reversal_experiment as run_experiment_fn
     elif strategy_key == "betting_against_beta":
         from swing_research.research_director import run_betting_against_beta_experiment as run_experiment_fn
+    elif strategy_key == "amihud_illiquidity":
+        from swing_research.research_director import run_amihud_experiment as run_experiment_fn
     else:
         raise ValueError(f"Unknown strategy: {strategy_key}")
 
@@ -123,7 +126,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", type=str, default="turtle_system2",
                          choices=["turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
-                                  "cross_sectional_momentum", "short_term_reversal", "betting_against_beta"])
+                                  "cross_sectional_momentum", "short_term_reversal", "betting_against_beta",
+                                  "amihud_illiquidity"])
     parser.add_argument("--years", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0, help="0 = full frozen universe")
     parser.add_argument("--windows", type=int, default=3)

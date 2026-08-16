@@ -297,3 +297,52 @@ def compute_52w_high_nearness_percentile_ranks(data: dict) -> dict:
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+AMIHUD_ILLIQ_FORMATION_DAYS = 252  # ~1 year -- Amihud (2002)'s own preferred annual measurement
+                                    # window, UNCHANGED (unlike Betting Against Beta's beta lookback,
+                                    # this window fits comfortably within the frozen 3-year
+                                    # recent-period check: 252 + MIN_TRADEABLE_DAYS_PER_WINDOW(60) = 312,
+                                    # 756 // 312 = 2 feasible windows -- no shortening needed).
+                                    # DISTINCT from execution_realism_engine.py's own trailing-ILLIQ
+                                    # use for the EXECUTION COST estimate (20-day lookback, a
+                                    # different purpose -- short-horizon liquidity AT THE MOMENT OF
+                                    # A TRADE, not this strategy's own annual formation SIGNAL).
+
+
+def compute_amihud_illiq_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of illiq_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN, i.e. >=252 bars of history) trailing
+    252-day Amihud ILLIQ that day, of its own illiquidity. HIGH percentile
+    means HIGH illiquidity (hard to trade) -- this strategy's entry
+    condition is percentile >=90 (the top decile, MOST illiquid), the
+    same polarity convention as every momentum strategy's >=90 threshold
+    (compute_short_term_reversal_percentile_ranks() is the only strategy
+    using the opposite, <=10, polarity).
+
+    Reuses swing_research.execution_realism_engine.compute_trailing_illiq()
+    -- the SAME Amihud (2002) ILLIQ formula (Close x Volume rupee-volume
+    proxy, disclosed as the standard practice this platform already
+    established) -- with THIS strategy's own 252-day formation window,
+    not execution_realism_engine.py's own 20-day execution-cost-estimate
+    window. One function, two callers, two different (disclosed, distinct-
+    purpose) lookback lengths -- not a duplicated formula.
+    """
+    from swing_research.execution_realism_engine import compute_trailing_illiq
+
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_trailing_illiq(df.sort_index(), lookback_days=AMIHUD_ILLIQ_FORMATION_DAYS)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

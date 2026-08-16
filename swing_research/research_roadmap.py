@@ -193,6 +193,7 @@ EXISTING_STRATEGY_TAGS = {
     "pead": {"earnings_drift"},
     "short_term_reversal": {"reversal_short_horizon"},
     "betting_against_beta": {"risk_based"},
+    "amihud_illiquidity": {"liquidity"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -979,34 +980,14 @@ CANDIDATES = [
         academic_evidence_score=9, expected_robustness_score=6, operational_simplicity_score=5,
         research_value_score=9, data_availability_score=10, implementation_feasibility_score=7,
     ),
-    CandidateProfile(
-        key="amihud_illiquidity",
-        name="Amihud Illiquidity Premium",
-        authors="Amihud, Y.",
-        publication="\"Illiquidity and Stock Returns: Cross-Section and Time-Series Effects\", Journal of Financial Markets, Vol. 5, No. 1",
-        year=2002,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-only top-decile (most illiquid, by ILLIQ = |return| / dollar volume) -- matches the paper's own long-side premium framing.",
-        factor_family="Liquidity risk premium",
-        factor_tags={"liquidity"},
-        mechanism="Investors demand compensation for holding hard-to-trade (price-impact-sensitive) "
-                  "stocks; the ILLIQ ratio (average |daily return| / daily dollar volume) proxies this "
-                  "directly from price and volume alone, no shares-outstanding or float data needed.",
-        typical_holding_period="Monthly rebalance",
-        expected_trade_frequency="Moderate",
-        data_requirements=["daily_ohlcv_history", "volume"],
-        known_strengths="One of the most-cited asset-pricing papers ever; illiquidity premia are "
-                         "documented as STRONGER in emerging markets than in the US large-cap samples "
-                         "most other candidates here were tested on -- directly relevant to NSE.",
-        known_weaknesses="A pure long-only illiquidity tilt raises real EXECUTION risk (wide spreads, "
-                          "slippage) that this platform's own Execution Realism Study already flagged "
-                          "as a modeling gap -- this strategy would stress-test that gap harder than any "
-                          "strategy tried so far.",
-        academic_replication_quality="Extensively replicated across developed and emerging markets.",
-        evidence_sufficiency_note="Sufficient -- but pair with the Execution Realism Study's own recommendation before any live promotion.",
-        academic_evidence_score=9, expected_robustness_score=8, operational_simplicity_score=8,
-        research_value_score=8, data_availability_score=10, implementation_feasibility_score=9,
-    ),
+    # NOTE: Amihud Illiquidity Premium is no longer a candidate here -- it
+    # was researched 2026-08-16 (SW-010) under the newly-built execution-
+    # realism framework and received an official Research Verdict PASS,
+    # but with a real, HIGH-evidence-quality conflicting supplementary
+    # robustness REJECT (EXP-029/EXP-030 PASS, EXP-031 robustness REJECT)
+    # -- see swing_research/strategy_library/amihud_illiquidity.md.
+    # Removed from CANDIDATES since it's no longer "not yet implemented";
+    # its "liquidity" tag is now tracked in EXISTING_STRATEGY_TAGS above.
     CandidateProfile(
         key="turnover_liquidity",
         name="Turnover / Liquidity Anomaly",

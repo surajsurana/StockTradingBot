@@ -1,0 +1,10 @@
+**Why the verdict makes sense given the mechanism**
+
+The in-sample/overall numbers (expectancy ₹509, profit factor 1.74, Sharpe 0.86) look attractive, but they come from the zero-cost, same-day-close backtest — precisely the number the auditor was told not to trust as the deciding metric. The Amihud illiquidity premium is, by construction, a bet on the least-liquid, top-decile-ILLIQ names. That is exactly the strategy type for which execution-realism adjustments (next-day-open fills, ADV-capped sizing, ILLIQ-derived slippage) bite hardest — the slippage model was calibrated to a median-liquidity stock, and this strategy deliberately trades far less liquid names, so realistic costs should be larger than the calibration anchor implies. Once those costs and next-day fill slippage are applied, the -₹148.31 out-of-sample expectancy indicates the "premium" investors were harvesting in the frictionless backtest is mechanically an illiquidity/transaction-cost artifact, not a durable edge that survives real execution.
+
+**Dependency patterns**
+The overall P&L is heavily concentrated: Capital Goods (₹25.8k) and Healthcare (₹15.5k) alone account for most of the gains, while Automobile/Auto Components (-₹10.2k) and several other sectors are net negative — a narrow, sector-concentrated return source, not broad-based confirmation of an illiquidity premium. Returns also depend almost entirely on bullish-regime days (₹59.5k vs ₹4.2k bearish), suggesting the "premium" is really a beta/illiquidity-in-rallies effect that evaporates or reverses once trading frictions and adverse regimes are priced in.
+
+**Follow-ups**
+1. Re-test with regime-conditioned entries (bullish-only) and sector caps to see if the OOS expectancy turns positive once concentration risk is controlled.
+2. Explore a lower illiquidity threshold (e.g., top-quintile instead of top-decile) to reduce ADV-cap/slippage drag while retaining some illiquidity tilt.
