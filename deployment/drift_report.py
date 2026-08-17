@@ -44,6 +44,24 @@ _COMPARED_METRICS = ("win_rate", "expectancy", "cagr", "sharpe_ratio", "max_draw
                      "avg_holding_period_days")
 _ABSOLUTE_METRICS = {"win_rate", "max_drawdown_pct"}
 
+# CAPITAL-SCALE BUG FIX (2026-08-17, per explicit direction): "expectancy"
+# is the ONE metric in _COMPARED_METRICS denominated in raw rupees --
+# win_rate/cagr/sharpe_ratio/max_drawdown_pct are all already ratios/
+# percentages, scale-invariant by construction. Research backtests run on
+# a fixed Rs.1,00,000 baseline (config.settings.RESEARCH_LAB_VIRTUAL_CAPITAL)
+# while paper trading's capital is now configurable (deployment.settings.
+# PAPER_TRADING_VIRTUAL_CAPITAL, see that module's own docstring) -- a
+# strategy behaving IDENTICALLY at two different capital levels would
+# still show a large raw-rupee expectancy difference purely from position-
+# size scaling, which _flag_drift()'s relative-threshold check would
+# previously have misread as MATERIAL drift. Fixed by comparing
+# expectancy AS A PERCENTAGE OF EACH SIDE'S OWN STARTING CAPITAL (a
+# scale-independent quantity) instead of raw rupees -- see
+# _normalize_expectancy() below. This is the ONLY metric requiring this
+# fix; every other _COMPARED_METRICS entry was already scale-independent
+# (confirmed by inspection, not assumed).
+_EXPECTANCY_NORMALIZED_KEY = "expectancy_pct_of_capital"
+
 # trade_frequency (trades per elapsed trading day so far) is compared
 # separately from _COMPARED_METRICS -- it has no equivalent field in a
 # compute_metrics()-shaped dict on the historical side (the historical
@@ -90,6 +108,17 @@ def _historical_trading_calendar_days(historical_experiment: dict) -> Optional[i
     return (end - start).days
 
 
+def _normalize_expectancy(expectancy: Optional[float], starting_capital: Optional[float]) -> Optional[float]:
+    """Expectancy (raw rupees) as a percentage of ITS OWN side's starting
+    capital -- makes the comparison scale-independent, so a strategy
+    behaving identically at Rs.25,000 vs Rs.10,00,000 doesn't falsely
+    drift purely from position-size scaling. See this module's own
+    capital-scale-bug-fix comment above _EXPECTANCY_NORMALIZED_KEY."""
+    if expectancy is None or not starting_capital:
+        return None
+    return round(expectancy / starting_capital * 100, 4)
+
+
 def compute_drift(strategy_key: str, historical_exp_id: str,
                    historical_experiments_dir: str) -> dict:
     """
@@ -101,9 +130,19 @@ def compute_drift(strategy_key: str, historical_exp_id: str,
     historical_metrics = historical_experiment["metrics"]
     live_metrics = compute_live_metrics(strategy_key)
 
+    historical_capital = historical_experiment.get("parameters", {}).get("starting_capital")
+    live_capital = load_portfolio(strategy_key).get("starting_capital")
+    historical_expectancy_norm = _normalize_expectancy(historical_metrics.get("expectancy"), historical_capital)
+    live_expectancy_norm = _normalize_expectancy(live_metrics.get("expectancy"), live_capital)
+
     flags = {}
     for metric in _COMPARED_METRICS:
-        reason = _flag_drift(metric, historical_metrics.get(metric), live_metrics.get(metric))
+        if metric == "expectancy":
+            # Compare the CAPITAL-NORMALIZED figures, not raw rupees --
+            # the fix described above _EXPECTANCY_NORMALIZED_KEY.
+            reason = _flag_drift(_EXPECTANCY_NORMALIZED_KEY, historical_expectancy_norm, live_expectancy_norm)
+        else:
+            reason = _flag_drift(metric, historical_metrics.get(metric), live_metrics.get(metric))
         if reason:
             flags[metric] = reason
 
@@ -126,9 +165,13 @@ def compute_drift(strategy_key: str, historical_exp_id: str,
 
     return {
         "historical": {**{m: historical_metrics.get(m) for m in _COMPARED_METRICS},
-                      "trade_frequency": historical_trade_frequency},
+                      "trade_frequency": historical_trade_frequency,
+                      _EXPECTANCY_NORMALIZED_KEY: historical_expectancy_norm,
+                      "starting_capital": historical_capital},
         "live": {**{m: live_metrics.get(m) for m in _COMPARED_METRICS},
-                "trade_frequency": live_trade_frequency},
+                "trade_frequency": live_trade_frequency,
+                _EXPECTANCY_NORMALIZED_KEY: live_expectancy_norm,
+                "starting_capital": live_capital},
         "live_total_trades": live_metrics.get("total_trades", 0), "flags": flags,
     }
 
@@ -171,12 +214,25 @@ def generate_drift_report(strategy_key: str, display_name: str, historical_exp_i
         f"# Live vs. Backtest Drift Report -- {display_name}" + (f" ({strategy_id})" if strategy_id else ""), "",
         f"Generated: {generated_at}",
         f"Compared against historical experiment: {historical_exp_id}",
-        f"Live trades so far: {drift['live_total_trades']}", "",
+        f"Live trades so far: {drift['live_total_trades']}",
+        f"Starting capital: historical Rs.{drift['historical'].get('starting_capital')}, "
+        f"live Rs.{drift['live'].get('starting_capital')}", "",
         "## Comparison", "",
         "| Metric | Historical (research) | Live (paper trading) | Drift |",
         "|---|---|---|---|",
     ]
     for metric in all_metrics:
+        if metric == "expectancy":
+            # Displayed alongside the raw rupee figure (informational
+            # only) since the two sides can now run at different capital
+            # -- the DRIFT DECISION itself is made on the capital-
+            # normalized row below, never on this raw-rupee one.
+            lines.append(f"| expectancy (Rs., informational only -- not scale-comparable if capital differs) "
+                         f"| {drift['historical']['expectancy']} | {drift['live']['expectancy']} | see next row |")
+            lines.append(f"| expectancy (% of own starting capital -- this is what drift is actually judged on) "
+                         f"| {drift['historical'][_EXPECTANCY_NORMALIZED_KEY]} | "
+                         f"{drift['live'][_EXPECTANCY_NORMALIZED_KEY]} | {drift['flags'].get('expectancy', 'within threshold')} |")
+            continue
         flag = drift["flags"].get(metric, "within threshold")
         lines.append(f"| {metric} | {drift['historical'][metric]} | {drift['live'][metric]} | {flag} |")
 

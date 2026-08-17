@@ -510,6 +510,78 @@ BETTING_AGAINST_BETA = PublishedStrategy(
 )
 
 
+POST_EARNINGS_ANNOUNCEMENT_DRIFT = PublishedStrategy(
+    name="Post-Earnings Announcement Drift (PEAD) -- Forward Evidence Experiment",
+    source_citation=(
+        "Bernard, V. and Thomas, J. (1989), \"Post-Earnings-Announcement Drift: Delayed Price Response or "
+        "Risk Premium?\", Journal of Accounting Research; Bernard and Thomas (1990), \"Evidence That Stock "
+        "Prices Do Not Fully Reflect The Implications Of Current Earnings For Future Earnings\", Journal of "
+        "Accounting and Economics. Original Standardized Unexpected Earnings (SUE) construction: Foster, "
+        "Olsen and Shevlin (1984)."
+    ),
+    mechanism=(
+        "Stock prices underreact to earnings surprises -- a large positive earnings surprise (high SUE) "
+        "predicts continued positive drift over the following quarter, as the market only gradually "
+        "incorporates the full information content of the announcement."
+    ),
+    rules=(
+        "SUE_q = (EPS_q - EPS_q-4) / sigma, sigma = std dev of the trailing 8 quarters' own YoY EPS "
+        "differences (the ORIGINAL Foster/Olsen/Shevlin 1984 seasonal-random-walk construction, not an "
+        "analyst-estimate-based surprise). Cross-sectional decile sort at each formation date in the "
+        "original literature; long the top decile (highest SUE), ~60-trading-day holding period "
+        "(approximately one quarter)."
+    ),
+    variant_chosen=(
+        "*** NO HISTORICAL BACKTEST EXISTS FOR THIS STRATEGY -- Research Verdict remains "
+        "NOT_YET_EVALUATED, unchanged by this record's existence. *** Deferred 2026-08-05 "
+        "(swing_research/strategy_library/pead.md): no usable multi-year historical earnings-surprise "
+        "dataset was found via any integrated source at that time. This record exists ONLY to document the "
+        "rules governing a FORWARD-ONLY, real-time paper-trading pipeline (deployment/pead_forward_engine.py) "
+        "collecting NEW evidence going forward from 2026-08-17 -- explicitly distinguished from a "
+        "historically-validated strategy. See deployment/pead_signal.py for the exact SUE formula and "
+        "threshold used. Absolute SUE threshold (+2.0) used in place of cross-sectional decile ranking -- a "
+        "disclosed adaptation for a live, incrementally-arriving event stream (see pead_signal.py's own "
+        "docstring for the full reasoning), not a cross-sectional sort like every other strategy in this "
+        "program. 60-trading-day single-vintage holding, 8% protective stop-loss, 1% risk-per-unit sizing -- "
+        "same disclosed patterns as every other strategy (not part of the original methodology)."
+    ),
+    scope_reductions=(
+        "NO BACKTEST: this program has never run PEAD through the frozen acceptance framework "
+        "(acceptance_criteria.py) at all -- there is no base run, no recent-period check, no evidence "
+        "quality score, and none is claimed. LONG ONLY (standard, disclosed reduction, same as every "
+        "strategy). SEASONAL-RANDOM-WALK SUE (not analyst-estimate-based): a faithful restatement of the "
+        "ORIGINAL SUE construction, chosen specifically because it needs only historical ACTUAL EPS (already "
+        "confirmed available going forward via yfinance's get_earnings_dates(), 2026-08-17), not analyst "
+        "estimates (confirmed UNAVAILABLE via any source during the original 2026-08-05 investigation). "
+        "ABSOLUTE THRESHOLD instead of cross-sectional decile rank: disclosed adaptation for a live event "
+        "stream, see pead_signal.py. CONSERVATIVE ENTRY TIMING: an announcement is never acted on the same "
+        "calendar day it is first detected -- entry waits until at least the following trading day, "
+        "regardless of the announcement's true before/after-market timing (which yfinance's own timestamp is "
+        "not trusted to reliably indicate) -- see deployment/pead_forward_engine.py's own docstring."
+    ),
+    distinctiveness=(
+        "First EVENT-DRIVEN (not daily-bar-driven) strategy in this program -- entries are triggered by a "
+        "real-world earnings announcement, detected via a NEW forward-data pipeline "
+        "(data/fetch_earnings_calendar.py), not by any technical or cross-sectional condition on a price "
+        "bar. Reuses swing_research/strategies/pead.py's exit-side Strategy shim so the EXIT half (holding-"
+        "period time-stop + protective stop) still runs through deployment/paper_trading_engine.py's "
+        "existing, unmodified exit machinery."
+    ),
+    assumptions_impact=(
+        "No backtest: the conceptual status of any observation from this pipeline is FORWARD EVIDENCE, not "
+        "a validated research finding -- explicitly not comparable in confidence to any PASS/REJECT/"
+        "INCONCLUSIVE verdict elsewhere in this program until/unless a real historical evaluation becomes "
+        "possible and is separately, explicitly undertaken. "
+        "Absolute SUE threshold vs. cross-sectional rank: DIRECTIONALLY UNKNOWN -- could over- or under-"
+        "select relative to what a true decile sort would produce in any given reporting season. "
+        "Conservative entry timing (never same-day): LIKELY UNDERSTATES the documented drift somewhat (real "
+        "PEAD studies typically capture drift beginning very close to the announcement itself), a deliberate "
+        "trade-off explicitly made to avoid lookahead given unverified announcement-timing data, not an "
+        "oversight."
+    ),
+)
+
+
 SHORT_TERM_REVERSAL = PublishedStrategy(
     name="Short-Term Reversal",
     source_citation=(

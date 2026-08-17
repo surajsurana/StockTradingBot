@@ -103,6 +103,69 @@ def calibrate_illiq_cost_k(data: dict, target_median_one_way_cost_pct: float = 0
     return target_median_one_way_cost_pct / (median_illiq * representative_trade_dollar_value)
 
 
+def compute_single_fill_cost(symbol: str, as_of_date: date, side: str, raw_price: float, quantity: int,
+                              data: dict,
+                              max_participation_pct_of_adv: Optional[float] = None,
+                              illiq_cost_k: Optional[float] = None,
+                              illiq_cost_cap_pct: float = DEFAULT_ILLIQ_COST_CAP_PCT,
+                              adv_lookback_days: int = DEFAULT_ADV_LOOKBACK_DAYS) -> dict:
+    """
+    Single-fill (incremental, point-in-time) version of the volume-cap and
+    illiquidity-cost logic apply_execution_realism() applies in BATCH to
+    an already-completed trade list -- used by paper trading's day-by-day
+    engine (deployment/paper_trading_engine.py), which fills ONE order at
+    a time, as it happens, rather than post-processing a finished list.
+    Deliberately factored out here (not duplicated in paper_trading_engine.py)
+    so research's batch adjustment and paper trading's incremental
+    adjustment can never silently compute the cost differently for the
+    same underlying ADV/ILLIQ formulas.
+
+    side: "BUY" or "SELL" (SELL = closing a long position, i.e. an exit --
+    this module's strategies are long-only throughout this program, same
+    convention as everywhere else).
+
+    Returns {"adjusted_price": float, "capped_quantity": int, "capped": bool,
+    "cost_pct_applied": float}. Called with all optional params at their
+    defaults returns adjusted_price == raw_price, capped_quantity ==
+    quantity -- a genuine no-op, matching apply_execution_realism()'s own
+    "every option defaults to OFF" contract.
+    """
+    capped_quantity = quantity
+    capped = False
+    if max_participation_pct_of_adv is not None:
+        df = data.get(symbol)
+        if df is not None and not df.empty:
+            adv_series = compute_trailing_adv(df.sort_index(), adv_lookback_days)
+            matches = adv_series[adv_series.index.date == as_of_date]
+            if not matches.empty and not pd.isna(matches.iloc[0]):
+                adv = float(matches.iloc[0])
+                if adv > 0:
+                    cap_qty = int(max_participation_pct_of_adv * adv)
+                    if cap_qty < quantity:
+                        capped_quantity = max(0, cap_qty)
+                        capped = True
+
+    adjusted_price = raw_price
+    cost_pct_applied = 0.0
+    if illiq_cost_k is not None and capped_quantity > 0:
+        df = data.get(symbol)
+        if df is not None and not df.empty:
+            illiq_series = compute_trailing_illiq(df.sort_index(), adv_lookback_days)
+            matches = illiq_series[illiq_series.index.date == as_of_date]
+            if not matches.empty and not pd.isna(matches.iloc[0]) and matches.iloc[0] > 0:
+                illiq = float(matches.iloc[0])
+                trade_dollar_value = raw_price * capped_quantity
+                cost_pct = min(illiq_cost_cap_pct, illiq_cost_k * illiq * trade_dollar_value)
+                cost_pct_applied = cost_pct
+                # BUY: pay more (adverse). SELL (exit of a long): receive less (adverse).
+                adjusted_price = raw_price * (1 + cost_pct) if side == "BUY" else raw_price * (1 - cost_pct)
+
+    return {
+        "adjusted_price": adjusted_price, "capped_quantity": capped_quantity,
+        "capped": capped, "cost_pct_applied": cost_pct_applied,
+    }
+
+
 def _next_trading_day_open(df: pd.DataFrame, after_date: date) -> Optional[float]:
     later = df[df.index.date > after_date]
     if later.empty:

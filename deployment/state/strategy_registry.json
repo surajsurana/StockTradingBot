@@ -26,8 +26,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "INCONCLUSIVE",
     "research_verdict_source": "EXP-007..EXP-011",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1786960648.1801226,
+        "reason": "Promoted per revised philosophy (2026-08-17): paper trading is a forward-evidence stage, not a reward for a perfect historical record. Research Verdict remains INCONCLUSIVE, unchanged -- this promotion does not alter it. Evidence supporting promotion: EXP-008 (base PASS), EXP-009 (recent-period REJECT, but based on a thin single consistency window, already flagged as such in the strategy library doc before this promotion), EXP-011 (robustness PASS), EXP-034 (2020-2022 temporal split, PASS, 100% consistency), EXP-035 (2023-latest temporal split, PASS, 100% consistency). Sufficient evidence to justify forward market observation despite the unresolved historical verdict."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -136,13 +143,19 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "NOT_YET_EVALUATED",
     "research_verdict_source": "",
-    "deployment_status": "RESEARCH",
+    "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
         "from_status": "RESEARCH",
         "to_status": "RESEARCH",
         "timestamp": 1785943962.3743908,
         "reason": "DEFERRED -- historical earnings surprise dataset unavailable, per explicit decision 2026-08-05. PEAD (Bernard and Thomas 1989/1990; Foster, Olsen and Shevlin 1984) requires Standardized Unexpected Earnings (SUE) computed from ~8-10 years of quarterly earnings-surprise events per symbol across the 457-symbol frozen universe, to support the standard 2-year validation + 10-year evaluation + recent-period + post-COVID robustness pipeline used for every other strategy. Investigated: (1) fundamentals/fundamental_agent.py -- point-in-time-only snapshot (trailing P/E, ROE, debt/equity), no earnings-surprise or historical time-series capability. (2) yfinance (the only data source integrated anywhere in this program) -- live-tested against real NSE symbols (RELIANCE.NS, TCS.NS): Ticker.earnings_history returns the right FIELDS (epsActual, epsEstimate, epsDifference, surprisePercent) but only ~4 trailing quarters (~1 year); quarterly_income_stmt/quarterly_financials EPS rows are similarly capped at ~5 quarters; Ticker.calendar is forward-looking only (next unannounced earnings date). No analyst-consensus-estimate history exists via any available source. (3) No cached or alternative earnings/fundamentals dataset exists anywhere in this repository. CONCLUSION: faithful implementation is not currently possible -- not a disclosed-assumption situation like every other strategys NSE adaptations, but a hard data-availability ceiling (~1 year available vs ~8-10 years required). Per explicit direction: do not implement using incomplete data, do not reduce the evaluation period, do not substitute a different signal, do not create an approximation that changes the published strategy. No backtest was run; no Research Verdict applies (remains NOT_YET_EVALUATED). REVISIT CONDITION: if a historical earnings/analyst-consensus dataset covering the Nifty 500 for approximately 10 years becomes available (e.g. a paid data vendor, or a dataset the user sources independently), PEAD can be reconsidered under the same frozen research protocol used for every other strategy."
+      },
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1786961127.6033654,
+        "reason": "Promoted 2026-08-17 as a FORWARD EVIDENCE EXPERIMENT, explicitly distinguished from a historically-validated strategy. Research Verdict remains NOT_YET_EVALUATED, unchanged -- no historical backtest exists or is claimed. Reliable historical earnings-event data remains insufficient for a proper multi-year backtest (unchanged conclusion from the 2026-08-05 deferral). However, a NEW forward-only data source (yfinance get_earnings_dates(), live-verified 2026-08-17 to provide ~24 quarters of actual EPS going forward, sufficient for a faithful seasonal-random-walk SUE calculation per Foster/Olsen/Shevlin 1984) makes FORWARD real-market evidence collection viable starting now. Deployment via deployment/pead_forward_engine.py -- event-driven detection, documented SUE rules (swing_research/published_research_analyst.py POST_EARNINGS_ANNOUNCEMENT_DRIFT record), full candidate-event logging (not only trades taken), conservative lookahead-avoidant entry timing. Purpose: accumulate real observations to eventually answer whether the PEAD effect appears in the Indian market under these exact rules -- not to validate or invalidate the historical question this deferral already identified as unanswerable with available data."
       }
     ],
     "notes": "",
@@ -170,7 +183,7 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-008",
-    "primary_experiment_id": ""
+    "primary_experiment_id": "EXP-020"
   },
   "betting_against_beta": {
     "strategy_key": "betting_against_beta",

@@ -42,6 +42,7 @@ import json
 import math
 import os
 import time
+from dataclasses import dataclass
 from datetime import date as date_type, datetime
 from typing import Callable, Optional
 
@@ -49,7 +50,46 @@ from swing_research.backtesting_engine import Trade
 from swing_research.base import OpenPosition, PositionUnit, Strategy
 from swing_research.metrics import compute_metrics
 
-from deployment.settings import PAPER_TRADING_STATE_DIR, PAPER_TRADING_VIRTUAL_CAPITAL, REPORTS_DIR
+from deployment.settings import (
+    PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
+    PAPER_TRADING_STATE_DIR,
+    PAPER_TRADING_VIRTUAL_CAPITAL,
+    REPORTS_DIR,
+)
+
+
+@dataclass
+class ExecutionRealismConfig:
+    """
+    Optional, per-strategy execution-realism configuration for paper
+    trading (added 2026-08-17, per explicit direction) -- OFF by default
+    (fill_timing="same_day_close", no cost modeling), preserving
+    BYTE-IDENTICAL behavior to every paper-trading run before this
+    capability existed. Reuses
+    swing_research/execution_realism_engine.py's cost-model formulas
+    (compute_single_fill_cost(), itself built on
+    compute_trailing_adv()/compute_trailing_illiq()) -- never a
+    separate/duplicated cost calculation, so research (Amihud) and paper
+    trading can never silently drift onto different cost assumptions for
+    the same underlying formula.
+
+    Deliberately NOT enabled for any strategy by default (SW-003, SW-008,
+    SW-002, SW-007 all currently run with this at its all-off default) --
+    "Execution assumptions should be strategy-appropriate and
+    configurable," per explicit direction; turning this on for a specific
+    strategy is a separate, deliberate decision, not a side effect of this
+    capability existing.
+    """
+    fill_timing: str = "same_day_close"   # or "next_day_open"
+    max_participation_pct_of_adv: Optional[float] = None
+    illiq_cost_k: Optional[float] = None
+    illiq_cost_cap_pct: float = 0.05
+    brokerage_flat_rs: float = 0.0
+
+    @property
+    def enabled(self) -> bool:
+        return (self.fill_timing != "same_day_close" or self.max_participation_pct_of_adv is not None
+                or self.illiq_cost_k is not None or self.brokerage_flat_rs > 0)
 
 
 def _portfolio_path(strategy_key: str) -> str:
@@ -70,9 +110,22 @@ def _load_portfolio(strategy_key: str) -> dict:
         return {
             "cash": PAPER_TRADING_VIRTUAL_CAPITAL, "starting_capital": PAPER_TRADING_VIRTUAL_CAPITAL,
             "positions": {}, "last_processed_date": None,
+            # pending_entries/pending_exits (added 2026-08-17): only ever
+            # populated when a strategy's ExecutionRealismConfig.fill_timing
+            # is "next_day_open" -- a signal detected on day T is recorded
+            # here, then FILLED on day T+1 using day T+1's actual Open (see
+            # run_daily()'s new resolve-pending step). Always empty for the
+            # default "same_day_close" mode, so existing strategies' state
+            # files gain these keys but they're always {} -- harmless.
+            "pending_entries": {}, "pending_exits": {},
         }
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        portfolio = json.load(f)
+    # Backward-compatible for portfolio.json files saved before this field
+    # existed (SW-003/SW-008's real, already-running state).
+    portfolio.setdefault("pending_entries", {})
+    portfolio.setdefault("pending_exits", {})
+    return portfolio
 
 
 def _save_portfolio(strategy_key: str, portfolio: dict) -> None:
@@ -145,10 +198,19 @@ def _load_daily_equity(strategy_key: str) -> dict:
     return result
 
 
+def _get_open_price(df, target_date: date_type) -> Optional[float]:
+    rows = df[df.index.date == target_date]
+    if rows.empty:
+        return None
+    return float(rows.iloc[0]["Open"])
+
+
 def run_daily(strategy_key: str, strategy: Strategy,
               fetch_data_fn: Callable[[], dict],
               compute_extra_columns_fn: Optional[Callable[[dict], dict]] = None,
-              as_of_date: Optional[date_type] = None, force: bool = False) -> dict:
+              as_of_date: Optional[date_type] = None, force: bool = False,
+              execution_config: Optional[ExecutionRealismConfig] = None,
+              min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES) -> dict:
     """
     The idempotent daily runner. Call this once per trading day, after
     market close, for a given strategy already registered in the
@@ -170,11 +232,29 @@ def run_daily(strategy_key: str, strategy: Strategy,
     swing_research.cross_sectional's functions.
     as_of_date: defaults to today; pass explicitly for a specific date
     (e.g. testing, or catching up after a missed run).
+    execution_config: OFF by default (ExecutionRealismConfig()'s own
+    all-off defaults) -- see that dataclass's docstring. When
+    fill_timing="next_day_open", a signal detected TODAY is queued in
+    portfolio["pending_entries"/"pending_exits"] and actually filled
+    TOMORROW at tomorrow's real Open (resolved at the TOP of the next
+    call to run_daily(), before today's own signals are evaluated) --
+    never same-day, so no lookahead is introduced. When cost/cap options
+    are set, the fill price/quantity is adjusted via
+    swing_research.execution_realism_engine.compute_single_fill_cost()
+    (the SAME formula research's batch adjustment uses) at the moment of
+    the ACTUAL fill (same-day close, or the resolved next-day open).
+    min_position_value_rupees: 0 (disabled) by default -- see
+    deployment/settings.py's PAPER_TRADING_MIN_POSITION_VALUE_RUPEES
+    docstring. When > 0, a signal whose computed position value (entry
+    price x quantity) falls below this is skipped, same soft-fail
+    convention as an unaffordable/zero-quantity signal (recorded nowhere,
+    simply not taken -- not an error).
 
     Returns a summary dict: {"status": "processed"|"skipped_already_processed",
     "as_of_date":..., "new_entries": [...], "new_exits": [...],
     "open_positions": N, "cash": ..., "equity": ...}.
     """
+    execution_config = execution_config or ExecutionRealismConfig()
     portfolio = _load_portfolio(strategy_key)
     target_date = as_of_date or date_type.today()
 
@@ -188,9 +268,80 @@ def run_daily(strategy_key: str, strategy: Strategy,
 
     cash = portfolio["cash"]
     positions = portfolio["positions"]   # {symbol: {entry_price, entry_date, quantity, stop_loss}}
+    pending_entries = portfolio.get("pending_entries", {})
+    pending_exits = portfolio.get("pending_exits", {})
     new_entries, new_exits = [], []
     mark_to_market_equity = cash
 
+    def _cost_adjusted(symbol: str, side: str, raw_price: float, quantity: int) -> tuple:
+        """Applies execution_config's cap/cost (both no-ops at defaults) --
+        returns (adjusted_price, capped_quantity)."""
+        if execution_config.max_participation_pct_of_adv is None and execution_config.illiq_cost_k is None:
+            return raw_price, quantity
+        from swing_research.execution_realism_engine import compute_single_fill_cost
+        result = compute_single_fill_cost(
+            symbol, target_date, side, raw_price, quantity, data,
+            max_participation_pct_of_adv=execution_config.max_participation_pct_of_adv,
+            illiq_cost_k=execution_config.illiq_cost_k,
+            illiq_cost_cap_pct=execution_config.illiq_cost_cap_pct,
+        )
+        return result["adjusted_price"], result["capped_quantity"]
+
+    # --- STEP 0: resolve any fills queued YESTERDAY at TODAY's real Open
+    # (only ever non-empty when fill_timing=="next_day_open" was active
+    # when they were queued) -- must run BEFORE today's own signals are
+    # evaluated, so a symbol's pending exit/entry is fully resolved
+    # (removed from/added to `positions`) before the main loop below
+    # re-examines it, and so no lookahead occurs (today's Open is now
+    # actually known).
+    for symbol in list(pending_exits.keys()):
+        df = data.get(symbol)
+        if df is None or df.empty:
+            continue
+        open_price = _get_open_price(df.sort_index(), target_date)
+        if open_price is None:
+            continue   # no bar today (holiday) -- stays pending, resolved on the next real trading day
+        pending = pending_exits.pop(symbol)
+        pos_state = positions.pop(symbol, None)
+        if pos_state is None:
+            continue
+        quantity = pos_state["quantity"]
+        fill_price, _ = _cost_adjusted(symbol, "SELL", open_price, quantity)
+        pnl = (fill_price - pos_state["entry_price"]) * quantity
+        cash += fill_price * quantity - execution_config.brokerage_flat_rs
+        entry_date = date_type.fromisoformat(pos_state["entry_date"])
+        trade = Trade(symbol=symbol, entry_date=entry_date, exit_date=target_date,
+                       entry_price=pos_state["entry_price"], exit_price=fill_price,
+                       quantity=quantity, pnl=pnl, exit_reason=pending["exit_reason"], direction="BUY")
+        _append_trade(strategy_key, trade)
+        new_exits.append({"symbol": symbol, "exit_price": fill_price, "pnl": round(pnl, 2),
+                           "reason": pending["exit_reason"], "fill_timing": "next_day_open"})
+
+    for symbol in list(pending_entries.keys()):
+        df = data.get(symbol)
+        if df is None or df.empty:
+            continue
+        open_price = _get_open_price(df.sort_index(), target_date)
+        if open_price is None:
+            continue
+        pending = pending_entries.pop(symbol)
+        stop_loss = pending["stop_loss"]
+        risk_per_share = open_price - stop_loss
+        if risk_per_share <= 0:
+            continue   # the overnight gap moved price through its own planned stop -- signal abandoned, not taken
+        quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
+        fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
+        cost = fill_price * quantity
+        if quantity < 1 or cost > cash or cost < min_position_value_rupees:
+            continue
+        cash -= cost + execution_config.brokerage_flat_rs
+        positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
+                              "quantity": quantity, "stop_loss": stop_loss}
+        new_entries.append({"symbol": symbol, "entry_price": fill_price, "quantity": quantity,
+                             "stop_loss": stop_loss, "fill_timing": "next_day_open"})
+        mark_to_market_equity += cost
+
+    # --- MAIN LOOP: evaluate today's own signals ---
     for symbol, df in data.items():
         if df is None or df.empty:
             continue
@@ -225,36 +376,51 @@ def run_daily(strategy_key: str, strategy: Strategy,
 
             if exit_price is not None:
                 quantity = pos_state["quantity"]
-                pnl = (exit_price - pos_state["entry_price"]) * quantity
-                cash += exit_price * quantity
-                trade = Trade(symbol=symbol, entry_date=entry_date, exit_date=target_date,
-                               entry_price=pos_state["entry_price"], exit_price=exit_price,
-                               quantity=quantity, pnl=pnl, exit_reason=exit_reason, direction="BUY")
-                _append_trade(strategy_key, trade)
-                new_exits.append({"symbol": symbol, "exit_price": exit_price, "pnl": round(pnl, 2),
-                                   "reason": exit_reason})
-                del positions[symbol]
+                if execution_config.fill_timing == "next_day_open":
+                    # Queue for tomorrow's Open -- NOT filled today, per
+                    # explicit direction (no lookahead: today's decision,
+                    # tomorrow's real, then-unknown price).
+                    pending_exits[symbol] = {"exit_reason": exit_reason, "signal_date": target_date.isoformat()}
+                    mark_to_market_equity += float(row.Close) * quantity   # still marked at today's close until filled
+                else:
+                    fill_price, _ = _cost_adjusted(symbol, "SELL", exit_price, quantity)
+                    pnl = (fill_price - pos_state["entry_price"]) * quantity
+                    cash += fill_price * quantity - execution_config.brokerage_flat_rs
+                    trade = Trade(symbol=symbol, entry_date=entry_date, exit_date=target_date,
+                                   entry_price=pos_state["entry_price"], exit_price=fill_price,
+                                   quantity=quantity, pnl=pnl, exit_reason=exit_reason, direction="BUY")
+                    _append_trade(strategy_key, trade)
+                    new_exits.append({"symbol": symbol, "exit_price": fill_price, "pnl": round(pnl, 2),
+                                       "reason": exit_reason})
+                    del positions[symbol]
             else:
                 mark_to_market_equity += float(row.Close) * pos_state["quantity"]
-        else:
+        elif symbol not in pending_entries and symbol not in pending_exits:
             signal = strategy.entry_signal_at(row)
             if signal is not None:
                 risk_per_share = signal.entry_price - signal.stop_loss
                 if risk_per_share > 0:
-                    quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
-                    cost = signal.entry_price * quantity
-                    if quantity >= 1 and cost <= cash:
-                        cash -= cost
-                        positions[symbol] = {
-                            "entry_price": signal.entry_price, "entry_date": target_date.isoformat(),
-                            "quantity": quantity, "stop_loss": signal.stop_loss,
-                        }
-                        new_entries.append({"symbol": symbol, "entry_price": signal.entry_price,
-                                             "quantity": quantity, "stop_loss": signal.stop_loss})
-                        mark_to_market_equity += cost
+                    if execution_config.fill_timing == "next_day_open":
+                        pending_entries[symbol] = {"stop_loss": signal.stop_loss,
+                                                    "signal_date": target_date.isoformat()}
+                    else:
+                        quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
+                        fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
+                        cost = fill_price * quantity
+                        if quantity >= 1 and cost <= cash and cost >= min_position_value_rupees:
+                            cash -= cost + execution_config.brokerage_flat_rs
+                            positions[symbol] = {
+                                "entry_price": fill_price, "entry_date": target_date.isoformat(),
+                                "quantity": quantity, "stop_loss": signal.stop_loss,
+                            }
+                            new_entries.append({"symbol": symbol, "entry_price": fill_price,
+                                                 "quantity": quantity, "stop_loss": signal.stop_loss})
+                            mark_to_market_equity += cost
 
     portfolio["cash"] = cash
     portfolio["positions"] = positions
+    portfolio["pending_entries"] = pending_entries
+    portfolio["pending_exits"] = pending_exits
     portfolio["last_processed_date"] = target_date.isoformat()
     _save_portfolio(strategy_key, portfolio)
     _append_daily_equity(strategy_key, target_date, cash, mark_to_market_equity)
