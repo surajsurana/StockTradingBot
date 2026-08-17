@@ -62,6 +62,31 @@ class TestTelegramTemplates(unittest.TestCase):
         self.assertIn("SYM2", text)
         self.assertIn("stop\\_loss", text)   # escaped -- see test_deployment_operational_v2's Markdown tests
 
+    def test_many_decimal_prices_display_with_max_two_decimal_places(self):
+        # Regression test for the 2026-08-17 fix -- real fill prices from
+        # this program's own float arithmetic (e.g. entry_price=
+        # 203.55999755859375) were previously shown raw/unformatted in
+        # Telegram messages. See reporting/format_utils.py.
+        text = format_strategy_notification(
+            mode="PAPER", strategy_display_name="Test",
+            new_entries=[{"symbol": "SYM", "entry_price": 203.55999755859375, "quantity": 614,
+                         "stop_loss": 187.27519775390627}],
+            new_exits=[{"symbol": "SYM2", "exit_price": 1329229.2412109375, "pnl": -100.333333333,
+                       "reason": "stop_loss"}],
+            open_positions=[], daily_pnl=-100.0, total_equity=99000, drawdown_pct=14.254612,
+            win_rate=0.503217, expectancy=1.032178,
+        )
+        self.assertIn("203.56", text)
+        self.assertIn("187.28", text)
+        self.assertIn("1,329,229.24", text)
+        self.assertIn("-100.33", text)
+        self.assertIn("14.25", text)
+        self.assertIn("0.50", text)
+        self.assertIn("1.03", text)
+        # None of the raw many-decimal originals should survive into the message.
+        self.assertNotIn("203.55999755859375", text)
+        self.assertNotIn("187.27519775390627", text)
+
     def test_open_positions_listed_and_empty_case(self):
         text_with = format_strategy_notification(
             mode="PAPER", strategy_display_name="Test", new_entries=[], new_exits=[],

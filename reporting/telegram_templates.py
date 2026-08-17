@@ -20,6 +20,8 @@ generic, mode-agnostic HTTP POST helper, reused unmodified).
 
 from typing import Optional
 
+from reporting.format_utils import format_metric
+
 MODE_HEADERS = {
     "LIVE": "\U0001F680 LIVE TRADING",     # rocket
     "PAPER": "\U0001F9EA PAPER TRADING",   # test tube
@@ -87,21 +89,21 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
         if new_entries:
             lines.append("*New Entries*")
             for e in new_entries:
-                lines.append(f"- {_escape_markdown(e['symbol'])}: entry {e['entry_price']} x {e['quantity']}, "
-                             f"stop {e['stop_loss']}")
+                lines.append(f"- {_escape_markdown(e['symbol'])}: entry {format_metric(e['entry_price'])} "
+                             f"x {e['quantity']}, stop {format_metric(e['stop_loss'])}")
             lines.append("")
         if new_exits:
             lines.append("*Exits*")
             for x in new_exits:
-                lines.append(f"- {_escape_markdown(x['symbol'])}: exit {x['exit_price']}, P&L {x['pnl']} "
-                             f"({_escape_markdown(x['reason'])})")
+                lines.append(f"- {_escape_markdown(x['symbol'])}: exit {format_metric(x['exit_price'])}, "
+                             f"P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})")
             lines.append("")
 
     lines.append("*Open Positions*")
     if open_positions:
         for p in open_positions:
-            lines.append(f"- {_escape_markdown(p['symbol'])}: entry {p['entry_price']} x {p['quantity']}, "
-                         f"stop {p['stop_loss']}")
+            lines.append(f"- {_escape_markdown(p['symbol'])}: entry {format_metric(p['entry_price'])} "
+                         f"x {p['quantity']}, stop {format_metric(p['stop_loss'])}")
     else:
         lines.append("(none)")
     lines.append("")
@@ -110,9 +112,9 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
         "*Summary*",
         f"Daily P&L: {daily_pnl:,.2f}",
         f"Total Equity: {total_equity:,.2f}",
-        f"Drawdown: {drawdown_pct}%" if drawdown_pct is not None else "Drawdown: n/a",
-        f"Win Rate: {win_rate}" if win_rate is not None else "Win Rate: n/a",
-        f"Expectancy: {expectancy}" if expectancy is not None else "Expectancy: n/a",
+        f"Drawdown: {format_metric(drawdown_pct)}%" if drawdown_pct is not None else "Drawdown: n/a",
+        f"Win Rate: {format_metric(win_rate)}" if win_rate is not None else "Win Rate: n/a",
+        f"Expectancy: {format_metric(expectancy)}" if expectancy is not None else "Expectancy: n/a",
     ]
 
     if observations:
@@ -155,6 +157,6 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
         f"*Current Open Positions*: {open_positions_total}",
         f"*Today's P&L*: {daily_pnl_total:,.2f}",
         f"*Portfolio Equity*: {portfolio_equity_total:,.2f}",
-        f"*Win Rate*: {blended_win_rate}" if blended_win_rate is not None else "*Win Rate*: n/a",
+        f"*Win Rate*: {format_metric(blended_win_rate)}" if blended_win_rate is not None else "*Win Rate*: n/a",
     ]
     return "\n".join(lines)

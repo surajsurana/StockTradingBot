@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from datetime import date as date_type, datetime
 from typing import Callable, Optional
 
+from reporting.format_utils import format_metric
 from swing_research.backtesting_engine import Trade
 from swing_research.base import OpenPosition, PositionUnit, Strategy
 from swing_research.metrics import compute_metrics
@@ -474,24 +475,26 @@ def generate_report(strategy_key: str, display_name: str, strategy_id: str = "")
         f"Generated: {datetime.now().isoformat()}",
         f"Last processed trading day: {portfolio.get('last_processed_date')}",
         f"Open positions: {len(portfolio['positions'])}",
-        f"Cash: {portfolio['cash']:.2f}", "",
+        f"Cash: {format_metric(portfolio['cash'])}", "",
         "## Cumulative Metrics (since paper trading began)", "",
         f"- Total trades: {metrics['total_trades']}",
-        f"- Win rate: {metrics['win_rate']}",
-        f"- Expectancy per trade: {metrics['expectancy']}",
-        f"- Profit factor: {metrics['profit_factor']}",
-        f"- CAGR: {metrics['cagr']}%",
-        f"- Sharpe: {metrics['sharpe_ratio']}",
-        f"- Max drawdown: {metrics['max_drawdown_pct']}%",
-        f"- Total P&L: {metrics['total_pnl']}", "",
+        f"- Win rate: {format_metric(metrics['win_rate'])}",
+        f"- Expectancy per trade: {format_metric(metrics['expectancy'])}",
+        f"- Profit factor: {format_metric(metrics['profit_factor'])}",
+        f"- CAGR: {format_metric(metrics['cagr'])}%",
+        f"- Sharpe: {format_metric(metrics['sharpe_ratio'])}",
+        f"- Max drawdown: {format_metric(metrics['max_drawdown_pct'])}%",
+        f"- Total P&L: {format_metric(metrics['total_pnl'])}", "",
         "## Open Positions", "",
     ]
     for symbol, pos in portfolio["positions"].items():
-        lines.append(f"- {symbol}: entry {pos['entry_price']} x {pos['quantity']}, stop {pos['stop_loss']}")
+        lines.append(f"- {symbol}: entry {format_metric(pos['entry_price'])} x {pos['quantity']}, "
+                     f"stop {format_metric(pos['stop_loss'])}")
 
     lines += ["", "## Recent Trades (last 10)", ""]
     for t in trades[-10:]:
-        lines.append(f"- {t.symbol}: {t.entry_date} -> {t.exit_date}, pnl {round(t.pnl, 2)} ({t.exit_reason})")
+        lines.append(f"- {t.symbol}: {t.entry_date} -> {t.exit_date}, pnl {format_metric(round(t.pnl, 2))} "
+                     f"({t.exit_reason})")
 
     report_text = "\n".join(lines)
 

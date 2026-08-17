@@ -23,6 +23,8 @@ import os
 from datetime import datetime
 from typing import Optional
 
+from reporting.format_utils import format_metric
+
 from research_lab.experiment_manager import load_experiment
 
 from deployment.paper_trading_engine import compute_live_metrics, load_portfolio
@@ -215,8 +217,8 @@ def generate_drift_report(strategy_key: str, display_name: str, historical_exp_i
         f"Generated: {generated_at}",
         f"Compared against historical experiment: {historical_exp_id}",
         f"Live trades so far: {drift['live_total_trades']}",
-        f"Starting capital: historical Rs.{drift['historical'].get('starting_capital')}, "
-        f"live Rs.{drift['live'].get('starting_capital')}", "",
+        f"Starting capital: historical Rs.{format_metric(drift['historical'].get('starting_capital'))}, "
+        f"live Rs.{format_metric(drift['live'].get('starting_capital'))}", "",
         "## Comparison", "",
         "| Metric | Historical (research) | Live (paper trading) | Drift |",
         "|---|---|---|---|",
@@ -228,13 +230,15 @@ def generate_drift_report(strategy_key: str, display_name: str, historical_exp_i
             # -- the DRIFT DECISION itself is made on the capital-
             # normalized row below, never on this raw-rupee one.
             lines.append(f"| expectancy (Rs., informational only -- not scale-comparable if capital differs) "
-                         f"| {drift['historical']['expectancy']} | {drift['live']['expectancy']} | see next row |")
+                         f"| {format_metric(drift['historical']['expectancy'])} | "
+                         f"{format_metric(drift['live']['expectancy'])} | see next row |")
             lines.append(f"| expectancy (% of own starting capital -- this is what drift is actually judged on) "
-                         f"| {drift['historical'][_EXPECTANCY_NORMALIZED_KEY]} | "
-                         f"{drift['live'][_EXPECTANCY_NORMALIZED_KEY]} | {drift['flags'].get('expectancy', 'within threshold')} |")
+                         f"| {format_metric(drift['historical'][_EXPECTANCY_NORMALIZED_KEY])} | "
+                         f"{format_metric(drift['live'][_EXPECTANCY_NORMALIZED_KEY])} | {drift['flags'].get('expectancy', 'within threshold')} |")
             continue
         flag = drift["flags"].get(metric, "within threshold")
-        lines.append(f"| {metric} | {drift['historical'][metric]} | {drift['live'][metric]} | {flag} |")
+        lines.append(f"| {metric} | {format_metric(drift['historical'][metric])} | "
+                     f"{format_metric(drift['live'][metric])} | {flag} |")
 
     lines += ["", "## Note",
               "Live paper-trading samples are, by construction, far smaller than the multi-year "
