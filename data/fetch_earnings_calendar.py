@@ -39,6 +39,7 @@ tested against yfinance's own (undocumented) rate limits at this scale.
 Disclosed, not silently assumed to be fine.
 """
 
+import multiprocessing
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
@@ -116,3 +117,45 @@ def fetch_recent_earnings_events(symbols: list, as_of_date: date, lookback_days:
         ))
 
     return events
+
+
+# Confirmed empirically (2026-08-17, production VPS) that each
+# yf.Ticker(...).get_earnings_dates() call leaks several MB of memory that
+# gc.collect() does NOT reclaim -- across the full ~457-symbol frozen
+# universe this exceeds 1GB, which OOM-killed the daily PEAD scan on a
+# VPS with only 458MB RAM and no swap. Root cause is inside yfinance's own
+# session/cache handling, not this codebase's logic, so the fix is process
+# isolation: scan the universe in small batches, each in its own
+# short-lived subprocess (killed and replaced after exactly one batch via
+# maxtasksperchild=1), so the OS fully reclaims whatever yfinance leaked
+# before the next batch starts.
+DEFAULT_SCAN_CHUNK_SIZE = 25
+
+
+def _fetch_chunk_worker(args) -> list:
+    symbols_chunk, as_of_date, lookback_days = args
+    return fetch_recent_earnings_events(symbols_chunk, as_of_date, lookback_days=lookback_days)
+
+
+def fetch_recent_earnings_events_chunked(symbols: list, as_of_date: date, lookback_days: int = 10,
+                                          chunk_size: int = DEFAULT_SCAN_CHUNK_SIZE) -> list:
+    """
+    Same contract and return shape as fetch_recent_earnings_events() --
+    use this for any full-universe scan. For symbol lists at or below
+    chunk_size, delegates directly with no subprocess overhead (this is
+    also what keeps existing unit tests, which use small synthetic symbol
+    lists, deterministic and mockable at the ordinary function level).
+    For larger lists, see the module-level note above DEFAULT_SCAN_CHUNK_SIZE
+    for why subprocess-per-batch isolation is used instead of a single
+    in-process loop.
+    """
+    if len(symbols) <= chunk_size:
+        return fetch_recent_earnings_events(symbols, as_of_date, lookback_days=lookback_days)
+
+    chunks = [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
+    all_events = []
+    with multiprocessing.Pool(processes=1, maxtasksperchild=1) as pool:
+        for chunk_events in pool.imap(_fetch_chunk_worker,
+                                       [(chunk, as_of_date, lookback_days) for chunk in chunks]):
+            all_events.extend(chunk_events)
+    return all_events

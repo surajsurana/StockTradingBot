@@ -51,7 +51,7 @@ import os
 from datetime import date as date_type, timedelta
 from typing import Optional
 
-from data.fetch_earnings_calendar import fetch_recent_earnings_events
+from data.fetch_earnings_calendar import fetch_recent_earnings_events_chunked
 from deployment.paper_trading_engine import (
     ExecutionRealismConfig,
     _load_portfolio,
@@ -153,7 +153,7 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
                 "last_processed_date": last_processed}
 
     processed_events = _load_processed_events()
-    raw_events = fetch_recent_earnings_events(symbols, target_date, lookback_days=EARNINGS_LOOKBACK_DAYS)
+    raw_events = fetch_recent_earnings_events_chunked(symbols, target_date, lookback_days=EARNINGS_LOOKBACK_DAYS)
 
     events_detected = len(raw_events)
     events_eligible = 0

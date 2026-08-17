@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from data.fetch_earnings_calendar import EarningsEvent
+from data.fetch_earnings_calendar import EarningsEvent, fetch_recent_earnings_events_chunked
 from deployment.pead_signal import compute_sue, evaluate_pead_signal, PEAD_SUE_THRESHOLD
 
 
@@ -49,6 +49,29 @@ class TestSUEComputation(unittest.TestCase):
         self.assertFalse(signal)
 
 
+class TestChunkedEarningsScanDelegation(unittest.TestCase):
+    """The multiprocessing/subprocess-isolated path (used for symbol lists
+    above chunk_size, to bound memory across a large universe -- see
+    data/fetch_earnings_calendar.py's DEFAULT_SCAN_CHUNK_SIZE docstring) is
+    verified separately against the real production universe, not here --
+    unittest.mock patches applied in this process do not propagate into
+    the subprocess workers. What IS verified here, deterministically: a
+    symbol list at or below chunk_size is delegated directly, in-process,
+    with no subprocess overhead and no behavior change from before this
+    fix existed."""
+
+    def test_small_list_delegates_directly_without_subprocess(self):
+        fake_event = EarningsEvent(symbol="TEST.NS", announcement_date=date(2026, 1, 1),
+                                    reported_eps=10.0, eps_estimate=5.0, surprise_pct=100.0,
+                                    trailing_actual_eps=_strong_positive_eps_history())
+        with patch("data.fetch_earnings_calendar.fetch_recent_earnings_events",
+                   return_value=[fake_event]) as mocked:
+            result = fetch_recent_earnings_events_chunked(["TEST.NS"], date(2026, 1, 2), lookback_days=10,
+                                                            chunk_size=25)
+        mocked.assert_called_once_with(["TEST.NS"], date(2026, 1, 2), lookback_days=10)
+        self.assertEqual(result, [fake_event])
+
+
 def _make_price_data(symbols, n=80, start_price=100.0):
     dates = pd.bdate_range("2024-01-01", periods=n)
     data = {}
@@ -82,7 +105,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     eps_estimate=5.0, surprise_pct=100.0,
                                     trailing_actual_eps=_strong_positive_eps_history())
 
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
             result = run_pead_daily(["TEST.NS"], as_of_date=today, fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(result["new_entries"], [])   # same-day -- must not act
@@ -101,7 +124,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     eps_estimate=5.0, surprise_pct=100.0,
                                     trailing_actual_eps=_strong_positive_eps_history())
 
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
             result = run_pead_daily(["TEST.NS"], as_of_date=run_date, fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(len(result["new_entries"]), 1)
@@ -121,7 +144,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     eps_estimate=5.0, surprise_pct=100.0,
                                     trailing_actual_eps=_flat_eps_history())   # no signal, just testing dedup
 
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
             run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_ohlcv_fn=lambda syms: data)
             run_pead_daily(["TEST.NS"], as_of_date=dates[7].date(), fetch_ohlcv_fn=lambda syms: data, force=True)
 
@@ -137,7 +160,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     eps_estimate=5.0, surprise_pct=100.0,
                                     trailing_actual_eps=_strong_positive_eps_history()[:6])   # too short
 
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
             result = run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(result["new_entries"], [])
@@ -170,7 +193,7 @@ class TestExitSideReusesExistingMachinery(unittest.TestCase):
                                     eps_estimate=5.0, surprise_pct=100.0,
                                     trailing_actual_eps=_strong_positive_eps_history())
 
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
             entry_result = run_pead_daily(["TEST.NS"], as_of_date=entry_run_date, fetch_ohlcv_fn=lambda syms: data)
         self.assertEqual(len(entry_result["new_entries"]), 1)
 
@@ -178,7 +201,7 @@ class TestExitSideReusesExistingMachinery(unittest.TestCase):
         # the exit must come from PEADStrategy.exit_signal_at() via the
         # SHARED run_daily(), not from any PEAD-specific exit code.
         exit_seen = False
-        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[]):
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[]):
             for i in range(3, 3 + PEAD_HOLDING_PERIOD_TRADING_DAYS + 10):
                 if i >= len(dates):
                     break
