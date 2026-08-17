@@ -1,0 +1,15 @@
+{
+  "data_period": "2020-01-01 to 2022-12-31",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 2,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Entry trigger (Template-qualification transition vs. real VCP pivot breakout): LIKELY MATERIAL, probably UNDERSTATES real SEPA -- a raw qualification day is likely noisier/earlier than a properly-formed VCP pivot breakout, so a weak or REJECT result here should be read as inconclusive about real SEPA, not a refutation of it. Exit rule (50-day MA close-below): MODERATE impact on holding period/win rate, directionally unverified against Minervini's own (undocumented) practice. Stop-loss (8% vs. documented 7-8% range): MINOR, within the documented range. No pyramiding: MODERATE, ONE-DIRECTIONAL -- can only understate real returns (the source explicitly adds to winners), never overstate them. Relative Strength substitute (open 3/6/9/12-month blend vs. IBD's proprietary formula): LIKELY MATERIAL, DIRECTIONALLY UNKNOWN -- the single biggest fidelity gap; criterion 8 may admit a meaningfully different symbol set than the real IBD screen.",
+  "minervini_risk_pct_per_unit": 0.0125,
+  "minervini_stop_loss_pct": 0.08,
+  "minervini_rs_percentile_threshold": 70.0,
+  "minervini_pyramiding": false
+}

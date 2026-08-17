@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-08-16T13:43:58.715189",
+  "strategy_name": "betting_against_beta",
+  "strategy_variant": "Frazzini-Pedersen shrunk beta -- TEMPORAL REGIME ANALYSIS: current_regime_2023_latest",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 3.6167008898015056,
+  "n_walk_forward_windows": 2,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000,
+    "temporal_regime_label": "current_regime_2023_latest",
+    "requested_windows": 3,
+    "available_trading_days": 896
+  },
+  "git": {
+    "commit_hash": "3fd8668d85b3860be36d42d6c753f7bd4800153f",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/knowledge_base.jsonl",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/_run_bab_temporal_regime_analysis.py",
+      "?? swing_research/experiments/EXP-032/",
+      "?? swing_research/experiments/EXP-033/",
+      "?? swing_research/run_manifests/2026-08-16T13-43-58-457606_betting_against_beta.json",
+      "?? swing_research/temporal_regime_analysis.py",
+      "?? test_kite_connection.py"
+    ]
+  }
+}
