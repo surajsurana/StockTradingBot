@@ -117,18 +117,27 @@ def load_events(strategy_key: str = STRATEGY_KEY) -> list:
 
 
 def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force: bool = False,
-                    fetch_data_fn=None,
+                    fetch_ohlcv_fn=None,
                     execution_config: Optional[ExecutionRealismConfig] = None) -> dict:
     """
     The idempotent daily PEAD runner -- call once per trading day, after
     market close, same cadence as every other paper-trading strategy.
 
-    symbols: the eligible universe to scan for earnings events (the
-    frozen swing_research universe, same as every other strategy).
-    fetch_data_fn: zero-arg callable returning {symbol: DataFrame} OHLCV
-    -- needed for the EXIT side (run_daily() checks stop-loss/holding-
-    period against real price bars) and for pricing a NEW entry at
-    today's close. Same shape as every other strategy's data fetch.
+    symbols: the eligible universe to SCAN FOR EARNINGS EVENTS (the frozen
+    swing_research universe, same as every other strategy). Unlike the
+    cross-sectional strategies (SW-002/003/008), PEAD does not rank across
+    the universe, so it does not need every symbol's price history --
+    only symbols that can actually need a price today: existing open
+    positions (for the exit side) and today's candidate earnings-event
+    symbols (for pricing a possible new entry). fetch_ohlcv_fn is called
+    with just that small subset, keeping memory bounded regardless of
+    universe size (discovered necessary after a full-universe 3y OHLCV
+    preload -- previously done in run_paper_trading.py before calling
+    this function -- exhausted memory on the production VPS).
+
+    fetch_ohlcv_fn: callable(symbol_list) -> {symbol: DataFrame} OHLCV --
+    needed for the EXIT side (run_daily() checks stop-loss/holding-period
+    against real price bars) and for pricing a NEW entry at today's close.
 
     Returns a summary dict: {"status": ..., "events_detected": N,
     "events_eligible": N, "signals_generated": N, "new_entries": [...],
@@ -151,7 +160,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     signals_generated = 0
     injected_entries = []
 
-    data = fetch_data_fn() if fetch_data_fn else {}
+    needed_symbols = sorted(set(portfolio["positions"].keys()) | {e.symbol for e in raw_events})
+    data = fetch_ohlcv_fn(needed_symbols) if fetch_ohlcv_fn else {}
 
     for event in raw_events:
         key = (event.symbol, event.announcement_date.isoformat())

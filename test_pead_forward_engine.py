@@ -83,7 +83,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     trailing_actual_eps=_strong_positive_eps_history())
 
         with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
-            result = run_pead_daily(["TEST.NS"], as_of_date=today, fetch_data_fn=lambda: data)
+            result = run_pead_daily(["TEST.NS"], as_of_date=today, fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(result["new_entries"], [])   # same-day -- must not act
         events = load_events()
@@ -102,7 +102,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     trailing_actual_eps=_strong_positive_eps_history())
 
         with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
-            result = run_pead_daily(["TEST.NS"], as_of_date=run_date, fetch_data_fn=lambda: data)
+            result = run_pead_daily(["TEST.NS"], as_of_date=run_date, fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(len(result["new_entries"]), 1)
         self.assertEqual(result["new_entries"][0]["symbol"], "TEST.NS")
@@ -122,8 +122,8 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     trailing_actual_eps=_flat_eps_history())   # no signal, just testing dedup
 
         with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
-            run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_data_fn=lambda: data)
-            run_pead_daily(["TEST.NS"], as_of_date=dates[7].date(), fetch_data_fn=lambda: data, force=True)
+            run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_ohlcv_fn=lambda syms: data)
+            run_pead_daily(["TEST.NS"], as_of_date=dates[7].date(), fetch_ohlcv_fn=lambda syms: data, force=True)
 
         events = load_events()
         self.assertEqual(len(events), 1, "The same real-world event must only be logged once across two daily runs")
@@ -138,7 +138,7 @@ class TestForwardEngineLookaheadGuard(unittest.TestCase):
                                     trailing_actual_eps=_strong_positive_eps_history()[:6])   # too short
 
         with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
-            result = run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_data_fn=lambda: data)
+            result = run_pead_daily(["TEST.NS"], as_of_date=dates[6].date(), fetch_ohlcv_fn=lambda syms: data)
 
         self.assertEqual(result["new_entries"], [])
         events = load_events()
@@ -171,7 +171,7 @@ class TestExitSideReusesExistingMachinery(unittest.TestCase):
                                     trailing_actual_eps=_strong_positive_eps_history())
 
         with patch("deployment.pead_forward_engine.fetch_recent_earnings_events", return_value=[fake_event]):
-            entry_result = run_pead_daily(["TEST.NS"], as_of_date=entry_run_date, fetch_data_fn=lambda: data)
+            entry_result = run_pead_daily(["TEST.NS"], as_of_date=entry_run_date, fetch_ohlcv_fn=lambda syms: data)
         self.assertEqual(len(entry_result["new_entries"]), 1)
 
         # Walk forward past the holding period with no further events --
@@ -182,7 +182,7 @@ class TestExitSideReusesExistingMachinery(unittest.TestCase):
             for i in range(3, 3 + PEAD_HOLDING_PERIOD_TRADING_DAYS + 10):
                 if i >= len(dates):
                     break
-                result = run_pead_daily(["TEST.NS"], as_of_date=dates[i].date(), fetch_data_fn=lambda: data)
+                result = run_pead_daily(["TEST.NS"], as_of_date=dates[i].date(), fetch_ohlcv_fn=lambda syms: data)
                 if result.get("new_exits"):
                     exit_seen = True
                     self.assertEqual(result["new_exits"][0]["reason"], "signal_exit")

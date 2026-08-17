@@ -167,9 +167,6 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
 
     try:
         symbols = get_swing_universe()
-        print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
-        data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
-        print(f"[{strategy_key}] Data available for {len(data)} symbol(s)")
 
         if config.get("is_forward_evidence_experiment"):
             # SW-007 PEAD -- event-driven, not a swing_research.base.Strategy
@@ -178,9 +175,23 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
             # strategy_factory call -- run_pead_daily() owns its own
             # earnings-detection + SUE + entry-injection flow, then
             # reuses run_daily() internally for the exit side only.
+            # Unlike the cross-sectional strategies below, it does NOT
+            # preload 3y OHLCV for the full universe here -- it is not
+            # cross-sectional, so run_pead_daily() fetches price data only
+            # for the small set of symbols it actually needs (open
+            # positions + today's candidate earnings events), avoiding the
+            # memory pressure of holding 3y OHLCV for ~450+ symbols
+            # simultaneously with a 450+-symbol earnings-history scan.
             from deployment.pead_forward_engine import run_pead_daily
-            result = run_pead_daily(symbols, fetch_data_fn=lambda: data, force=force)
+            print(f"[{strategy_key}] Scanning {len(symbols)} symbol(s) for earnings events...")
+            result = run_pead_daily(
+                symbols, fetch_ohlcv_fn=lambda syms: fetch_all(syms, period="3y"), force=force,
+            )
         else:
+            print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
+            data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
+            print(f"[{strategy_key}] Data available for {len(data)} symbol(s)")
+
             strategy = config["strategy_factory"]()
             extra_fn = config.get("compute_extra_columns_fn")
 
