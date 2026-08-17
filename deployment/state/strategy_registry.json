@@ -122,20 +122,26 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
     "research_verdict_source": "EXP-016, EXP-017",
-    "deployment_status": "RESEARCH",
+    "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
         "from_status": "RESEARCH",
         "to_status": "RESEARCH",
         "timestamp": 1785863081.4744153,
         "reason": "HOLD at RESEARCH, per explicit human decision 2026-08-04. Although the official frozen acceptance framework produced PASS (base EXP-016 + recent-period EXP-017, both PASS, no conflict), the supplementary post-COVID robustness run (EXP-018, additional evidence only, does not alter the Research Verdict) produced REJECT on a high-quality 224-trade sample (evidence quality HIGH, 90.0/100) -- negative out-of-sample expectancy specifically in the most recent structural regime. The strategy also underperformed the existing paper-trading strategy 52-Week High Momentum (SW-003) on every primary performance metric (CAGR, Sharpe, MaxDD, profit factor, win rate, expectancy, at both the base and recent-period horizon). The diversification comparison (genuine sector-exposure divergence from SW-003, see swing_research/strategy_library/cross_sectional_momentum.md) is preserved as real evidence but is judged insufficient on its own to justify paper trading at this stage. May be reconsidered later if additional published strategies (e.g. PEAD) demonstrate complementary behavior that changes the overall portfolio decision. Research Verdict (PASS) is unaffected by this Deployment Status decision -- the two remain fully independent."
+      },
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1786968703.545595,
+        "reason": "Promoted 2026-08-17 as a deliberate forward-evidence decision, per explicit direction: paper trading is a forward-evidence stage, not a reward for a perfect historical record. Research Verdict remains PASS, unchanged (base EXP-016 + recent-period EXP-017, both PASS, no conflict) -- this promotion does not alter it. The prior HOLD-at-RESEARCH reasoning (a REJECT on the supplementary post-COVID robustness run EXP-018, and underperformance vs SW-003 on every primary metric) is preserved in this record's own history below, not overwritten -- that evidence is real and unresolved by this promotion. The temporal regime diagnostics run 2026-08-17 (EXP-036..EXP-040) found the EXP-018 weakness sensitive to walk-forward window construction rather than cleanly confirmed as a stable structural regime effect, and further historical slicing was explicitly ruled out as unproductive. Rather than continue slicing historical data indefinitely, SW-006 joins SW-002/003/007/008 in PAPER_TRADING to gather real forward market evidence directly."
       }
     ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-006",
-    "primary_experiment_id": ""
+    "primary_experiment_id": "EXP-016"
   },
   "pead": {
     "strategy_key": "pead",

@@ -10,8 +10,81 @@ flagged as a gap during that deployment's verification).
 import unittest
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
 import run_paper_trading as rpt
+
+
+def _synthetic_price_data(symbols, n=280):
+    """Minimal OHLCV fixture, long enough (>=~252 bars) to satisfy every
+    cross-sectional strategy's own lookback -- the longest being 52-Week
+    High Momentum's and Minervini RS's ~12-month (252 trading day) window."""
+    dates = pd.bdate_range("2024-01-01", periods=n)
+    data = {}
+    for i, sym in enumerate(symbols):
+        close = pd.Series([100.0 + i + j * 0.1 for j in range(n)], index=dates)
+        data[sym] = pd.DataFrame({
+            "Open": close, "High": close * 1.01, "Low": close * 0.98, "Close": close, "Volume": 100000,
+        }, index=dates)
+    return data
+
+
+class TestStrategyFactoryExtraColumnNaming(unittest.TestCase):
+    """Regression test for the 2026-08-17 bug: compute_*_percentile_ranks()
+    returns {symbol: Series} where each Series' own .name is the SYMBOL
+    (an artifact of column-wise slicing a wide-format DataFrame), not the
+    feature name each strategy's precompute() looks for. Without an
+    explicit rename, deployment/paper_trading_engine.py's
+    df.join(extra_columns[symbol]) joins a column named after the symbol
+    instead of e.g. "rs_percentile" -- precompute() then never finds its
+    expected column and the strategy can never signal. Found after
+    fifty_two_week_high_momentum/short_term_reversal/
+    minervini_trend_template_filter had been running in PAPER_TRADING for
+    days/weeks with this bug, structurally unable to ever generate an
+    entry signal despite showing no errors. This test would have caught it."""
+
+    EXPECTED_COLUMN_BY_STRATEGY = {
+        "fifty_two_week_high_momentum": "nearness_percentile",
+        "short_term_reversal": "reversal_percentile",
+        "minervini_trend_template_filter": "rs_percentile",
+        "cross_sectional_momentum": "momentum_percentile",
+    }
+
+    def test_extra_columns_are_named_what_precompute_expects(self):
+        symbols = ["AAA.NS", "BBB.NS", "CCC.NS"]
+        data = _synthetic_price_data(symbols)
+
+        for strategy_key, expected_column in self.EXPECTED_COLUMN_BY_STRATEGY.items():
+            with self.subTest(strategy_key=strategy_key):
+                config = rpt._STRATEGY_FACTORIES[strategy_key]
+                extra = config["compute_extra_columns_fn"](data)
+                self.assertTrue(extra, f"{strategy_key}: compute_extra_columns_fn returned nothing for the fixture")
+                sample_series = next(iter(extra.values()))
+                self.assertEqual(
+                    sample_series.name, expected_column,
+                    f"{strategy_key}: extra-column Series is named {sample_series.name!r}, "
+                    f"but its own strategy's precompute() looks for {expected_column!r} -- "
+                    f"df.join() would silently create the wrong column and the strategy could never signal.",
+                )
+
+    def test_joined_column_is_actually_present_and_usable(self):
+        """End-to-end version of the same check: exactly mimics
+        deployment/paper_trading_engine.py's df.join(extra_columns[symbol])
+        call and confirms the resulting DataFrame has real (non-NaN)
+        values under the exact column name precompute() reads."""
+        symbols = ["AAA.NS", "BBB.NS", "CCC.NS"]
+        data = _synthetic_price_data(symbols)
+
+        for strategy_key, expected_column in self.EXPECTED_COLUMN_BY_STRATEGY.items():
+            with self.subTest(strategy_key=strategy_key):
+                config = rpt._STRATEGY_FACTORIES[strategy_key]
+                extra = config["compute_extra_columns_fn"](data)
+                symbol = "AAA.NS"
+                df = data[symbol].sort_index().join(extra[symbol])
+                self.assertIn(expected_column, df.columns)
+                self.assertTrue(df[expected_column].notna().any(),
+                                 f"{strategy_key}: {expected_column} column exists but is entirely NaN")
 
 
 def _fake_record(strategy_key, display_name):

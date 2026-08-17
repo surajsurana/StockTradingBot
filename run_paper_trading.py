@@ -59,33 +59,61 @@ from deployment.scheduler import is_due_now, strategies_due_now
 from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
 
+def _renamed(extra: dict, column_name: str) -> dict:
+    """compute_*_percentile_ranks() returns {symbol: Series} where each
+    Series' own .name is the SYMBOL (an artifact of slicing a wide-format
+    DataFrame column-wise), not the feature name each strategy's
+    precompute() looks for. deployment/paper_trading_engine.py's
+    df.join(extra_columns[symbol]) uses the Series' .name as the joined
+    column's name, so without this rename it silently joins a column named
+    after the symbol instead of e.g. "rs_percentile" -- precompute() then
+    never finds its expected column, treats the percentile as always NaN,
+    and entry_signal_at() can never signal. swing_research/research_director.py
+    already does this same rename correctly for every backtest (see its
+    own extra_columns_by_symbol construction) -- this mirrors that
+    convention for the live paper-trading path. Found and fixed 2026-08-17:
+    fifty_two_week_high_momentum/short_term_reversal/minervini_trend_template_filter
+    had been running in PAPER_TRADING without this rename since promotion,
+    meaning they were structurally unable to ever generate an entry signal."""
+    return {symbol: series.rename(column_name) for symbol, series in extra.items()}
+
+
 _STRATEGY_FACTORIES = {
     "fifty_two_week_high_momentum": {
         "display_name": "52-Week High Momentum",
         "strategy_factory": lambda: __import__(
             "swing_research.strategies.fifty_two_week_high_momentum", fromlist=["FiftyTwoWeekHighMomentumStrategy"]
         ).FiftyTwoWeekHighMomentumStrategy(),
-        "compute_extra_columns_fn": lambda data: __import__(
+        "compute_extra_columns_fn": lambda data: _renamed(__import__(
             "swing_research.cross_sectional", fromlist=["compute_52w_high_nearness_percentile_ranks"]
-        ).compute_52w_high_nearness_percentile_ranks(data),
+        ).compute_52w_high_nearness_percentile_ranks(data), "nearness_percentile"),
     },
     "short_term_reversal": {
         "display_name": "Short-Term Reversal",
         "strategy_factory": lambda: __import__(
             "swing_research.strategies.short_term_reversal", fromlist=["ShortTermReversalStrategy"]
         ).ShortTermReversalStrategy(),
-        "compute_extra_columns_fn": lambda data: __import__(
+        "compute_extra_columns_fn": lambda data: _renamed(__import__(
             "swing_research.cross_sectional", fromlist=["compute_short_term_reversal_percentile_ranks"]
-        ).compute_short_term_reversal_percentile_ranks(data),
+        ).compute_short_term_reversal_percentile_ranks(data), "reversal_percentile"),
     },
     "minervini_trend_template_filter": {
         "display_name": "Minervini Trend Template Filter",
         "strategy_factory": lambda: __import__(
             "swing_research.strategies.minervini_trend_template_filter", fromlist=["MinerviniTrendTemplateFilterStrategy"]
         ).MinerviniTrendTemplateFilterStrategy(),
-        "compute_extra_columns_fn": lambda data: __import__(
+        "compute_extra_columns_fn": lambda data: _renamed(__import__(
             "swing_research.cross_sectional", fromlist=["compute_rs_percentile_ranks"]
-        ).compute_rs_percentile_ranks(data),
+        ).compute_rs_percentile_ranks(data), "rs_percentile"),
+    },
+    "cross_sectional_momentum": {
+        "display_name": "Cross-Sectional Momentum",
+        "strategy_factory": lambda: __import__(
+            "swing_research.strategies.cross_sectional_momentum", fromlist=["CrossSectionalMomentumStrategy"]
+        ).CrossSectionalMomentumStrategy(),
+        "compute_extra_columns_fn": lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_momentum_percentile_ranks"]
+        ).compute_momentum_percentile_ranks(data), "momentum_percentile"),
     },
     "pead": {
         "display_name": "PEAD (Forward Evidence Experiment)",
