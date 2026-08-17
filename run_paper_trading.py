@@ -54,10 +54,28 @@ from reporting.telegram_templates import format_daily_summary, format_strategy_n
 
 from deployment.deployment_manager import get_strategy, list_strategies
 from deployment.drift_report import generate_drift_report
-from deployment.paper_trading_engine import compute_live_metrics, generate_report, load_portfolio, run_daily
+from deployment.paper_trading_engine import (
+    ExecutionRealismConfig, compute_live_metrics, generate_report, load_portfolio, run_daily,
+)
 from deployment.scheduler import is_due_now, strategies_due_now
 from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
+
+# All five paper-trading strategies are End-of-Day: they need the full
+# day's closing bar to compute a signal at all (percentile ranks,
+# formation returns), so same_day_close fills -- entering at the very
+# close price the signal was just computed from -- are not something a
+# live order could ever achieve (the close isn't known until the day is
+# over). next_day_open is the realistic execution model: a signal
+# detected after today's close is queued and filled at TOMORROW's real
+# market open, a price that genuinely doesn't exist yet when the
+# decision is made. Switched 2026-08-17 so paper-trading results stop
+# overstating what's achievable live -- see deployment/paper_trading_engine.py's
+# ExecutionRealismConfig for the mechanism (already built for Amihud's
+# research, reused here unmodified). Cost/slippage modeling (ADV
+# participation caps, ILLIQ-based cost) deliberately left off for now --
+# a separate, later decision, not bundled into this timing fix.
+_DEFAULT_EXECUTION_CONFIG = ExecutionRealismConfig(fill_timing="next_day_open")
 
 def _renamed(extra: dict, column_name: str) -> dict:
     """compute_*_percentile_ranks() returns {symbol: Series} where each
@@ -214,6 +232,7 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
             print(f"[{strategy_key}] Scanning {len(symbols)} symbol(s) for earnings events...")
             result = run_pead_daily(
                 symbols, fetch_ohlcv_fn=lambda syms: fetch_all(syms, period="3y"), force=force,
+                execution_config=_DEFAULT_EXECUTION_CONFIG,
             )
         else:
             print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
@@ -226,7 +245,7 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
             result = run_daily(
                 strategy_key, strategy, fetch_data_fn=lambda: data,
                 compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
-                force=force,
+                force=force, execution_config=_DEFAULT_EXECUTION_CONFIG,
             )
         print(f"[{strategy_key}] {result}")
 
