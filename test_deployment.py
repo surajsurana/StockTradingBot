@@ -234,6 +234,41 @@ class TestPaperTradingEngine(unittest.TestCase):
         portfolio = pte.load_portfolio(self.strategy_key)
         self.assertLess(portfolio["cash"], portfolio["starting_capital"])
 
+    def test_mark_to_market_equity_unchanged_by_a_same_day_entry(self):
+        # Regression test for a real bug found 2026-08-18: entering a
+        # position used to ADD its cost to mark_to_market_equity on top
+        # of a baseline that already equalled the pre-trade cash --
+        # double-counting the entry (equity looked like it jumped by the
+        # trade's own size). Moving cash into a position of equal value
+        # changes nothing on entry day (no price move has happened yet).
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        self.assertEqual(result["mark_to_market_equity"], 1_000_000.0)
+
+    def test_mark_to_market_equity_reflects_same_day_exit_proceeds(self):
+        # Regression test for the other half of the same bug: an exit's
+        # proceeds were never added anywhere (position removed from
+        # `positions`, but cash's increase wasn't reflected in equity
+        # either) -- equity silently understated by the exited position's
+        # value on any day a position closes (default same_day_close
+        # fill timing, same setup as test_stop_loss_hit_closes_position).
+        strategy = _AlwaysQualifiesStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))
+        stop_hit_data = {"SYM": _one_day_df("2024-01-02", 95, 96, 85, 92)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: stop_hit_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        self.assertEqual(len(result["new_exits"]), 1)
+        self.assertEqual(result["open_positions"], 0)
+        # No open positions left -- equity must equal cash exactly (the
+        # bug would have left equity stuck at a stale, lower snapshot
+        # that never picked up the exit proceeds).
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertEqual(result["mark_to_market_equity"], round(portfolio["cash"], 2))
+
     def test_compute_live_metrics_reflects_a_closed_trade(self):
         strategy = _AlwaysQualifiesStrategy()
         entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
@@ -244,6 +279,64 @@ class TestPaperTradingEngine(unittest.TestCase):
                       as_of_date=datetime.date(2024, 1, 2))
         metrics = pte.compute_live_metrics(self.strategy_key)
         self.assertEqual(metrics["total_trades"], 1)
+
+    # -- daily_pnl / open_positions_detail (added 2026-08-18, per direct
+    # user feedback: "Daily P&L" showed 0 whenever nothing closed that
+    # day, even though open positions' value had genuinely moved; open
+    # positions showed only entry price/stop-loss, never current value or
+    # unrealized P&L) --
+
+    def test_daily_pnl_is_none_on_the_first_ever_recorded_day(self):
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        self.assertIsNone(result["daily_pnl"])
+
+    def test_daily_pnl_reflects_unrealized_movement_with_no_exit(self):
+        strategy = _AlwaysQualifiesStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))
+        # Position held open, price moved up, no exit signal fires --
+        # under the OLD computation (sum of today's booked exits only)
+        # this showed 0.0; it must now reflect the real equity change.
+        moved_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 105)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: moved_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        self.assertEqual(len(result["new_exits"]), 0)
+        self.assertIsNotNone(result["daily_pnl"])
+        self.assertGreater(result["daily_pnl"], 0)
+
+    def test_open_positions_detail_has_current_value_and_unrealized_pnl(self):
+        strategy = _AlwaysQualifiesStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        entry_result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                                     as_of_date=datetime.date(2024, 1, 1))
+        quantity = entry_result["new_entries"][0]["quantity"]
+
+        moved_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 105)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: moved_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        detail = result["open_positions_detail"]
+        self.assertEqual(len(detail), 1)
+        d = detail[0]
+        self.assertEqual(d["symbol"], "SYM")
+        self.assertEqual(d["current_price"], 105.0)
+        self.assertEqual(d["current_value"], round(105.0 * quantity, 2))
+        self.assertEqual(d["unrealized_pnl"], round((105.0 - 100.0) * quantity, 2))
+        self.assertAlmostEqual(d["unrealized_pnl_pct"], 5.0, places=1)
+
+    def test_next_day_open_signal_appears_in_new_pending_entries(self):
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+        self.assertEqual(result["new_entries"], [])   # not filled yet
+        self.assertEqual(len(result["new_pending_entries"]), 1)
+        self.assertEqual(result["new_pending_entries"][0]["symbol"], "SYM")
+        self.assertEqual(result["new_pending_entries"][0]["signal_date"], "2024-01-01")
 
 
 class TestDriftReport(unittest.TestCase):

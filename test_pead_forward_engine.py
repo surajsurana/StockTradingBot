@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from data.fetch_earnings_calendar import EarningsEvent, fetch_recent_earnings_events_chunked
+from deployment.paper_trading_engine import ExecutionRealismConfig
 from deployment.pead_signal import compute_sue, evaluate_pead_signal, PEAD_SUE_THRESHOLD
 
 
@@ -211,6 +212,92 @@ class TestExitSideReusesExistingMachinery(unittest.TestCase):
                     self.assertEqual(result["new_exits"][0]["reason"], "signal_exit")
                     break
         self.assertTrue(exit_seen, "Holding-period exit never fired")
+
+
+class TestNextDayOpenEntryTiming(unittest.TestCase):
+    """Regression test for the 2026-08-17 fix: PEAD's entry injection
+    previously always filled at the SAME day's close regardless of
+    execution_config, unlike every other paper-trading strategy's shared
+    run_daily() pending_entries mechanism -- meaning the next_day_open
+    switch silently didn't apply to PEAD's entries (only its exits, which
+    already flow through the shared run_daily() call)."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.patcher = patch("deployment.paper_trading_engine.PAPER_TRADING_STATE_DIR", self.tmp_dir)
+        self.patcher.start()
+        self.patcher2 = patch("deployment.pead_forward_engine.PAPER_TRADING_STATE_DIR", self.tmp_dir)
+        self.patcher2.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        self.patcher2.stop()
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_signal_is_queued_not_filled_same_day(self):
+        from deployment.pead_forward_engine import run_pead_daily, load_events
+
+        data, dates = _make_price_data(["TEST.NS"])
+        announce_date = dates[9].date()
+        run_date = dates[10].date()
+        fake_event = EarningsEvent(symbol="TEST.NS", announcement_date=announce_date, reported_eps=10.0,
+                                    eps_estimate=5.0, surprise_pct=100.0,
+                                    trailing_actual_eps=_strong_positive_eps_history())
+        cfg = ExecutionRealismConfig(fill_timing="next_day_open")
+
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
+            result = run_pead_daily(["TEST.NS"], as_of_date=run_date, fetch_ohlcv_fn=lambda syms: data,
+                                     execution_config=cfg)
+
+        self.assertEqual(result["new_entries"], [])   # not filled yet
+        self.assertEqual(len(result["new_pending_entries"]), 1)
+        self.assertEqual(result["new_pending_entries"][0]["symbol"], "TEST.NS")
+        events = load_events()
+        self.assertTrue(events[0]["queued_for_next_open"])
+        self.assertFalse(events[0]["trade_taken"])
+
+    def test_queued_signal_fills_at_the_following_days_real_open(self):
+        from deployment.pead_forward_engine import run_pead_daily
+
+        data, dates = _make_price_data(["TEST.NS"])
+        announce_date = dates[9].date()
+        detect_date = dates[10].date()
+        fill_date = dates[11].date()
+        fake_event = EarningsEvent(symbol="TEST.NS", announcement_date=announce_date, reported_eps=10.0,
+                                    eps_estimate=5.0, surprise_pct=100.0,
+                                    trailing_actual_eps=_strong_positive_eps_history())
+        cfg = ExecutionRealismConfig(fill_timing="next_day_open")
+
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
+            detect_result = run_pead_daily(["TEST.NS"], as_of_date=detect_date, fetch_ohlcv_fn=lambda syms: data,
+                                            execution_config=cfg)
+        self.assertEqual(detect_result["new_entries"], [])
+
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[]):
+            fill_result = run_pead_daily(["TEST.NS"], as_of_date=fill_date, fetch_ohlcv_fn=lambda syms: data,
+                                          execution_config=cfg)
+        self.assertEqual(len(fill_result["new_entries"]), 1)
+        self.assertEqual(fill_result["new_entries"][0]["symbol"], "TEST.NS")
+        self.assertEqual(fill_result["new_entries"][0]["fill_timing"], "next_day_open")
+
+    def test_default_behavior_unchanged_still_fills_same_day(self):
+        # Backward compatibility -- no execution_config passed at all
+        # (the pre-2026-08-17 calling convention) must behave exactly as
+        # before: immediate same-day-close fill.
+        from deployment.pead_forward_engine import run_pead_daily
+
+        data, dates = _make_price_data(["TEST.NS"])
+        announce_date = dates[9].date()
+        run_date = dates[10].date()
+        fake_event = EarningsEvent(symbol="TEST.NS", announcement_date=announce_date, reported_eps=10.0,
+                                    eps_estimate=5.0, surprise_pct=100.0,
+                                    trailing_actual_eps=_strong_positive_eps_history())
+
+        with patch("deployment.pead_forward_engine.fetch_recent_earnings_events_chunked", return_value=[fake_event]):
+            result = run_pead_daily(["TEST.NS"], as_of_date=run_date, fetch_ohlcv_fn=lambda syms: data)
+
+        self.assertEqual(len(result["new_entries"]), 1)
+        self.assertEqual(result.get("new_pending_entries"), [])
 
 
 if __name__ == "__main__":

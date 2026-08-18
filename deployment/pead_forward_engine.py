@@ -158,10 +158,14 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     events_detected = len(raw_events)
     events_eligible = 0
     signals_generated = 0
-    injected_entries = []
+    injected_entries = []   # actually filled TODAY (only when fill_timing != "next_day_open")
+    queued_entries = []     # detected + eligible + signaled today, deferred to a future run's next-open fill
 
     needed_symbols = sorted(set(portfolio["positions"].keys()) | {e.symbol for e in raw_events})
     data = fetch_ohlcv_fn(needed_symbols) if fetch_ohlcv_fn else {}
+
+    execution_config = execution_config or ExecutionRealismConfig()
+    defer_to_next_open = execution_config.fill_timing == "next_day_open"
 
     for event in raw_events:
         key = (event.symbol, event.announcement_date.isoformat())
@@ -188,20 +192,50 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
         sue_result = compute_sue(event.trailing_actual_eps)
         signal_generated, signal_reason = evaluate_pead_signal(sue_result)
 
-        already_held = event.symbol in portfolio["positions"]
+        already_held = (event.symbol in portfolio["positions"]
+                        or event.symbol in portfolio.get("pending_entries", {}))
         eligible = sue_result.sufficient_history and not already_held
         events_eligible += 1 if eligible else 0
         if signal_generated:
             signals_generated += 1
 
         trade_taken = False
+        queued_for_next_open = False
         rejection_reason = None
         if already_held:
-            rejection_reason = "Already holding a PEAD position in this symbol."
+            rejection_reason = "Already holding, or already have a pending entry queued for, this symbol."
         elif not sue_result.sufficient_history:
             rejection_reason = sue_result.reason
         elif not signal_generated:
             rejection_reason = signal_reason
+        elif defer_to_next_open:
+            # REALISTIC EXECUTION TIMING (added 2026-08-17): a signal
+            # computed from today's close cannot be filled at that same
+            # close by a real order -- queue it, exactly like every other
+            # paper-trading strategy's fill_timing="next_day_open" path,
+            # for a real fill at a FUTURE trading day's actual market
+            # Open. stop_loss is anchored to TODAY's close only as the
+            # planned risk distance (not a promise of tomorrow's price) --
+            # same convention deployment/paper_trading_engine.py's own
+            # pending_entries mechanism already uses for the other four
+            # strategies. NOT written into portfolio["pending_entries"]
+            # here -- merged in AFTER run_daily() below runs its own STEP-0
+            # resolution pass for target_date, so this brand-new queue
+            # entry cannot be mistakenly resolved against TODAY's own Open
+            # by that same call (it must wait for a later run).
+            df = data.get(event.symbol)
+            if df is None or df.empty:
+                rejection_reason = "No price data available to size the planned stop-loss."
+            else:
+                rows = df[df.index.date == target_date]
+                if rows.empty:
+                    rejection_reason = "No trading bar for this symbol today (holiday/delisting)."
+                else:
+                    reference_price = float(rows.iloc[0]["Close"])
+                    stop_loss = reference_price * (1 - PEAD_STOP_LOSS_PCT)
+                    queued_entries.append({"symbol": event.symbol, "stop_loss": stop_loss,
+                                            "signal_date": target_date.isoformat(), "sue": sue_result.sue})
+                    queued_for_next_open = True
         else:
             # Real, eligible signal -- price the entry at TODAY's close
             # (target_date), the same convention every other strategy in
@@ -239,7 +273,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
             "reported_eps": event.reported_eps, "eps_estimate": event.eps_estimate,
             "surprise_pct": event.surprise_pct, "sue": sue_result.sue,
             "eligible": eligible, "signal_generated": signal_generated,
-            "trade_taken": trade_taken, "rejection_reason": rejection_reason,
+            "trade_taken": trade_taken, "queued_for_next_open": queued_for_next_open,
+            "rejection_reason": rejection_reason,
         })
 
     _save_processed_events(processed_events)
@@ -260,12 +295,35 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     if daily_result["status"] != "processed":
         return daily_result
 
+    # Merge queued (deferred) entries in AFTER run_daily() has already run
+    # its own STEP-0 pending-entries/exits resolution pass for this same
+    # target_date -- see the queuing comment above for why this ordering
+    # is required (a signal detected today must not be resolvable against
+    # today's own Open by that same call).
+    if queued_entries:
+        portfolio_after = _load_portfolio(STRATEGY_KEY)
+        for q in queued_entries:
+            portfolio_after["pending_entries"][q["symbol"]] = {
+                "stop_loss": q["stop_loss"], "signal_date": q["signal_date"],
+            }
+        _save_portfolio(STRATEGY_KEY, portfolio_after)
+
     daily_result["events_detected"] = events_detected
     daily_result["events_eligible"] = events_eligible
     daily_result["signals_generated"] = signals_generated
-    # run_daily() only ever handles EXITS for PEAD (entry_signal_at is
-    # always None, see swing_research/strategies/pead.py) -- its own
-    # new_entries is always []. Report OUR entries (injected above,
-    # before run_daily() was called) here instead.
-    daily_result["new_entries"] = injected_entries
+    # run_daily()'s own entry_signal_at() is always None for PEAD (see
+    # swing_research/strategies/pead.py), so its new_entries is always []
+    # UNLESS its STEP 0 just resolved a PEAD entry we queued on a PRIOR
+    # day (fill_timing="next_day_open") -- that fill legitimately belongs
+    # to run_daily()'s own list, so it must be MERGED with, never
+    # overwritten by, injected_entries (this function's own same-day
+    # immediate-fill path, only ever non-empty when NOT deferring).
+    daily_result["new_entries"] = injected_entries + daily_result["new_entries"]
+    # Likewise, run_daily()'s own new_pending_entries is always [] for
+    # PEAD (entry_signal_at never signals) -- report OUR queued entries
+    # (this function's own earnings-driven detection) here instead.
+    daily_result["new_pending_entries"] = [
+        {"symbol": q["symbol"], "stop_loss": q["stop_loss"], "signal_date": q["signal_date"]}
+        for q in queued_entries
+    ]
     return daily_result

@@ -206,6 +206,31 @@ def _get_open_price(df, target_date: date_type) -> Optional[float]:
     return float(rows.iloc[0]["Open"])
 
 
+def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -> Optional[float]:
+    """The mark-to-market `equity` value (NOT the cash-basis figure
+    _load_daily_equity() returns for compute_metrics()) most recently
+    recorded strictly before `before_date` -- i.e. "yesterday's" equity,
+    robust to weekends/holidays/gaps since it just takes the latest prior
+    entry rather than literally calendar-yesterday. Returns None if no
+    prior day has been recorded (first-ever run), so callers can
+    distinguish "no prior day to compare against" from a genuine zero
+    change."""
+    path = _daily_equity_path(strategy_key)
+    if not os.path.exists(path):
+        return None
+    latest_date, latest_equity = None, None
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            d = json.loads(line)
+            d_date = date_type.fromisoformat(d["date"])
+            if d_date < before_date and (latest_date is None or d_date > latest_date):
+                latest_date, latest_equity = d_date, d["equity"]
+    return latest_equity
+
+
 def run_daily(strategy_key: str, strategy: Strategy,
               fetch_data_fn: Callable[[], dict],
               compute_extra_columns_fn: Optional[Callable[[dict], dict]] = None,
@@ -253,7 +278,14 @@ def run_daily(strategy_key: str, strategy: Strategy,
 
     Returns a summary dict: {"status": "processed"|"skipped_already_processed",
     "as_of_date":..., "new_entries": [...], "new_exits": [...],
-    "open_positions": N, "cash": ..., "equity": ...}.
+    "new_pending_entries": [...], "new_pending_exits": [...] (signals
+    detected TODAY but not yet filled -- only ever populated under
+    fill_timing="next_day_open"), "open_positions": N,
+    "open_positions_detail": [...] (per-position current price/value/
+    unrealized P&L, marked at today's close), "cash": ...,
+    "mark_to_market_equity": ..., "daily_pnl": ... (today's equity minus
+    the most recently recorded prior day's, or None on the first-ever
+    recorded day)}.
     """
     execution_config = execution_config or ExecutionRealismConfig()
     portfolio = _load_portfolio(strategy_key)
@@ -272,7 +304,16 @@ def run_daily(strategy_key: str, strategy: Strategy,
     pending_entries = portfolio.get("pending_entries", {})
     pending_exits = portfolio.get("pending_exits", {})
     new_entries, new_exits = [], []
-    mark_to_market_equity = cash
+    # Signals detected TODAY but not yet filled (only ever populated when
+    # fill_timing=="next_day_open") -- distinct from new_entries/new_exits,
+    # which are ACTUAL fills. Lets callers show "detected today, queued for
+    # tomorrow's open" instead of the misleading "no signal today" a purely
+    # fill-based view would otherwise show on the detection day.
+    new_pending_entries, new_pending_exits = [], []
+    # Per-open-position current mark-to-market snapshot (current price,
+    # value, unrealized P&L) -- for reporting/Telegram, which should show
+    # what a position is worth NOW, not just its entry price/stop-loss.
+    open_positions_detail = []
 
     def _cost_adjusted(symbol: str, side: str, raw_price: float, quantity: int) -> tuple:
         """Applies execution_config's cap/cost (both no-ops at defaults) --
@@ -316,7 +357,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
                        quantity=quantity, pnl=pnl, exit_reason=pending["exit_reason"], direction="BUY")
         _append_trade(strategy_key, trade)
         new_exits.append({"symbol": symbol, "exit_price": fill_price, "pnl": round(pnl, 2),
-                           "reason": pending["exit_reason"], "fill_timing": "next_day_open"})
+                           "reason": pending["exit_reason"], "fill_timing": "next_day_open",
+                           "signal_date": pending["signal_date"]})
 
     for symbol in list(pending_entries.keys()):
         df = data.get(symbol)
@@ -339,8 +381,17 @@ def run_daily(strategy_key: str, strategy: Strategy,
         positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
                               "quantity": quantity, "stop_loss": stop_loss}
         new_entries.append({"symbol": symbol, "entry_price": fill_price, "quantity": quantity,
-                             "stop_loss": stop_loss, "fill_timing": "next_day_open"})
-        mark_to_market_equity += cost
+                             "stop_loss": stop_loss, "fill_timing": "next_day_open",
+                             "signal_date": pending["signal_date"]})
+        # NOTE: no equity bookkeeping needed here -- this position now sits
+        # in `positions`, and the MAIN LOOP below will visit this same
+        # symbol (it's in `data`), find it `in positions`, and -- if it
+        # doesn't ALSO exit same-day -- add it to open_positions_detail
+        # itself. mark_to_market_equity is computed ONCE at the very end
+        # from final cash + open_positions_detail, not accumulated
+        # in-line (a prior incremental version of this double-counted
+        # entries and silently dropped same-day exit proceeds -- fixed
+        # 2026-08-18).
 
     # --- MAIN LOOP: evaluate today's own signals ---
     for symbol, df in data.items():
@@ -382,7 +433,16 @@ def run_daily(strategy_key: str, strategy: Strategy,
                     # explicit direction (no lookahead: today's decision,
                     # tomorrow's real, then-unknown price).
                     pending_exits[symbol] = {"exit_reason": exit_reason, "signal_date": target_date.isoformat()}
-                    mark_to_market_equity += float(row.Close) * quantity   # still marked at today's close until filled
+                    new_pending_exits.append({"symbol": symbol, "exit_reason": exit_reason,
+                                               "signal_date": target_date.isoformat()})
+                    current_price = float(row.Close)   # still marked at today's close until the exit actually fills
+                    open_positions_detail.append({
+                        "symbol": symbol, "quantity": quantity, "entry_price": pos_state["entry_price"],
+                        "current_price": current_price, "current_value": round(current_price * quantity, 2),
+                        "unrealized_pnl": round((current_price - pos_state["entry_price"]) * quantity, 2),
+                        "unrealized_pnl_pct": round((current_price / pos_state["entry_price"] - 1) * 100, 2)
+                        if pos_state["entry_price"] else None,
+                    })
                 else:
                     fill_price, _ = _cost_adjusted(symbol, "SELL", exit_price, quantity)
                     pnl = (fill_price - pos_state["entry_price"]) * quantity
@@ -395,7 +455,15 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                        "reason": exit_reason})
                     del positions[symbol]
             else:
-                mark_to_market_equity += float(row.Close) * pos_state["quantity"]
+                current_price = float(row.Close)
+                quantity = pos_state["quantity"]
+                open_positions_detail.append({
+                    "symbol": symbol, "quantity": quantity, "entry_price": pos_state["entry_price"],
+                    "current_price": current_price, "current_value": round(current_price * quantity, 2),
+                    "unrealized_pnl": round((current_price - pos_state["entry_price"]) * quantity, 2),
+                    "unrealized_pnl_pct": round((current_price / pos_state["entry_price"] - 1) * 100, 2)
+                    if pos_state["entry_price"] else None,
+                })
         elif symbol not in pending_entries and symbol not in pending_exits:
             signal = strategy.entry_signal_at(row)
             if signal is not None:
@@ -404,6 +472,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
                     if execution_config.fill_timing == "next_day_open":
                         pending_entries[symbol] = {"stop_loss": signal.stop_loss,
                                                     "signal_date": target_date.isoformat()}
+                        new_pending_entries.append({"symbol": symbol, "stop_loss": signal.stop_loss,
+                                                     "signal_date": target_date.isoformat()})
                     else:
                         quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
@@ -416,21 +486,57 @@ def run_daily(strategy_key: str, strategy: Strategy,
                             }
                             new_entries.append({"symbol": symbol, "entry_price": fill_price,
                                                  "quantity": quantity, "stop_loss": signal.stop_loss})
-                            mark_to_market_equity += cost
+                            # Filled at today's close, so fill_price IS
+                            # today's mark -- this symbol won't be
+                            # revisited again this call (each symbol is
+                            # only ever iterated once), so it must be
+                            # added to open_positions_detail explicitly
+                            # here rather than relying on a later
+                            # "held, no exit" pass.
+                            open_positions_detail.append({
+                                "symbol": symbol, "quantity": quantity, "entry_price": fill_price,
+                                "current_price": fill_price, "current_value": round(cost, 2),
+                                "unrealized_pnl": 0.0, "unrealized_pnl_pct": 0.0,
+                            })
 
     portfolio["cash"] = cash
     portfolio["positions"] = positions
     portfolio["pending_entries"] = pending_entries
     portfolio["pending_exits"] = pending_exits
     portfolio["last_processed_date"] = target_date.isoformat()
+
+    # Computed ONCE, here, from final cash + every currently-open
+    # position's current value (open_positions_detail already reflects
+    # every symbol still held at day-end, built incrementally above as
+    # each was visited). Deliberately NOT accumulated incrementally
+    # during the loop -- a prior incremental version double-counted the
+    # cost of same-day/resolved entries (added on top of cash that
+    # already included that money) and silently dropped same-day exit
+    # proceeds entirely (never added anywhere), a real bug found
+    # 2026-08-18 while adding daily_pnl below, which exposed it.
+    mark_to_market_equity = round(cash + sum(d["current_value"] for d in open_positions_detail), 2)
+
+    # Daily P&L = today's mark-to-market equity minus the most recently
+    # recorded prior day's -- captures BOTH realized P&L (from any exits
+    # that filled today) AND unrealized mark-to-market movement of
+    # positions held open, which "sum of today's booked exits alone"
+    # (the previous computation, done by the caller) silently missed,
+    # showing 0 on every day with no exit even though open positions may
+    # have moved. None on the very first recorded day (nothing prior to
+    # compare against).
+    previous_equity = _previous_mark_to_market_equity(strategy_key, target_date)
+    daily_pnl = round(mark_to_market_equity - previous_equity, 2) if previous_equity is not None else None
+
     _save_portfolio(strategy_key, portfolio)
     _append_daily_equity(strategy_key, target_date, cash, mark_to_market_equity)
 
     return {
         "status": "processed", "as_of_date": target_date.isoformat(),
         "new_entries": new_entries, "new_exits": new_exits,
-        "open_positions": len(positions), "cash": round(cash, 2),
-        "mark_to_market_equity": round(mark_to_market_equity, 2),
+        "new_pending_entries": new_pending_entries, "new_pending_exits": new_pending_exits,
+        "open_positions": len(positions), "open_positions_detail": open_positions_detail,
+        "cash": round(cash, 2), "mark_to_market_equity": round(mark_to_market_equity, 2),
+        "daily_pnl": daily_pnl,
     }
 
 

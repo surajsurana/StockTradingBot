@@ -87,10 +87,50 @@ class TestTelegramTemplates(unittest.TestCase):
         self.assertNotIn("203.55999755859375", text)
         self.assertNotIn("187.27519775390627", text)
 
+    def test_open_positions_show_current_value_and_pnl_not_entry_price(self):
+        # Per direct user feedback 2026-08-18: open positions should show
+        # what a position is worth NOW, not its entry price/stop-loss
+        # (which the user has to see every single day even though it
+        # never changes).
+        text = format_strategy_notification(
+            mode="PAPER", strategy_display_name="Test", new_entries=[], new_exits=[],
+            open_positions=[{"symbol": "SYM", "quantity": 10, "entry_price": 100.0,
+                             "current_price": 110.0, "current_value": 1100.0,
+                             "unrealized_pnl": 100.0, "unrealized_pnl_pct": 10.0}],
+            daily_pnl=0.0, total_equity=100000, drawdown_pct=None, win_rate=None, expectancy=None,
+        )
+        self.assertIn("SYM", text)
+        self.assertIn("1,100.00", text)   # current value
+        self.assertIn("100.00", text)     # unrealized P&L
+        self.assertIn("10.00%", text)     # unrealized P&L %
+
+    def test_pending_entries_and_exits_shown_as_queued_not_invisible(self):
+        # Per direct user feedback 2026-08-18: a signal detected today but
+        # deferred to next_day_open previously looked IDENTICAL to "no
+        # signal at all" -- this must be visible and distinct.
+        text = format_strategy_notification(
+            mode="PAPER", strategy_display_name="Test", new_entries=[], new_exits=[], open_positions=[],
+            pending_entries=[{"symbol": "NEW.NS", "stop_loss": 90.0, "signal_date": "2026-08-17"}],
+            pending_exits=[{"symbol": "OLD.NS", "exit_reason": "stop_loss", "signal_date": "2026-08-17"}],
+            daily_pnl=0.0, total_equity=100000, drawdown_pct=None, win_rate=None, expectancy=None,
+        )
+        self.assertIn("Queued for Next Open", text)
+        self.assertIn("NEW.NS", text)
+        self.assertIn("OLD.NS", text)
+        self.assertNotIn("No qualifying setups found today.", text)
+
+    def test_daily_pnl_none_shows_n_a_not_a_crash(self):
+        text = format_strategy_notification(
+            mode="PAPER", strategy_display_name="Test", new_entries=[], new_exits=[], open_positions=[],
+            daily_pnl=None, total_equity=100000, drawdown_pct=None, win_rate=None, expectancy=None,
+        )
+        self.assertIn("Daily P&L: n/a", text)
+
     def test_open_positions_listed_and_empty_case(self):
         text_with = format_strategy_notification(
             mode="PAPER", strategy_display_name="Test", new_entries=[], new_exits=[],
-            open_positions=[{"symbol": "SYM", "entry_price": 100.0, "quantity": 10, "stop_loss": 90.0}],
+            open_positions=[{"symbol": "SYM", "quantity": 10, "current_value": 1000.0,
+                             "unrealized_pnl": 0.0, "unrealized_pnl_pct": 0.0}],
             daily_pnl=0.0, total_equity=100000, drawdown_pct=None, win_rate=None, expectancy=None,
         )
         self.assertIn("SYM", text_with)

@@ -156,14 +156,14 @@ def _report_links(strategy_key: str, record, result: dict) -> dict:
 
 def _send_notification(strategy_key: str, record, result: dict) -> None:
     metrics = compute_live_metrics(strategy_key)
-    portfolio = load_portfolio(strategy_key)
-    daily_pnl = round(sum(x["pnl"] for x in result["new_exits"]), 2)
-    open_positions = [{"symbol": sym, **pos} for sym, pos in portfolio["positions"].items()]
 
     text = format_strategy_notification(
         mode="PAPER", strategy_display_name=record.display_name,
-        new_entries=result["new_entries"], new_exits=result["new_exits"], open_positions=open_positions,
-        daily_pnl=daily_pnl, total_equity=result["mark_to_market_equity"],
+        new_entries=result["new_entries"], new_exits=result["new_exits"],
+        open_positions=result.get("open_positions_detail", []),
+        pending_entries=result.get("new_pending_entries", []),
+        pending_exits=result.get("new_pending_exits", []),
+        daily_pnl=result.get("daily_pnl"), total_equity=result["mark_to_market_equity"],
         drawdown_pct=metrics.get("max_drawdown_pct"), win_rate=metrics.get("win_rate"),
         expectancy=metrics.get("expectancy"), strategy_id=record.strategy_id,
         report_links=_report_links(strategy_key, record, result),
@@ -293,14 +293,23 @@ def _send_daily_summary(run_results: list) -> None:
                          "new_exits": r["result"]["new_exits"]} for r in run_results]
 
     closed_trades_today = sum(len(r["result"]["new_exits"]) for r in run_results)
-    daily_pnl_total = round(sum(x["pnl"] for r in run_results for x in r["result"]["new_exits"]), 2)
     portfolio_equity_total = round(sum(r["result"]["mark_to_market_equity"] for r in run_results), 2)
 
+    # Sum of each strategy's OWN daily_pnl (today's mark-to-market equity
+    # change, realized AND unrealized -- see run_daily()'s daily_pnl) --
+    # None per-strategy on its first-ever recorded day, so those are
+    # excluded from the sum rather than poisoning the whole total; if NO
+    # strategy has a prior day yet, the total itself is None ("n/a").
+    daily_pnls = [r["result"]["daily_pnl"] for r in run_results if r["result"].get("daily_pnl") is not None]
+    daily_pnl_total = round(sum(daily_pnls), 2) if daily_pnls else None
+
     open_positions_total = 0
+    total_unrealized_pnl = 0.0
     total_wins, total_trades = 0, 0
     for r in run_results:
         portfolio = load_portfolio(r["strategy_key"])
         open_positions_total += len(portfolio["positions"])
+        total_unrealized_pnl += sum(p["unrealized_pnl"] for p in r["result"].get("open_positions_detail", []))
         metrics = compute_live_metrics(r["strategy_key"])
         n = metrics.get("total_trades", 0)
         if n:
@@ -312,6 +321,7 @@ def _send_daily_summary(run_results: list) -> None:
         strategy_results=strategy_results, closed_trades_today=closed_trades_today,
         open_positions_total=open_positions_total, daily_pnl_total=daily_pnl_total,
         portfolio_equity_total=portfolio_equity_total, blended_win_rate=blended_win_rate,
+        total_unrealized_pnl=round(total_unrealized_pnl, 2),
     )
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
