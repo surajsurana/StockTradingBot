@@ -339,6 +339,118 @@ class TestPaperTradingEngine(unittest.TestCase):
         self.assertEqual(result["new_pending_entries"][0]["signal_date"], "2024-01-01")
 
 
+class TestResolvePendingFillsAtOpen(unittest.TestCase):
+    """resolve_pending_fills_at_open() -- the near-market-open runner
+    added 2026-08-18 per direct user feedback ("I should be getting a
+    Telegram message at the live time when something is bought or
+    sold"). Verifies it resolves queued fills using the SAME logic as
+    run_daily()'s own STEP 0, without disturbing that same day's later
+    EOD run_daily() call."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.patcher_state = patch.object(pte, "PAPER_TRADING_STATE_DIR", self.tmpdir)
+        self.patcher_state.start()
+        self.strategy_key = "test_strategy"
+
+    def tearDown(self):
+        self.patcher_state.stop()
+        shutil.rmtree(self.tmpdir)
+
+    def test_no_pending_items_skips_the_data_fetch_entirely(self):
+        def _should_not_be_called():
+            raise AssertionError("fetch_open_data_fn must not be called when nothing is pending")
+
+        strategy = _AlwaysQualifiesStrategy()
+        result = pte.resolve_pending_fills_at_open(
+            self.strategy_key, strategy, fetch_open_data_fn=_should_not_be_called,
+            as_of_date=datetime.date(2024, 1, 2),
+        )
+        self.assertEqual(result["status"], "processed")
+        self.assertEqual(result["new_entries"], [])
+        self.assertEqual(result["new_exits"], [])
+
+    def test_resolves_a_queued_entry_at_the_real_open(self):
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        day1 = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertIn("SYM", portfolio["pending_entries"])
+
+        open_only_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 999)}   # Close irrelevant here
+        result = pte.resolve_pending_fills_at_open(
+            self.strategy_key, strategy, fetch_open_data_fn=lambda: open_only_data,
+            as_of_date=datetime.date(2024, 1, 2), execution_config=cfg,
+        )
+        self.assertEqual(len(result["new_entries"]), 1)
+        self.assertEqual(result["new_entries"][0]["entry_price"], 105.0)   # today's real Open, not Close
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertIn("SYM", portfolio["positions"])
+        self.assertNotIn("SYM", portfolio["pending_entries"])
+
+    def test_does_not_touch_last_processed_date(self):
+        # Equity/daily_pnl are end-of-day concepts -- this morning-only
+        # call must never mark the day as "processed" (that stays
+        # run_daily()'s sole responsibility), or the later EOD call would
+        # be skipped by the idempotency guard.
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        day1 = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        open_only_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 999)}
+        pte.resolve_pending_fills_at_open(
+            self.strategy_key, strategy, fetch_open_data_fn=lambda: open_only_data,
+            as_of_date=datetime.date(2024, 1, 2), execution_config=cfg,
+        )
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertEqual(portfolio["last_processed_date"], "2024-01-01")   # unchanged
+
+    def test_later_eod_run_daily_call_same_day_still_works_normally(self):
+        # The morning call and the EOD call must compose cleanly: the EOD
+        # call's own STEP 0 finds nothing left (already resolved that
+        # morning) and proceeds to detect NEW signals as usual.
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        day1 = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        open_only_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 999)}
+        morning_result = pte.resolve_pending_fills_at_open(
+            self.strategy_key, strategy, fetch_open_data_fn=lambda: open_only_data,
+            as_of_date=datetime.date(2024, 1, 2), execution_config=cfg,
+        )
+        self.assertEqual(len(morning_result["new_entries"]), 1)
+
+        # EOD call, same day, full data -- must not re-fill SYM (already
+        # filled this morning) and must complete as "processed".
+        eod_data = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 108)}
+        eod_result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: eod_data,
+                                    as_of_date=datetime.date(2024, 1, 2), execution_config=cfg)
+        self.assertEqual(eod_result["status"], "processed")
+        self.assertEqual(eod_result["new_entries"], [])   # not re-filled
+        self.assertEqual(len(eod_result["open_positions_detail"]), 1)   # SYM correctly still held
+
+    def test_no_open_price_available_leaves_it_pending_not_an_error(self):
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        day1 = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        result = pte.resolve_pending_fills_at_open(
+            self.strategy_key, strategy, fetch_open_data_fn=lambda: {},   # no bar available yet
+            as_of_date=datetime.date(2024, 1, 2), execution_config=cfg,
+        )
+        self.assertEqual(result["new_entries"], [])
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertIn("SYM", portfolio["pending_entries"])   # still queued, not lost
+
+
 class TestDriftReport(unittest.TestCase):
     def test_flag_drift_relative_within_threshold_is_none(self):
         self.assertIsNone(_flag_drift("cagr", 20.0, 22.0))   # 10% relative diff

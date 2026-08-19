@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from reporting.telegram_templates import format_strategy_notification
+from reporting.telegram_templates import format_execution_notification, format_strategy_notification
 from deployment import deployment_manager
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
 from deployment.drift_report import compute_drift, generate_drift_report, load_drift_history
@@ -148,6 +148,38 @@ class TestTelegramTemplates(unittest.TestCase):
         sig = inspect.signature(format_strategy_notification)
         self.assertIn("strategy_display_name", sig.parameters)
         self.assertEqual(sig.parameters["strategy_display_name"].annotation, str)
+
+
+class TestExecutionNotification(unittest.TestCase):
+    """format_execution_notification() -- the lean, near-real-time
+    execution confirmation sent by --resolve-at-open (added 2026-08-18,
+    see run_paper_trading.py's _resolve_at_open_one())."""
+
+    def test_bought_and_sold_lines_shown_with_signal_date(self):
+        text = format_execution_notification(
+            mode="PAPER", strategy_display_name="Test Strategy", strategy_id="SW-003",
+            new_entries=[{"symbol": "SYM.NS", "entry_price": 105.25, "quantity": 100,
+                         "stop_loss": 95.0, "signal_date": "2026-08-17"}],
+            new_exits=[{"symbol": "OLD.NS", "exit_price": 200.5, "pnl": 50.0,
+                       "reason": "stop_loss", "signal_date": "2026-08-17"}],
+        )
+        self.assertIn("EXECUTED", text)
+        self.assertIn("SW-003", text)
+        self.assertIn("BOUGHT", text)
+        self.assertIn("SYM.NS", text)
+        self.assertIn("105.25", text)
+        self.assertIn("2026-08-17", text)
+        self.assertIn("SOLD", text)
+        self.assertIn("OLD.NS", text)
+        self.assertIn("200.50", text)
+
+    def test_empty_lists_produce_just_the_header(self):
+        text = format_execution_notification(
+            mode="PAPER", strategy_display_name="Test Strategy", new_entries=[], new_exits=[],
+        )
+        self.assertIn("EXECUTED", text)
+        self.assertNotIn("BOUGHT", text)
+        self.assertNotIn("SOLD", text)
 
 
 class TestScheduler(unittest.TestCase):

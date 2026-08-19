@@ -6,6 +6,7 @@ once per trading day, AFTER market close.
 
     python run_paper_trading.py --strategy=fifty_two_week_high_momentum
     python run_paper_trading.py --all-due
+    python run_paper_trading.py --resolve-at-open
 
 --all-due iterates every registered strategy currently due per
 deployment/scheduler.py's metadata-driven logic (deployment_status is an
@@ -16,10 +17,23 @@ market is open, per explicit requirement. After ALL strategies run in
 --all-due mode, ONE additional daily summary Telegram message is sent
 (in addition to, never replacing, each strategy's own message).
 
+--resolve-at-open (added 2026-08-18) is a SEPARATE, near-market-open
+pass -- it resolves entries/exits queued by a PRIOR day's --all-due run
+(fill_timing="next_day_open") against TODAY's real market Open, and
+sends an immediate Telegram execution confirmation for anything that
+actually fills, instead of waiting until the end-of-day run reports it
+hours later. It does NOT detect new signals (End-of-Day strategies need
+the full day's close for that) and does NOT touch last_processed_date,
+so the SAME day's later --all-due run is completely unaffected and still
+required -- these two modes are complementary, not alternatives. See
+deployment/paper_trading_engine.py's resolve_pending_fills_at_open() for
+the full mechanism.
+
 IDEMPOTENT: safe to run more than once for the same day (a repeat call is
 a no-op, see deployment/paper_trading_engine.py's run_daily()). Safe to
 run from Task Scheduler with no additional duplicate-run protection of
-its own.
+its own. --resolve-at-open is ALSO safe to run repeatedly or when nothing
+is pending (a fast no-op per strategy).
 
 TELEGRAM: sends ONE separate message per strategy (never combined),
 via the shared reporting/telegram_templates.py formatter with mode="PAPER"
@@ -32,9 +46,19 @@ TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID re-export (the only thing deployment/
 ever reads from config/settings.py).
 
 RECOMMENDED SCHEDULE (not built or enforced by this program -- set up
-manually): once per NSE trading day, after 15:30 IST market close, e.g.
-16:30 IST to allow for EOD data availability from the data provider.
-Example Windows Task Scheduler action:
+manually): TWO separate triggers per NSE trading day.
+  1. --resolve-at-open around 9:30 IST -- 15 minutes after the 9:15 IST
+     market open, as a buffer for the data provider (yfinance -- an
+     unofficial, sometimes-delayed source, same disclosed caveat as
+     data/fetch_earnings_calendar.py) to have that morning's Open
+     actually populated.
+  2. --all-due after 15:30 IST market close, e.g. 16:30 IST to allow for
+     EOD data availability.
+Example Windows Task Scheduler actions:
+    Program:   C:\\path\\to\\python.exe
+    Arguments: C:\\path\\to\\run_paper_trading.py --resolve-at-open
+    Trigger:   Daily, 09:30, weekdays only
+
     Program:   C:\\path\\to\\python.exe
     Arguments: C:\\path\\to\\run_paper_trading.py --all-due
     Trigger:   Daily, 16:30, weekdays only (the scheduler guard makes a
@@ -50,12 +74,14 @@ import argparse
 from data.fetch_historical import fetch_all
 from swing_research.universe import get_swing_universe
 from reporting.telegram_notifier import send_telegram_message
-from reporting.telegram_templates import format_daily_summary, format_strategy_notification
+from reporting.telegram_templates import format_daily_summary, format_execution_notification, format_strategy_notification
 
+from deployment.base import DeploymentStatus
 from deployment.deployment_manager import get_strategy, list_strategies
 from deployment.drift_report import generate_drift_report
 from deployment.paper_trading_engine import (
-    ExecutionRealismConfig, compute_live_metrics, generate_report, load_portfolio, run_daily,
+    ExecutionRealismConfig, compute_live_metrics, generate_report, load_portfolio,
+    resolve_pending_fills_at_open, run_daily,
 )
 from deployment.scheduler import is_due_now, strategies_due_now
 from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
@@ -152,6 +178,72 @@ def _report_links(strategy_key: str, record, result: dict) -> dict:
     links["Daily Report"] = f"deployment/reports/{strategy_key}/{result['as_of_date']}.md"
     links["Drift Report"] = f"deployment/reports/{strategy_key}/DRIFT_REPORT.md"
     return links
+
+
+def _strategy_instance_for(strategy_key: str):
+    """A Strategy instance for a given key -- purely for its
+    risk_pct_per_unit attribute (resolve_pending_fills_at_open() needs it
+    to size a resolved entry the same way run_daily() itself would).
+    PEAD isn't in _STRATEGY_FACTORIES' strategy_factory (event-driven,
+    see that dict's own comment) -- special-cased here, matching
+    deployment/pead_forward_engine.py's own PEADStrategy() instantiation."""
+    if strategy_key == "pead":
+        from swing_research.strategies.pead import PEADStrategy
+        return PEADStrategy()
+    return _STRATEGY_FACTORIES[strategy_key]["strategy_factory"]()
+
+
+def _send_execution_notification(strategy_key: str, record, result: dict) -> None:
+    text = format_execution_notification(
+        mode="PAPER", strategy_display_name=record.display_name,
+        new_entries=result["new_entries"], new_exits=result["new_exits"], strategy_id=record.strategy_id,
+    )
+    send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+
+def _resolve_at_open_one(strategy_key: str) -> None:
+    """NEAR-MARKET-OPEN pass (added 2026-08-18, per direct user feedback
+    -- "I should be getting a Telegram message at the live time when
+    something is bought or sold"). Resolves whatever entries/exits were
+    QUEUED by a prior day's EOD run (fill_timing="next_day_open") against
+    TODAY's real market Open, and sends an immediate Telegram message if
+    anything actually filled -- distinct from, and never a replacement
+    for, that same strategy's end-of-day message later, which still
+    reports these same fills again alongside the full daily report.
+
+    Deliberately does NOT use deployment.scheduler.is_due_now() -- that
+    function REFUSES to run an End-of-Day strategy while the market is
+    open, which is exactly when this is meant to run (shortly after
+    market open, e.g. 9:30 IST). Isolated in its own try/except (same
+    discipline as _run_one()) -- one strategy's failure here must never
+    stop the others, and must never affect that same strategy's later
+    EOD run (resolve_pending_fills_at_open() never touches
+    last_processed_date -- see that function's own docstring).
+
+    Fetches only a SHORT window (not the full 3y EOD pull) for only the
+    symbols actually pending -- this only ever needs today's Open, kept
+    deliberately lightweight since this runs while the market is open,
+    not after close."""
+    record = get_strategy(strategy_key)
+    if record is None:
+        return
+    try:
+        portfolio = load_portfolio(strategy_key)
+        pending_symbols = sorted(set(portfolio.get("pending_entries", {})) | set(portfolio.get("pending_exits", {})))
+        if not pending_symbols:
+            print(f"[{strategy_key}] Nothing pending -- skipping the open-price fetch.")
+            return
+        print(f"[{strategy_key}] Resolving {len(pending_symbols)} pending fill(s) at today's real Open...")
+        strategy = _strategy_instance_for(strategy_key)
+        result = resolve_pending_fills_at_open(
+            strategy_key, strategy, fetch_open_data_fn=lambda: fetch_all(pending_symbols, period="5d"),
+            execution_config=_DEFAULT_EXECUTION_CONFIG,
+        )
+        print(f"[{strategy_key}] {result}")
+        if result["new_entries"] or result["new_exits"]:
+            _send_execution_notification(strategy_key, record, result)
+    except Exception as e:
+        print(f"ERROR: '{strategy_key}' failed during the market-open resolution pass: {type(e).__name__}: {e}")
 
 
 def _send_notification(strategy_key: str, record, result: dict) -> None:
@@ -334,9 +426,22 @@ def main():
                         help="run every registered, currently-due strategy per deployment/scheduler.py, "
                              "then send one additional daily summary message")
     parser.add_argument("--force", action="store_true", help="bypass the scheduler guard and idempotency check")
+    parser.add_argument("--resolve-at-open", action="store_true",
+                        help="near-market-open pass (e.g. run via cron ~9:30 IST): resolves any entries/exits "
+                             "queued by a prior EOD run against today's real market Open, and sends an immediate "
+                             "Telegram message for anything that actually filled. Does NOT detect new signals "
+                             "and does NOT touch last_processed_date -- the later --all-due/EOD run is unaffected "
+                             "and still required. Safe to run even if nothing is pending (a fast no-op).")
     args = parser.parse_args()
 
-    if args.all_due:
+    if args.resolve_at_open:
+        active_keys = [r.strategy_key for r in list_strategies()
+                       if r.strategy_key in _STRATEGY_FACTORIES
+                       and r.deployment_status in (DeploymentStatus.PAPER_TRADING, DeploymentStatus.PILOT_LIVE,
+                                                     DeploymentStatus.PRODUCTION)]
+        for strategy_key in active_keys:
+            _resolve_at_open_one(strategy_key)
+    elif args.all_due:
         due_records = strategies_due_now(list_strategies())
         due_keys = [r.strategy_key for r in due_records if r.strategy_key in _STRATEGY_FACTORIES]
         if not due_keys:
@@ -360,7 +465,7 @@ def main():
     elif args.strategy:
         _run_one(args.strategy, force=args.force)
     else:
-        parser.error("Pass either --strategy=<key> or --all-due")
+        parser.error("Pass --strategy=<key>, --all-due, or --resolve-at-open")
 
 
 if __name__ == "__main__":

@@ -210,5 +210,120 @@ class TestAllDueLoopContinuesPastOneFailure(unittest.TestCase):
             rpt.main()   # must not raise despite the summary blowing up
 
 
+class TestResolveAtOpenOne(unittest.TestCase):
+    """_resolve_at_open_one() -- the near-market-open pass added
+    2026-08-18 (--resolve-at-open), per direct user feedback ("I should
+    be getting a Telegram message at the live time when something is
+    bought or sold"). Uses deployment.paper_trading_engine.
+    resolve_pending_fills_at_open() internally -- mocked here so these
+    tests stay fast/isolated; that function's own real behavior is
+    covered in test_deployment.py's TestResolvePendingFillsAtOpen."""
+
+    def setUp(self):
+        self.record = _fake_record("fake_strategy", "Fake Strategy")
+        rpt._STRATEGY_FACTORIES["fake_strategy"] = {
+            "display_name": "Fake Strategy",
+            "strategy_factory": MagicMock(),
+        }
+
+    def tearDown(self):
+        rpt._STRATEGY_FACTORIES.pop("fake_strategy", None)
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.resolve_pending_fills_at_open")
+    @patch("run_paper_trading.load_portfolio")
+    @patch("run_paper_trading.get_strategy")
+    def test_nothing_pending_skips_resolution_and_sends_no_message(self, mock_get_strategy, mock_load_portfolio,
+                                                                     mock_resolve, mock_send):
+        mock_get_strategy.return_value = self.record
+        mock_load_portfolio.return_value = {"pending_entries": {}, "pending_exits": {}}
+
+        rpt._resolve_at_open_one("fake_strategy")
+
+        mock_resolve.assert_not_called()
+        mock_send.assert_not_called()
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.resolve_pending_fills_at_open")
+    @patch("run_paper_trading.load_portfolio")
+    @patch("run_paper_trading.get_strategy")
+    def test_resolved_fill_sends_an_execution_notification(self, mock_get_strategy, mock_load_portfolio,
+                                                             mock_resolve, mock_send):
+        mock_get_strategy.return_value = self.record
+        mock_load_portfolio.return_value = {"pending_entries": {"SYM.NS": {"stop_loss": 90.0}},
+                                             "pending_exits": {}}
+        mock_resolve.return_value = {
+            "status": "processed", "as_of_date": "2026-08-18",
+            "new_entries": [{"symbol": "SYM.NS", "entry_price": 105.0, "quantity": 10, "stop_loss": 90.0}],
+            "new_exits": [],
+        }
+
+        rpt._resolve_at_open_one("fake_strategy")
+
+        mock_resolve.assert_called_once()
+        mock_send.assert_called_once()
+        sent_text = mock_send.call_args[0][0]
+        self.assertIn("SYM.NS", sent_text)
+        self.assertIn("EXECUTED", sent_text)
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.resolve_pending_fills_at_open")
+    @patch("run_paper_trading.load_portfolio")
+    @patch("run_paper_trading.get_strategy")
+    def test_nothing_actually_filled_sends_no_message(self, mock_get_strategy, mock_load_portfolio,
+                                                        mock_resolve, mock_send):
+        # Pending items existed, but today's Open wasn't available yet --
+        # resolve_pending_fills_at_open() returns empty lists, not an
+        # error. Must not send a message for "nothing happened."
+        mock_get_strategy.return_value = self.record
+        mock_load_portfolio.return_value = {"pending_entries": {"SYM.NS": {"stop_loss": 90.0}},
+                                             "pending_exits": {}}
+        mock_resolve.return_value = {"status": "processed", "as_of_date": "2026-08-18",
+                                      "new_entries": [], "new_exits": []}
+
+        rpt._resolve_at_open_one("fake_strategy")
+
+        mock_resolve.assert_called_once()
+        mock_send.assert_not_called()
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.resolve_pending_fills_at_open", side_effect=RuntimeError("data provider outage"))
+    @patch("run_paper_trading.load_portfolio")
+    @patch("run_paper_trading.get_strategy")
+    def test_exception_is_caught_not_raised(self, mock_get_strategy, mock_load_portfolio, _mock_resolve, mock_send):
+        mock_get_strategy.return_value = self.record
+        mock_load_portfolio.return_value = {"pending_entries": {"SYM.NS": {"stop_loss": 90.0}},
+                                             "pending_exits": {}}
+
+        rpt._resolve_at_open_one("fake_strategy")   # must not raise
+
+        mock_send.assert_not_called()
+
+    @patch("run_paper_trading._resolve_at_open_one")
+    @patch("run_paper_trading.list_strategies")
+    def test_cli_flag_iterates_only_active_strategies(self, mock_list, mock_resolve_one):
+        rpt._STRATEGY_FACTORIES["fake_strategy_research"] = {
+            "display_name": "Y", "strategy_factory": MagicMock(),
+        }
+        self.addCleanup(rpt._STRATEGY_FACTORIES.pop, "fake_strategy_research", None)
+
+        mock_list.return_value = [
+            _fake_record("fake_strategy", "Fake Strategy"),   # PAPER_TRADING, in _STRATEGY_FACTORIES
+            StrategyRecord(strategy_key="not_registered", display_name="X", strategy_family="fam",
+                            research_verdict=ResearchVerdict.PASS, research_verdict_source="EXP-000",
+                            deployment_status=DeploymentStatus.PAPER_TRADING, deployment_status_history=[],
+                            strategy_id="SW-999", primary_experiment_id=""),   # not in _STRATEGY_FACTORIES
+            StrategyRecord(strategy_key="fake_strategy_research", display_name="Y", strategy_family="fam",
+                            research_verdict=ResearchVerdict.PASS, research_verdict_source="EXP-000",
+                            deployment_status=DeploymentStatus.RESEARCH, deployment_status_history=[],
+                            strategy_id="SW-998", primary_experiment_id=""),   # inactive status
+        ]
+
+        with patch("sys.argv", ["run_paper_trading.py", "--resolve-at-open"]):
+            rpt.main()
+
+        mock_resolve_one.assert_called_once_with("fake_strategy")
+
+
 if __name__ == "__main__":
     unittest.main()

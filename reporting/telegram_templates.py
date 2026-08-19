@@ -164,6 +164,42 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
     return "\n".join(lines)
 
 
+def format_execution_notification(mode: str, strategy_display_name: str, new_entries: list, new_exits: list,
+                                   strategy_id: str = "") -> str:
+    """
+    A FOCUSED, near-real-time execution confirmation -- sent by
+    deployment.paper_trading_engine.resolve_pending_fills_at_open() (via
+    run_paper_trading.py's --resolve-at-open mode) immediately after a
+    queued signal actually fills at market open, added 2026-08-18 per
+    direct user feedback ("I should be getting a Telegram message at the
+    live time when something is bought or sold"). Deliberately lean --
+    just what was bought/sold, at what price, right now -- NOT a
+    replacement for that same strategy's end-of-day
+    format_strategy_notification() message, which still reports these
+    SAME fills again later alongside the day's full signal-detection
+    results, metrics, and open-positions snapshot. Never called when
+    nothing actually filled (an empty new_entries/new_exits pair is not
+    worth a message -- see run_paper_trading.py's own call site).
+    """
+    emoji = MODE_EMOJI.get(mode, mode)
+    if strategy_id:
+        header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_id)} | {_escape_markdown(strategy_display_name)}*"
+    else:
+        header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_display_name)}*"
+    lines = [header, ""]
+
+    for e in new_entries:
+        signal_note = f" (signal detected {e['signal_date']})" if e.get("signal_date") else ""
+        lines.append(f"BOUGHT {_escape_markdown(e['symbol'])}: {format_metric(e['entry_price'])} "
+                     f"x {e['quantity']}, stop {format_metric(e['stop_loss'])}{_escape_markdown(signal_note)}")
+    for x in new_exits:
+        signal_note = f" (signal detected {x['signal_date']})" if x.get("signal_date") else ""
+        lines.append(f"SOLD {_escape_markdown(x['symbol'])}: {format_metric(x['exit_price'])}, "
+                     f"P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])}){_escape_markdown(signal_note)}")
+
+    return "\n".join(lines)
+
+
 def format_daily_summary(strategy_results: list, closed_trades_today: int, open_positions_total: int,
                           daily_pnl_total: Optional[float], portfolio_equity_total: float,
                           blended_win_rate: Optional[float],
