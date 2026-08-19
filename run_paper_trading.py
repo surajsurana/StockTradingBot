@@ -293,6 +293,7 @@ def _send_daily_summary(run_results: list) -> None:
                          "new_exits": r["result"]["new_exits"]} for r in run_results]
 
     closed_trades_today = sum(len(r["result"]["new_exits"]) for r in run_results)
+    booked_pnl_today = round(sum(x["pnl"] for r in run_results for x in r["result"]["new_exits"]), 2)
     portfolio_equity_total = round(sum(r["result"]["mark_to_market_equity"] for r in run_results), 2)
 
     # Sum of each strategy's OWN daily_pnl (today's mark-to-market equity
@@ -321,7 +322,7 @@ def _send_daily_summary(run_results: list) -> None:
         strategy_results=strategy_results, closed_trades_today=closed_trades_today,
         open_positions_total=open_positions_total, daily_pnl_total=daily_pnl_total,
         portfolio_equity_total=portfolio_equity_total, blended_win_rate=blended_win_rate,
-        total_unrealized_pnl=round(total_unrealized_pnl, 2),
+        total_unrealized_pnl=round(total_unrealized_pnl, 2), booked_pnl_today=booked_pnl_today,
     )
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 

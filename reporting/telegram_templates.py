@@ -167,7 +167,8 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
 def format_daily_summary(strategy_results: list, closed_trades_today: int, open_positions_total: int,
                           daily_pnl_total: Optional[float], portfolio_equity_total: float,
                           blended_win_rate: Optional[float],
-                          total_unrealized_pnl: Optional[float] = None) -> str:
+                          total_unrealized_pnl: Optional[float] = None,
+                          booked_pnl_today: Optional[float] = None) -> str:
     """
     ONE additional message sent after ALL scheduled strategies have
     finished for the day -- in addition to, never a replacement for, each
@@ -177,15 +178,25 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
     strategy_results: list of {"display_name": str, "new_entries": list,
     "new_exits": list} for every strategy that ran today, in the order
     they ran -- used to build the "Strategies Executed" and "Signals
-    Today" sections.
+    Today" sections (both BUYs and SELLs -- a strategy that only closed
+    a position today, with no new entry, previously showed "No Setup",
+    indistinguishable from a day with no activity at all).
     daily_pnl_total: sum of each strategy's OWN daily_pnl (today's
     mark-to-market equity change -- realized AND unrealized, see
-    deployment.paper_trading_engine.run_daily()'s daily_pnl), not just
-    booked exits. None if no strategy has a prior day to compare against.
+    deployment.paper_trading_engine.run_daily()'s daily_pnl). None if no
+    strategy has a prior day to compare against.
+    booked_pnl_today: sum of P&L from trades that actually CLOSED today
+    (realized only) -- a distinct, more concrete figure from
+    daily_pnl_total (which also includes open positions' price movement),
+    shown alongside it so "did I actually make/lose money on something I
+    sold today" is never conflated with "my paper gains moved because
+    prices moved." Optional (None omits the line) so existing callers
+    keep working unchanged.
     total_unrealized_pnl: sum of each strategy's open positions'
     unrealized P&L (cumulative since entry, not a single day's change) --
-    a distinct figure from daily_pnl_total, shown alongside it. Optional
-    (None omits the line) so existing callers keep working unchanged.
+    a distinct figure from both P&L lines above, shown alongside them.
+    Optional (None omits the line) so existing callers keep working
+    unchanged.
     """
     lines = ["\U0001F4CA DAILY PAPER TRADING SUMMARY", "", "*Strategies Executed*"]
     for r in strategy_results:
@@ -194,13 +205,22 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
     lines += ["", "*Signals Today*", "--------------"]
     for r in strategy_results:
         n_entries = len(r["new_entries"])
-        signal_text = f"{n_entries} BUY" if n_entries > 0 else "No Setup"
+        n_exits = len(r["new_exits"])
+        parts = []
+        if n_entries:
+            parts.append(f"{n_entries} BUY")
+        if n_exits:
+            parts.append(f"{n_exits} SELL")
+        signal_text = ", ".join(parts) if parts else "No Setup"
         lines.append(f"{_escape_markdown(r['display_name'])}: {signal_text}")
 
+    lines += ["", f"*Today's Closed Trades*: {closed_trades_today}"]
+    if booked_pnl_today is not None:
+        lines.append(f"*Booked P&L (closed trades today)*: {format_metric(booked_pnl_today)}")
     lines += [
-        "", f"*Today's Closed Trades*: {closed_trades_today}",
         f"*Current Open Positions*: {open_positions_total}",
-        f"*Today's P&L*: {format_metric(daily_pnl_total)}" if daily_pnl_total is not None else "*Today's P&L*: n/a",
+        f"*Today's Total P&L (mark-to-market)*: {format_metric(daily_pnl_total)}"
+        if daily_pnl_total is not None else "*Today's Total P&L (mark-to-market)*: n/a",
     ]
     if total_unrealized_pnl is not None:
         lines.append(f"*Total Unrealized P&L (open positions)*: {format_metric(total_unrealized_pnl)}")

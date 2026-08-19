@@ -161,7 +161,7 @@ class TestDailySummary(unittest.TestCase):
         self.assertIn("Minervini", text)
         self.assertIn("DAILY PAPER TRADING SUMMARY", text)
 
-    def test_signal_counts_reflect_entries_only(self):
+    def test_signal_counts_reflect_entries_and_exits(self):
         text = format_daily_summary(
             strategy_results=[
                 {"display_name": "S1", "new_entries": [{"symbol": "A"}, {"symbol": "B"}], "new_exits": []},
@@ -172,6 +172,41 @@ class TestDailySummary(unittest.TestCase):
         )
         self.assertIn("S1: 2 BUY", text)
         self.assertIn("S2: No Setup", text)
+
+    def test_exit_only_day_shows_sell_not_no_setup(self):
+        # Regression test for a real bug found 2026-08-18: a strategy that
+        # only closed a position today (no new entry) previously showed
+        # "No Setup", identical to a day with zero activity at all.
+        text = format_daily_summary(
+            strategy_results=[
+                {"display_name": "S1", "new_entries": [], "new_exits": [{"symbol": "A", "pnl": 50.0}]},
+                {"display_name": "S2", "new_entries": [{"symbol": "B"}],
+                 "new_exits": [{"symbol": "C", "pnl": -20.0}]},
+            ],
+            closed_trades_today=2, open_positions_total=1, daily_pnl_total=30.0,
+            portfolio_equity_total=1000000.0, blended_win_rate=None,
+        )
+        self.assertIn("S1: 1 SELL", text)
+        self.assertNotIn("S1: No Setup", text)
+        self.assertIn("S2: 1 BUY, 1 SELL", text)
+
+    def test_booked_pnl_shown_distinctly_from_total_pnl(self):
+        text = format_daily_summary(
+            strategy_results=[], closed_trades_today=1, open_positions_total=5,
+            daily_pnl_total=1234.56, portfolio_equity_total=2000000.0, blended_win_rate=0.45,
+            booked_pnl_today=500.0,
+        )
+        self.assertIn("Booked P&L (closed trades today)", text)
+        self.assertIn("500.00", text)
+        self.assertIn("Today's Total P&L (mark-to-market)", text)
+        self.assertIn("1,234.56", text)
+
+    def test_booked_pnl_omitted_when_not_passed(self):
+        text = format_daily_summary(
+            strategy_results=[], closed_trades_today=0, open_positions_total=0,
+            daily_pnl_total=0.0, portfolio_equity_total=1000000.0, blended_win_rate=None,
+        )
+        self.assertNotIn("Booked P&L", text)
 
     def test_summary_shows_closed_trades_positions_pnl_equity(self):
         text = format_daily_summary(
