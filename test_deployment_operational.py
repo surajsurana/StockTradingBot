@@ -188,7 +188,7 @@ class TestExecutionNotification(unittest.TestCase):
             new_exits=[],
         )
         self.assertIn("AAA.NS\n", text)
-        self.assertIn("\n\nBOUGHT BBB.NS", text)   # a blank line separates the two stock blocks
+        self.assertIn("\n\n*BOUGHT* BBB.NS", text)   # a blank line separates the two stock blocks
 
     def test_entry_without_signal_price_falls_back_gracefully(self):
         # Backward compatibility -- pending entries queued before
@@ -199,8 +199,30 @@ class TestExecutionNotification(unittest.TestCase):
             new_entries=[{"symbol": "OLD.NS", "entry_price": 50.0, "quantity": 20, "stop_loss": 45.0}],
             new_exits=[],
         )
-        self.assertIn("Bought 50.00", text)
+        self.assertIn("Bought: 20 x 50.00 = 1,000.00", text)
+        self.assertNotIn("Signal:", text)
         self.assertNotIn("None", text)
+
+    def test_bought_sold_are_bold_qty_price_total_and_no_target(self):
+        # Per direct user feedback 2026-08-19: *BOUGHT*/*SOLD* bold; qty
+        # moved onto the fill line as "qty x price = total"; Stop is the
+        # final line -- no Target (these strategies have no actual
+        # profit-target rule, so one wasn't invented, per explicit
+        # direction to skip it rather than fabricate a number).
+        text = format_execution_notification(
+            mode="PAPER", strategy_display_name="Test Strategy",
+            new_entries=[{"symbol": "SYM.NS", "entry_price": 10.0, "quantity": 100, "stop_loss": 9.0,
+                         "signal_price": 9.8}],
+            new_exits=[{"symbol": "OLD.NS", "exit_price": 20.0, "quantity": 50, "pnl": 100.0,
+                       "reason": "stop_loss"}],
+        )
+        self.assertIn("*BOUGHT* SYM.NS", text)
+        self.assertIn("Signal: 9.80", text)
+        self.assertIn("Bought: 100 x 10.00 = 1,000.00", text)
+        self.assertIn("Stop: 9.00", text)
+        self.assertNotIn("Target", text)
+        self.assertIn("*SOLD* OLD.NS", text)
+        self.assertIn("Sold: 50 x 20.00 = 1,000.00", text)
 
     def test_empty_lists_produce_just_the_header(self):
         text = format_execution_notification(

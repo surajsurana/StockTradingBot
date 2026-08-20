@@ -291,7 +291,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                        entry_price=pos_state["entry_price"], exit_price=fill_price,
                        quantity=quantity, pnl=pnl, exit_reason=pending["exit_reason"], direction="BUY")
         _append_trade(strategy_key, trade)
-        new_exits.append({"symbol": symbol, "exit_price": fill_price, "pnl": round(pnl, 2),
+        new_exits.append({"symbol": symbol, "exit_price": fill_price, "quantity": quantity, "pnl": round(pnl, 2),
                            "reason": pending["exit_reason"], "fill_timing": "next_day_open",
                            "signal_date": pending["signal_date"]})
 
@@ -560,8 +560,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                    entry_price=pos_state["entry_price"], exit_price=fill_price,
                                    quantity=quantity, pnl=pnl, exit_reason=exit_reason, direction="BUY")
                     _append_trade(strategy_key, trade)
-                    new_exits.append({"symbol": symbol, "exit_price": fill_price, "pnl": round(pnl, 2),
-                                       "reason": exit_reason})
+                    new_exits.append({"symbol": symbol, "exit_price": fill_price, "quantity": quantity,
+                                       "pnl": round(pnl, 2), "reason": exit_reason})
                     del positions[symbol]
             else:
                 current_price = float(row.Close)
