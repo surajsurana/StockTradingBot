@@ -51,6 +51,68 @@ def _escape_markdown(value) -> str:
     return text
 
 
+def _format_bought_sold_section(new_entries: list, new_exits: list) -> list:
+    """
+    Returns message lines for a numbered *Bought*/*Sold* section plus
+    Total Bought/Total Sold aggregate lines at the end -- shared by
+    format_execution_notification() and format_strategy_notification()
+    so both use IDENTICAL structure. Rewritten 2026-08-19 per direct
+    feedback on the prior per-stock-header design: "BOUGHT" was
+    confusingly repeated twice per stock (once in a header, once in the
+    price line) -- replaced with ONE section header and a numbered list;
+    the Signal price (the close the signal was originally computed from,
+    the day before -- omitted if not available, e.g. an entry queued
+    before this field existed) now shows next to the symbol; Total
+    Bought/Total Sold let a glance answer "how much did I put to work /
+    take off the table today."
+
+    new_entries / new_exits: same shape
+    deployment.paper_trading_engine.run_daily()'s result produces --
+    {"symbol", "entry_price"/"exit_price", "quantity", "stop_loss"/
+    "reason", optionally "signal_price"}.
+    """
+    lines = []
+    total_bought = 0.0
+    total_sold = 0.0
+
+    if new_entries:
+        lines.append("*Bought*")
+        lines.append("")
+        for i, e in enumerate(new_entries, 1):
+            signal_note = f" (Signal: {format_metric(e['signal_price'])})" if e.get("signal_price") is not None else ""
+            total = e["quantity"] * e["entry_price"]
+            total_bought += total
+            lines.append(
+                f"{i}. {_escape_markdown(e['symbol'])}{_escape_markdown(signal_note)}\n"
+                f"{e['quantity']} x {format_metric(e['entry_price'])} = {format_metric(total)}\n"
+                f"Stop: {format_metric(e['stop_loss'])}"
+            )
+            lines.append("")
+
+    if new_exits:
+        lines.append("*Sold*")
+        lines.append("")
+        for i, x in enumerate(new_exits, 1):
+            total = x["quantity"] * x["exit_price"] if x.get("quantity") is not None else None
+            if total is not None:
+                total_sold += total
+                fill_line = f"{x['quantity']} x {format_metric(x['exit_price'])} = {format_metric(total)}"
+            else:
+                fill_line = format_metric(x["exit_price"])
+            lines.append(
+                f"{i}. {_escape_markdown(x['symbol'])}\n"
+                f"{fill_line}\n"
+                f"P&L: {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})"
+            )
+            lines.append("")
+
+    if new_entries or new_exits:
+        lines.append(f"Total Bought = {format_metric(total_bought)}")
+        lines.append(f"Total Sold = {format_metric(total_sold)}")
+
+    return lines
+
+
 def format_strategy_notification(mode: str, strategy_display_name: str,
                                   new_entries: list, new_exits: list, open_positions: list,
                                   daily_pnl: Optional[float], total_equity: float, drawdown_pct: Optional[float],
@@ -104,29 +166,7 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
     if not new_entries and not new_exits and not pending_entries and not pending_exits:
         lines.append("No qualifying setups found today.")
     else:
-        if new_entries:
-            lines.append("*New Entries*")
-            lines.append("")
-            for e in new_entries:
-                block_lines = [f"*BOUGHT* {_escape_markdown(e['symbol'])}"]
-                if e.get("signal_price") is not None:
-                    block_lines.append(f"Signal: {format_metric(e['signal_price'])}")
-                total = e["quantity"] * e["entry_price"]
-                block_lines.append(f"Bought: {e['quantity']} x {format_metric(e['entry_price'])} "
-                                   f"= {format_metric(total)}")
-                block_lines.append(f"Stop: {format_metric(e['stop_loss'])}")
-                lines.append("\n".join(block_lines))
-                lines.append("")
-        if new_exits:
-            lines.append("*Exits*")
-            lines.append("")
-            for x in new_exits:
-                total = x["quantity"] * x["exit_price"] if x.get("quantity") is not None else None
-                sold_line = (f"Sold: {x['quantity']} x {format_metric(x['exit_price'])} = {format_metric(total)}"
-                             if total is not None else f"Sold: {format_metric(x['exit_price'])}")
-                lines.append(f"*SOLD* {_escape_markdown(x['symbol'])}\n{sold_line}\n"
-                             f"P&L: {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})")
-                lines.append("")
+        lines += _format_bought_sold_section(new_entries, new_exits)
         if pending_entries:
             lines.append("*Queued for Next Open (not yet bought)*")
             lines.append("")
@@ -195,46 +235,28 @@ def format_execution_notification(mode: str, strategy_display_name: str, new_ent
     nothing actually filled (an empty new_entries/new_exits pair is not
     worth a message -- see run_paper_trading.py's own call site).
 
-    Each stock gets its OWN short block (symbol, then a compact few-line
-    detail), separated by a blank line from the next -- per direct
-    2026-08-19 feedback that everything run together on adjacent lines
-    was hard to read. Per that same feedback: *BOUGHT*/*SOLD* are bold;
-    entry blocks show a Signal line (the close price the signal was
-    originally computed from, the day before) ahead of the Bought line
-    when available -- older pending entries queued before this field
-    existed fall back to just the fill line; quantity moved onto the
-    Bought/Sold line itself as "qty x price = total"; Stop is the final
-    line (no Target -- these strategies have no actual profit-target
-    exit rule, only stop-loss/time-based/signal-based, so a fabricated
-    target would misrepresent how the position will actually exit; per
-    explicit direction 2026-08-19, skipped rather than invented).
+    ONE numbered list under a single *Bought*/*Sold* header each (not a
+    repeated header per stock), with Total Bought/Total Sold at the end
+    -- rewritten 2026-08-19 per direct feedback that "BOUGHT" appearing
+    twice per stock (header + price line) was confusing, and to show
+    the Signal price (the close the signal was originally computed
+    from, the day before) next to each symbol -- omitted for an entry
+    queued before this field existed, never a broken "None". See
+    _format_bought_sold_section()'s own docstring for the exact layout,
+    shared with format_strategy_notification() so both use IDENTICAL
+    structure. No Target line -- these strategies have no actual
+    profit-target exit rule, only stop-loss/time-based/signal-based, so
+    a fabricated target would misrepresent how the position will
+    actually exit; per explicit direction, skipped rather than invented.
     """
     emoji = MODE_EMOJI.get(mode, mode)
     if strategy_id:
         header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_id)} | {_escape_markdown(strategy_display_name)}*"
     else:
         header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_display_name)}*"
-    blocks = [header]
-
-    for e in new_entries:
-        block_lines = [f"*BOUGHT* {_escape_markdown(e['symbol'])}"]
-        if e.get("signal_price") is not None:
-            block_lines.append(f"Signal: {format_metric(e['signal_price'])}")
-        total = e["quantity"] * e["entry_price"]
-        block_lines.append(f"Bought: {e['quantity']} x {format_metric(e['entry_price'])} = {format_metric(total)}")
-        block_lines.append(f"Stop: {format_metric(e['stop_loss'])}")
-        blocks.append("\n".join(block_lines))
-    for x in new_exits:
-        total = x["quantity"] * x["exit_price"] if x.get("quantity") is not None else None
-        sold_line = (f"Sold: {x['quantity']} x {format_metric(x['exit_price'])} = {format_metric(total)}"
-                     if total is not None else f"Sold: {format_metric(x['exit_price'])}")
-        blocks.append(
-            f"*SOLD* {_escape_markdown(x['symbol'])}\n"
-            f"{sold_line}\n"
-            f"P&L: {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})"
-        )
-
-    return "\n\n".join(blocks)
+    lines = [header, ""]
+    lines += _format_bought_sold_section(new_entries, new_exits)
+    return "\n".join(lines).rstrip()
 
 
 def format_daily_summary(strategy_results: list, closed_trades_today: int, open_positions_total: int,

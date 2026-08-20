@@ -155,30 +155,29 @@ class TestExecutionNotification(unittest.TestCase):
     execution confirmation sent by --resolve-at-open (added 2026-08-18,
     see run_paper_trading.py's _resolve_at_open_one())."""
 
-    def test_bought_and_sold_lines_shown_with_signal_price(self):
-        # Per direct user feedback 2026-08-19: show the signal price
-        # (the close price the signal was detected at) alongside the
-        # actual fill price, and drop the verbose date note to keep the
-        # message short -- each stock gets its own short, blank-line-
-        # separated block, not one crammed line.
+    def test_bought_and_sold_shown_with_signal_price(self):
+        # Per direct user feedback 2026-08-19: numbered list under ONE
+        # *Bought*/*Sold* header each (not a header repeated per stock),
+        # signal price shown next to the symbol, totals at the end.
         text = format_execution_notification(
             mode="PAPER", strategy_display_name="Test Strategy", strategy_id="SW-003",
             new_entries=[{"symbol": "SYM.NS", "entry_price": 105.25, "quantity": 100,
-                         "stop_loss": 95.0, "signal_date": "2026-08-17", "signal_price": 103.10}],
-            new_exits=[{"symbol": "OLD.NS", "exit_price": 200.5, "pnl": 50.0,
-                       "reason": "stop_loss", "signal_date": "2026-08-17"}],
+                         "stop_loss": 95.0, "signal_price": 103.10}],
+            new_exits=[{"symbol": "OLD.NS", "exit_price": 200.5, "quantity": 10, "pnl": 50.0,
+                       "reason": "stop_loss"}],
         )
         self.assertIn("EXECUTED", text)
         self.assertIn("SW-003", text)
-        self.assertIn("BOUGHT", text)
-        self.assertIn("SYM.NS", text)
-        self.assertIn("103.10", text)   # signal price
-        self.assertIn("105.25", text)   # actual fill price
-        self.assertIn("SOLD", text)
-        self.assertIn("OLD.NS", text)
-        self.assertIn("200.50", text)
+        self.assertIn("*Bought*", text)
+        self.assertIn("1. SYM.NS (Signal: 103.10)", text)
+        self.assertIn("100 x 105.25 = 10,525.00", text)
+        self.assertIn("*Sold*", text)
+        self.assertIn("1. OLD.NS", text)
+        self.assertIn("10 x 200.50 = 2,005.00", text)
+        self.assertIn("Total Bought = 10,525.00", text)
+        self.assertIn("Total Sold = 2,005.00", text)
 
-    def test_entries_and_exits_are_separated_by_a_blank_line_per_stock(self):
+    def test_entries_are_numbered_and_blank_line_separated(self):
         text = format_execution_notification(
             mode="PAPER", strategy_display_name="Test Strategy",
             new_entries=[
@@ -187,28 +186,30 @@ class TestExecutionNotification(unittest.TestCase):
             ],
             new_exits=[],
         )
-        self.assertIn("AAA.NS\n", text)
-        self.assertIn("\n\n*BOUGHT* BBB.NS", text)   # a blank line separates the two stock blocks
+        self.assertIn("1. AAA.NS", text)
+        self.assertIn("\n\n2. BBB.NS", text)   # a blank line separates the two entries
+        self.assertIn("Total Bought = 2,000.00", text)
+        self.assertIn("Total Sold = 0.00", text)
 
     def test_entry_without_signal_price_falls_back_gracefully(self):
         # Backward compatibility -- pending entries queued before
         # signal_price existed resolve with signal_price=None; must not
-        # crash or show a broken "Signal: None" line.
+        # crash or show a broken "(Signal: None)".
         text = format_execution_notification(
             mode="PAPER", strategy_display_name="Test Strategy",
             new_entries=[{"symbol": "OLD.NS", "entry_price": 50.0, "quantity": 20, "stop_loss": 45.0}],
             new_exits=[],
         )
-        self.assertIn("Bought: 20 x 50.00 = 1,000.00", text)
+        self.assertIn("1. OLD.NS\n", text)   # no "(Signal: ...)" suffix
+        self.assertIn("20 x 50.00 = 1,000.00", text)
         self.assertNotIn("Signal:", text)
         self.assertNotIn("None", text)
 
-    def test_bought_sold_are_bold_qty_price_total_and_no_target(self):
-        # Per direct user feedback 2026-08-19: *BOUGHT*/*SOLD* bold; qty
-        # moved onto the fill line as "qty x price = total"; Stop is the
-        # final line -- no Target (these strategies have no actual
-        # profit-target rule, so one wasn't invented, per explicit
-        # direction to skip it rather than fabricate a number).
+    def test_bold_headers_and_no_target(self):
+        # Per direct user feedback 2026-08-19: *Bought*/*Sold* section
+        # headers are bold; no Target line -- these strategies have no
+        # actual profit-target rule, so one wasn't invented, per explicit
+        # direction to skip it rather than fabricate a number.
         text = format_execution_notification(
             mode="PAPER", strategy_display_name="Test Strategy",
             new_entries=[{"symbol": "SYM.NS", "entry_price": 10.0, "quantity": 100, "stop_loss": 9.0,
@@ -216,13 +217,10 @@ class TestExecutionNotification(unittest.TestCase):
             new_exits=[{"symbol": "OLD.NS", "exit_price": 20.0, "quantity": 50, "pnl": 100.0,
                        "reason": "stop_loss"}],
         )
-        self.assertIn("*BOUGHT* SYM.NS", text)
-        self.assertIn("Signal: 9.80", text)
-        self.assertIn("Bought: 100 x 10.00 = 1,000.00", text)
+        self.assertIn("*Bought*", text)
+        self.assertIn("*Sold*", text)
         self.assertIn("Stop: 9.00", text)
         self.assertNotIn("Target", text)
-        self.assertIn("*SOLD* OLD.NS", text)
-        self.assertIn("Sold: 50 x 20.00 = 1,000.00", text)
 
     def test_empty_lists_produce_just_the_header(self):
         text = format_execution_notification(
