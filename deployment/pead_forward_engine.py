@@ -234,7 +234,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
                     reference_price = float(rows.iloc[0]["Close"])
                     stop_loss = reference_price * (1 - PEAD_STOP_LOSS_PCT)
                     queued_entries.append({"symbol": event.symbol, "stop_loss": stop_loss,
-                                            "signal_date": target_date.isoformat(), "sue": sue_result.sue})
+                                            "signal_date": target_date.isoformat(), "sue": sue_result.sue,
+                                            "signal_price": reference_price})
                     queued_for_next_open = True
         else:
             # Real, eligible signal -- price the entry at TODAY's close
@@ -305,6 +306,7 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
         for q in queued_entries:
             portfolio_after["pending_entries"][q["symbol"]] = {
                 "stop_loss": q["stop_loss"], "signal_date": q["signal_date"],
+                "signal_price": q["signal_price"],
             }
         _save_portfolio(STRATEGY_KEY, portfolio_after)
 
@@ -323,7 +325,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     # PEAD (entry_signal_at never signals) -- report OUR queued entries
     # (this function's own earnings-driven detection) here instead.
     daily_result["new_pending_entries"] = [
-        {"symbol": q["symbol"], "stop_loss": q["stop_loss"], "signal_date": q["signal_date"]}
+        {"symbol": q["symbol"], "stop_loss": q["stop_loss"], "signal_date": q["signal_date"],
+         "signal_price": q["signal_price"]}
         for q in queued_entries
     ]
     return daily_result

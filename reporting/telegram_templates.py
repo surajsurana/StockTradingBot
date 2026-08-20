@@ -106,43 +106,52 @@ def format_strategy_notification(mode: str, strategy_display_name: str,
     else:
         if new_entries:
             lines.append("*New Entries (bought)*")
-            for e in new_entries:
-                signal_note = f" -- signal detected {e['signal_date']}" if e.get("signal_date") else ""
-                lines.append(f"- {_escape_markdown(e['symbol'])}: bought {format_metric(e['entry_price'])} "
-                             f"x {e['quantity']}, stop {format_metric(e['stop_loss'])}{_escape_markdown(signal_note)}")
             lines.append("")
+            for e in new_entries:
+                if e.get("signal_price") is not None:
+                    price_line = f"Signal {format_metric(e['signal_price'])} → Bought {format_metric(e['entry_price'])}"
+                else:
+                    price_line = f"Bought {format_metric(e['entry_price'])}"
+                lines.append(f"{_escape_markdown(e['symbol'])}\n{price_line}\n"
+                             f"Qty {e['quantity']} | Stop {format_metric(e['stop_loss'])}")
+                lines.append("")
         if new_exits:
             lines.append("*Exits (sold)*")
+            lines.append("")
             for x in new_exits:
-                signal_note = f" -- signal detected {x['signal_date']}" if x.get("signal_date") else ""
-                lines.append(f"- {_escape_markdown(x['symbol'])}: sold {format_metric(x['exit_price'])}, "
-                             f"P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})"
-                             f"{_escape_markdown(signal_note)}")
-            lines.append("")
+                lines.append(f"{_escape_markdown(x['symbol'])}\n{format_metric(x['exit_price'])} | "
+                             f"P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})")
+                lines.append("")
         if pending_entries:
-            lines.append("*Signals Detected -- Queued for Next Open (not yet bought)*")
+            lines.append("*Queued for Next Open (not yet bought)*")
+            lines.append("")
             for e in pending_entries:
-                lines.append(f"- {_escape_markdown(e['symbol'])}: planned stop {format_metric(e['stop_loss'])} "
-                             f"-- will attempt to fill at the next trading day's real market Open")
-            lines.append("")
+                block = f"{_escape_markdown(e['symbol'])}\n"
+                if e.get("signal_price") is not None:
+                    block += f"Signal {format_metric(e['signal_price'])}\n"
+                block += f"Planned stop {format_metric(e['stop_loss'])}"
+                lines.append(block)
+                lines.append("")
         if pending_exits:
-            lines.append("*Exit Signals Detected -- Queued for Next Open (not yet sold)*")
-            for x in pending_exits:
-                lines.append(f"- {_escape_markdown(x['symbol'])}: {_escape_markdown(x['exit_reason'])} "
-                             f"-- will attempt to fill at the next trading day's real market Open")
+            lines.append("*Queued for Next Open (not yet sold)*")
             lines.append("")
+            for x in pending_exits:
+                lines.append(f"{_escape_markdown(x['symbol'])}\n{_escape_markdown(x['exit_reason'])}")
+                lines.append("")
 
     lines.append("*Open Positions*")
+    lines.append("")
     if open_positions:
         for p in open_positions:
             pnl = p.get("unrealized_pnl")
             pnl_pct = p.get("unrealized_pnl_pct")
             pnl_str = f"{format_metric(pnl)} ({format_metric(pnl_pct)}%)" if pnl is not None else "n/a"
-            lines.append(f"- {_escape_markdown(p['symbol'])}: qty {p['quantity']}, "
-                         f"value {format_metric(p.get('current_value'))}, P&L {pnl_str}")
+            lines.append(f"{_escape_markdown(p['symbol'])}\nQty {p['quantity']} | "
+                         f"Value {format_metric(p.get('current_value'))} | P&L {pnl_str}")
+            lines.append("")
     else:
         lines.append("(none)")
-    lines.append("")
+        lines.append("")
 
     lines += [
         "*Summary*",
@@ -180,24 +189,40 @@ def format_execution_notification(mode: str, strategy_display_name: str, new_ent
     results, metrics, and open-positions snapshot. Never called when
     nothing actually filled (an empty new_entries/new_exits pair is not
     worth a message -- see run_paper_trading.py's own call site).
+
+    Each stock gets its OWN short block (symbol, then a compact 2-line
+    detail), separated by a blank line from the next -- per direct
+    2026-08-19 feedback that everything run together on adjacent lines
+    was hard to read. entry blocks show signal_price (the close price
+    the signal was originally computed from, the day before) alongside
+    entry_price (the actual fill, at this morning's real Open) when
+    available -- older pending entries queued before this field existed
+    fall back to just the fill price.
     """
     emoji = MODE_EMOJI.get(mode, mode)
     if strategy_id:
         header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_id)} | {_escape_markdown(strategy_display_name)}*"
     else:
         header = f"*{emoji} EXECUTED -- {_escape_markdown(strategy_display_name)}*"
-    lines = [header, ""]
+    blocks = [header]
 
     for e in new_entries:
-        signal_note = f" (signal detected {e['signal_date']})" if e.get("signal_date") else ""
-        lines.append(f"BOUGHT {_escape_markdown(e['symbol'])}: {format_metric(e['entry_price'])} "
-                     f"x {e['quantity']}, stop {format_metric(e['stop_loss'])}{_escape_markdown(signal_note)}")
+        if e.get("signal_price") is not None:
+            price_line = f"Signal {format_metric(e['signal_price'])} → Bought {format_metric(e['entry_price'])}"
+        else:
+            price_line = f"Bought {format_metric(e['entry_price'])}"
+        blocks.append(
+            f"BOUGHT {_escape_markdown(e['symbol'])}\n"
+            f"{price_line}\n"
+            f"Qty {e['quantity']} | Stop {format_metric(e['stop_loss'])}"
+        )
     for x in new_exits:
-        signal_note = f" (signal detected {x['signal_date']})" if x.get("signal_date") else ""
-        lines.append(f"SOLD {_escape_markdown(x['symbol'])}: {format_metric(x['exit_price'])}, "
-                     f"P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])}){_escape_markdown(signal_note)}")
+        blocks.append(
+            f"SOLD {_escape_markdown(x['symbol'])}\n"
+            f"{format_metric(x['exit_price'])} | P&L {format_metric(x['pnl'])} ({_escape_markdown(x['reason'])})"
+        )
 
-    return "\n".join(lines)
+    return "\n\n".join(blocks)
 
 
 def format_daily_summary(strategy_results: list, closed_trades_today: int, open_positions_total: int,

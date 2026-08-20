@@ -252,6 +252,7 @@ class TestNextDayOpenEntryTiming(unittest.TestCase):
         self.assertEqual(result["new_entries"], [])   # not filled yet
         self.assertEqual(len(result["new_pending_entries"]), 1)
         self.assertEqual(result["new_pending_entries"][0]["symbol"], "TEST.NS")
+        self.assertEqual(result["new_pending_entries"][0]["signal_price"], 100.0)   # detection day's close
         events = load_events()
         self.assertTrue(events[0]["queued_for_next_open"])
         self.assertFalse(events[0]["trade_taken"])

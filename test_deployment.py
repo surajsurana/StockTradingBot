@@ -337,6 +337,24 @@ class TestPaperTradingEngine(unittest.TestCase):
         self.assertEqual(len(result["new_pending_entries"]), 1)
         self.assertEqual(result["new_pending_entries"][0]["symbol"], "SYM")
         self.assertEqual(result["new_pending_entries"][0]["signal_date"], "2024-01-01")
+        self.assertEqual(result["new_pending_entries"][0]["signal_price"], 100.0)
+
+    def test_signal_price_flows_through_to_the_resolved_fill(self):
+        # Per direct user feedback 2026-08-19: the morning execution
+        # message should show both the signal price (the close the day
+        # the signal fired) and the actual fill price -- confirms
+        # signal_price survives the queue -> resolve round trip.
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        day1 = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+        day2 = {"SYM": _one_day_df("2024-01-02", 105, 106, 104, 107)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day2,
+                                as_of_date=datetime.date(2024, 1, 2), execution_config=cfg)
+        self.assertEqual(len(result["new_entries"]), 1)
+        self.assertEqual(result["new_entries"][0]["signal_price"], 100.0)   # day 1's close
+        self.assertEqual(result["new_entries"][0]["entry_price"], 105.0)   # day 2's real Open
 
 
 class TestResolvePendingFillsAtOpen(unittest.TestCase):

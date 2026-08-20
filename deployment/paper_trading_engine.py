@@ -317,7 +317,8 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                               "quantity": quantity, "stop_loss": stop_loss}
         new_entries.append({"symbol": symbol, "entry_price": fill_price, "quantity": quantity,
                              "stop_loss": stop_loss, "fill_timing": "next_day_open",
-                             "signal_date": pending["signal_date"]})
+                             "signal_date": pending["signal_date"],
+                             "signal_price": pending.get("signal_price")})
 
     portfolio["cash"] = cash
     portfolio["positions"] = positions
@@ -579,9 +580,11 @@ def run_daily(strategy_key: str, strategy: Strategy,
                 if risk_per_share > 0:
                     if execution_config.fill_timing == "next_day_open":
                         pending_entries[symbol] = {"stop_loss": signal.stop_loss,
-                                                    "signal_date": target_date.isoformat()}
+                                                    "signal_date": target_date.isoformat(),
+                                                    "signal_price": signal.entry_price}
                         new_pending_entries.append({"symbol": symbol, "stop_loss": signal.stop_loss,
-                                                     "signal_date": target_date.isoformat()})
+                                                     "signal_date": target_date.isoformat(),
+                                                     "signal_price": signal.entry_price})
                     else:
                         quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)

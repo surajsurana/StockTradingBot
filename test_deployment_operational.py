@@ -155,11 +155,16 @@ class TestExecutionNotification(unittest.TestCase):
     execution confirmation sent by --resolve-at-open (added 2026-08-18,
     see run_paper_trading.py's _resolve_at_open_one())."""
 
-    def test_bought_and_sold_lines_shown_with_signal_date(self):
+    def test_bought_and_sold_lines_shown_with_signal_price(self):
+        # Per direct user feedback 2026-08-19: show the signal price
+        # (the close price the signal was detected at) alongside the
+        # actual fill price, and drop the verbose date note to keep the
+        # message short -- each stock gets its own short, blank-line-
+        # separated block, not one crammed line.
         text = format_execution_notification(
             mode="PAPER", strategy_display_name="Test Strategy", strategy_id="SW-003",
             new_entries=[{"symbol": "SYM.NS", "entry_price": 105.25, "quantity": 100,
-                         "stop_loss": 95.0, "signal_date": "2026-08-17"}],
+                         "stop_loss": 95.0, "signal_date": "2026-08-17", "signal_price": 103.10}],
             new_exits=[{"symbol": "OLD.NS", "exit_price": 200.5, "pnl": 50.0,
                        "reason": "stop_loss", "signal_date": "2026-08-17"}],
         )
@@ -167,11 +172,35 @@ class TestExecutionNotification(unittest.TestCase):
         self.assertIn("SW-003", text)
         self.assertIn("BOUGHT", text)
         self.assertIn("SYM.NS", text)
-        self.assertIn("105.25", text)
-        self.assertIn("2026-08-17", text)
+        self.assertIn("103.10", text)   # signal price
+        self.assertIn("105.25", text)   # actual fill price
         self.assertIn("SOLD", text)
         self.assertIn("OLD.NS", text)
         self.assertIn("200.50", text)
+
+    def test_entries_and_exits_are_separated_by_a_blank_line_per_stock(self):
+        text = format_execution_notification(
+            mode="PAPER", strategy_display_name="Test Strategy",
+            new_entries=[
+                {"symbol": "AAA.NS", "entry_price": 100.0, "quantity": 10, "stop_loss": 90.0},
+                {"symbol": "BBB.NS", "entry_price": 200.0, "quantity": 5, "stop_loss": 180.0},
+            ],
+            new_exits=[],
+        )
+        self.assertIn("AAA.NS\n", text)
+        self.assertIn("\n\nBOUGHT BBB.NS", text)   # a blank line separates the two stock blocks
+
+    def test_entry_without_signal_price_falls_back_gracefully(self):
+        # Backward compatibility -- pending entries queued before
+        # signal_price existed resolve with signal_price=None; must not
+        # crash or show a broken "Signal: None" line.
+        text = format_execution_notification(
+            mode="PAPER", strategy_display_name="Test Strategy",
+            new_entries=[{"symbol": "OLD.NS", "entry_price": 50.0, "quantity": 20, "stop_loss": 45.0}],
+            new_exits=[],
+        )
+        self.assertIn("Bought 50.00", text)
+        self.assertNotIn("None", text)
 
     def test_empty_lists_produce_just_the_header(self):
         text = format_execution_notification(
