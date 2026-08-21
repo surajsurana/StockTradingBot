@@ -190,7 +190,7 @@ class TestDailySummary(unittest.TestCase):
         self.assertNotIn("S1: No Setup", text)
         self.assertIn("S2: 1 BUY, 1 SELL", text)
 
-    def test_booked_pnl_shown_distinctly_from_total_pnl(self):
+    def test_booked_pnl_shown_distinctly_from_todays_pnl(self):
         text = format_daily_summary(
             strategy_results=[], closed_trades_today=1, open_positions_total=5,
             daily_pnl_total=1234.56, portfolio_equity_total=2000000.0, blended_win_rate=0.45,
@@ -198,8 +198,22 @@ class TestDailySummary(unittest.TestCase):
         )
         self.assertIn("Booked P&L (closed trades today)", text)
         self.assertIn("500.00", text)
-        self.assertIn("Today's Total P&L (mark-to-market)", text)
+        self.assertIn("Today's P&L", text)
+        self.assertNotIn("unrealised", text.lower())
         self.assertIn("1,234.56", text)
+
+    def test_total_pnl_shown_when_provided(self):
+        # Per direct user feedback 2026-08-19: a cumulative "Total P&L"
+        # figure (equity minus starting capital), replacing a prior
+        # separate "unrealised" line that was confusing jargon.
+        text = format_daily_summary(
+            strategy_results=[], closed_trades_today=0, open_positions_total=5,
+            daily_pnl_total=100.0, portfolio_equity_total=2000000.0, blended_win_rate=None,
+            total_pnl=50000.0,
+        )
+        self.assertIn("*Total P&L*: 50,000.00", text)
+        self.assertNotIn("Unrealized", text)
+        self.assertNotIn("unrealised", text.lower())
 
     def test_booked_pnl_omitted_when_not_passed(self):
         text = format_daily_summary(

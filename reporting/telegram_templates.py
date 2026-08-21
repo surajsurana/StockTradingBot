@@ -262,8 +262,8 @@ def format_execution_notification(mode: str, strategy_display_name: str, new_ent
 def format_daily_summary(strategy_results: list, closed_trades_today: int, open_positions_total: int,
                           daily_pnl_total: Optional[float], portfolio_equity_total: float,
                           blended_win_rate: Optional[float],
-                          total_unrealized_pnl: Optional[float] = None,
-                          booked_pnl_today: Optional[float] = None) -> str:
+                          booked_pnl_today: Optional[float] = None,
+                          total_pnl: Optional[float] = None) -> str:
     """
     ONE additional message sent after ALL scheduled strategies have
     finished for the day -- in addition to, never a replacement for, each
@@ -271,33 +271,40 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
     system calls this).
 
     strategy_results: list of {"display_name": str, "new_entries": list,
-    "new_exits": list} for every strategy that ran today, in the order
-    they ran -- used to build the "Strategies Executed" and "Signals
-    Today" sections (both BUYs and SELLs -- a strategy that only closed
-    a position today, with no new entry, previously showed "No Setup",
-    indistinguishable from a day with no activity at all).
-    daily_pnl_total: sum of each strategy's OWN daily_pnl (today's
-    mark-to-market equity change -- realized AND unrealized, see
-    deployment.paper_trading_engine.run_daily()'s daily_pnl). None if no
-    strategy has a prior day to compare against.
+    "new_exits": list} for every strategy that ran today. Per direct
+    2026-08-19 feedback: MUST include newly QUEUED signals (not just
+    actual fills), since under fill_timing="next_day_open" (the default)
+    a signal detected today doesn't fill until tomorrow morning -- the
+    caller (run_paper_trading.py's _send_daily_summary()) already merges
+    new_entries + new_pending_entries (and exits) before passing this
+    in, so "Signals Today" reflects whether a signal was DETECTED today,
+    not only whether one happened to fill today. Used to build the
+    "Strategies Executed" and "Signals Today" sections, each strategy on
+    its own blank-line-separated row for readability.
+    daily_pnl_total ("Today's P&L"): sum of each strategy's OWN daily_pnl
+    (today's mark-to-market equity change -- realized AND unrealized,
+    see deployment.paper_trading_engine.run_daily()'s daily_pnl). None
+    if no strategy has a prior day to compare against.
     booked_pnl_today: sum of P&L from trades that actually CLOSED today
     (realized only) -- a distinct, more concrete figure from
-    daily_pnl_total (which also includes open positions' price movement),
-    shown alongside it so "did I actually make/lose money on something I
+    daily_pnl_total, so "did I actually make/lose money on something I
     sold today" is never conflated with "my paper gains moved because
-    prices moved." Optional (None omits the line) so existing callers
-    keep working unchanged.
-    total_unrealized_pnl: sum of each strategy's open positions'
-    unrealized P&L (cumulative since entry, not a single day's change) --
-    a distinct figure from both P&L lines above, shown alongside them.
-    Optional (None omits the line) so existing callers keep working
-    unchanged.
+    prices moved." Optional (None omits the line).
+    total_pnl ("Total P&L"): cumulative since each strategy's paper
+    trading began -- portfolio equity minus total starting capital.
+    Deliberately the ONLY "since inception" figure shown (replaces a
+    prior separate "Total Unrealized P&L" line, per direct feedback that
+    the word "unrealised" was confusing jargon) -- equity vs. starting
+    capital already nets together everything booked historically and
+    today's unrealized movement into one number. Optional (None omits
+    the line).
     """
-    lines = ["\U0001F4CA DAILY PAPER TRADING SUMMARY", "", "*Strategies Executed*"]
+    lines = ["\U0001F4CA DAILY PAPER TRADING SUMMARY", "", "*Strategies Executed*", ""]
     for r in strategy_results:
-        lines.append(f"- {_escape_markdown(r['display_name'])}")
+        lines.append(_escape_markdown(r["display_name"]))
+        lines.append("")
 
-    lines += ["", "*Signals Today*", "--------------"]
+    lines += ["*Signals Today*", ""]
     for r in strategy_results:
         n_entries = len(r["new_entries"])
         n_exits = len(r["new_exits"])
@@ -308,19 +315,17 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
             parts.append(f"{n_exits} SELL")
         signal_text = ", ".join(parts) if parts else "No Setup"
         lines.append(f"{_escape_markdown(r['display_name'])}: {signal_text}")
+        lines.append("")
 
-    lines += ["", f"*Today's Closed Trades*: {closed_trades_today}"]
+    lines.append(f"*Today's Closed Trades*: {closed_trades_today}")
     if booked_pnl_today is not None:
         lines.append(f"*Booked P&L (closed trades today)*: {format_metric(booked_pnl_today)}")
-    lines += [
-        f"*Current Open Positions*: {open_positions_total}",
-        f"*Today's Total P&L (mark-to-market)*: {format_metric(daily_pnl_total)}"
-        if daily_pnl_total is not None else "*Today's Total P&L (mark-to-market)*: n/a",
-    ]
-    if total_unrealized_pnl is not None:
-        lines.append(f"*Total Unrealized P&L (open positions)*: {format_metric(total_unrealized_pnl)}")
-    lines += [
-        f"*Portfolio Equity*: {portfolio_equity_total:,.2f}",
-        f"*Win Rate*: {format_metric(blended_win_rate)}" if blended_win_rate is not None else "*Win Rate*: n/a",
-    ]
+    lines.append(f"*Current Open Positions*: {open_positions_total}")
+    lines.append(f"*Today's P&L*: {format_metric(daily_pnl_total)}"
+                 if daily_pnl_total is not None else "*Today's P&L*: n/a")
+    if total_pnl is not None:
+        lines.append(f"*Total P&L*: {format_metric(total_pnl)}")
+    lines.append(f"*Portfolio Equity*: {portfolio_equity_total:,.2f}")
+    lines.append(f"*Win Rate*: {format_metric(blended_win_rate)}" if blended_win_rate is not None
+                 else "*Win Rate*: n/a")
     return "\n".join(lines)

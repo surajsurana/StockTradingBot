@@ -325,5 +325,56 @@ class TestResolveAtOpenOne(unittest.TestCase):
         mock_resolve_one.assert_called_once_with("fake_strategy")
 
 
+class TestSendDailySummary(unittest.TestCase):
+    """_send_daily_summary() -- regression coverage for a real bug found
+    2026-08-19: "Signals Today" showed "No Setup" for every strategy on
+    a day that genuinely had signals, because under fill_timing=
+    "next_day_open" (the default) a signal detected today is queued, not
+    filled, so new_entries/new_exits (actual fills only) is routinely
+    empty at EOD time. Also covers the new cumulative "Total P&L" figure
+    (equity minus starting capital)."""
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio")
+    def test_newly_queued_signals_are_counted_not_just_fills(self, mock_load_portfolio, _mock_metrics,
+                                                               mock_format, _mock_send):
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0}
+        run_results = [{
+            "strategy_key": "s1", "display_name": "S1",
+            "result": {
+                "new_entries": [], "new_exits": [],   # nothing FILLED today
+                "new_pending_entries": [{"symbol": "A.NS", "stop_loss": 90.0, "signal_price": 100.0}],
+                "new_pending_exits": [],
+                "mark_to_market_equity": 1_000_000.0, "daily_pnl": 0.0, "open_positions_detail": [],
+            },
+        }]
+
+        rpt._send_daily_summary(run_results)
+
+        mock_format.assert_called_once()
+        strategy_results = mock_format.call_args.kwargs["strategy_results"]
+        self.assertEqual(len(strategy_results[0]["new_entries"]), 1)   # the queued signal counts
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio")
+    def test_total_pnl_is_equity_minus_starting_capital(self, mock_load_portfolio, _mock_metrics,
+                                                          mock_format, _mock_send):
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0}
+        run_results = [{
+            "strategy_key": "s1", "display_name": "S1",
+            "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
+                       "mark_to_market_equity": 1_050_000.0, "daily_pnl": 5000.0, "open_positions_detail": []},
+        }]
+
+        rpt._send_daily_summary(run_results)
+
+        total_pnl = mock_format.call_args.kwargs["total_pnl"]
+        self.assertEqual(total_pnl, 50_000.0)
+
+
 if __name__ == "__main__":
     unittest.main()
