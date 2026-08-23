@@ -7,6 +7,7 @@ motivated this (SW-008 wasn't the cause, but the missing isolation was
 flagged as a gap during that deployment's verification).
 """
 
+import datetime
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -135,6 +136,7 @@ class TestRunOneExceptionIsolation(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    @patch("run_paper_trading.apply_capital_winddown")
     @patch("run_paper_trading._send_notification", side_effect=ValueError("bad template data"))
     @patch("run_paper_trading.generate_report", return_value="deployment/reports/fake_strategy/2026-01-01.md")
     @patch("run_paper_trading.run_daily")
@@ -144,12 +146,15 @@ class TestRunOneExceptionIsolation(unittest.TestCase):
     @patch("run_paper_trading.get_strategy")
     @patch("run_paper_trading.send_telegram_message")
     def test_notification_exception_is_also_caught(self, mock_send, mock_get_strategy, _mock_due, _mock_universe,
-                                                     _mock_fetch, mock_run_daily, _mock_report, _mock_notify):
+                                                     _mock_fetch, mock_run_daily, _mock_report, _mock_notify,
+                                                     mock_winddown):
         mock_get_strategy.return_value = self.record
         mock_run_daily.return_value = {
             "status": "processed", "as_of_date": "2026-01-01", "new_entries": [], "new_exits": [],
             "open_positions": 0, "cash": 1000000, "mark_to_market_equity": 1000000,
         }
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0,
+                                       "remaining_cash": 1000000, "reason": None}
 
         result = rpt._run_one("fake_strategy")   # _send_notification raising must still be caught
 
@@ -157,6 +162,52 @@ class TestRunOneExceptionIsolation(unittest.TestCase):
         # the failure-notification path (a separate call) should still have fired
         mock_send.assert_called_once()
         self.assertIn("FAILED", mock_send.call_args[0][0])
+
+    @patch("run_paper_trading.apply_capital_winddown")
+    @patch("run_paper_trading._send_notification")
+    @patch("run_paper_trading.generate_report", return_value="deployment/reports/fake_strategy/2026-01-01.md")
+    @patch("run_paper_trading.run_daily")
+    @patch("run_paper_trading.fetch_all", return_value={})
+    @patch("run_paper_trading.get_swing_universe", return_value=[])
+    @patch("run_paper_trading.is_due_now", return_value=(True, "due"))
+    @patch("run_paper_trading.get_strategy")
+    def test_capital_winddown_is_called_after_a_successful_run(self, mock_get_strategy, _mock_due, _mock_universe,
+                                                                  _mock_fetch, mock_run_daily, _mock_report,
+                                                                  _mock_notify, mock_winddown):
+        mock_get_strategy.return_value = self.record
+        mock_run_daily.return_value = {
+            "status": "processed", "as_of_date": "2026-01-01", "new_entries": [], "new_exits": [],
+            "open_positions": 0, "cash": 1000000, "mark_to_market_equity": 1000000,
+        }
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0,
+                                       "remaining_cash": 1000000, "reason": None}
+
+        rpt._run_one("fake_strategy")
+
+        mock_winddown.assert_called_once()
+        self.assertEqual(mock_winddown.call_args.kwargs.get("as_of_date"), datetime.date(2026, 1, 1))
+
+    @patch("run_paper_trading.apply_capital_winddown", side_effect=RuntimeError("boom"))
+    @patch("run_paper_trading._send_notification")
+    @patch("run_paper_trading.generate_report", return_value="deployment/reports/fake_strategy/2026-01-01.md")
+    @patch("run_paper_trading.run_daily")
+    @patch("run_paper_trading.fetch_all", return_value={})
+    @patch("run_paper_trading.get_swing_universe", return_value=[])
+    @patch("run_paper_trading.is_due_now", return_value=(True, "due"))
+    @patch("run_paper_trading.get_strategy")
+    def test_capital_winddown_failure_does_not_stop_the_rest_of_the_run(self, mock_get_strategy, _mock_due,
+                                                                          _mock_universe, _mock_fetch, mock_run_daily,
+                                                                          _mock_report, mock_notify, _mock_winddown):
+        mock_get_strategy.return_value = self.record
+        mock_run_daily.return_value = {
+            "status": "processed", "as_of_date": "2026-01-01", "new_entries": [], "new_exits": [],
+            "open_positions": 0, "cash": 1000000, "mark_to_market_equity": 1000000,
+        }
+
+        result = rpt._run_one("fake_strategy")   # a wind-down failure must not raise or skip the rest
+
+        self.assertIsNotNone(result)   # the run still completes successfully
+        mock_notify.assert_called_once()   # the normal (non-failure) notification still fires
 
 
 class TestAllDueLoopContinuesPastOneFailure(unittest.TestCase):

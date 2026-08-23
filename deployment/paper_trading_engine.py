@@ -206,15 +206,20 @@ def _get_open_price(df, target_date: date_type) -> Optional[float]:
     return float(rows.iloc[0]["Open"])
 
 
-def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -> Optional[float]:
-    """The mark-to-market `equity` value (NOT the cash-basis figure
+def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -> Optional[tuple]:
+    """The (date, mark-to-market `equity`) pair (NOT the cash-basis figure
     _load_daily_equity() returns for compute_metrics()) most recently
     recorded strictly before `before_date` -- i.e. "yesterday's" equity,
     robust to weekends/holidays/gaps since it just takes the latest prior
     entry rather than literally calendar-yesterday. Returns None if no
     prior day has been recorded (first-ever run), so callers can
     distinguish "no prior day to compare against" from a genuine zero
-    change."""
+    change. Returns the DATE alongside the value (not just the value) so
+    run_daily()'s daily_pnl computation can look up any capital wind-down
+    withdrawals that happened strictly between that prior day and today
+    (see deployment/capital_winddown.py) -- a withdrawal is a deliberate
+    capital-management action, never a trading result, so it must never
+    be misread as a loss."""
     path = _daily_equity_path(strategy_key)
     if not os.path.exists(path):
         return None
@@ -228,7 +233,7 @@ def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -
             d_date = date_type.fromisoformat(d["date"])
             if d_date < before_date and (latest_date is None or d_date > latest_date):
                 latest_date, latest_equity = d_date, d["equity"]
-    return latest_equity
+    return (latest_date, latest_equity) if latest_date is not None else None
 
 
 def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
@@ -634,9 +639,22 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # (the previous computation, done by the caller) silently missed,
     # showing 0 on every day with no exit even though open positions may
     # have moved. None on the very first recorded day (nothing prior to
-    # compare against).
-    previous_equity = _previous_mark_to_market_equity(strategy_key, target_date)
-    daily_pnl = round(mark_to_market_equity - previous_equity, 2) if previous_equity is not None else None
+    # compare against). Adds back any capital wind-down withdrawal that
+    # happened strictly between that prior day and today (deferred, local
+    # import to avoid a module-load-time circular import with
+    # deployment/capital_winddown.py, which itself imports from this
+    # module) -- a withdrawal is a deliberate capital-management action,
+    # never a trading result, so it must never show up as a loss here. A
+    # strategy that has never had a withdrawal gets 0.0 back, a complete
+    # no-op -- byte-identical to before this existed.
+    previous = _previous_mark_to_market_equity(strategy_key, target_date)
+    if previous is not None:
+        previous_date, previous_equity = previous
+        from deployment.capital_winddown import cumulative_withdrawn_between
+        withdrawn_since = cumulative_withdrawn_between(strategy_key, previous_date, target_date)
+        daily_pnl = round((mark_to_market_equity - previous_equity) + withdrawn_since, 2)
+    else:
+        daily_pnl = None
 
     _save_portfolio(strategy_key, portfolio)
     _append_daily_equity(strategy_key, target_date, cash, mark_to_market_equity)
@@ -663,9 +681,22 @@ def compute_live_metrics(strategy_key: str) -> dict:
     """Metrics computed from the accumulated virtual trade/equity history
     so far, using the SAME compute_metrics() function the research
     backtests use -- for direct comparability against the historical
-    research numbers (see deployment/drift_report.py)."""
+    research numbers (see deployment/drift_report.py).
+
+    The cash-basis curve is adjusted by adding back, at each date, the
+    cumulative amount any capital wind-down has withdrawn as of that date
+    (deferred, local import -- see deployment/capital_winddown.py and
+    run_daily()'s own identical daily_pnl adjustment for the full
+    rationale: a withdrawal is a deliberate capital-management action,
+    never a trading result, so CAGR/Sharpe/Sortino/MaxDrawdown must never
+    read it as a loss). A strategy that has never had a withdrawal gets
+    0.0 added at every date -- a complete no-op, byte-identical to
+    before this existed."""
     trades = _load_trades(strategy_key)
     daily_equity = _load_daily_equity(strategy_key)
+    if daily_equity:
+        from deployment.capital_winddown import cumulative_withdrawn_up_to
+        daily_equity = {d: v + cumulative_withdrawn_up_to(strategy_key, d) for d, v in daily_equity.items()}
     portfolio = _load_portfolio(strategy_key)
     trading_calendar = sorted(daily_equity.keys())
     return compute_metrics(trades, portfolio["starting_capital"], trading_calendar, daily_equity=daily_equity)

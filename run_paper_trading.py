@@ -70,6 +70,7 @@ isolation/execution-assumption disclosure.
 """
 
 import argparse
+from datetime import date as date_type
 
 from data.fetch_historical import fetch_all
 from swing_research.universe import get_swing_universe
@@ -77,6 +78,7 @@ from reporting.telegram_notifier import send_telegram_message
 from reporting.telegram_templates import format_daily_summary, format_execution_notification, format_strategy_notification
 
 from deployment.base import DeploymentStatus
+from deployment.capital_winddown import apply_capital_winddown
 from deployment.deployment_manager import get_strategy, list_strategies
 from deployment.drift_report import generate_drift_report
 from deployment.paper_trading_engine import (
@@ -343,6 +345,30 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
 
         if result["status"] != "processed":
             return None
+
+        # Capital wind-down (added 2026-08-23, per explicit direction) --
+        # gradually brings this strategy's own idle cash down toward a
+        # target, WITHOUT ever touching capital reserved for currently-
+        # queued next-session entries or force-selling anything. Runs
+        # strictly AFTER the run_daily()/run_pead_daily() call above has
+        # fully completed -- exits processed, new signals detected and
+        # queued into pending_entries -- so the reservation calculation
+        # below sees the FINAL, complete pending_entries for today. Runs
+        # BEFORE the report/Telegram message below, so both reflect the
+        # accurate, current cash figure. Isolated in its own try/except,
+        # same discipline as drift-report generation below -- a wind-down
+        # failure must never take down the rest of this strategy's run.
+        # See deployment/capital_winddown.py for the full design.
+        try:
+            winddown = apply_capital_winddown(
+                strategy_key, risk_pct_per_unit=_strategy_instance_for(strategy_key).risk_pct_per_unit,
+                as_of_date=date_type.fromisoformat(result["as_of_date"]),
+            )
+            if winddown["withdrawn"] > 0:
+                print(f"[{strategy_key}] Capital wind-down: withdrew {winddown['withdrawn']} "
+                      f"(reserved {winddown['reserved']} for queued entries, cash now {winddown['remaining_cash']})")
+        except Exception as e:
+            print(f"WARNING: '{strategy_key}' capital wind-down failed (non-fatal): {type(e).__name__}: {e}")
 
         report_path = generate_report(strategy_key, config["display_name"], strategy_id=record.strategy_id)
         print(f"[{strategy_key}] Report saved: {report_path}")

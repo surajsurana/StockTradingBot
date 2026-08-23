@@ -49,6 +49,33 @@ import os
 PAPER_TRADING_VIRTUAL_CAPITAL = float(os.environ.get("PAPER_TRADING_VIRTUAL_CAPITAL", 1_000_000))
 PAPER_TRADING_MIN_POSITION_VALUE_RUPEES = float(os.environ.get("PAPER_TRADING_MIN_POSITION_VALUE_RUPEES", 0))
 
+# CAPITAL WIND-DOWN (added 2026-08-23, per explicit direction): gradually
+# brings each strategy's own idle cash down toward a target "actively
+# deployable capital" level, without ever touching cash reserved for
+# currently-queued next-session entries or force-selling anything -- see
+# deployment/capital_winddown.py for the full mechanism. All three knobs
+# below are runtime-configurable (same "appropriate existing configuration
+# mechanism" convention as PAPER_TRADING_VIRTUAL_CAPITAL above), per the
+# same "no hardcoded capital assumption" principle -- change these via
+# environment variable, never a code edit, to retarget or pause wind-down.
+#
+# PAPER_TRADING_WINDDOWN_ENABLED: on by default -- this setting exists
+# specifically so the feature can be switched off operationally (e.g. if
+# something looks wrong after deployment) without a code change.
+# PAPER_TRADING_WINDDOWN_TARGET_CAPITAL: the cash level each strategy
+# gradually converges toward. Explicit direction named Rs.1,00,000.
+# PAPER_TRADING_WINDDOWN_DAILY_FRACTION: what fraction of TODAY's excess
+# cash (cash above target, after reservation) is withdrawn on any one
+# day -- 0.10 (10%) was chosen as a disclosed, deliberately conservative
+# default that removes the bulk of a large excess within a few weeks
+# without ever looking like a sudden, shocking cash drop in one day. Not
+# specified in the request itself -- flagged here, and again in the
+# pre-deployment writeup, as a judgment call for review, not an assumption
+# to accept silently.
+PAPER_TRADING_WINDDOWN_ENABLED = os.environ.get("PAPER_TRADING_WINDDOWN_ENABLED", "true").lower() == "true"
+PAPER_TRADING_WINDDOWN_TARGET_CAPITAL = float(os.environ.get("PAPER_TRADING_WINDDOWN_TARGET_CAPITAL", 100_000))
+PAPER_TRADING_WINDDOWN_DAILY_FRACTION = float(os.environ.get("PAPER_TRADING_WINDDOWN_DAILY_FRACTION", 0.10))
+
 # NARROW, EXPLICIT EXCEPTION (2026-08-04, per explicit direction): the ONLY
 # thing ever imported from config/settings.py anywhere in deployment/.
 # Exists solely so paper-trading Telegram notifications land in the same
