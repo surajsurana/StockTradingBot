@@ -110,6 +110,16 @@ PAPER_TRADING_STRATEGY_SPECS = [
             "swing_research.cross_sectional", fromlist=["compute_momentum_percentile_ranks"]
         ).compute_momentum_percentile_ranks(data), "momentum_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="max_effect",
+        display_name="MAX Effect (Lottery-Demand Anomaly)",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.max_effect", fromlist=["MaxEffectStrategy"]
+        ).MaxEffectStrategy(),
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_max_effect_percentile_ranks"]
+        ).compute_max_effect_percentile_ranks(data), "max_effect_percentile"),
+    ),
 ]
 
 

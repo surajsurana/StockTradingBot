@@ -225,8 +225,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
     "research_verdict_source": "EXP-042 (base), EXP-043 (recent-period)",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1787492890.216014,
+        "reason": "Explicit approval 2026-08-23: PASS on both required checks (EXP-042 base, EXP-043 recent-period), HIGH evidence quality both -- promoted for forward validation only, not real-money trading."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
