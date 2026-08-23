@@ -23,38 +23,23 @@ import sys
 from config import settings
 from data.fetch_historical import fetch_all
 from swing_research.manifest import build_run_manifest, save_run_manifest
+from swing_research.strategy_catalog import RESEARCH_EXPERIMENT_SPECS
 from swing_research.universe import get_swing_universe
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
-_STRATEGY_VARIANTS = {
-    "turtle_system2": "System 2 (55-day entry / 20-day exit, long-only)",
-    "minervini_trend_template_filter": "Trend Template Filter (8-criterion screen, disclosed mechanical entry trigger, no pyramiding)",
-    "52_week_high_momentum": "52-Week High Momentum (top-decile nearness percentile, K=6mo single-vintage, no percentile-based early exit)",
-    "cross_sectional_momentum": "Cross-Sectional Momentum (J=6mo formation, top-decile percentile, K=6mo single-vintage, no percentile-based early exit)",
-    "short_term_reversal": "Short-Term Reversal (1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
-    "betting_against_beta": "Betting Against Beta (Frazzini-Pedersen shrunk beta, 1yr lookback, bottom-decile percentile, 1mo single-vintage, long-only unlevered)",
-    "amihud_illiquidity": "Amihud Illiquidity Premium (252d ILLIQ formation, top-decile percentile, 1mo single-vintage, EXECUTION-REALISTIC verdict: 5% ADV cap + ILLIQ-derived cost + next-day-open fills)",
-}
+# Built from swing_research/strategy_catalog.py (added 2026-08-23, "self-
+# registering strategy architecture") -- adding a future research
+# candidate to this CLI means appending one entry to that catalog, not
+# editing this dict or the dispatch in run_strategy() below.
+_SPECS_BY_KEY = {spec.strategy_key: spec for spec in RESEARCH_EXPERIMENT_SPECS}
+_STRATEGY_VARIANTS = {spec.strategy_key: spec.variant_description for spec in RESEARCH_EXPERIMENT_SPECS}
 
 
 def run_strategy(strategy_key: str, years: int, limit: int, windows: int):
-    if strategy_key == "turtle_system2":
-        from swing_research.research_director import run_turtle_experiment as run_experiment_fn
-    elif strategy_key == "minervini_trend_template_filter":
-        from swing_research.research_director import run_minervini_experiment as run_experiment_fn
-    elif strategy_key == "52_week_high_momentum":
-        from swing_research.research_director import run_52_week_high_momentum_experiment as run_experiment_fn
-    elif strategy_key == "cross_sectional_momentum":
-        from swing_research.research_director import run_cross_sectional_momentum_experiment as run_experiment_fn
-    elif strategy_key == "short_term_reversal":
-        from swing_research.research_director import run_short_term_reversal_experiment as run_experiment_fn
-    elif strategy_key == "betting_against_beta":
-        from swing_research.research_director import run_betting_against_beta_experiment as run_experiment_fn
-    elif strategy_key == "amihud_illiquidity":
-        from swing_research.research_director import run_amihud_experiment as run_experiment_fn
-    else:
+    if strategy_key not in _SPECS_BY_KEY:
         raise ValueError(f"Unknown strategy: {strategy_key}")
+    run_experiment_fn = _SPECS_BY_KEY[strategy_key].runner_getter()
 
     symbols = get_swing_universe()
     if limit:
@@ -125,9 +110,7 @@ def run_strategy(strategy_key: str, years: int, limit: int, windows: int):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", type=str, default="turtle_system2",
-                         choices=["turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
-                                  "cross_sectional_momentum", "short_term_reversal", "betting_against_beta",
-                                  "amihud_illiquidity"])
+                         choices=list(_SPECS_BY_KEY.keys()))
     parser.add_argument("--years", type=int, default=10)
     parser.add_argument("--limit", type=int, default=0, help="0 = full frozen universe")
     parser.add_argument("--windows", type=int, default=3)

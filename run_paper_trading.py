@@ -88,6 +88,7 @@ from deployment.paper_trading_engine import (
 from deployment.scheduler import is_due_now, strategies_due_now
 from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
+from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
 # All five paper-trading strategies are End-of-Day: they need the full
 # day's closing bar to compute a signal at all (percentile ranks,
@@ -105,71 +106,29 @@ from swing_research.research_director import SWING_EXPERIMENTS_DIR
 # a separate, later decision, not bundled into this timing fix.
 _DEFAULT_EXECUTION_CONFIG = ExecutionRealismConfig(fill_timing="next_day_open")
 
-def _renamed(extra: dict, column_name: str) -> dict:
-    """compute_*_percentile_ranks() returns {symbol: Series} where each
-    Series' own .name is the SYMBOL (an artifact of slicing a wide-format
-    DataFrame column-wise), not the feature name each strategy's
-    precompute() looks for. deployment/paper_trading_engine.py's
-    df.join(extra_columns[symbol]) uses the Series' .name as the joined
-    column's name, so without this rename it silently joins a column named
-    after the symbol instead of e.g. "rs_percentile" -- precompute() then
-    never finds its expected column, treats the percentile as always NaN,
-    and entry_signal_at() can never signal. swing_research/research_director.py
-    already does this same rename correctly for every backtest (see its
-    own extra_columns_by_symbol construction) -- this mirrors that
-    convention for the live paper-trading path. Found and fixed 2026-08-17:
-    fifty_two_week_high_momentum/short_term_reversal/minervini_trend_template_filter
-    had been running in PAPER_TRADING without this rename since promotion,
-    meaning they were structurally unable to ever generate an entry signal."""
-    return {symbol: series.rename(column_name) for symbol, series in extra.items()}
-
-
+# Built from swing_research/strategy_catalog.py (added 2026-08-23, "self-
+# registering strategy architecture") -- adding a future cross-sectional
+# strategy to paper trading means appending one entry to that catalog, not
+# editing this dict directly. PEAD stays hardcoded below exactly as
+# before: it is event-driven, not a cross-sectional swing_research.base.Strategy,
+# and deliberately does not fit the catalog's shape -- see
+# strategy_catalog.py's own module docstring for why it's excluded there.
 _STRATEGY_FACTORIES = {
-    "fifty_two_week_high_momentum": {
-        "display_name": "52-Week High Momentum",
-        "strategy_factory": lambda: __import__(
-            "swing_research.strategies.fifty_two_week_high_momentum", fromlist=["FiftyTwoWeekHighMomentumStrategy"]
-        ).FiftyTwoWeekHighMomentumStrategy(),
-        "compute_extra_columns_fn": lambda data: _renamed(__import__(
-            "swing_research.cross_sectional", fromlist=["compute_52w_high_nearness_percentile_ranks"]
-        ).compute_52w_high_nearness_percentile_ranks(data), "nearness_percentile"),
-    },
-    "short_term_reversal": {
-        "display_name": "Short-Term Reversal",
-        "strategy_factory": lambda: __import__(
-            "swing_research.strategies.short_term_reversal", fromlist=["ShortTermReversalStrategy"]
-        ).ShortTermReversalStrategy(),
-        "compute_extra_columns_fn": lambda data: _renamed(__import__(
-            "swing_research.cross_sectional", fromlist=["compute_short_term_reversal_percentile_ranks"]
-        ).compute_short_term_reversal_percentile_ranks(data), "reversal_percentile"),
-    },
-    "minervini_trend_template_filter": {
-        "display_name": "Minervini Trend Template Filter",
-        "strategy_factory": lambda: __import__(
-            "swing_research.strategies.minervini_trend_template_filter", fromlist=["MinerviniTrendTemplateFilterStrategy"]
-        ).MinerviniTrendTemplateFilterStrategy(),
-        "compute_extra_columns_fn": lambda data: _renamed(__import__(
-            "swing_research.cross_sectional", fromlist=["compute_rs_percentile_ranks"]
-        ).compute_rs_percentile_ranks(data), "rs_percentile"),
-    },
-    "cross_sectional_momentum": {
-        "display_name": "Cross-Sectional Momentum",
-        "strategy_factory": lambda: __import__(
-            "swing_research.strategies.cross_sectional_momentum", fromlist=["CrossSectionalMomentumStrategy"]
-        ).CrossSectionalMomentumStrategy(),
-        "compute_extra_columns_fn": lambda data: _renamed(__import__(
-            "swing_research.cross_sectional", fromlist=["compute_momentum_percentile_ranks"]
-        ).compute_momentum_percentile_ranks(data), "momentum_percentile"),
-    },
-    "pead": {
-        "display_name": "PEAD (Forward Evidence Experiment)",
-        # No historical backtest exists for this strategy -- Research
-        # Verdict is NOT_YET_EVALUATED, unchanged. See
-        # deployment/pead_forward_engine.py's own module docstring.
-        # No strategy_factory/compute_extra_columns_fn -- event-driven,
-        # handled entirely by run_pead_daily(), see _run_one() below.
-        "is_forward_evidence_experiment": True,
-    },
+    spec.strategy_key: {
+        "display_name": spec.display_name,
+        "strategy_factory": spec.strategy_factory,
+        **({"compute_extra_columns_fn": spec.compute_extra_columns_fn} if spec.compute_extra_columns_fn else {}),
+    }
+    for spec in PAPER_TRADING_STRATEGY_SPECS
+}
+_STRATEGY_FACTORIES["pead"] = {
+    "display_name": "PEAD (Forward Evidence Experiment)",
+    # No historical backtest exists for this strategy -- Research
+    # Verdict is NOT_YET_EVALUATED, unchanged. See
+    # deployment/pead_forward_engine.py's own module docstring.
+    # No strategy_factory/compute_extra_columns_fn -- event-driven,
+    # handled entirely by run_pead_daily(), see _run_one() below.
+    "is_forward_evidence_experiment": True,
 }
 
 
