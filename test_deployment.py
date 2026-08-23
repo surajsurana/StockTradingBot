@@ -23,6 +23,7 @@ from deployment import deployment_manager
 from deployment import paper_trading_engine as pte
 from deployment.drift_report import _flag_drift, compute_drift
 from deployment.pilot_live import check_pilot_eligibility
+from deployment.settings import PAPER_TRADING_WINDDOWN_TARGET_CAPITAL
 from swing_research.base import OpenPosition, Signal, Strategy
 
 
@@ -241,11 +242,16 @@ class TestPaperTradingEngine(unittest.TestCase):
         # double-counting the entry (equity looked like it jumped by the
         # trade's own size). Moving cash into a position of equal value
         # changes nothing on entry day (no price move has happened yet).
+        # Expected baseline is PAPER_TRADING_WINDDOWN_TARGET_CAPITAL, not a
+        # hardcoded literal -- see _load_portfolio()'s fresh-strategy
+        # capital policy (fixed 2026-08-23): a brand-new strategy now
+        # starts directly at the target capital, so this test's baseline
+        # tracks that setting rather than drifting out of sync with it.
         strategy = _AlwaysQualifiesStrategy()
         data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
                                 as_of_date=datetime.date(2024, 1, 1))
-        self.assertEqual(result["mark_to_market_equity"], 1_000_000.0)
+        self.assertEqual(result["mark_to_market_equity"], PAPER_TRADING_WINDDOWN_TARGET_CAPITAL)
 
     def test_mark_to_market_equity_reflects_same_day_exit_proceeds(self):
         # Regression test for the other half of the same bug: an exit's

@@ -54,7 +54,7 @@ from swing_research.metrics import compute_metrics
 from deployment.settings import (
     PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
     PAPER_TRADING_STATE_DIR,
-    PAPER_TRADING_VIRTUAL_CAPITAL,
+    PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
     REPORTS_DIR,
 )
 
@@ -108,8 +108,27 @@ def _daily_equity_path(strategy_key: str) -> str:
 def _load_portfolio(strategy_key: str) -> dict:
     path = _portfolio_path(strategy_key)
     if not os.path.exists(path):
+        # FRESH-STRATEGY CAPITAL POLICY (fixed 2026-08-23, per explicit
+        # direction, after SW-011's promotion showed the prior behavior's
+        # real consequence): a brand-new strategy starts DIRECTLY at the
+        # same target "steady-state" capital deployment/capital_winddown.py
+        # already winds every OTHER strategy's idle cash toward
+        # (PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -- not at the old, much
+        # larger PAPER_TRADING_VIRTUAL_CAPITAL default, which would
+        # otherwise trigger an immediate, artificial wind-down withdrawal
+        # on day one purely as an artifact of the initial seed, before the
+        # strategy has ever had a chance to hold a real position. Starting
+        # AT target makes wind-down a natural no-op for a new strategy
+        # (compute_winddown_withdrawal() already returns 0 once
+        # cash <= target -- no special-casing needed here or anywhere
+        # else). Reuses the SAME existing, already-configurable setting
+        # the wind-down mechanism targets, rather than introducing a
+        # second value that could drift out of sync with it. An EXISTING
+        # strategy whose portfolio.json already exists never reaches this
+        # branch again, so this changes nothing for any strategy already
+        # running.
         return {
-            "cash": PAPER_TRADING_VIRTUAL_CAPITAL, "starting_capital": PAPER_TRADING_VIRTUAL_CAPITAL,
+            "cash": PAPER_TRADING_WINDDOWN_TARGET_CAPITAL, "starting_capital": PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
             "positions": {}, "last_processed_date": None,
             # pending_entries/pending_exits (added 2026-08-17): only ever
             # populated when a strategy's ExecutionRealismConfig.fill_timing

@@ -25,6 +25,7 @@ from deployment.capital_winddown import (
     cumulative_withdrawn_up_to,
     estimate_reservation,
 )
+from deployment.settings import PAPER_TRADING_WINDDOWN_TARGET_CAPITAL
 from swing_research.base import OpenPosition, Signal, Strategy
 
 
@@ -152,6 +153,27 @@ def _one_day_df(date_str, open_, high, low, close):
                           "Volume": [1000]}, index=idx)
 
 
+def _seed_elevated_starting_cash(strategy_key: str, cash: float = 1_000_000.0) -> None:
+    """Explicitly puts a strategy's portfolio into the 'already has capital
+    ABOVE target' state the wind-down mechanism is meant to act on.
+
+    A BRAND-NEW strategy now starts directly AT
+    PAPER_TRADING_WINDDOWN_TARGET_CAPITAL (see
+    deployment/paper_trading_engine.py's _load_portfolio() fresh-strategy
+    capital policy, fixed 2026-08-23) and therefore never triggers a real
+    withdrawal on its own -- every test below that needs an ACTUAL
+    withdrawal to happen in order to test something meaningful (not a
+    withdrawal, distortion, or reservation check that would otherwise pass
+    vacuously with nothing ever withdrawn) calls this first to explicitly
+    simulate an EXISTING, already-running strategy's elevated cash --
+    mirroring this program's own standing policy that existing strategies
+    already above target keep winding down unchanged, while brand-new ones
+    do not."""
+    portfolio = pte.load_portfolio(strategy_key)
+    portfolio["cash"] = cash
+    pte._save_portfolio(strategy_key, portfolio)
+
+
 class TestCapitalWinddownIntegration(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -192,6 +214,12 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         strategy = _AlwaysQualifiesStrategy()
         cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
 
+        # Seeded BEFORE this strategy's very first run_daily() call, so its
+        # own recorded day-1 equity snapshot is consistent with the
+        # elevated cash from the start -- simulates an existing,
+        # already-elevated strategy (never a brand-new one, which now
+        # starts directly at target and has nothing to wind down).
+        _seed_elevated_starting_cash(self.strategy_key)
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
@@ -211,6 +239,7 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
     def test_withdrawal_never_exceeds_idle_cash(self):
         strategy = _AlwaysQualifiesStrategy()
         cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        _seed_elevated_starting_cash(self.strategy_key)   # before the first run -- see comment above
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
@@ -228,6 +257,7 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         explicit 'release' step)."""
         strategy = _AlwaysQualifiesStrategy()
         cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        _seed_elevated_starting_cash(self.strategy_key)   # before the first run -- see comment above
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
@@ -261,6 +291,7 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         strategy_b = _AlwaysQualifiesStrategy()
         pte.run_daily("strategy_b", strategy_b, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+        _seed_elevated_starting_cash("strategy_b")   # so wind-down actually withdraws something to compare against
         apply_capital_winddown("strategy_b", risk_pct_per_unit=strategy_b.risk_pct_per_unit,
                                 as_of_date=datetime.date(2024, 1, 1))
 
@@ -276,6 +307,7 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         behavior -- a stop-loss/signal exit must fire exactly the same
         whether or not wind-down has run against this strategy's cash."""
         strategy = _AlwaysQualifiesStrategy()
+        _seed_elevated_starting_cash(self.strategy_key)   # before the first run -- see comment above
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1))
@@ -295,6 +327,7 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         position survives untouched (same quantity/entry_price/stop_loss)
         across a wind-down call."""
         strategy = _AlwaysQualifiesStrategy()
+        _seed_elevated_starting_cash(self.strategy_key)   # before the first run -- see comment above
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1))
@@ -311,9 +344,15 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         per day) with no pending entries in the way, and confirm cash
         approaches, and eventually reaches, the target."""
         # No positions/pending entries at all -- isolates pure convergence.
+        # A brand-new strategy now starts directly AT target (see
+        # _seed_elevated_starting_cash()'s own docstring), so this test
+        # explicitly seeds the SAME elevated starting cash the original
+        # scenario exercised, to keep testing real multi-day convergence
+        # rather than a one-step no-op.
         # 900,000 excess x 0.9^n drops below the 2,000 snap threshold at
         # n~=58 -- run well past that so the snap-to-target rule has
         # definitely fired.
+        _seed_elevated_starting_cash(self.strategy_key)
         for day in range(1, 65):
             apply_capital_winddown(
                 self.strategy_key, risk_pct_per_unit=0.01,
@@ -323,7 +362,12 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         self.assertAlmostEqual(final_cash, 100_000.0, delta=1.0)
 
     def test_disabled_flag_withdraws_nothing(self):
+        # Seeded elevated so this actually proves the enabled=False flag is
+        # what suppresses the withdrawal -- without seeding, a fresh
+        # strategy already at target would withdraw nothing regardless of
+        # the flag, which would prove nothing about the flag itself.
         strategy = _AlwaysQualifiesStrategy()
+        _seed_elevated_starting_cash(self.strategy_key)   # before the first run -- see comment above
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1))
@@ -355,6 +399,12 @@ class TestPerformanceMetricsUnaffectedByWinddown(unittest.TestCase):
 
     def test_daily_pnl_does_not_show_withdrawal_as_a_loss(self):
         strategy = _AlwaysQualifiesStrategy()
+        # Seeded BEFORE the first run_daily() call, so the day-1 equity
+        # snapshot run_daily() records is itself consistent with the
+        # elevated cash -- seeding AFTER would leave a stale, inconsistent
+        # day-1 snapshot behind that daily_pnl's own day-over-day
+        # comparison would then (correctly) flag as a huge, unrelated jump.
+        _seed_elevated_starting_cash(self.strategy_key)
         day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
         pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
                       as_of_date=datetime.date(2024, 1, 1))
@@ -374,14 +424,19 @@ class TestPerformanceMetricsUnaffectedByWinddown(unittest.TestCase):
 
     def test_compute_live_metrics_cagr_unaffected_by_withdrawal(self):
         strategy = _AlwaysQualifiesStrategy()
+        # Seeded BEFORE the first day's run_daily() call -- see comment in
+        # test_daily_pnl_does_not_show_withdrawal_as_a_loss above for why
+        # seeding after the fact would leave an inconsistent equity history.
+        _seed_elevated_starting_cash(self.strategy_key)
         # Build up a few days of flat, trade-free history.
         for i, day_str in enumerate(["2024-01-01", "2024-01-02", "2024-01-03"]):
             data = {"SYM.NS": _one_day_df(day_str, 100, 101, 99, 100)}
             pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda d=data: d,
                           as_of_date=datetime.date(2024, 1, 1 + i) if i < 3 else None)
 
-        apply_capital_winddown(self.strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit,
-                                as_of_date=datetime.date(2024, 1, 3))
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit,
+                                         as_of_date=datetime.date(2024, 1, 3))
+        self.assertGreater(result["withdrawn"], 0.0, "test is only meaningful if a withdrawal actually happened")
 
         for day_str, day_num in [("2024-01-04", 4), ("2024-01-05", 5)]:
             data = {"SYM.NS": _one_day_df(day_str, 100, 101, 99, 100)}
@@ -401,6 +456,53 @@ class TestPerformanceMetricsUnaffectedByWinddown(unittest.TestCase):
         self.assertEqual(cumulative_withdrawn_up_to("never_used_strategy", datetime.date(2024, 1, 1)), 0.0)
         self.assertEqual(cumulative_withdrawn_between("never_used_strategy", datetime.date(2024, 1, 1),
                                                         datetime.date(2024, 1, 2)), 0.0)
+
+
+class TestFreshStrategyCapitalPolicy(unittest.TestCase):
+    """Regression coverage for the fresh-strategy capital fix (2026-08-23,
+    per explicit direction, after SW-011's promotion showed the OLD
+    behavior's real consequence): a brand-new strategy must start directly
+    at PAPER_TRADING_WINDDOWN_TARGET_CAPITAL, not the old, much larger
+    PAPER_TRADING_VIRTUAL_CAPITAL default -- and, having started AT
+    target, must never suffer an immediate, artificial wind-down
+    withdrawal purely as an artifact of its own initial seed."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.patcher_pte = patch.object(pte, "PAPER_TRADING_STATE_DIR", self.tmpdir)
+        self.patcher_pte.start()
+        import deployment.capital_winddown as cwd
+        self.patcher_cwd = patch.object(cwd, "PAPER_TRADING_STATE_DIR", self.tmpdir)
+        self.patcher_cwd.start()
+        self.strategy_key = "brand_new_fresh_capital_test_strategy"
+
+    def tearDown(self):
+        self.patcher_pte.stop()
+        self.patcher_cwd.stop()
+        shutil.rmtree(self.tmpdir)
+
+    def test_fresh_portfolio_starts_at_target_capital_not_the_old_larger_default(self):
+        portfolio = pte.load_portfolio(self.strategy_key)   # no portfolio.json exists yet -- the fresh-seed branch
+        self.assertEqual(portfolio["cash"], PAPER_TRADING_WINDDOWN_TARGET_CAPITAL)
+        self.assertEqual(portfolio["starting_capital"], PAPER_TRADING_WINDDOWN_TARGET_CAPITAL)
+
+    def test_first_day_winddown_withdraws_nothing_for_a_fresh_strategy(self):
+        # Mirrors the exact real-world scenario this fix was written for
+        # (SW-011's actual first day): a brand-new strategy whose scan
+        # found no qualifying signal at all -- no run_daily() call needed
+        # here, since apply_capital_winddown() itself triggers the very
+        # same fresh-portfolio creation path via its own _load_portfolio()
+        # call, in complete isolation from any trading activity.
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1))
+        self.assertEqual(result["withdrawn"], 0.0,
+                          "a strategy that starts AT target must never have anything withdrawn on day one")
+
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertEqual(portfolio["cash"], PAPER_TRADING_WINDDOWN_TARGET_CAPITAL)
+        # No entry in the wind-down log either -- confirms this is a genuine
+        # no-op, not a withdrawal of Rs.0 still being recorded.
+        self.assertEqual(cumulative_withdrawn_up_to(self.strategy_key, datetime.date(2024, 1, 1)), 0.0)
 
 
 if __name__ == "__main__":
