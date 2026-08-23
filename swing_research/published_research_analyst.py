@@ -659,3 +659,73 @@ SHORT_TERM_REVERSAL = PublishedStrategy(
         "disclosed as a point of interpretive difference, not a rule change."
     ),
 )
+
+
+MAX_EFFECT = PublishedStrategy(
+    name="MAX Effect (Lottery-Demand Anomaly)",
+    source_citation=(
+        "Bali, T.G., Cakici, N. and Whitelaw, R.F. (2011), \"Maxing Out: Stocks as Lotteries and "
+        "the Cross-Section of Expected Returns,\" Journal of Financial Economics, Vol. 99, No. 2."
+    ),
+    mechanism=(
+        "Stocks with an extreme maximum single-day return within the recent month get bid up by "
+        "investors with a preference for lottery-like payoffs (skewness-seeking demand), then "
+        "underperform as that demand fades. Documented as surviving controls for size, "
+        "book-to-market, momentum, and short-term reversal -- a genuinely distinct behavioral "
+        "mechanism from every strategy already tested in this program, though highly correlated "
+        "with idiosyncratic volatility (a separate, not-yet-implemented roadmap candidate)."
+    ),
+    rules=(
+        "MAX, each formation date: the single HIGHEST daily return within the trailing ONE MONTH "
+        "(the paper's primary MAX(1) specification; MAX(5), the average of the 5 highest days, is "
+        "a disclosed robustness variant, not the headline result). Cross-sectional decile sort by "
+        "MAX at each formation date. Long the BOTTOM decile (lowest MAX -- calmest stocks); the "
+        "paper's zero-cost portfolio shorts the top decile (highest MAX -- most lottery-like "
+        "stocks). Holding period: one month, standard monthly-rebalance construction."
+    ),
+    variant_chosen=(
+        "MAX(1), single highest daily return in the trailing month -- the paper's own headline, "
+        "most-cited specification (not MAX(5), the paper's own secondary robustness check). "
+        "1-month formation / 1-month holding. Single-vintage holding, not the paper's "
+        "overlapping-portfolio construction -- identical structural adaptation to every prior "
+        "cross-sectional strategy in this program."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy -- no NSE SLB "
+        "infrastructure for a genuine short). MAX(1) ONLY, not the paper's MAX(5) robustness "
+        "variant -- MAX(1) is itself the paper's primary specification, not a weaker substitute. "
+        "SINGLE-VINTAGE HOLDING instead of the paper's overlapping-portfolio construction -- "
+        "mirrors every prior cross-sectional strategy's own approved deviation. EXIT RULE is ONLY "
+        "the 21-trading-day time-stop or the synthetic protective stop -- deliberately no "
+        "percentile-based early exit, same discipline established for every prior strategy. "
+        "PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- the source paper is a factor-return study with no "
+        "position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "Ninth strategy in this program, and the first BEHAVIORAL (lottery/gambling-preference) "
+        "mechanism tested -- every prior strategy is either trend-following, cross-sectional "
+        "momentum, short-horizon reversal, event-driven (earnings), or risk-based (beta/"
+        "liquidity). Zero factor-tag overlap with anything currently researched or paper-trading "
+        "(see swing_research/research_roadmap.py's EXISTING_STRATEGY_TAGS) -- the strongest "
+        "diversification candidate available from price data alone at the time this strategy was "
+        "selected. Reuses swing_research/cross_sectional.py's existing vectorized "
+        ".rank(pct=True, axis=1) pattern via a new compute_max_effect_percentile_ranks() function. "
+        "Known future overlap risk (disclosed, not a concern for this strategy alone): highly "
+        "correlated with Idiosyncratic Volatility Anomaly, a separate, not-yet-implemented "
+        "roadmap candidate -- if both are ever implemented, their overlap should be disclosed "
+        "together, not treated as two fully independent diversification wins."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. "
+        "MAX(1) vs. MAX(5): MINOR -- MAX(1) is the paper's own primary, most-cited specification. "
+        "1-month formation period: MINOR, a direct restatement of the paper's own headline window. "
+        "Single-vintage holding (vs. the paper's overlapping-portfolio construction): "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior "
+        "cross-sectional strategy's own single-vintage deviation. "
+        "Exit rule (21-trading-day time-stop only, no percentile-based early exit): N/A for the "
+        "time-stop itself. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all."
+    ),
+)

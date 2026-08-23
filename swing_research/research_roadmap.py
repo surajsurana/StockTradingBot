@@ -194,6 +194,7 @@ EXISTING_STRATEGY_TAGS = {
     "short_term_reversal": {"reversal_short_horizon"},
     "betting_against_beta": {"risk_based"},
     "amihud_illiquidity": {"liquidity"},
+    "max_effect": {"behavioral_lottery"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -1043,35 +1044,13 @@ CANDIDATES = [
         academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=7,
         research_value_score=6, data_availability_score=10, implementation_feasibility_score=9,
     ),
-    CandidateProfile(
-        key="max_lottery_effect",
-        name="MAX Effect (Lottery-Demand Anomaly)",
-        authors="Bali, T.G., Cakici, N. and Whitelaw, R.F.",
-        publication="\"Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns\", Journal of Financial Economics, Vol. 99, No. 2",
-        year=2011,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-only bottom-decile (avoid/underweight the highest recent single-day-return stocks); "
-                   "as a standalone strategy, long the LOW-MAX decile.",
-        factor_family="Behavioral / lottery-demand anomaly",
-        factor_tags={"behavioral_lottery"},
-        mechanism="Stocks with an extreme maximum daily return in the recent month get bid up by "
-                   "investors with a preference for lottery-like payoffs, then underperform as that "
-                   "demand fades -- distinct from idiosyncratic volatility (level of variance) despite "
-                   "some conceptual overlap.",
-        typical_holding_period="Monthly rebalance",
-        expected_trade_frequency="Moderate",
-        data_requirements=["daily_ohlcv_history"],
-        known_strengths="Well-cited, robust behavioral finding, purely price-data-based, and offers a "
-                         "genuinely distinct behavioral mechanism (gambling preference) never touched "
-                         "by this program.",
-        known_weaknesses="Meaningful conceptual overlap with idiosyncratic volatility -- if both were "
-                          "eventually implemented, their overlap should be disclosed, not treated as "
-                          "two fully independent diversification wins.",
-        academic_replication_quality="Well-replicated internationally, part of the broader low-vol/lottery-preference literature.",
-        evidence_sufficiency_note="Sufficient.",
-        academic_evidence_score=8, expected_robustness_score=7, operational_simplicity_score=8,
-        research_value_score=8, data_availability_score=10, implementation_feasibility_score=9,
-    ),
+    # NOTE: MAX Effect (Lottery-Demand Anomaly) is no longer a candidate
+    # here -- it was researched 2026-08-23 (SW-011) and received an
+    # official Research Verdict PASS (base run EXP-042 AND the dedicated
+    # recent-period check EXP-043, both HIGH evidence quality). Removed
+    # from CANDIDATES since it's no longer "not yet implemented"; its
+    # "behavioral_lottery" tag is now tracked in EXISTING_STRATEGY_TAGS
+    # above -- see swing_research/strategy_library/max_effect.md.
     CandidateProfile(
         key="downside_beta",
         name="Downside Beta / Downside Risk",

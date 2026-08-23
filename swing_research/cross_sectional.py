@@ -163,6 +163,57 @@ def compute_short_term_reversal_percentile_ranks(data: dict) -> dict:
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+MAX_EFFECT_FORMATION_DAYS = 21  # ~1 month -- Bali, Cakici & Whitelaw (2011)'s own "within a month" window
+
+
+def compute_max_effect_score(price_history: pd.DataFrame) -> pd.Series:
+    """
+    Bali, Cakici & Whitelaw (2011)'s MAX(1): the single HIGHEST daily
+    return within the trailing MAX_EFFECT_FORMATION_DAYS (21 trading days,
+    ~1 calendar month) window ending at (and including) the current row --
+    the paper's own headline/most-cited specification (MAX(5), the average
+    of the 5 highest days in the month, is the paper's disclosed robustness
+    variant, not implemented here -- see swing_research/strategy_library/
+    max_effect.md for the full documented-rule-vs-implementation-assumption
+    breakdown). No .shift() needed before .rolling() -- daily_return at
+    row i depends only on Close[i] and Close[i-1], and .rolling(21).max()
+    at row i looks only at rows i-20..i, never a future row -- no
+    lookahead, the same property every other score function in this
+    module already relies on.
+    """
+    daily_return = price_history["Close"].pct_change()
+    return daily_return.rolling(MAX_EFFECT_FORMATION_DAYS).max()
+
+
+def compute_max_effect_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of max_effect_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN, i.e. >=21 bars of history) MAX score
+    that day, of its own trailing-month single-highest-daily-return. Same
+    vectorized .rank(axis=1, pct=True) construction as every other
+    cross-sectional signal in this module -- LOW percentile here means a
+    LOW recent maximum daily return (a calmer, less lottery-like stock --
+    this strategy's entry condition is percentile <=10, the bottom decile,
+    the same "long the calmer/less extreme decile" polarity already used
+    by Betting Against Beta's bottom-decile-of-beta convention).
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_max_effect_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 # Frazzini & Pedersen (2014) beta estimator: beta = rho x (sigma_i / sigma_m),
 # shrunk 0.6/0.4 toward 1.0. BETA_LOOKBACK_DAYS is an APPROVED DEVIATION
 # (2026-08-15) from the paper's own preferred 5-year (minimum 3-year)

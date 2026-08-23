@@ -170,4 +170,11 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_amihud_experiment"]
         ).run_amihud_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="max_effect",
+        variant_description="MAX Effect / Lottery-Demand Anomaly (MAX(1) trailing 1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_max_effect_experiment"]
+        ).run_max_effect_experiment,
+    ),
 ]

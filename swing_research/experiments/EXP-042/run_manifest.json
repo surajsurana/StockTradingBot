@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-08-23T16:39:33.256061",
+  "strategy_name": "max_effect",
+  "strategy_variant": "MAX Effect / Lottery-Demand Anomaly (MAX(1) trailing 1mo formation, bottom-decile percentile, 1mo single-vintage, no percentile-based early exit)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 10,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "74e1cd1ab7d26060ba9877e0b818c3504f9ccddc",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/cross_sectional.py",
+      " M swing_research/knowledge_base.jsonl",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_director.py",
+      " M swing_research/strategy_catalog.py",
+      " M test_cross_sectional.py",
+      " M test_strategy_catalog.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/experiments/EXP-041/",
+      "?? swing_research/run_manifests/2026-08-23T16-37-32-551954_max_effect.json",
+      "?? swing_research/strategies/max_effect.py",
+      "?? test_kite_connection.py",
+      "?? test_max_effect.py"
+    ]
+  }
+}

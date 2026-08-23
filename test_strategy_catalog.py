@@ -85,6 +85,7 @@ class TestResearchExperimentCatalogStructure(unittest.TestCase):
     EXPECTED_KEYS = {
         "turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
         "cross_sectional_momentum", "short_term_reversal", "betting_against_beta", "amihud_illiquidity",
+        "max_effect",
     }
 
     def test_no_duplicate_keys(self):

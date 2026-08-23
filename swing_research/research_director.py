@@ -742,3 +742,46 @@ def run_short_term_reversal_experiment(data: dict, start_date: date, end_date: d
             "short_term_reversal_percentile_based_early_exit": False,
         },
     )
+
+
+def run_max_effect_experiment(data: dict, start_date: date, end_date: date,
+                               starting_capital: float = 1_000_000,
+                               n_walk_forward_windows: int = 3,
+                               narrative_api_key: str = "",
+                               narrative_call_fn: Optional[Callable[[str], str]] = None,
+                               experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                               knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                               skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for MAX Effect
+    (Lottery-Demand Anomaly) -- computes the 1-month trailing MAX(1)
+    cross-sectional percentile ONCE up front (same pattern as every prior
+    cross-sectional strategy), reused across every walk-forward window by
+    run_walk_forward_generic()'s own per-window slicing of
+    extra_columns_by_symbol.
+    """
+    from swing_research.strategies.max_effect import MaxEffectStrategy
+    from swing_research.published_research_analyst import MAX_EFFECT
+    from swing_research.cross_sectional import compute_max_effect_percentile_ranks
+
+    max_effect_percentiles = compute_max_effect_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("max_effect_percentile") for symbol, series in max_effect_percentiles.items()}
+
+    strategy = MaxEffectStrategy()
+    return run_generic_swing_experiment(
+        strategy, MAX_EFFECT, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "max_effect_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "max_effect_stop_loss_pct": 0.08,
+            "max_effect_percentile_threshold": 10.0,
+            "max_effect_formation_days": 21,
+            "max_effect_holding_period_trading_days": 21,
+            "max_effect_single_vintage": True,
+            "max_effect_percentile_based_early_exit": False,
+            "max_effect_variant": "MAX(1) -- single highest daily return in trailing month",
+        },
+    )

@@ -12,6 +12,7 @@ import pandas as pd
 
 from swing_research.cross_sectional import (
     compute_52w_high_nearness_percentile_ranks, compute_52w_high_nearness_score,
+    compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
     compute_rs_percentile_ranks, compute_rs_score,
     compute_short_term_reversal_percentile_ranks, compute_short_term_reversal_score,
@@ -292,6 +293,77 @@ class TestComputeShortTermReversalPercentileRanks(unittest.TestCase):
         ranks = compute_short_term_reversal_percentile_ranks(data)
         last_date = data["B"].index[-1]
         # B has the lowest (most negative) return of the four -> rank 1/4 -> 25th pct
+        self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
+
+
+class TestComputeMaxEffectScore(unittest.TestCase):
+    def test_flat_series_has_zero_score(self):
+        # A flat series has a zero daily return every day -- the rolling
+        # MAX of an all-zero window is itself 0.0.
+        df = _flat_then_final_jump(0.0)
+        score = compute_max_effect_score(df)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=6)
+
+    def test_positive_jump_gives_a_score_matching_hand_calculation(self):
+        # Every day in the trailing 21-day window is 0% except the final
+        # day (+20%) -- the rolling MAX must equal that single spike.
+        df = _flat_then_final_jump(0.20)
+        score = compute_max_effect_score(df)
+        self.assertAlmostEqual(score.iloc[-1], 0.20, places=6)
+
+    def test_negative_final_day_does_not_push_the_score_below_zero(self):
+        # Unlike a cumulative-return score, MAX is a rolling MAXIMUM of
+        # daily returns -- a single negative day surrounded by flat (0%)
+        # days must NOT make the score negative, since 0% is still the
+        # best day in that window. This is the behavior that distinguishes
+        # MAX from short_term_reversal_score on the same fixture shape.
+        df = _flat_then_final_jump(-0.30)
+        score = compute_max_effect_score(df)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=6)
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        df = _flat_then_final_jump(0.10, n=15)  # short of the 21-day formation window
+        score = compute_max_effect_score(df)
+        self.assertTrue(pd.isna(score.iloc[-1]))
+
+
+class TestComputeMaxEffectPercentileRanks(unittest.TestCase):
+    def test_calmer_symbol_ranks_lower(self):
+        # LOW percentile = LOW recent max daily return = the "calm" stock
+        # this strategy wants to buy (bottom decile).
+        data = {
+            "CALM": _flat_then_final_jump(0.02),
+            "MODERATE": _flat_then_final_jump(0.15),
+            "EXTREME": _flat_then_final_jump(0.50),
+        }
+        ranks = compute_max_effect_percentile_ranks(data)
+        last_date = data["CALM"].index[-1]
+        self.assertLess(ranks["CALM"].loc[last_date], ranks["MODERATE"].loc[last_date])
+        self.assertLess(ranks["MODERATE"].loc[last_date], ranks["EXTREME"].loc[last_date])
+
+    def test_percentiles_are_between_0_and_100(self):
+        data = {
+            "A": _flat_then_final_jump(0.10), "B": _flat_then_final_jump(0.40),
+            "C": _flat_then_final_jump(0.01), "D": _flat_then_final_jump(0.25),
+        }
+        ranks = compute_max_effect_percentile_ranks(data)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        self.assertEqual(compute_max_effect_percentile_ranks({}), {})
+
+    def test_calmest_symbol_lands_at_lowest_percentile(self):
+        data = {
+            "A": _flat_then_final_jump(0.10), "B": _flat_then_final_jump(0.01),
+            "C": _flat_then_final_jump(0.40), "D": _flat_then_final_jump(0.25),
+        }
+        ranks = compute_max_effect_percentile_ranks(data)
+        last_date = data["B"].index[-1]
+        # B has the lowest MAX (calmest) of the four -> rank 1/4 -> 25th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
 
 

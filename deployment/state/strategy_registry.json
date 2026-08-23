@@ -218,5 +218,19 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-010",
     "primary_experiment_id": ""
+  },
+  "max_effect": {
+    "strategy_key": "max_effect",
+    "display_name": "MAX Effect (Lottery-Demand Anomaly)",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-042 (base), EXP-043 (recent-period)",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-011",
+    "primary_experiment_id": "EXP-042"
   }
 }

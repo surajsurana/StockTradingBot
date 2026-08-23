@@ -1,0 +1,9 @@
+# Analysis: MAX Effect (Lottery-Demand Anomaly) — PASS
+
+The MAX effect bets on mispricing from lottery-demand: retail investors overpay for stocks with high recent extreme-return days (MAX(1)), causing subsequent underperformance. This implementation is long-only and captures the effect by holding the *low/moderate*-MAX side (or the strategy structurally profits from mean-reversion in high-MAX names via avoidance) — the modest 47.9% win rate paired with a 1.27 profit factor and +174 expectancy suggests a classic asymmetric-payoff anomaly: frequent small losses offset by fewer larger winners, consistent with harvesting a genuine risk-premium/behavioral distortion rather than a high-hit-rate signal.
+
+**Regime dependency**: Bullish-day entries generated ~66% of P&L (129k vs 67k bearish), and the catastrophic 2020-03 (-38.5%) and 2025 drawdowns (Jan -23.6%, Aug -18.7%, Mar -28.7% rolling) confirm the strategy is long-biased and vulnerable in risk-off regimes — expected given the long-only constraint with no short leg to hedge lottery-demand unwinds during crashes.
+
+**Sector concentration**: Healthcare (+72.8k) and Financial Services (+57.9k) alone account for ~66% of total P&L, while Consumer Services (-18.0k), Consumer Durables (-16.1k) and Services (-11.0k) were structural drags — sectors with retail-heavy, high-beta narratives (autos, consumer discretionary) may harbor stronger lottery-demand distortions that this long-only construction can't fully exploit without shorting the crowded high-MAX names directly.
+
+**Follow-ups**: (1) Test sector-neutral construction to isolate whether the Healthcare/Financials tilt is the true alpha source or a regime artifact of 2023-24 rallies. (2) Given single-vintage holding is a disclosed moderate-impact deviation, rerun with overlapping-portfolio construction to check if expectancy and the 41.95% max drawdown are artifacts of sizing/timing concentration rather than the factor itself.
