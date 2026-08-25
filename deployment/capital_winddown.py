@@ -128,18 +128,28 @@ SNAP_TO_TARGET_THRESHOLD_RUPEES = 2_000.0
 # --------------------------- reservation math ---------------------------
 
 def estimate_reservation(pending_entries: dict, cash: float, risk_pct_per_unit: float,
-                          min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES) -> dict:
+                          min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
+                          target_active_capital: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> dict:
     """
     Estimates the total cash tomorrow's real resolution is likely to need
     for every symbol currently in `pending_entries`, using the EXACT same
     sizing formula deployment/paper_trading_engine.py's own
-    _resolve_pending_fills() uses (quantity = floor(available x
-    risk_pct_per_unit / risk_per_share)), simulated sequentially against
-    a working copy of `cash` -- mirrors that real resolution loop's own
-    sequential consumption (each entry sized using whatever cash is left
-    after the previous one in the same run), so a strategy with several
-    pending entries doesn't get an inflated reservation that assumes each
-    one gets the FULL cash pool independently.
+    _resolve_pending_fills() uses (quantity = floor(min(available,
+    target_active_capital) x risk_pct_per_unit / risk_per_share) --
+    see that function's own sizing_capital_cap docstring, added
+    2026-08-24, for why the sizing basis is capped), simulated
+    sequentially against a working copy of `cash` -- mirrors that real
+    resolution loop's own sequential consumption (each entry sized using
+    whatever cash is left after the previous one in the same run), so a
+    strategy with several pending entries doesn't get an inflated
+    reservation that assumes each one gets the FULL cash pool
+    independently.
+
+    target_active_capital: the SAME cap _resolve_pending_fills() applies
+    -- defaults to PAPER_TRADING_WINDDOWN_TARGET_CAPITAL so this estimate
+    stays an exact mirror of what the real (now-capped) resolution will
+    do. A strategy already at or below target is unaffected: the working
+    pool starts at cash either way.
 
     pending_entries: {symbol: {"stop_loss": ..., "signal_price": ...,
     ...}} -- the exact shape portfolio["pending_entries"] already has.
@@ -156,7 +166,7 @@ def estimate_reservation(pending_entries: dict, cash: float, risk_pct_per_unit: 
     Returns {"total_reserved": float, "per_symbol": {symbol: float}} --
     per_symbol only contains symbols an amount was actually reserved for.
     """
-    working_cash = max(cash, 0.0)
+    working_cash = min(max(cash, 0.0), target_active_capital)
     per_symbol = {}
     for symbol, pending in pending_entries.items():
         signal_price = pending.get("signal_price")
@@ -178,14 +188,28 @@ def estimate_reservation(pending_entries: dict, cash: float, risk_pct_per_unit: 
 
 def compute_winddown_withdrawal(cash: float, reserved: float, target_active_capital: float,
                                  daily_fraction: float,
-                                 snap_threshold: float = SNAP_TO_TARGET_THRESHOLD_RUPEES) -> float:
+                                 snap_threshold: float = SNAP_TO_TARGET_THRESHOLD_RUPEES,
+                                 immediate_if_fully_idle: bool = False) -> float:
     """
     Pure decision function -- how much to withdraw TODAY, given today's
     cash, the amount reserved for pending entries, and the target. Never
     negative, never more than idle cash (cash - reserved), and never
     reduces cash below target_active_capital in one step unless the
     remaining gap is already below snap_threshold (see module docstring
-    for why a snap-to-target rule is needed for finite convergence).
+    for why a snap-to-target rule is needed for finite convergence) OR
+    immediate_if_fully_idle is True.
+
+    immediate_if_fully_idle (added 2026-08-24, per explicit direction,
+    after observing PEAD -- zero open positions, zero pending entries --
+    still only had its excess trimmed 10%/day like an actively-trading
+    strategy): the daily_fraction pacing exists to avoid a sudden,
+    visually-alarming cash swing next to an ACTIVE strategy's real trades
+    and reports -- a strategy holding nothing at all has no such trading
+    narrative for a same-day full withdrawal to disrupt. The CALLER
+    (apply_capital_winddown()) decides when this applies, from the real
+    portfolio's positions/pending_entries -- this function only encodes
+    what to DO once told, exactly like conflicting_robustness_evidence in
+    swing_research/acceptance_criteria.py's determine_acceptance_verdict().
     """
     idle_cash = cash - reserved
     if idle_cash <= 0:
@@ -193,7 +217,7 @@ def compute_winddown_withdrawal(cash: float, reserved: float, target_active_capi
     excess_over_target = cash - target_active_capital
     if excess_over_target <= 0:
         return 0.0   # already at or below target -- nothing to wind down
-    if excess_over_target <= snap_threshold:
+    if immediate_if_fully_idle or excess_over_target <= snap_threshold:
         withdrawal = excess_over_target
     else:
         withdrawal = excess_over_target * daily_fraction
@@ -290,11 +314,21 @@ def apply_capital_winddown(strategy_key: str, risk_pct_per_unit: float,
     portfolio = _load_portfolio(strategy_key)
     cash = portfolio["cash"]
 
-    reservation = estimate_reservation(portfolio.get("pending_entries", {}), cash, risk_pct_per_unit)
+    reservation = estimate_reservation(portfolio.get("pending_entries", {}), cash, risk_pct_per_unit,
+                                        target_active_capital=target_active_capital)
     reserved = reservation["total_reserved"]
     idle_cash = round(cash - reserved, 2)
 
-    withdrawal = compute_winddown_withdrawal(cash, reserved, target_active_capital, daily_fraction)
+    # A strategy holding NOTHING at all -- no open positions, nothing
+    # queued for tomorrow -- has no active trading narrative for a full,
+    # same-day withdrawal to disrupt (see compute_winddown_withdrawal()'s
+    # own immediate_if_fully_idle docstring). Determined here, from the
+    # real portfolio, not guessed from `reserved` alone (which reflects
+    # only PENDING entries, never open positions).
+    fully_idle = not portfolio.get("positions") and not portfolio.get("pending_entries")
+
+    withdrawal = compute_winddown_withdrawal(cash, reserved, target_active_capital, daily_fraction,
+                                               immediate_if_fully_idle=fully_idle)
     if withdrawal <= 0:
         reason = None if cash <= target_active_capital else "no idle cash after reservation"
         return {"withdrawn": 0.0, "reserved": reserved, "idle_cash": idle_cash,

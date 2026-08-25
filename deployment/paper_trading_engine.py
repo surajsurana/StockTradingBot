@@ -258,7 +258,8 @@ def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -
 def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                             execution_config: ExecutionRealismConfig, target_date: date_type,
                             risk_pct_per_unit: float,
-                            min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES) -> tuple:
+                            min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
+                            sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> tuple:
     """
     Resolves any entries/exits queued on a PRIOR day (fill_timing=
     "next_day_open") against target_date's real Open. This is the EXACT
@@ -267,6 +268,23 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
     near-market-open runner -- see that function's own docstring for why
     it exists) calls IDENTICAL fill logic, never a second, parallel
     implementation that could silently drift from this one.
+
+    sizing_capital_cap (added 2026-08-24, per explicit direction, after
+    observing new BUYs sized off a strategy's full elevated cash working
+    against capital wind-down's own goal of bringing that cash back down):
+    a NEW BUY's quantity is sized off min(cash, sizing_capital_cap), never
+    the raw cash figure alone -- defaults to
+    PAPER_TRADING_WINDDOWN_TARGET_CAPITAL so this applies automatically
+    everywhere without any caller needing to change. This is a CEILING,
+    not a daily allowance: `cash` is always the real, currently-persisted
+    balance (already reduced by every prior fill, on this day or any
+    earlier one), so once cash drops to or below the cap, min() simply
+    returns cash and this is a complete no-op -- exactly today's
+    unmodified behavior for a strategy already at or below target.
+    Affordability (`cost > cash` below) is checked against REAL cash,
+    never the capped basis, so this can only ever shrink a fill, never
+    reject one that would otherwise have been taken. Sells are entirely
+    unaffected -- they always close whatever quantity is actually held.
 
     Mutates `portfolio` in place (positions/cash/pending_entries/
     pending_exits are already updated in `portfolio` when this returns --
@@ -331,7 +349,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
         risk_per_share = open_price - stop_loss
         if risk_per_share <= 0:
             continue   # the overnight gap moved price through its own planned stop -- signal abandoned, not taken
-        quantity = math.floor(cash * risk_pct_per_unit / risk_per_share)
+        quantity = math.floor(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share)
         fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
         cost = fill_price * quantity
         if quantity < 1 or cost > cash or cost < min_position_value_rupees:
@@ -415,7 +433,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
               compute_extra_columns_fn: Optional[Callable[[dict], dict]] = None,
               as_of_date: Optional[date_type] = None, force: bool = False,
               execution_config: Optional[ExecutionRealismConfig] = None,
-              min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES) -> dict:
+              min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
+              sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> dict:
     """
     The idempotent daily runner. Call this once per trading day, after
     market close, for a given strategy already registered in the
@@ -454,6 +473,11 @@ def run_daily(strategy_key: str, strategy: Strategy,
     price x quantity) falls below this is skipped, same soft-fail
     convention as an unaffordable/zero-quantity signal (recorded nowhere,
     simply not taken -- not an error).
+    sizing_capital_cap: see _resolve_pending_fills()'s own docstring --
+    every NEW buy (both the next-day-open resolution above and this
+    function's own same-day-close path below) is sized off
+    min(cash, sizing_capital_cap), never uncapped cash alone. Defaults to
+    PAPER_TRADING_WINDDOWN_TARGET_CAPITAL.
 
     Returns a summary dict: {"status": "processed"|"skipped_already_processed",
     "as_of_date":..., "new_entries": [...], "new_exits": [...],
@@ -519,7 +543,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # harmless no-op re-check, not a double-fill).
     new_entries, new_exits = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
-        min_position_value_rupees,
+        min_position_value_rupees, sizing_capital_cap,
     )
     cash = portfolio["cash"]
     positions = portfolio["positions"]
@@ -610,7 +634,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                                      "signal_date": target_date.isoformat(),
                                                      "signal_price": signal.entry_price})
                     else:
-                        quantity = math.floor(cash * strategy.risk_pct_per_unit / risk_per_share)
+                        quantity = math.floor(min(cash, sizing_capital_cap) * strategy.risk_pct_per_unit
+                                               / risk_per_share)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
                         cost = fill_price * quantity
                         if quantity >= 1 and cost <= cash and cost >= min_position_value_rupees:

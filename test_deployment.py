@@ -235,6 +235,41 @@ class TestPaperTradingEngine(unittest.TestCase):
         portfolio = pte.load_portfolio(self.strategy_key)
         self.assertLess(portfolio["cash"], portfolio["starting_capital"])
 
+    def test_entry_quantity_is_capped_at_target_when_cash_is_elevated(self):
+        """Regression test for the 2026-08-24 sizing-cap fix: a strategy
+        with cash well above PAPER_TRADING_WINDDOWN_TARGET_CAPITAL (e.g.
+        one still being gradually wound down) must size a NEW entry off
+        the target, not its full elevated cash -- otherwise every new
+        position re-inflates the very pool wind-down is trying to shrink."""
+        portfolio = pte.load_portfolio(self.strategy_key)
+        portfolio["cash"] = 1_000_000.0
+        pte._save_portfolio(self.strategy_key, portfolio)
+
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        # entry_price=100, stop=90, risk_per_share=10;
+        # sized off min(1,000,000, 100,000)=100,000 -> qty=floor(100000*0.01/10)=100
+        # (NOT floor(1,000,000*0.01/10)=1000, the pre-fix, uncapped quantity)
+        self.assertEqual(result["new_entries"][0]["quantity"], 100)
+
+    def test_entry_quantity_uses_real_cash_when_already_below_target(self):
+        """The cap is a ceiling, never a daily allowance: once real cash
+        has dropped to or below target (e.g. after yesterday's buy already
+        used some of it), a new entry sizes off the SMALLER real cash
+        figure, never resets to imagine the full target is available again."""
+        portfolio = pte.load_portfolio(self.strategy_key)
+        portfolio["cash"] = 50_000.0   # already below the 100,000 target
+        pte._save_portfolio(self.strategy_key, portfolio)
+
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        # sized off min(50,000, 100,000)=50,000 -> qty=floor(50000*0.01/10)=50
+        self.assertEqual(result["new_entries"][0]["quantity"], 50)
+
     def test_mark_to_market_equity_unchanged_by_a_same_day_entry(self):
         # Regression test for a real bug found 2026-08-18: entering a
         # position used to ADD its cost to mark_to_market_equity on top

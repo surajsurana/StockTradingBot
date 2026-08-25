@@ -33,27 +33,45 @@ from swing_research.base import OpenPosition, Signal, Strategy
 
 class TestEstimateReservation(unittest.TestCase):
     def test_reserved_capital_includes_the_5pct_buffer(self):
+        # cash (1,000,000) is well above the default target_active_capital
+        # (100,000, see estimate_reservation()'s own default) -- the
+        # sizing basis is capped at target (added 2026-08-24), so this
+        # deliberately-large cash figure exercises the cap, not raw cash.
         pending = {"SYM.NS": {"stop_loss": 90.0, "signal_price": 100.0}}
         r = estimate_reservation(pending, cash=1_000_000.0, risk_pct_per_unit=0.01)
-        # quantity = floor(1,000,000 * 0.01 / 10) = 1000; cost = 100,000
-        expected_cost = 100_000.0
+        # working_cash = min(1,000,000, 100,000) = 100,000
+        # quantity = floor(100,000 * 0.01 / 10) = 100; cost = 10,000
+        expected_cost = 10_000.0
         self.assertEqual(r["per_symbol"]["SYM.NS"], round(expected_cost * RESERVATION_BUFFER_MULTIPLIER, 2))
-        self.assertEqual(r["per_symbol"]["SYM.NS"], 105_000.0)
-        self.assertEqual(r["total_reserved"], 105_000.0)
+        self.assertEqual(r["per_symbol"]["SYM.NS"], 10_500.0)
+        self.assertEqual(r["total_reserved"], 10_500.0)
+
+    def test_reserved_capital_uncapped_when_cash_is_already_below_target(self):
+        # Below target_active_capital, the cap is a complete no-op --
+        # working_cash starts at the real cash figure, unchanged from
+        # before the 2026-08-24 sizing-cap fix.
+        pending = {"SYM.NS": {"stop_loss": 90.0, "signal_price": 100.0}}
+        r = estimate_reservation(pending, cash=50_000.0, risk_pct_per_unit=0.01)
+        # quantity = floor(50,000 * 0.01 / 10) = 50; cost = 5,000
+        self.assertEqual(r["per_symbol"]["SYM.NS"], round(5_000.0 * RESERVATION_BUFFER_MULTIPLIER, 2))
 
     def test_multiple_pending_entries_are_sized_sequentially(self):
         # Mirrors _resolve_pending_fills()'s own sequential cash
-        # consumption -- the second entry must be sized against cash
-        # ALREADY reduced by the first's estimated cost, not the full pool.
+        # consumption -- the second entry must be sized against the
+        # working pool ALREADY reduced by the first's estimated cost, not
+        # the full pool. cash (500,000) exceeds the default
+        # target_active_capital (100,000), so the pool starts CAPPED at
+        # 100,000, not at cash itself (added 2026-08-24).
         pending = {
             "A.NS": {"stop_loss": 90.0, "signal_price": 100.0},
             "B.NS": {"stop_loss": 180.0, "signal_price": 200.0},
         }
         r = estimate_reservation(pending, cash=500_000.0, risk_pct_per_unit=0.01)
-        # A: qty=floor(500000*0.01/10)=500, cost=50,000 -> working_cash=450,000
-        # B: qty=floor(450000*0.01/20)=225, cost=45,000
-        self.assertEqual(r["per_symbol"]["A.NS"], round(50_000 * 1.05, 2))
-        self.assertEqual(r["per_symbol"]["B.NS"], round(45_000 * 1.05, 2))
+        # working_cash starts at min(500000, 100000) = 100,000
+        # A: qty=floor(100000*0.01/10)=100, cost=10,000 -> working_cash=90,000
+        # B: qty=floor(90000*0.01/20)=45, cost=9,000
+        self.assertEqual(r["per_symbol"]["A.NS"], round(10_000 * 1.05, 2))
+        self.assertEqual(r["per_symbol"]["B.NS"], round(9_000 * 1.05, 2))
 
     def test_entry_missing_signal_price_is_skipped_not_guessed(self):
         # Backward compatibility: an entry queued before signal_price
@@ -341,18 +359,24 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
     def test_portfolio_converges_toward_target_over_multiple_days(self):
         """Portfolios naturally converge toward Rs.1,00,000 without forced
         position closures -- run wind-down repeatedly (as it would once
-        per day) with no pending entries in the way, and confirm cash
-        approaches, and eventually reaches, the target."""
-        # No positions/pending entries at all -- isolates pure convergence.
-        # A brand-new strategy now starts directly AT target (see
-        # _seed_elevated_starting_cash()'s own docstring), so this test
-        # explicitly seeds the SAME elevated starting cash the original
-        # scenario exercised, to keep testing real multi-day convergence
-        # rather than a one-step no-op.
+        per day) with an OPEN POSITION in the way (not pending entries),
+        and confirm cash approaches, and eventually reaches, the target.
+
+        Seeded WITH an open position deliberately: immediate_if_fully_idle
+        (added 2026-08-24) does NOT apply to a strategy that has something
+        at risk, so this keeps testing genuine gradual, multi-day
+        convergence rather than a one-step snap. The fully-idle case (no
+        positions, no pending entries -- immediate snap) is covered
+        separately by test_fully_idle_strategy_snaps_to_target_immediately
+        below."""
+        _seed_elevated_starting_cash(self.strategy_key)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        portfolio["positions"] = {"SYM.NS": {"entry_price": 100.0, "entry_date": "2024-01-01",
+                                              "quantity": 10, "stop_loss": 90.0}}
+        pte._save_portfolio(self.strategy_key, portfolio)
         # 900,000 excess x 0.9^n drops below the 2,000 snap threshold at
         # n~=58 -- run well past that so the snap-to-target rule has
         # definitely fired.
-        _seed_elevated_starting_cash(self.strategy_key)
         for day in range(1, 65):
             apply_capital_winddown(
                 self.strategy_key, risk_pct_per_unit=0.01,
@@ -360,6 +384,22 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
             )
         final_cash = pte.load_portfolio(self.strategy_key)["cash"]
         self.assertAlmostEqual(final_cash, 100_000.0, delta=1.0)
+
+    def test_fully_idle_strategy_snaps_to_target_immediately(self):
+        """A strategy with ZERO open positions and ZERO pending entries
+        has no active trading narrative for a same-day full withdrawal to
+        disrupt -- immediate_if_fully_idle (added 2026-08-24) withdraws
+        the ENTIRE excess in one call, not daily_fraction of it. Mirrors
+        the real PEAD scenario this fix was written for: an existing,
+        already-elevated strategy (cash=1,000,000, see
+        _seed_elevated_starting_cash()) holding nothing at all."""
+        _seed_elevated_starting_cash(self.strategy_key)   # cash=1,000,000; positions/pending_entries stay {}
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1))
+        self.assertEqual(result["withdrawn"], 900_000.0,
+                          "a fully idle strategy must snap directly to target, not 10%/day")
+        final_cash = pte.load_portfolio(self.strategy_key)["cash"]
+        self.assertAlmostEqual(final_cash, 100_000.0, delta=0.01)
 
     def test_disabled_flag_withdraws_nothing(self):
         # Seeded elevated so this actually proves the enabled=False flag is
