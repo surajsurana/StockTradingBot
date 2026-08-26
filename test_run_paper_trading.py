@@ -391,7 +391,7 @@ class TestSendDailySummary(unittest.TestCase):
     @patch("run_paper_trading.load_portfolio")
     def test_newly_queued_signals_are_counted_not_just_fills(self, mock_load_portfolio, _mock_metrics,
                                                                mock_format, _mock_send):
-        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0}
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0, "cash": 1_000_000.0}
         run_results = [{
             "strategy_key": "s1", "display_name": "S1",
             "result": {
@@ -414,7 +414,7 @@ class TestSendDailySummary(unittest.TestCase):
     @patch("run_paper_trading.load_portfolio")
     def test_total_pnl_is_equity_minus_starting_capital(self, mock_load_portfolio, _mock_metrics,
                                                           mock_format, _mock_send):
-        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0}
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0, "cash": 1_050_000.0}
         run_results = [{
             "strategy_key": "s1", "display_name": "S1",
             "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
@@ -425,6 +425,33 @@ class TestSendDailySummary(unittest.TestCase):
 
         total_pnl = mock_format.call_args.kwargs["total_pnl"]
         self.assertEqual(total_pnl, 50_000.0)
+
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio")
+    def test_invested_amount_is_equity_minus_cash_summed_across_strategies(self, mock_load_portfolio, _mock_metrics,
+                                                                             mock_format, _mock_send):
+        # Two strategies: s1 has 800,000 equity / 100,000 cash (700,000
+        # deployed); s2 has 200,000 equity / 50,000 cash (150,000
+        # deployed) -- invested amount must be the SUM of what's actually
+        # deployed, not derived from a single strategy's numbers alone.
+        portfolios = {"s1": {"positions": {}, "starting_capital": 1_000_000.0, "cash": 100_000.0},
+                      "s2": {"positions": {}, "starting_capital": 1_000_000.0, "cash": 50_000.0}}
+        mock_load_portfolio.side_effect = lambda key: portfolios[key]
+        run_results = [
+            {"strategy_key": "s1", "display_name": "S1",
+             "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
+                        "mark_to_market_equity": 800_000.0, "daily_pnl": 0.0, "open_positions_detail": []}},
+            {"strategy_key": "s2", "display_name": "S2",
+             "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
+                        "mark_to_market_equity": 200_000.0, "daily_pnl": 0.0, "open_positions_detail": []}},
+        ]
+
+        rpt._send_daily_summary(run_results)
+
+        invested = mock_format.call_args.kwargs["invested_amount_total"]
+        self.assertEqual(invested, 850_000.0)   # (800,000-100,000) + (200,000-50,000)
 
 
 if __name__ == "__main__":

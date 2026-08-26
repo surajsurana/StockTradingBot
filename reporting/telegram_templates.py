@@ -263,7 +263,8 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
                           daily_pnl_total: Optional[float], portfolio_equity_total: float,
                           blended_win_rate: Optional[float],
                           booked_pnl_today: Optional[float] = None,
-                          total_pnl: Optional[float] = None) -> str:
+                          total_pnl: Optional[float] = None,
+                          invested_amount_total: Optional[float] = None) -> str:
     """
     ONE additional message sent after ALL scheduled strategies have
     finished for the day -- in addition to, never a replacement for, each
@@ -298,6 +299,13 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
     capital already nets together everything booked historically and
     today's unrealized movement into one number. Optional (None omits
     the line).
+    invested_amount_total ("Invested Amount"): portfolio equity minus
+    uninvested cash, summed across every strategy that ran today -- how
+    much capital is actually deployed into open positions right now, as
+    opposed to sitting idle. Added 2026-08-26, per direct feedback that
+    Portfolio Equity alone doesn't say how much of it is at work.
+    Optional (None omits the line) for callers that don't have a cash
+    figure to hand.
     """
     lines = ["\U0001F4CA DAILY PAPER TRADING SUMMARY", "", "*Strategies Executed*", ""]
     for r in strategy_results:
@@ -326,6 +334,8 @@ def format_daily_summary(strategy_results: list, closed_trades_today: int, open_
     if total_pnl is not None:
         lines.append(f"*Total P&L*: {format_metric(total_pnl)}")
     lines.append(f"*Portfolio Equity*: {portfolio_equity_total:,.2f}")
+    if invested_amount_total is not None:
+        lines.append(f"*Invested Amount*: {invested_amount_total:,.2f}")
     lines.append(f"*Win Rate*: {format_metric(blended_win_rate)}" if blended_win_rate is not None
                  else "*Win Rate*: n/a")
     return "\n".join(lines)

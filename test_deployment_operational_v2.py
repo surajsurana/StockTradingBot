@@ -232,6 +232,23 @@ class TestDailySummary(unittest.TestCase):
         self.assertIn("1,234.56", text)
         self.assertIn("2,000,000.00", text)
 
+    def test_invested_amount_shown_when_provided(self):
+        # Added 2026-08-26, per direct feedback that Portfolio Equity
+        # alone doesn't say how much of it is actually deployed.
+        text = format_daily_summary(
+            strategy_results=[], closed_trades_today=0, open_positions_total=5,
+            daily_pnl_total=0.0, portfolio_equity_total=2000000.0, blended_win_rate=None,
+            invested_amount_total=1500000.0,
+        )
+        self.assertIn("*Invested Amount*: 1,500,000.00", text)
+
+    def test_invested_amount_omitted_when_not_passed(self):
+        text = format_daily_summary(
+            strategy_results=[], closed_trades_today=0, open_positions_total=0,
+            daily_pnl_total=0.0, portfolio_equity_total=1000000.0, blended_win_rate=None,
+        )
+        self.assertNotIn("Invested Amount", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -402,10 +402,12 @@ def _send_daily_summary(run_results: list) -> None:
     total_pnl = round(portfolio_equity_total - total_starting_capital, 2)
 
     open_positions_total = 0
+    cash_total = 0.0
     total_wins, total_trades = 0, 0
     for r in run_results:
         portfolio = load_portfolio(r["strategy_key"])
         open_positions_total += len(portfolio["positions"])
+        cash_total += portfolio["cash"]
         metrics = compute_live_metrics(r["strategy_key"])
         n = metrics.get("total_trades", 0)
         if n:
@@ -413,10 +415,18 @@ def _send_daily_summary(run_results: list) -> None:
             total_wins += round(metrics.get("win_rate", 0.0) * n)
     blended_win_rate = round(total_wins / total_trades, 4) if total_trades else None
 
+    # Invested Amount = Portfolio Equity minus uninvested cash -- how much
+    # capital is actually deployed into open positions right now, across
+    # every strategy that ran today. Added 2026-08-26, per direct
+    # feedback that Portfolio Equity alone doesn't say how much of it is
+    # sitting in cash vs. actually at work.
+    invested_amount_total = round(portfolio_equity_total - cash_total, 2)
+
     text = format_daily_summary(
         strategy_results=strategy_results, closed_trades_today=closed_trades_today,
         open_positions_total=open_positions_total, daily_pnl_total=daily_pnl_total,
-        portfolio_equity_total=portfolio_equity_total, blended_win_rate=blended_win_rate,
+        portfolio_equity_total=portfolio_equity_total, invested_amount_total=invested_amount_total,
+        blended_win_rate=blended_win_rate,
         booked_pnl_today=booked_pnl_today, total_pnl=total_pnl,
     )
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
