@@ -1,15 +1,33 @@
 """
 Capital Wind-Down (added 2026-08-23, per explicit direction) -- a
-SEPARATE layer on top of deployment/paper_trading_engine.py that
-gradually brings each strategy's own idle cash down toward a target
-"actively deployable capital" level (deployment/settings.py's
-PAPER_TRADING_WINDDOWN_TARGET_CAPITAL, Rs.1,00,000 by default), without
-ever:
-  - touching cash reserved for currently-queued next-session entries,
-  - resizing or skipping an otherwise-valid signal or queued entry,
+SEPARATE layer on top of deployment/paper_trading_engine.py that brings
+each strategy's own idle cash down toward a target "actively deployable
+capital" level (deployment/settings.py's PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
+Rs.1,00,000 by default), without ever:
+  - touching cash reserved for currently-queued (already-pending, from a
+    prior day) next-session entries -- compute_winddown_withdrawal()
+    hard-caps every withdrawal at idle_cash (cash minus reserved),
+    regardless of PAPER_TRADING_WINDDOWN_DAILY_FRACTION's aggressiveness,
   - force-selling any open position,
-  - changing signal generation, position sizing, or exit logic at all,
+  - changing signal generation, position sizing FORMULA, or exit logic at
+    all (see run_paper_trading.py's sizing_capital_cap for the separate,
+    2026-08-24 fix that caps what a signal's SIZE can be, independent of
+    this module),
   - rewriting historical trades, equity, or performance metrics.
+
+POLICY CHANGE (2026-08-26, per explicit direction): a BRAND-NEW signal
+(one that wasn't already pending/reserved before today's withdrawal) is
+NO LONGER guaranteed to fill -- once wind-down has aggressively swept
+cash down near target (PAPER_TRADING_WINDDOWN_DAILY_FRACTION=0.90 by
+default), a later same-day signal can find genuinely insufficient real
+cash and be skipped entirely (deployment/paper_trading_engine.py's
+existing `quantity < 1 or cost > cash` skip path, unchanged code, simply
+more often reachable now). This is intentional: a strategy operating at
+a small, finite capital pool sometimes can't take every signal, exactly
+as it wouldn't be able to with real money -- confirmed as an accepted
+trade-off, not a bug. Nothing about the RESERVATION guarantee above
+changes: an entry already queued from a prior day is still always
+protected.
 
 This module NEVER modifies swing_research/ or the entry/exit logic in
 deployment/paper_trading_engine.py's run_daily(). It only ever reads and

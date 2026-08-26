@@ -270,6 +270,30 @@ class TestPaperTradingEngine(unittest.TestCase):
         # sized off min(50,000, 100,000)=50,000 -> qty=floor(50000*0.01/10)=50
         self.assertEqual(result["new_entries"][0]["quantity"], 50)
 
+    def test_signal_is_skipped_not_crashed_when_cash_is_genuinely_insufficient(self):
+        """Policy change confirmed 2026-08-26: a signal is no longer
+        guaranteed to fill just because it's valid -- once real cash is
+        too low for even a single share, it is cleanly SKIPPED (no entry
+        recorded, no crash, no error), the same way it would be with real,
+        finite capital. This is the existing `quantity < 1` skip path in
+        run_daily()'s own entry-sizing block -- unchanged code, now
+        actually reachable now that wind-down (2026-08-26) sweeps cash
+        down aggressively."""
+        portfolio = pte.load_portfolio(self.strategy_key)
+        portfolio["cash"] = 500.0   # far too little for even 1 share at this fixture's sizing
+        pte._save_portfolio(self.strategy_key, portfolio)
+
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        # qty = floor(500 * 0.01 / 10) = 0 -- skipped, not an error
+        self.assertEqual(result["status"], "processed")
+        self.assertEqual(result["new_entries"], [])
+        portfolio_after = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("SYM", portfolio_after["positions"])
+        self.assertEqual(portfolio_after["cash"], 500.0)   # untouched -- nothing was bought
+
     def test_mark_to_market_equity_unchanged_by_a_same_day_entry(self):
         # Regression test for a real bug found 2026-08-18: entering a
         # position used to ADD its cost to mark_to_market_equity on top

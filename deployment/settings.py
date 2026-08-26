@@ -66,15 +66,37 @@ PAPER_TRADING_MIN_POSITION_VALUE_RUPEES = float(os.environ.get("PAPER_TRADING_MI
 # gradually converges toward. Explicit direction named Rs.1,00,000.
 # PAPER_TRADING_WINDDOWN_DAILY_FRACTION: what fraction of TODAY's excess
 # cash (cash above target, after reservation) is withdrawn on any one
-# day -- 0.10 (10%) was chosen as a disclosed, deliberately conservative
-# default that removes the bulk of a large excess within a few weeks
-# without ever looking like a sudden, shocking cash drop in one day. Not
-# specified in the request itself -- flagged here, and again in the
-# pre-deployment writeup, as a judgment call for review, not an assumption
-# to accept silently.
+# day. CHANGED 2026-08-26, per explicit direction, from the original 0.10
+# (10%, deliberately conservative -- removed a large excess over a few
+# weeks without a sudden cash drop) to 0.90 (90%): the slow default meant
+# new BUY signals were still finding a large, un-withdrawn pool sitting
+# around for days/weeks (confirmed live: Minervini/Cross-Sectional
+# Momentum's daily withdrawal was visibly shrinking day over day as new
+# positions consumed the "idle" cash faster than 10%/day could claim it
+# back -- see the sizing_capital_cap fix, 2026-08-24, for the other half
+# of this same problem). At 0.90, an excess is reduced to ~10% of itself
+# per day (below the snap threshold within 3-4 days for even a very large
+# excess) so cash genuinely reaches target quickly rather than nominally
+# sitting there unused.
+#
+# EXPLICIT POLICY CHANGE (2026-08-26, confirmed): this reverses the
+# earlier "capital reduction must never cause an otherwise-valid signal
+# to be skipped, only resized" guarantee for BRAND-NEW (not yet queued)
+# signals -- once cash has been aggressively swept down near target, a
+# later same-day signal can find genuinely insufficient cash and be
+# skipped entirely (see deployment/paper_trading_engine.py's existing
+# `quantity < 1 or cost > cash` skip path -- always present, rarely
+# reachable before this change). Confirmed as an intentional, accepted
+# trade-off: a strategy operating at a small, finite capital pool
+# sometimes can't take every signal, exactly as it wouldn't be able to
+# with real money. This does NOT weaken the SEPARATE reservation
+# guarantee for entries ALREADY queued from a prior day --
+# compute_winddown_withdrawal() still hard-caps every withdrawal at
+# idle_cash (cash minus reserved), regardless of daily_fraction, so an
+# entry already reserved for is never starved by wind-down itself.
 PAPER_TRADING_WINDDOWN_ENABLED = os.environ.get("PAPER_TRADING_WINDDOWN_ENABLED", "true").lower() == "true"
 PAPER_TRADING_WINDDOWN_TARGET_CAPITAL = float(os.environ.get("PAPER_TRADING_WINDDOWN_TARGET_CAPITAL", 100_000))
-PAPER_TRADING_WINDDOWN_DAILY_FRACTION = float(os.environ.get("PAPER_TRADING_WINDDOWN_DAILY_FRACTION", 0.10))
+PAPER_TRADING_WINDDOWN_DAILY_FRACTION = float(os.environ.get("PAPER_TRADING_WINDDOWN_DAILY_FRACTION", 0.90))
 
 # NARROW, EXPLICIT EXCEPTION (2026-08-04, per explicit direction): the ONLY
 # thing ever imported from config/settings.py anywhere in deployment/.

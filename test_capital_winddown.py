@@ -374,10 +374,12 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         portfolio["positions"] = {"SYM.NS": {"entry_price": 100.0, "entry_date": "2024-01-01",
                                               "quantity": 10, "stop_loss": 90.0}}
         pte._save_portfolio(self.strategy_key, portfolio)
-        # 900,000 excess x 0.9^n drops below the 2,000 snap threshold at
-        # n~=58 -- run well past that so the snap-to-target rule has
-        # definitely fired.
-        for day in range(1, 65):
+        # At the current default (PAPER_TRADING_WINDDOWN_DAILY_FRACTION=0.90,
+        # changed 2026-08-26 for much faster real convergence -- see
+        # settings.py's own comment), a 900,000 excess x 0.1^n drops below
+        # the 2,000 snap threshold at n~=3 -- run well past that so the
+        # snap-to-target rule has definitely fired.
+        for day in range(1, 10):
             apply_capital_winddown(
                 self.strategy_key, risk_pct_per_unit=0.01,
                 as_of_date=datetime.date(2024, 1, 1) + datetime.timedelta(days=day),
