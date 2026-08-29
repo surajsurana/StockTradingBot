@@ -785,3 +785,60 @@ def run_max_effect_experiment(data: dict, start_date: date, end_date: date,
             "max_effect_variant": "MAX(1) -- single highest daily return in trailing month",
         },
     )
+
+
+def run_idiosyncratic_volatility_experiment(data: dict, start_date: date, end_date: date,
+                                             starting_capital: float = 1_000_000,
+                                             n_walk_forward_windows: int = 3,
+                                             narrative_api_key: str = "",
+                                             narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                             experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                             knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                             skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Idiosyncratic
+    Volatility Anomaly -- computes the 1-month trailing single-factor
+    residual-volatility cross-sectional percentile ONCE up front (same
+    pattern as every prior cross-sectional strategy), reused across every
+    walk-forward window by run_walk_forward_generic()'s own per-window
+    slicing of extra_columns_by_symbol.
+
+    Second strategy in this program (after Betting Against Beta) needing an
+    EXTERNAL market-index series (Nifty 50) as an input to its own
+    cross-sectional signal -- fetched here via
+    data.fetch_historical.fetch_nifty() (period="max", read-only reuse,
+    same source already used for the regime gate/breakdown and for Betting
+    Against Beta elsewhere in this module), independent of whatever period
+    `data` itself covers (compute_idiosyncratic_volatility_percentile_ranks()
+    reindexes the market series to each symbol's own dates, so a shorter
+    `data` window -- e.g. the recent-period check's 3-year slice -- is
+    handled correctly without a second, differently-windowed Nifty fetch).
+    """
+    from swing_research.strategies.idiosyncratic_volatility import IdiosyncraticVolatilityStrategy
+    from swing_research.published_research_analyst import IDIOSYNCRATIC_VOLATILITY_ANOMALY
+    from swing_research.cross_sectional import compute_idiosyncratic_volatility_percentile_ranks
+    from data.fetch_historical import fetch_nifty
+
+    nifty = fetch_nifty(period="max")
+    idio_vol_percentiles = compute_idiosyncratic_volatility_percentile_ranks(data, nifty["Close"])
+    extra_columns = {symbol: series.rename("idio_vol_percentile") for symbol, series in idio_vol_percentiles.items()}
+
+    strategy = IdiosyncraticVolatilityStrategy()
+    return run_generic_swing_experiment(
+        strategy, IDIOSYNCRATIC_VOLATILITY_ANOMALY, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "idiosyncratic_volatility_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "idiosyncratic_volatility_stop_loss_pct": 0.08,
+            "idiosyncratic_volatility_percentile_threshold": 10.0,
+            "idiosyncratic_volatility_formation_days": 21,
+            "idiosyncratic_volatility_holding_period_trading_days": 21,
+            "idiosyncratic_volatility_single_vintage": True,
+            "idiosyncratic_volatility_percentile_based_early_exit": False,
+            "idiosyncratic_volatility_factor_model": "single-factor (CAPM/market-model) residual, "
+                                                       "not the paper's primary 3-factor construction",
+        },
+    )

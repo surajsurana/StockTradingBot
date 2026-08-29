@@ -510,6 +510,98 @@ BETTING_AGAINST_BETA = PublishedStrategy(
 )
 
 
+IDIOSYNCRATIC_VOLATILITY_ANOMALY = PublishedStrategy(
+    name="Idiosyncratic Volatility Anomaly",
+    source_citation=(
+        "Ang, A., Hodrick, R.J., Xing, Y. and Zhang, X. (2006), \"The Cross-Section of "
+        "Volatility and Expected Returns,\" The Journal of Finance, Vol. 61, No. 1."
+    ),
+    mechanism=(
+        "Stocks with high idiosyncratic (residual, market-model-adjusted) volatility earn "
+        "anomalously LOW subsequent returns -- the opposite of what a risk premium would "
+        "predict -- attributed to lottery-preference/limits-to-arbitrage effects that keep "
+        "high-idio-vol stocks persistently overpriced. Same RISK-BASED family as Betting "
+        "Against Beta (SW-009), but a structurally distinct signal: residual (stock-specific) "
+        "volatility after removing market-wide moves, not estimated systematic risk (beta)."
+    ),
+    rules=(
+        "Idiosyncratic volatility = standard deviation of the residuals from a regression of "
+        "daily stock returns on a factor model, estimated over the trailing month. The paper's "
+        "PRIMARY, headline specification regresses on the FAMA-FRENCH 3-FACTOR model (market, "
+        "SMB size factor, HML value factor). Stocks are quintile-sorted on this measure monthly; "
+        "the paper longs the LOWEST-idio-vol quintile and shorts the HIGHEST, rebalanced monthly."
+    ),
+    variant_chosen=(
+        "Long-only, bottom-decile (lowest idiosyncratic volatility) selection, using a "
+        "SINGLE-FACTOR (CAPM/market-model) residual volatility in place of the paper's primary "
+        "3-factor construction -- see scope_reductions below for why. Formation window kept "
+        "faithful to the paper's own trailing-1-month (21 trading day) re-formation, not "
+        "shortened or lengthened."
+    ),
+    scope_reductions=(
+        "SINGLE-FACTOR (CAPM/market-model) RESIDUAL VOLATILITY INSTEAD OF THE PAPER'S PRIMARY "
+        "3-FACTOR (MARKET+SMB+HML) CONSTRUCTION (disclosed) -- SMB and HML require point-in-time "
+        "market-capitalization and book-to-market data, which this platform has already confirmed "
+        "unavailable (research_roadmap.py's DATA_CAPABILITIES: point_in_time_fundamentals_history "
+        "is a confirmed gap). This is NOT an invented substitute: the paper's own robustness "
+        "section reports that results are qualitatively unchanged using a single-factor "
+        "market-model residual in place of the 3-factor residual, so this is a faithful, "
+        "disclosed alternative specification drawn from the paper itself. It is nonetheless a "
+        "LARGER fidelity gap than most prior adaptations in this program, since it drops two of "
+        "the three regressors behind the paper's own headline result, not merely a window length "
+        "or a risk-free-rate simplification. "
+        "LONG ONLY (approved, disclosed) -- no NSE SLB infrastructure for a genuine short (same "
+        "reason as every prior strategy). We capture only the long, low-idio-vol STOCK-SELECTION "
+        "leg, not the paper's own long-short spread. "
+        "SINGLE-VINTAGE HOLDING instead of continuous monthly rebalancing into overlapping "
+        "positions -- mirrors every prior cross-sectional strategy's own approved deviation. "
+        "PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- the source paper is a return-predictability/factor-"
+        "construction study with no position-level risk management whatsoever. "
+        "KNOWN INTERACTION RISK, DISCLOSED NOT CONTROLLED FOR: the idiosyncratic-volatility "
+        "measure is documented in the literature to interact with short-term reversal if not "
+        "separately controlled for -- this platform does not attempt that control (no existing "
+        "orthogonalization machinery), so any observed edge should be read with that caveat."
+    ),
+    distinctiveness=(
+        "Second RISK-BASED strategy in this program, after Betting Against Beta (SW-009, "
+        "REJECTED -- base PASS, recent-period REJECT, robustness REJECT, genuine regime decay). "
+        "Structurally distinct signal within the same factor family: RESIDUAL (stock-specific) "
+        "volatility after removing the market-wide component, not estimated systematic risk "
+        "(beta) itself -- a stock can have low beta and high idiosyncratic volatility, or vice "
+        "versa, so the two rankings are not a relabeling of the same underlying quantity. Reuses "
+        "swing_research/cross_sectional.py's established vectorized .rank(pct=True, axis=1) "
+        "percentile pattern via compute_idiosyncratic_volatility_percentile_ranks(), and reuses "
+        "the same 'needs an EXTERNAL market-index series' pattern Betting Against Beta "
+        "established (data/fetch_historical.fetch_nifty()), applied here via a closed-form "
+        "single-factor residual-variance identity (sigma_stock x sqrt(1-rho^2)) rather than "
+        "Betting Against Beta's own beta_hat = rho x (sigma_i/sigma_m) formula."
+    ),
+    assumptions_impact=(
+        "Single-factor residual volatility vs. the paper's primary 3-factor residual: "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- disclosed as the largest fidelity gap in "
+        "this implementation. The paper's own robustness checks suggest the anomaly survives "
+        "under a single-factor construction, but 'qualitatively unchanged' in a US large-cap "
+        "sample is not a guarantee of the same magnitude on NSE's cross-section. "
+        "Long-only (no long-short spread): measures only the long, low-idio-vol leg's own "
+        "stock-selection return, a related but distinct question from the paper's own long-short "
+        "factor return -- same reasoning as Betting Against Beta's identical long-only reduction. "
+        "Formation window (kept faithful, not shortened): NEGLIGIBLE incremental risk beyond the "
+        "single-factor substitution above -- this is the one dimension where fidelity to the "
+        "paper is NOT reduced. "
+        "Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical "
+        "reasoning to every prior cross-sectional strategy's own single-vintage deviation. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all. "
+        "Uncontrolled short-term-reversal interaction: DIRECTIONALLY UNKNOWN, disclosed as a "
+        "genuine, un-mitigated risk rather than a theoretical footnote -- if this platform's own "
+        "Short-Term Reversal strategy (SW-006) and this one show materially overlapping entries "
+        "in the backtest, that would be direct empirical evidence the interaction is live here, "
+        "not just in the literature."
+    ),
+)
+
+
 POST_EARNINGS_ANNOUNCEMENT_DRIFT = PublishedStrategy(
     name="Post-Earnings Announcement Drift (PEAD) -- Forward Evidence Experiment",
     source_citation=(

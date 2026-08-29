@@ -187,4 +187,11 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_max_effect_experiment"]
         ).run_max_effect_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="idiosyncratic_volatility",
+        variant_description="Idiosyncratic Volatility Anomaly (single-factor market-model residual vol, 1mo formation, bottom-decile percentile, 1mo single-vintage, long-only)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_idiosyncratic_volatility_experiment"]
+        ).run_idiosyncratic_volatility_experiment,
+    ),
 ]

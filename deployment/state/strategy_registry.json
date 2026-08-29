@@ -239,5 +239,19 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-011",
     "primary_experiment_id": "EXP-042"
+  },
+  "idiosyncratic_volatility": {
+    "strategy_key": "idiosyncratic_volatility",
+    "display_name": "Idiosyncratic Volatility Anomaly",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "INCONCLUSIVE",
+    "research_verdict_source": "EXP-045 (base, PASS), EXP-046 (recent-period, REJECT), EXP-047 (robustness sub-period, PASS -- conflicting evidence)",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-012",
+    "primary_experiment_id": "EXP-045"
   }
 }

@@ -397,3 +397,93 @@ def compute_amihud_illiq_percentile_ranks(data: dict) -> dict:
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+IVOL_FORMATION_DAYS = 21  # ~1 month -- Ang, Hodrick, Xing & Zhang (2006)'s own monthly
+                           # re-formation window (a regression run on the trailing month's
+                           # daily returns). Unlike Betting Against Beta's beta lookback, this
+                           # window needs NO shortening for the frozen 3-year recent-period
+                           # check -- the paper's own primary specification is already a
+                           # short, 1-month window, not a multi-year one.
+
+
+def compute_idiosyncratic_volatility_score(price_history: pd.DataFrame, market_close: pd.Series) -> pd.Series:
+    """
+    Ang, Hodrick, Xing & Zhang (2006)'s idiosyncratic volatility: the
+    standard deviation of the residuals from a regression of the stock's
+    daily returns on a market-return factor, over the trailing
+    IVOL_FORMATION_DAYS (21 trading days, ~1 month) window.
+
+    DISCLOSED DEVIATION FROM THE PAPER'S PRIMARY SPECIFICATION: the paper's
+    headline construction regresses on the FAMA-FRENCH 3-FACTOR model
+    (market, SMB size factor, HML value factor) -- SMB/HML require
+    point-in-time market-cap and book-to-market data this platform has
+    already confirmed unavailable (see research_roadmap.py's
+    DATA_CAPABILITIES). A SINGLE-FACTOR (CAPM/market-model) residual
+    volatility is used instead -- this is NOT an invented substitute: the
+    paper's own robustness section reports results are qualitatively
+    unchanged using a single-factor market-model residual, so this is a
+    faithful, disclosed alternative specification drawn from the paper
+    itself, not a simplification invented for this platform. See
+    swing_research/strategy_library/idiosyncratic_volatility.md and
+    published_research_analyst.py's IDIOSYNCRATIC_VOLATILITY_ANOMALY record
+    for the full documented-rules-vs-implementation-assumptions breakdown.
+
+    For a single-regressor OLS, the residual variance has a closed form
+    that avoids running an actual regression: Var(residual) = Var(Y) x
+    (1 - rho^2), where rho is the correlation between Y (stock returns) and
+    the single regressor (market returns) -- so idio_vol = sigma_stock x
+    sqrt(1 - rho^2), using PLAIN (non-overlapping) daily returns, matching
+    the paper's own daily-frequency, within-the-month regression (NOT
+    Betting Against Beta's own separate, disclosed choice of overlapping
+    3-day returns, which was Frazzini-Pedersen's own specific thin-trading
+    correction for a DIFFERENT paper's beta estimator, not a general
+    convention for every strategy needing a market series).
+
+    market_close: the market index's (Nifty 50) own daily Close series,
+    reindexed to price_history's own dates and forward-filled, same
+    alignment convention as compute_shrunk_beta_score(). No .shift() needed
+    before .rolling() -- the value at row i uses only data up to and
+    including row i's own Close, no lookahead.
+    """
+    stock_close = price_history["Close"]
+    aligned_market = market_close.reindex(stock_close.index).ffill()
+
+    stock_r1 = stock_close.pct_change()
+    market_r1 = aligned_market.pct_change()
+
+    rho = stock_r1.rolling(IVOL_FORMATION_DAYS).corr(market_r1)
+    sigma_stock = stock_r1.rolling(IVOL_FORMATION_DAYS).std()
+
+    return sigma_stock * np.sqrt(1 - rho ** 2)
+
+
+def compute_idiosyncratic_volatility_percentile_ranks(data: dict, market_close: pd.Series) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}. market_close: the market
+    index's own daily Close series (see compute_idiosyncratic_volatility_score()).
+
+    Returns {symbol: pd.Series of idio_vol_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN) idiosyncratic volatility that day, of
+    its own residual (market-model-adjusted) volatility. LOW percentile
+    means LOW idiosyncratic volatility (a calmer, less lottery-like stock
+    once market-wide moves are stripped out) -- this strategy's entry
+    condition is percentile <=10 (bottom decile, lowest idio-vol), the
+    paper's own "long the calmest quintile" finding, same polarity
+    convention as Betting Against Beta's and MAX Effect's own bottom-decile
+    thresholds. Same vectorized .rank(axis=1, pct=True) construction as
+    every other cross-sectional signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_idiosyncratic_volatility_score(df.sort_index(), market_close)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

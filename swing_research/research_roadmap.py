@@ -195,6 +195,7 @@ EXISTING_STRATEGY_TAGS = {
     "betting_against_beta": {"risk_based"},
     "amihud_illiquidity": {"liquidity"},
     "max_effect": {"behavioral_lottery"},
+    "idiosyncratic_volatility": {"risk_based"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -922,32 +923,6 @@ CANDIDATES = [
                                    "has been established in the literature.",
         academic_evidence_score=3, expected_robustness_score=3, operational_simplicity_score=4,
         research_value_score=4, data_availability_score=2, implementation_feasibility_score=1,
-    ),
-    CandidateProfile(
-        key="idiosyncratic_volatility",
-        name="Idiosyncratic Volatility Anomaly",
-        authors="Ang, A., Hodrick, R.J., Xing, Y. and Zhang, X.",
-        publication="\"The Cross-Section of Volatility and Expected Returns\", The Journal of Finance, Vol. 61, No. 1",
-        year=2006,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-short in the original; long-only top-decile (lowest idiosyncratic vol) here.",
-        factor_family="Risk-based / low-volatility anomaly",
-        factor_tags={"risk_based"},
-        mechanism="Stocks with high idiosyncratic (residual, market-model-adjusted) volatility earn "
-                  "anomalously LOW subsequent returns -- the opposite of what a risk premium would "
-                  "predict, attributed to lottery-preference/limits-to-arbitrage effects.",
-        typical_holding_period="Monthly rebalance",
-        expected_trade_frequency="Moderate, same cadence family as BAB above",
-        data_requirements=["daily_ohlcv_history"],
-        known_strengths="Extremely well-known 'low-vol puzzle', directly computable from daily returns "
-                         "already fetched, no new data source needed at all.",
-        known_weaknesses="The original measure is sensitive to the exact estimation window and known "
-                          "to interact with short-term reversal if not controlled for -- a genuine "
-                          "implementation-risk area, not just a data gap.",
-        academic_replication_quality="Extensively replicated internationally; the puzzle itself (why does high risk pay less?) remains actively debated.",
-        evidence_sufficiency_note="Sufficient for a first test, with the reversal-interaction risk explicitly disclosed.",
-        academic_evidence_score=8, expected_robustness_score=6, operational_simplicity_score=6,
-        research_value_score=7, data_availability_score=10, implementation_feasibility_score=8,
     ),
     CandidateProfile(
         key="long_term_reversal",

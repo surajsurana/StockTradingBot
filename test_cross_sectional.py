@@ -10,8 +10,11 @@ import unittest
 
 import pandas as pd
 
+import numpy as np
+
 from swing_research.cross_sectional import (
     compute_52w_high_nearness_percentile_ranks, compute_52w_high_nearness_score,
+    compute_idiosyncratic_volatility_percentile_ranks, compute_idiosyncratic_volatility_score,
     compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
     compute_rs_percentile_ranks, compute_rs_score,
@@ -364,6 +367,107 @@ class TestComputeMaxEffectPercentileRanks(unittest.TestCase):
         ranks = compute_max_effect_percentile_ranks(data)
         last_date = data["B"].index[-1]
         # B has the lowest MAX (calmest) of the four -> rank 1/4 -> 25th pct
+        self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
+
+
+def _close_from_returns(returns, start_price=100.0, start="2020-01-01"):
+    """Builds a Close-price series from an explicit list of daily returns
+    (the FIRST price is start_price, unaffected by returns[0] -- pct_change
+    of this series reproduces `returns` exactly at indices 1..len(returns))."""
+    idx = pd.date_range(start, periods=len(returns) + 1, freq="D")
+    prices = [start_price]
+    for r in returns:
+        prices.append(prices[-1] * (1 + r))
+    return pd.Series(prices, index=idx)
+
+
+def _ohlcv_from_close(close: pd.Series) -> pd.DataFrame:
+    return pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close,
+                          "Volume": [1000] * len(close)}, index=close.index)
+
+
+# A non-constant 21-value return pattern (zero variance would make
+# correlation undefined/NaN) -- deliberately not monotonic, so the rolling
+# window at the last row exercises a genuine mix of up/down days.
+_MARKET_RETURNS_21 = [(-0.01 + 0.001 * i) if i % 2 == 0 else (0.01 - 0.001 * i) for i in range(21)]
+
+
+class TestComputeIdiosyncraticVolatilityScore(unittest.TestCase):
+    def test_perfectly_correlated_stock_has_zero_idiosyncratic_volatility(self):
+        # stock_r = 2 x market_r every day -> Pearson correlation is exactly
+        # 1.0 (perfect linear relationship) -> sqrt(1-rho^2) = 0 regardless
+        # of the stock's own (nonzero) volatility.
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        stock_returns = [2 * r for r in _MARKET_RETURNS_21]
+        stock_close = _close_from_returns(stock_returns)
+        score = compute_idiosyncratic_volatility_score(_ohlcv_from_close(stock_close), market_close)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=6)
+
+    def test_score_matches_independent_closed_form_calculation(self):
+        # stock_r = market_r + independent alternating noise -> correlation
+        # is NOT 1 -- cross-check the function's output against the same
+        # sigma_stock x sqrt(1-rho^2) identity computed independently here
+        # via plain numpy (not by re-deriving the rolling machinery).
+        noise = [0.004 if i % 2 == 0 else -0.004 for i in range(21)]
+        stock_returns = [m + n for m, n in zip(_MARKET_RETURNS_21, noise)]
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        stock_close = _close_from_returns(stock_returns)
+
+        score = compute_idiosyncratic_volatility_score(_ohlcv_from_close(stock_close), market_close)
+
+        rho = np.corrcoef(stock_returns, _MARKET_RETURNS_21)[0, 1]
+        sigma_stock = np.std(stock_returns, ddof=1)
+        expected = sigma_stock * np.sqrt(1 - rho ** 2)
+        self.assertAlmostEqual(score.iloc[-1], expected, places=8)
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        short_returns = _MARKET_RETURNS_21[:10]  # short of the 21-day formation window
+        market_close = _close_from_returns(short_returns)
+        stock_close = _close_from_returns(short_returns)
+        score = compute_idiosyncratic_volatility_score(_ohlcv_from_close(stock_close), market_close)
+        self.assertTrue(pd.isna(score.iloc[-1]))
+
+
+class TestComputeIdiosyncraticVolatilityPercentileRanks(unittest.TestCase):
+    def _symbol(self, extra_noise_scale):
+        noise = [extra_noise_scale if i % 2 == 0 else -extra_noise_scale for i in range(21)]
+        returns = [m + n for m, n in zip(_MARKET_RETURNS_21, noise)]
+        return _ohlcv_from_close(_close_from_returns(returns))
+
+    def test_lower_residual_vol_symbol_ranks_lower(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        data = {
+            "CALM": self._symbol(0.0005),
+            "MODERATE": self._symbol(0.004),
+            "NOISY": self._symbol(0.02),
+        }
+        ranks = compute_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["CALM"].index[-1]
+        self.assertLess(ranks["CALM"].loc[last_date], ranks["MODERATE"].loc[last_date])
+        self.assertLess(ranks["MODERATE"].loc[last_date], ranks["NOISY"].loc[last_date])
+
+    def test_percentiles_are_between_0_and_100(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        data = {"A": self._symbol(0.001), "B": self._symbol(0.03),
+                "C": self._symbol(0.0002), "D": self._symbol(0.015)}
+        ranks = compute_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        self.assertEqual(compute_idiosyncratic_volatility_percentile_ranks({}, market_close), {})
+
+    def test_calmest_symbol_lands_at_lowest_percentile(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_21)
+        data = {"A": self._symbol(0.01), "B": self._symbol(0.0002),
+                "C": self._symbol(0.03), "D": self._symbol(0.02)}
+        ranks = compute_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["B"].index[-1]
+        # B has the lowest idiosyncratic volatility of the four -> rank 1/4 -> 25th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
 
 
