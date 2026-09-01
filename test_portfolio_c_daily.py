@@ -290,5 +290,69 @@ class TestRunPortfolioCDaily(_PortfolioCTestBase):
         self.assertTrue(os.path.exists(pcs._daily_equity_path()))
 
 
+class TestResolvePortfolioCAtOpen(_PortfolioCTestBase):
+    def test_nothing_pending_is_a_fast_no_op(self):
+        result = pcd.resolve_portfolio_c_at_open(fetch_open_data_fn=lambda: {},
+                                                  as_of_date=datetime.date(2024, 1, 5))
+        self.assertEqual(result, {"status": "processed", "as_of_date": "2024-01-05",
+                                   "new_entries": [], "new_exits": []})
+
+    def test_pending_entry_fills_using_the_light_fetch(self):
+        portfolio = pcs.load_portfolio()
+        portfolio["pending_entries"]["AAA.NS"] = {
+            "direction": "BUY", "stop_loss": 90.0, "target": 120.0,
+            "signal_date": "2024-01-04", "signal_price": 100.0,
+            "strategy_name": "max_effect", "confidence": 0.9, "quantity": 50,
+        }
+        pcs.save_portfolio(portfolio)
+
+        result = pcd.resolve_portfolio_c_at_open(
+            fetch_open_data_fn=lambda: {"AAA.NS": _multi_day_df("2024-01-01", 10, base_price=101.0)},
+            as_of_date=datetime.date(2024, 1, 5))
+
+        self.assertEqual(len(result["new_entries"]), 1)
+        reloaded = pcs.load_portfolio()
+        self.assertIn("AAA.NS", reloaded["positions"])
+
+    def test_does_not_touch_last_processed_date_or_daily_equity(self):
+        portfolio = pcs.load_portfolio()
+        portfolio["pending_entries"]["AAA.NS"] = {
+            "direction": "BUY", "stop_loss": 90.0, "target": 120.0,
+            "signal_date": "2024-01-04", "signal_price": 100.0,
+            "strategy_name": "max_effect", "confidence": 0.9, "quantity": 50,
+        }
+        pcs.save_portfolio(portfolio)
+
+        pcd.resolve_portfolio_c_at_open(
+            fetch_open_data_fn=lambda: {"AAA.NS": _multi_day_df("2024-01-01", 10, base_price=101.0)},
+            as_of_date=datetime.date(2024, 1, 5))
+
+        reloaded = pcs.load_portfolio()
+        self.assertIsNone(reloaded["last_processed_date"])
+        import os
+        self.assertFalse(os.path.exists(pcs._daily_equity_path()))
+
+    def test_later_eod_call_the_same_day_finds_nothing_left_to_resolve(self):
+        portfolio = pcs.load_portfolio()
+        portfolio["pending_entries"]["AAA.NS"] = {
+            "direction": "BUY", "stop_loss": 90.0, "target": 120.0,
+            "signal_date": "2024-01-04", "signal_price": 100.0,
+            "strategy_name": "max_effect", "confidence": 0.9, "quantity": 50,
+        }
+        pcs.save_portfolio(portfolio)
+        data = {"AAA.NS": _multi_day_df("2024-01-01", 10, base_price=101.0)}
+
+        pcd.resolve_portfolio_c_at_open(fetch_open_data_fn=lambda: data, as_of_date=datetime.date(2024, 1, 5))
+
+        with patch("portfolio_c.daily.collect_anchor_candidates", return_value={}):
+            result = pcd.run_portfolio_c_daily(
+                data, as_of_date=datetime.date(2024, 1, 5), api_key="fake",
+                fetch_fundamentals_fn=_healthy_fundamentals,
+                research_call_fn=lambda p: _research_response("favorable", 0.9))
+
+        self.assertEqual(result["new_entries"], [], "already resolved this morning -- EOD call has nothing left to fill")
+        self.assertEqual(result["open_positions"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

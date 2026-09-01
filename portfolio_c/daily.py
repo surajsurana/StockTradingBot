@@ -383,3 +383,54 @@ def run_portfolio_c_daily(data: dict, as_of_date: Optional[datetime.date] = None
         "open_positions": len(portfolio["positions"]), "cash": portfolio["cash"],
         "mark_to_market_equity": mark_to_market_equity,
     }
+
+
+def resolve_portfolio_c_at_open(fetch_open_data_fn: Callable[[], dict],
+                                 as_of_date: Optional[datetime.date] = None) -> dict:
+    """
+    NEAR-MARKET-OPEN runner, same purpose as
+    deployment/paper_trading_engine.py's resolve_pending_fills_at_open():
+    the anchor strategies are End-of-Day (signals need the full day's
+    close), so this does NOT detect new candidates -- it only resolves
+    entries/exits already QUEUED by a PRIOR day's EOD run_portfolio_c_daily()
+    call, against TODAY's real, now-available market Open. Intended for a
+    separate ~9:30 IST cron entry.
+
+    This does NOT change what price a fill uses -- run_portfolio_c_daily()
+    already fills queued items against the real Open whenever it runs,
+    even if that's not until the 15:45 IST EOD call. What this DOES change
+    is how soon you find out: without this, a fill that happened at
+    9:15 IST market open wouldn't be reported until the evening's EOD
+    Telegram message. Deliberately reuses _resolve_pending() -- the EXACT
+    same fill logic the EOD cycle's own step 1 uses -- so there is only
+    ever one implementation of "how a queued signal becomes a real fill."
+
+    Does NOT touch last_processed_date or daily_equity.jsonl -- both stay
+    solely the EOD call's responsibility, exactly like Portfolio A's own
+    equivalent function -- so that day's later EOD run is unaffected by
+    this call having already happened.
+
+    fetch_open_data_fn: zero-arg callable returning {symbol: DataFrame}
+    -- deliberately a separate, lighter fetch than the EOD call's full
+    3y pull (only needs each pending symbol's today bar's Open), left to
+    the caller (see run_portfolio_c.py's --resolve-at-open) to decide how.
+
+    Returns {"status": "processed", "as_of_date": ..., "new_entries": [...],
+    "new_exits": [...]} -- empty lists if nothing was resolvable yet (no
+    pending items, or today's Open isn't in the data provider yet --
+    safely retried tomorrow morning, or picked up as a fallback by that
+    day's own EOD call, whichever comes first).
+    """
+    as_of_date = as_of_date or datetime.date.today()
+    portfolio = pcs.load_portfolio()
+
+    if not portfolio.get("pending_entries") and not portfolio.get("pending_exits"):
+        return {"status": "processed", "as_of_date": as_of_date.isoformat(),
+                "new_entries": [], "new_exits": []}
+
+    data = fetch_open_data_fn()
+    new_entries, new_exits = _resolve_pending(portfolio, data, as_of_date)
+    pcs.save_portfolio(portfolio)
+
+    return {"status": "processed", "as_of_date": as_of_date.isoformat(),
+            "new_entries": new_entries, "new_exits": new_exits}
