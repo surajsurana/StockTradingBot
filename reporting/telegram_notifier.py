@@ -22,14 +22,25 @@ the Telegram setup, matching the same fail-safe fallback pattern used
 throughout this project.
 """
 
+import json
+
 import requests
 
 
-def send_telegram_message(message: str, bot_token: str, chat_id: str) -> dict:
+def send_telegram_message(message: str, bot_token: str, chat_id: str, reply_markup: dict = None) -> dict:
     """
     Sends `message` to `chat_id` via the given bot. Falls back to printing
     (rather than raising) if bot_token or chat_id aren't configured yet --
     lets the rest of the pipeline run and be tested before Telegram is set up.
+
+    reply_markup (added 2026-09-01, per explicit direction -- Portfolio B's
+    interactive commands): an optional Telegram Bot API reply_markup dict
+    (e.g. a ReplyKeyboardMarkup for tappable buttons -- see
+    portfolio_b/telegram_bot.py's WATCHLIST_KEYBOARD) -- sent as-is,
+    JSON-encoded per the Bot API's own requirement for this field. None
+    (the default) omits it entirely -- a plain-text message with no
+    keyboard change, exactly today's existing behavior for every other
+    caller (run_paper_trading.py, run_portfolio_c.py, ...).
     """
     if not bot_token or not chat_id:
         print("=" * 50)
@@ -38,15 +49,38 @@ def send_telegram_message(message: str, bot_token: str, chat_id: str) -> dict:
         print("=" * 50)
         return {"status": "not_configured"}
 
+    data = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    if reply_markup is not None:
+        data["reply_markup"] = json.dumps(reply_markup)
+
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    resp = requests.post(url, data={
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown",
-    })
+    resp = requests.post(url, data=data)
     result = resp.json()
     if not result.get("ok"):
         print(f"WARNING: Telegram send failed (status {resp.status_code}): {result}")
+    return result
+
+
+def set_bot_commands(bot_token: str, commands: list) -> dict:
+    """
+    Registers the bot's command menu (the list shown when a user taps the
+    "/" icon next to Telegram's message box, each with a short
+    description) via the Bot API's setMyCommands. `commands`: a list of
+    {"command": "watchlist", "description": "..."} dicts (no leading
+    slash in "command", per the Bot API's own convention). Idempotent --
+    safe to call every time the bot starts, always overwrites with the
+    current list rather than appending. No-ops (prints, like
+    send_telegram_message) if bot_token isn't configured yet.
+    """
+    if not bot_token:
+        print("[TELEGRAM -- not configured, skipping setMyCommands]")
+        return {"status": "not_configured"}
+
+    url = f"https://api.telegram.org/bot{bot_token}/setMyCommands"
+    resp = requests.post(url, json={"commands": commands})
+    result = resp.json()
+    if not result.get("ok"):
+        print(f"WARNING: setMyCommands failed (status {resp.status_code}): {result}")
     return result
 
 

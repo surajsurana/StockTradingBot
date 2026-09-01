@@ -9,7 +9,13 @@ from unittest.mock import patch
 import pandas as pd
 
 import portfolio_b.state as pbs
-from portfolio_b.engine import DEFAULT_WATCHLIST, PROTECTIVE_STOP_PCT, build_watchlist_signal, get_watchlist
+from portfolio_b.engine import (
+    DEFAULT_WATCHLIST,
+    PROTECTIVE_STOP_PCT,
+    build_watchlist_signal,
+    get_watchlist,
+    get_watchlist_with_names,
+)
 
 
 def _price_history(closes):
@@ -21,11 +27,15 @@ def _price_history(closes):
 class TestDefaultWatchlist(unittest.TestCase):
     def test_default_watchlist_has_nine_symbols_no_duplicates(self):
         self.assertEqual(len(DEFAULT_WATCHLIST), 9)
-        self.assertEqual(len(set(DEFAULT_WATCHLIST)), 9)
+        self.assertEqual(len(set(DEFAULT_WATCHLIST.keys())), 9)
 
     def test_default_watchlist_symbols_are_nse_tickers(self):
         for symbol in DEFAULT_WATCHLIST:
             self.assertTrue(symbol.endswith(".NS"), f"{symbol} should be an NSE ticker")
+
+    def test_default_watchlist_every_symbol_has_a_real_company_name(self):
+        for symbol, name in DEFAULT_WATCHLIST.items():
+            self.assertTrue(name, f"{symbol} is missing a company name")
 
 
 class TestGetWatchlist(unittest.TestCase):
@@ -38,13 +48,17 @@ class TestGetWatchlist(unittest.TestCase):
         self.patcher.stop()
         shutil.rmtree(self.tmpdir)
 
-    def test_first_call_seeds_from_default_watchlist(self):
-        self.assertEqual(get_watchlist(), DEFAULT_WATCHLIST)
+    def test_get_watchlist_returns_just_symbols(self):
+        self.assertEqual(sorted(get_watchlist()), sorted(DEFAULT_WATCHLIST.keys()))
+
+    def test_get_watchlist_with_names_returns_the_full_mapping(self):
+        self.assertEqual(get_watchlist_with_names(), DEFAULT_WATCHLIST)
 
     def test_reflects_a_change_made_via_save_watchlist(self):
         get_watchlist()   # seeds the file
-        pbs.save_watchlist(["ONLY.NS"])
+        pbs.save_watchlist({"ONLY.NS": "Only Co"})
         self.assertEqual(get_watchlist(), ["ONLY.NS"])
+        self.assertEqual(get_watchlist_with_names(), {"ONLY.NS": "Only Co"})
 
 
 class TestBuildWatchlistSignal(unittest.TestCase):

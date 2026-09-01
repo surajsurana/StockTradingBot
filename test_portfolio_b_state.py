@@ -67,20 +67,38 @@ class TestPortfolioBState(unittest.TestCase):
         self.assertNotEqual(pbs.PORTFOLIO_B_STATE_DIR, pcs.PORTFOLIO_C_STATE_DIR)
 
     def test_load_watchlist_seeds_from_default_on_first_call(self):
-        result = pbs.load_watchlist(default=["AAA.NS", "BBB.NS"])
-        self.assertEqual(result, ["AAA.NS", "BBB.NS"])
+        result = pbs.load_watchlist(default={"AAA.NS": "Company A", "BBB.NS": "Company B"})
+        self.assertEqual(result, {"AAA.NS": "Company A", "BBB.NS": "Company B"})
         import os
         self.assertTrue(os.path.exists(pbs._watchlist_path()))
 
     def test_load_watchlist_does_not_reseed_once_file_exists(self):
-        pbs.load_watchlist(default=["AAA.NS"])
-        pbs.save_watchlist(["CHANGED.NS"])
-        result = pbs.load_watchlist(default=["AAA.NS"])
-        self.assertEqual(result, ["CHANGED.NS"], "must never revert to the default once a real file exists")
+        pbs.load_watchlist(default={"AAA.NS": "Company A"})
+        pbs.save_watchlist({"CHANGED.NS": "Changed Co"})
+        result = pbs.load_watchlist(default={"AAA.NS": "Company A"})
+        self.assertEqual(result, {"CHANGED.NS": "Changed Co"},
+                          "must never revert to the default once a real file exists")
 
     def test_save_watchlist_then_load_round_trips(self):
-        pbs.save_watchlist(["X.NS", "Y.NS"])
-        self.assertEqual(pbs.load_watchlist(default=[]), ["X.NS", "Y.NS"])
+        pbs.save_watchlist({"X.NS": "X Co", "Y.NS": "Y Co"})
+        self.assertEqual(pbs.load_watchlist(default={}), {"X.NS": "X Co", "Y.NS": "Y Co"})
+
+    def test_load_watchlist_migrates_old_flat_list_format(self):
+        """Backward compatibility: the original schema (added
+        2026-09-01, before company names existed) was a plain JSON
+        array of symbols. An existing file in that format must be
+        upgraded in place, never silently discarded."""
+        import json
+        import os
+        os.makedirs(pbs.PORTFOLIO_B_STATE_DIR, exist_ok=True)
+        with open(pbs._watchlist_path(), "w", encoding="utf-8") as f:
+            json.dump(["OLD.NS", "ALSO_OLD.NS"], f)
+
+        result = pbs.load_watchlist(default={"SHOULD_NOT.NS": "Be used"})
+        self.assertEqual(result, {"OLD.NS": "", "ALSO_OLD.NS": ""})
+        # And the upgrade must have been persisted, not just returned in-memory.
+        reloaded = pbs.load_watchlist(default={})
+        self.assertEqual(reloaded, {"OLD.NS": "", "ALSO_OLD.NS": ""})
 
     def test_telegram_offset_defaults_to_zero(self):
         self.assertEqual(pbs.load_telegram_offset(), 0)

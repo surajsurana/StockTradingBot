@@ -1,0 +1,17 @@
+[Unit]
+Description=Portfolio B Telegram command bot (long-polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tradingbot
+WorkingDirectory=/home/tradingbot/StockTradingBot
+ExecStart=/home/tradingbot/StockTradingBot/venv/bin/python run_portfolio_b_bot_daemon.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/tradingbot/StockTradingBot/logs/portfolio_b_bot_daemon.log
+StandardError=append:/home/tradingbot/StockTradingBot/logs/portfolio_b_bot_daemon.log
+
+[Install]
+WantedBy=multi-user.target

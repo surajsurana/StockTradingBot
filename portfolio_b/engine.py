@@ -31,12 +31,23 @@ from strategies.base import Signal as AgentSignal
 # After that, deployment/state/portfolio_b/watchlist.json is the single
 # source of truth -- edited live via Telegram /addstock and /removestock
 # commands (portfolio_b/telegram_bot.py), never by changing this
-# constant. Changing this list in code after first run has NO effect on
+# constant. Changing this dict in code after first run has NO effect on
 # an already-running deployment.
-DEFAULT_WATCHLIST = [
-    "RVNL.NS", "VEDL.NS", "EXIDEIND.NS", "HONASA.NS", "HSCL.NS",
-    "ETERNAL.NS", "MON100.NS", "GOLDBEES.NS", "SILVERBEES.NS",
-]
+#
+# {symbol: company_name} -- names verified against yfinance's own
+# longName field 2026-09-01, shown in /watchlist so the list reads as
+# actual companies, not scrip codes.
+DEFAULT_WATCHLIST = {
+    "RVNL.NS": "Rail Vikas Nigam Limited",
+    "VEDL.NS": "Vedanta Limited",
+    "EXIDEIND.NS": "Exide Industries Limited",
+    "HONASA.NS": "Honasa Consumer Limited",
+    "HSCL.NS": "Himadri Speciality Chemical Limited",
+    "ETERNAL.NS": "Eternal Limited",
+    "MON100.NS": "Motilal Oswal NASDAQ 100 ETF",
+    "GOLDBEES.NS": "Nippon India ETF Gold BeES",
+    "SILVERBEES.NS": "Nippon India Silver ETF",
+}
 
 # Same disclosed convention every swing_research strategy without a
 # strategy-specific stop uses (see e.g.
@@ -52,12 +63,21 @@ DISPLAY_ONLY_TARGET_R_MULTIPLE = 2.0
 
 
 def get_watchlist() -> list:
-    """The LIVE watchlist -- reads deployment/state/portfolio_b/watchlist.json
-    (seeding it from DEFAULT_WATCHLIST on first ever call). Call this
-    fresh each time you need the watchlist rather than caching it -- a
-    Telegram /addstock or /removestock command can change it between
-    calls, and every consumer (run_portfolio_b.py, the daily cycle)
-    should always see the CURRENT list, never a stale one."""
+    """The LIVE watchlist's symbols only, for every trading-logic
+    consumer (run_portfolio_b.py, the daily cycle) that just needs
+    something to fetch price data for and never cares about display
+    names. Call this fresh each time rather than caching it -- a
+    Telegram /addstock or /removestock command can change the list
+    between calls."""
+    return list(get_watchlist_with_names().keys())
+
+
+def get_watchlist_with_names() -> dict:
+    """The LIVE watchlist as {symbol: company_name} -- reads
+    deployment/state/portfolio_b/watchlist.json (seeding it from
+    DEFAULT_WATCHLIST on first ever call). Used by
+    portfolio_b/telegram_bot.py's /watchlist reply; trading-logic code
+    should use get_watchlist() above instead."""
     return load_watchlist(DEFAULT_WATCHLIST)
 
 

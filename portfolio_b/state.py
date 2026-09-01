@@ -101,28 +101,41 @@ def append_decision_log(entry: dict) -> None:
         f.write(json.dumps(entry) + "\n")
 
 
-def load_watchlist(default: list) -> list:
+def load_watchlist(default: dict) -> dict:
     """
-    Reads the live watchlist from watchlist.json. `default` (see
-    portfolio_b/engine.py's DEFAULT_WATCHLIST) is used ONLY to seed a
-    brand-new file on first ever call -- once the file exists, it is the
-    single source of truth, so /addstock and /removestock changes (see
-    portfolio_b/telegram_bot.py) persist across every future call and
-    every future cron run, never silently reverting to the code default.
+    Reads the live watchlist from watchlist.json as {symbol: company_name}.
+    `default` (see portfolio_b/engine.py's DEFAULT_WATCHLIST) is used
+    ONLY to seed a brand-new file on first ever call -- once the file
+    exists, it is the single source of truth, so /addstock and
+    /removestock changes (see portfolio_b/telegram_bot.py) persist
+    across every future call and every future cron run, never silently
+    reverting to the code default.
+
+    BACKWARD COMPATIBLE with the original schema (a plain JSON array of
+    symbols, no names -- added 2026-09-01, before company names existed):
+    detected automatically and upgraded in place to {symbol: ""} (name
+    unknown, falls back to showing the bare symbol -- see
+    portfolio_b/telegram_bot.py's display logic) rather than losing
+    whatever was already on the list.
     """
     path = _watchlist_path()
     if not os.path.exists(path):
         save_watchlist(default)
-        return list(default)
+        return dict(default)
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        loaded = json.load(f)
+    if isinstance(loaded, list):
+        upgraded = {symbol: "" for symbol in loaded}
+        save_watchlist(upgraded)
+        return upgraded
+    return loaded
 
 
-def save_watchlist(symbols: list) -> None:
+def save_watchlist(watchlist: dict) -> None:
     path = _watchlist_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(symbols, f, indent=2)
+        json.dump(watchlist, f, indent=2)
 
 
 def load_telegram_offset() -> int:
