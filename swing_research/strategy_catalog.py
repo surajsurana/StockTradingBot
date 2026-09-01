@@ -120,6 +120,16 @@ PAPER_TRADING_STRATEGY_SPECS = [
             "swing_research.cross_sectional", fromlist=["compute_max_effect_percentile_ranks"]
         ).compute_max_effect_percentile_ranks(data), "max_effect_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="turn_of_month",
+        display_name="Turn-of-the-Month Effect",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.turn_of_month", fromlist=["TurnOfMonthStrategy"]
+        ).TurnOfMonthStrategy(),
+        # No compute_extra_columns_fn -- no natural cross-sectional ranking signal exists for
+        # this strategy (date-driven, not percentile-driven); candidate_ranking.py's
+        # date-seeded tie-break is the sole ordering mechanism, same as Turtle System 2.
+    ),
 ]
 
 

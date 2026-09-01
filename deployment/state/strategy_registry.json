@@ -47,13 +47,19 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "REJECT",
     "research_verdict_source": "EXP-054 (base, PASS), EXP-056 (recent-period, REJECT), EXP-060 (robustness sub-period, REJECT -- corroborates) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original PASS (EXP-013/EXP-014-era record) to REJECT. Supersedes prior record. Deployment Status (PAPER_TRADING) NOT changed by this update -- a demotion/retirement decision is a separate, explicit action requiring direct user approval, not implied by this research-record correction.",
-    "deployment_status": "PAPER_TRADING",
+    "deployment_status": "ARCHIVED",
     "deployment_status_history": [
       {
         "from_status": "RESEARCH",
         "to_status": "PAPER_TRADING",
         "timestamp": 1785834079.318454,
         "reason": "Phase 2 -- first strategy to pass both research checks cleanly, per explicit direction 2026-08-04"
+      },
+      {
+        "from_status": "PAPER_TRADING",
+        "to_status": "ARCHIVED",
+        "timestamp": 1788240501.2484493,
+        "reason": "Corrected candidate-ranking engine revalidation confirms REJECT, corroborated independently by both the recent-period check (OOS -58.68/trade, EXP-056) and the robustness sub-period check (OOS -142.13/trade, EXP-060). Approved by user 2026-09-01. Historical paper-trading data left untouched."
       }
     ],
     "notes": "",
@@ -260,8 +266,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
     "research_verdict_source": "EXP-050 (base, PASS), EXP-051 (recent-period, PASS) -- under the generic candidate-ranking architecture fix (swing_research/candidate_ranking.py), replacing all prior SW-013-specific tie-break attempts",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1788240588.1217065,
+        "reason": "PASS under corrected candidate-ranking engine, full 20/20 sector coverage confirmed (EXP-050). Paper-trading wiring added to strategy_catalog.py PAPER_TRADING_STRATEGY_SPECS. Approved by user 2026-09-01."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
