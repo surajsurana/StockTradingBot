@@ -143,6 +143,7 @@ class MinerviniTrendTemplateFilterStrategy(Strategy):
         stop_loss = entry_price * (1 - STOP_LOSS_PCT)
         return Signal(
             symbol="", direction="BUY", entry_price=entry_price, stop_loss=stop_loss,
+            confidence=float(row.rs_percentile),
             strategy_name=self.name,
             reason=(f"Trend Template qualified today (RS pctile {row.rs_percentile:.1f}), "
                     f"did not qualify yesterday"),

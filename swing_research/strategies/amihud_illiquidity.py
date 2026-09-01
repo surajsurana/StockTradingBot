@@ -108,6 +108,7 @@ class AmihudIlliquidityStrategy(Strategy):
         stop_loss = entry_price * (1 - STOP_LOSS_PCT)
         return Signal(
             symbol="", direction="BUY", entry_price=entry_price, stop_loss=stop_loss,
+            confidence=float(row.illiq_percentile),
             strategy_name=self.name,
             reason=(f"Trailing 252-day ILLIQ entered the top decile today "
                     f"(percentile {row.illiq_percentile:.1f}), did not qualify yesterday"),

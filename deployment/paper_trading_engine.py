@@ -49,6 +49,7 @@ from typing import Callable, Optional
 from reporting.format_utils import format_metric
 from swing_research.backtesting_engine import Trade
 from swing_research.base import OpenPosition, PositionUnit, Strategy
+from swing_research.candidate_ranking import rank_candidate_symbols
 from swing_research.metrics import compute_metrics
 
 from deployment.settings import (
@@ -337,7 +338,21 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                            "reason": pending["exit_reason"], "fill_timing": "next_day_open",
                            "signal_date": pending["signal_date"]})
 
-    for symbol in list(pending_entries.keys()):
+    # Ranked by each pending entry's own stored confidence (populated at
+    # queueing time in run_daily(), from the strategy's own already-
+    # computed percentile/magnitude where one exists, defaulting to the
+    # neutral 1.0 otherwise), with ties broken by the SAME date-seeded,
+    # symbol-name-independent key the research engine uses -- see
+    # swing_research/candidate_ranking.py. This is what decides which
+    # entries actually get today's limited cash when more are pending
+    # than can be afforded, instead of raw dict insertion order (the
+    # defect SW-013 exposed). .get("confidence", 1.0) keeps this
+    # backward-compatible with any pending entry persisted before this
+    # field existed.
+    ranked_pending_symbols = rank_candidate_symbols(
+        [(symbol, pending.get("confidence", 1.0)) for symbol, pending in pending_entries.items()], target_date,
+    )
+    for symbol in ranked_pending_symbols:
         df = data.get(symbol)
         if df is None or df.empty:
             continue
@@ -627,9 +642,17 @@ def run_daily(strategy_key: str, strategy: Strategy,
                 risk_per_share = signal.entry_price - signal.stop_loss
                 if risk_per_share > 0:
                     if execution_config.fill_timing == "next_day_open":
+                        # confidence: the strategy's own already-computed
+                        # priority signal (a percentile, a raw magnitude,
+                        # ...) where one exists, else the neutral default
+                        # 1.0 -- stored here so _resolve_pending_fills()
+                        # can rank same-day-scarce-cash entries by it
+                        # instead of raw queueing order. See
+                        # swing_research/candidate_ranking.py.
                         pending_entries[symbol] = {"stop_loss": signal.stop_loss,
                                                     "signal_date": target_date.isoformat(),
-                                                    "signal_price": signal.entry_price}
+                                                    "signal_price": signal.entry_price,
+                                                    "confidence": signal.confidence}
                         new_pending_entries.append({"symbol": symbol, "stop_loss": signal.stop_loss,
                                                      "signal_date": target_date.isoformat(),
                                                      "signal_price": signal.entry_price})

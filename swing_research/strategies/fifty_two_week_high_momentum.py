@@ -145,6 +145,7 @@ class FiftyTwoWeekHighMomentumStrategy(Strategy):
         stop_loss = entry_price * (1 - STOP_LOSS_PCT)
         return Signal(
             symbol="", direction="BUY", entry_price=entry_price, stop_loss=stop_loss,
+            confidence=float(row.nearness_percentile),
             strategy_name=self.name,
             reason=(f"52-week-high nearness entered the top decile today "
                     f"(percentile {row.nearness_percentile:.1f}), did not qualify yesterday"),

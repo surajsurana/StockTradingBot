@@ -125,6 +125,7 @@ class IdiosyncraticVolatilityStrategy(Strategy):
         stop_loss = entry_price * (1 - STOP_LOSS_PCT)
         return Signal(
             symbol="", direction="BUY", entry_price=entry_price, stop_loss=stop_loss,
+            confidence=100.0 - float(row.idio_vol_percentile),
             strategy_name=self.name,
             reason=(f"Idiosyncratic volatility entered the bottom decile today "
                     f"(percentile {row.idio_vol_percentile:.1f}), did not qualify yesterday"),

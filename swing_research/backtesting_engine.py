@@ -59,6 +59,7 @@ from datetime import date
 from typing import Optional
 
 from swing_research.base import OpenPosition, PositionUnit, Strategy
+from swing_research.candidate_ranking import rank_candidate_symbols
 
 
 @dataclass
@@ -236,7 +237,18 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             pos.units.append(PositionUnit(entry_price=signal.entry_price, entry_date=today, quantity=quantity))
             pos.stop_loss = signal.stop_loss
 
-        # 3. New entries for symbols with no open position.
+        # 3. New entries for symbols with no open position. Collected
+        # FIRST, across the whole universe, independent of dict order --
+        # then RANKED by each candidate's own Signal.confidence (a
+        # strategy's own already-computed percentile/magnitude where one
+        # exists, a neutral default of 1.0 for every candidate otherwise)
+        # with ties broken by a date-seeded, symbol-name-independent key
+        # -- see swing_research/candidate_ranking.py -- and ONLY THEN
+        # walked through the sector/total-cap/cash checks below. This is
+        # what makes which candidates actually get today's limited slots
+        # a function of rank, never of rows_by_symbol's own (alphabetical
+        # universe-list) iteration order -- the defect SW-013 exposed.
+        new_entry_signals = {}
         for symbol, rows in rows_by_symbol.items():
             if symbol in open_positions:
                 continue
@@ -245,15 +257,23 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                 continue
             last_close_by_symbol[symbol] = float(row.Close)
 
+            signal = strategy.entry_signal_at(row)
+            if signal is None:
+                continue
+            new_entry_signals[symbol] = signal
+
+        ranked_symbols = rank_candidate_symbols(
+            [(symbol, signal.confidence) for symbol, signal in new_entry_signals.items()], today,
+        )
+        for symbol in ranked_symbols:
+            signal = new_entry_signals[symbol]
+
             sector = sector_map.get(bare_symbol(symbol)) if sector_map else None
             if sector and sector_unit_count(sector) >= max_units_per_sector:
                 continue
             if total_unit_count() >= max_units_total:
                 continue
 
-            signal = strategy.entry_signal_at(row)
-            if signal is None:
-                continue
             risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
                 continue

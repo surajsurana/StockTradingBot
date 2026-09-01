@@ -156,6 +156,39 @@ class _AlwaysQualifiesStrategy(Strategy):
         return None
 
 
+class _ConfidenceBySymbolStrategy(Strategy):
+    """Same shape as _AlwaysQualifiesStrategy, but reads a per-symbol
+    'confidence_override' column (injected the same way a real strategy's
+    percentile column is injected via extra_columns_by_symbol) so a test
+    can control which symbol should win a scarce fill -- proving
+    _resolve_pending_fills() now ranks by confidence rather than raw
+    pending_entries dict order (see swing_research/candidate_ranking.py)."""
+    name = "confidence_by_symbol_test"
+    max_units = 1
+    risk_pct_per_unit = 0.01
+    min_lookback_days = 0
+
+    def precompute(self, price_history):
+        df = price_history.copy()
+        df["signal_day"] = False
+        if len(df) > 0:
+            df.iloc[-1, df.columns.get_loc("signal_day")] = True
+        if "confidence_override" not in df.columns:
+            df["confidence_override"] = 1.0
+        return df
+
+    def entry_signal_at(self, row):
+        if not bool(row.signal_day):
+            return None
+        entry_price = float(row.Close)
+        return Signal(symbol="", direction="BUY", entry_price=entry_price,
+                      stop_loss=entry_price * 0.9, confidence=float(row.confidence_override),
+                      strategy_name=self.name)
+
+    def exit_signal_at(self, row, open_position):
+        return None
+
+
 def _one_day_df(date_str, open_, high, low, close):
     idx = pd.DatetimeIndex([pd.Timestamp(date_str)])
     return pd.DataFrame({"Open": [open_], "High": [high], "Low": [low], "Close": [close],
@@ -420,6 +453,41 @@ class TestPaperTradingEngine(unittest.TestCase):
         self.assertEqual(len(result["new_entries"]), 1)
         self.assertEqual(result["new_entries"][0]["signal_price"], 100.0)   # day 1's close
         self.assertEqual(result["new_entries"][0]["entry_price"], 105.0)   # day 2's real Open
+
+    def test_resolve_pending_fills_ranks_by_confidence_not_dict_order_when_cash_is_scarce(self):
+        # AAA is alphabetically first (would win under the pre-fix raw
+        # pending_entries.keys() iteration order) but has LOW confidence;
+        # ZZZ is alphabetically last but HIGH confidence. Cash is scarce
+        # enough for exactly one fill -- the fix must give it to ZZZ,
+        # proving _resolve_pending_fills() now ranks by each pending
+        # entry's own stored confidence, not queueing/dict order.
+        strategy = _ConfidenceBySymbolStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+
+        def extra_columns(data):
+            return {
+                "AAA": pd.Series([10.0], index=data["AAA"].index, name="confidence_override"),
+                "ZZZ": pd.Series([90.0], index=data["ZZZ"].index, name="confidence_override"),
+            }
+
+        day1 = {"AAA": _one_day_df("2024-01-01", 100, 101, 99, 100),
+                "ZZZ": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      compute_extra_columns_fn=extra_columns,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        portfolio = pte.load_portfolio(self.strategy_key)
+        portfolio["cash"] = 1000.0   # exactly enough for ONE fill (qty=1 @ 100) then too little for a 2nd
+        pte._save_portfolio(self.strategy_key, portfolio)
+
+        day2 = {"AAA": _one_day_df("2024-01-02", 100, 101, 99, 100),
+                "ZZZ": _one_day_df("2024-01-02", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day2,
+                                compute_extra_columns_fn=extra_columns,
+                                as_of_date=datetime.date(2024, 1, 2), execution_config=cfg)
+
+        self.assertEqual(len(result["new_entries"]), 1)
+        self.assertEqual(result["new_entries"][0]["symbol"], "ZZZ")
 
 
 class TestResolvePendingFillsAtOpen(unittest.TestCase):

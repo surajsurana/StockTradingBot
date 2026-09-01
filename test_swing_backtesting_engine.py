@@ -189,6 +189,63 @@ class TestPortfolioLimits(unittest.TestCase):
         symbols_entered = {t.symbol for t in result["trades"]}
         self.assertEqual(len(symbols_entered), 1)  # second IT-sector entry blocked
 
+    def test_higher_confidence_wins_the_scarce_slot_over_an_alphabetically_earlier_symbol(self):
+        # AAA is alphabetically first (would win under the old, pre-fix
+        # raw-iteration-order behavior) but has LOWER confidence than ZZZ,
+        # which is alphabetically last. Only 1 slot is available for 2
+        # candidates -- the fix must give it to ZZZ, proving confidence
+        # (not iteration order) decides.
+        class _ConfidenceBySymbol(Strategy):
+            name = "confidence_test"
+            def precompute(self, price_history):
+                return price_history.copy()
+            def entry_signal_at(self, row):
+                confidence = 10.0 if row.Close < 150 else 90.0  # AAA's bars are ~100s, ZZZ's are ~200s
+                return Signal(symbol="", direction="BUY", entry_price=float(row.Close),
+                              stop_loss=float(row.Close) * 0.9, confidence=confidence,
+                              strategy_name=self.name)
+
+        data = {
+            "AAA": _bars("2026-01-05", [100, 101, 102]),   # low confidence (10.0)
+            "ZZZ": _bars("2026-01-05", [200, 201, 202]),   # high confidence (90.0)
+        }
+        result = simulate_portfolio(data, _ConfidenceBySymbol(), starting_capital=1_000_000, max_units_total=1,
+                                     min_bars_required=1)
+        symbols_entered = {t.symbol for t in result["trades"]}
+        self.assertEqual(symbols_entered, {"ZZZ"})
+
+    def test_equal_confidence_tie_break_result_is_independent_of_dict_insertion_order(self):
+        # 5 symbols, all equal (default) confidence, only 2 slots -- the
+        # SAME 2 winners must be chosen regardless of which order the
+        # caller happens to build the `data` dict in (alphabetical,
+        # reversed, or shuffled). This is the end-to-end proof that the
+        # fix works through the real simulate_portfolio() call path, not
+        # just in candidate_ranking.py's own isolated unit tests.
+        class _AlwaysEnters(Strategy):
+            name = "always_enters"
+            def precompute(self, price_history):
+                return price_history.copy()
+            def entry_signal_at(self, row):
+                return Signal(symbol="", direction="BUY", entry_price=float(row.Close),
+                              stop_loss=float(row.Close) * 0.9, strategy_name=self.name)
+
+        symbols = ["AAA", "BBB", "CCC", "DDD", "EEE"]
+        bars_by_symbol = {s: _bars("2026-01-05", [100 + i, 101 + i, 102 + i]) for i, s in enumerate(symbols)}
+
+        data_alphabetical = {s: bars_by_symbol[s] for s in symbols}
+        data_reversed = {s: bars_by_symbol[s] for s in reversed(symbols)}
+        data_shuffled = {s: bars_by_symbol[s] for s in [symbols[2], symbols[0], symbols[4], symbols[1], symbols[3]]}
+
+        winners = []
+        for data in (data_alphabetical, data_reversed, data_shuffled):
+            result = simulate_portfolio(data, _AlwaysEnters(), starting_capital=1_000_000, max_units_total=2,
+                                         min_bars_required=1)
+            winners.append(frozenset(t.symbol for t in result["trades"]))
+
+        self.assertEqual(len(winners[0]), 2)
+        self.assertEqual(winners[0], winners[1])
+        self.assertEqual(winners[0], winners[2])
+
 
 class TestCompoundingEquity(unittest.TestCase):
     def test_equity_updates_after_each_closed_trade_and_sizes_off_current_equity(self):
