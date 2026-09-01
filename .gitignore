@@ -17,6 +17,8 @@ data/nse_tick_sizes.json
 # config: strategy IDs, research verdicts, deployment statuses) -- only
 # per-strategy runtime trading state and generated reports are excluded.
 deployment/state/paper_trading/
+deployment/state/portfolio_c/
+deployment/state/portfolio_b/
 deployment/reports/
 deployment/certification_experiments/
 deployment/certification_knowledge_base.jsonl

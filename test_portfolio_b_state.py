@@ -1,0 +1,94 @@
+"""Tests for portfolio_b/state.py -- isolated capital/state I/O.
+Mirrors test_portfolio_c_state.py exactly (same schema, own namespace)."""
+
+import datetime
+import json
+import shutil
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import portfolio_b.state as pbs
+
+
+class TestPortfolioBState(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.patcher = patch.object(pbs, "PORTFOLIO_B_STATE_DIR", self.tmpdir)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        shutil.rmtree(self.tmpdir)
+
+    def test_fresh_portfolio_starts_at_the_fixed_starting_capital(self):
+        portfolio = pbs.load_portfolio()
+        self.assertEqual(portfolio["cash"], pbs.PORTFOLIO_B_STARTING_CAPITAL)
+        self.assertEqual(portfolio["starting_capital"], pbs.PORTFOLIO_B_STARTING_CAPITAL)
+        self.assertEqual(portfolio["positions"], {})
+        self.assertIsNone(portfolio["last_processed_date"])
+
+    def test_loading_a_fresh_portfolio_does_not_write_a_file(self):
+        pbs.load_portfolio()
+        import os
+        self.assertFalse(os.path.exists(pbs._portfolio_path()))
+
+    def test_save_then_load_round_trips(self):
+        portfolio = pbs.load_portfolio()
+        portfolio["cash"] = 55_000.0
+        portfolio["positions"]["AAA.NS"] = {"entry_price": 100.0, "quantity": 10}
+        pbs.save_portfolio(portfolio)
+
+        reloaded = pbs.load_portfolio()
+        self.assertEqual(reloaded["cash"], 55_000.0)
+        self.assertEqual(reloaded["positions"]["AAA.NS"]["quantity"], 10)
+
+    def test_append_trade_writes_one_json_line(self):
+        pbs.append_trade({"symbol": "AAA.NS", "pnl": 123.45})
+        with open(pbs._trades_path(), "r", encoding="utf-8") as f:
+            lines = [line for line in f.read().strip().split("\n") if line]
+        self.assertEqual(len(lines), 1)
+
+    def test_append_daily_equity_writes_date_cash_equity(self):
+        pbs.append_daily_equity(datetime.date(2024, 1, 1), cash=90_000.0, equity=101_000.0)
+        with open(pbs._daily_equity_path(), "r", encoding="utf-8") as f:
+            row = json.loads(f.read().strip())
+        self.assertEqual(row, {"date": "2024-01-01", "cash": 90_000.0, "equity": 101_000.0})
+
+    def test_append_decision_log_is_append_only(self):
+        pbs.append_decision_log({"symbol": "AAA.NS"})
+        pbs.append_decision_log({"symbol": "BBB.NS"})
+        with open(pbs._decision_log_path(), "r", encoding="utf-8") as f:
+            lines = [line for line in f.read().strip().split("\n") if line]
+        self.assertEqual(len(lines), 2)
+
+    def test_portfolio_b_and_portfolio_c_state_dirs_are_different(self):
+        import portfolio_c.state as pcs
+        self.assertNotEqual(pbs.PORTFOLIO_B_STATE_DIR, pcs.PORTFOLIO_C_STATE_DIR)
+
+    def test_load_watchlist_seeds_from_default_on_first_call(self):
+        result = pbs.load_watchlist(default=["AAA.NS", "BBB.NS"])
+        self.assertEqual(result, ["AAA.NS", "BBB.NS"])
+        import os
+        self.assertTrue(os.path.exists(pbs._watchlist_path()))
+
+    def test_load_watchlist_does_not_reseed_once_file_exists(self):
+        pbs.load_watchlist(default=["AAA.NS"])
+        pbs.save_watchlist(["CHANGED.NS"])
+        result = pbs.load_watchlist(default=["AAA.NS"])
+        self.assertEqual(result, ["CHANGED.NS"], "must never revert to the default once a real file exists")
+
+    def test_save_watchlist_then_load_round_trips(self):
+        pbs.save_watchlist(["X.NS", "Y.NS"])
+        self.assertEqual(pbs.load_watchlist(default=[]), ["X.NS", "Y.NS"])
+
+    def test_telegram_offset_defaults_to_zero(self):
+        self.assertEqual(pbs.load_telegram_offset(), 0)
+
+    def test_telegram_offset_round_trips(self):
+        pbs.save_telegram_offset(42)
+        self.assertEqual(pbs.load_telegram_offset(), 42)
+
+
+if __name__ == "__main__":
+    unittest.main()
