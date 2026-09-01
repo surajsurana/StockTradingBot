@@ -10,10 +10,11 @@ Portfolio B's daily CLI. Same two-mode shape as run_portfolio_c.py:
       touch last_processed_date.
 
 Only fetches portfolio_b/engine.py's own small, LIVE watchlist (edited
-via Telegram, see portfolio_b/telegram_bot.py -- run_portfolio_b_bot.py
-is the separate, frequently-polled script that handles /watchlist,
-/addstock, /removestock), not the full swing universe run_portfolio_c.py
-pulls -- Portfolio B has no anchor strategy needing the broader universe.
+via Telegram, see portfolio_b/telegram_bot.py -- /watchlist, /addstock,
+/removestock are handled by the separate, always-on
+run_portfolio_b_bot_daemon.py, not this script), not the full swing
+universe run_portfolio_c.py pulls -- Portfolio B has no anchor strategy
+needing the broader universe.
 
 Sends to the SAME Telegram bot/chat as Portfolio A and Portfolio C
 (deployment.settings.TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID), clearly
