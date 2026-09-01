@@ -1,6 +1,8 @@
 """
-Tests for portfolio_b/telegram_bot.py -- command parsing, watchlist
-mutation, and the getUpdates polling/security/idempotency logic.
+Tests for portfolio_b/telegram_bot.py -- command parsing, the search-and-
+confirm /addstock flow (inline buttons, nothing added until tapped),
+/removestock's tap-to-remove picker, and the getUpdates polling/security/
+idempotency logic (both message and callback_query updates).
 requests.get/send_telegram_message are always mocked -- these tests
 never make a real network call.
 """
@@ -13,10 +15,13 @@ from unittest.mock import MagicMock, patch
 import portfolio_b.state as pbs
 from portfolio_b.telegram_bot import (
     QUICK_ACTIONS_KEYBOARD,
+    CommandReply,
+    _handle_callback_query,
     _handle_command,
     _normalize_symbol,
     fetch_company_name_if_tradeable,
     poll_and_process_commands,
+    search_nse_symbol_candidates,
 )
 
 
@@ -50,13 +55,6 @@ class TestFetchCompanyNameIfTradeable(unittest.TestCase):
         result = fetch_company_name_if_tradeable("AAA.NS", fetch_price_fn=fake_price_fn, fetch_info_fn=fake_info_fn)
         self.assertEqual(result, "Test Company Ltd")
 
-    def test_falls_back_to_short_name(self):
-        import pandas as pd
-        fake_price_fn = MagicMock(return_value=pd.DataFrame({"Close": [100.0]}))
-        fake_info_fn = MagicMock(return_value={"shortName": "Test Co"})
-        result = fetch_company_name_if_tradeable("AAA.NS", fetch_price_fn=fake_price_fn, fetch_info_fn=fake_info_fn)
-        self.assertEqual(result, "Test Co")
-
     def test_none_when_price_fetch_returns_empty(self):
         import pandas as pd
         fake_price_fn = MagicMock(return_value=pd.DataFrame())
@@ -69,9 +67,6 @@ class TestFetchCompanyNameIfTradeable(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_tradeable_but_no_name_returns_empty_string_not_none(self):
-        """A symbol with real price data but no info returned is still
-        ACCEPTED (empty name, falls back to showing the bare symbol) --
-        the name is a display nicety, never a rejection reason."""
         import pandas as pd
         fake_price_fn = MagicMock(return_value=pd.DataFrame({"Close": [100.0]}))
         fake_info_fn = MagicMock(side_effect=RuntimeError("info lookup failed"))
@@ -79,87 +74,184 @@ class TestFetchCompanyNameIfTradeable(unittest.TestCase):
         self.assertEqual(result, "")
 
 
+class TestSearchNseSymbolCandidates(unittest.TestCase):
+    def test_filters_to_nse_exchange_only(self):
+        fake_search = MagicMock(return_value=[
+            {"symbol": "HWHG.F", "shortname": "Tata Steel Ltd.", "exchange": "FRA"},
+            {"symbol": "TATASTEEL.NS", "shortname": "TATA STEEL LIMITED", "exchange": "NSI"},
+        ])
+        result = search_nse_symbol_candidates("tata steel", search_fn=fake_search)
+        self.assertEqual(result, [{"symbol": "TATASTEEL.NS", "name": "TATA STEEL LIMITED"}])
+
+    def test_prefers_longname_over_shortname(self):
+        fake_search = MagicMock(return_value=[
+            {"symbol": "AAA.NS", "shortname": "Short", "longname": "Long Name Ltd", "exchange": "NSI"},
+        ])
+        result = search_nse_symbol_candidates("x", search_fn=fake_search)
+        self.assertEqual(result[0]["name"], "Long Name Ltd")
+
+    def test_deduplicates_repeated_symbols(self):
+        fake_search = MagicMock(return_value=[
+            {"symbol": "AAA.NS", "shortname": "A", "exchange": "NSI"},
+            {"symbol": "AAA.NS", "shortname": "A", "exchange": "NSI"},
+        ])
+        result = search_nse_symbol_candidates("x", search_fn=fake_search)
+        self.assertEqual(len(result), 1)
+
+    def test_caps_at_max_results(self):
+        fake_search = MagicMock(return_value=[
+            {"symbol": f"S{i}.NS", "shortname": f"Co {i}", "exchange": "NSI"} for i in range(10)
+        ])
+        result = search_nse_symbol_candidates("x", search_fn=fake_search, max_results=3)
+        self.assertEqual(len(result), 3)
+
+    def test_empty_when_no_nse_matches(self):
+        fake_search = MagicMock(return_value=[{"symbol": "GOLD", "shortname": "Gold Inc", "exchange": "NYQ"}])
+        self.assertEqual(search_nse_symbol_candidates("gold", search_fn=fake_search), [])
+
+    def test_never_raises_on_search_failure(self):
+        fake_search = MagicMock(side_effect=RuntimeError("network down"))
+        self.assertEqual(search_nse_symbol_candidates("x", search_fn=fake_search), [])
+
+
 class TestHandleCommand(_PortfolioBBotTestBase):
     def test_watchlist_command_lists_names_and_symbols(self):
         pbs.save_watchlist({"AAA.NS": "Company A", "BBB.NS": "Company B"})
         reply = _handle_command("/watchlist")
-        self.assertIn("Company A (AAA.NS)", reply)
-        self.assertIn("Company B (BBB.NS)", reply)
+        self.assertIn("Company A (AAA.NS)", reply.text)
+        self.assertIn("Company B (BBB.NS)", reply.text)
 
     def test_watchlist_command_falls_back_to_bare_symbol_when_name_unknown(self):
         pbs.save_watchlist({"AAA.NS": ""})
         reply = _handle_command("/watchlist")
-        self.assertIn("- AAA.NS", reply)
-        self.assertNotIn("()", reply)
+        self.assertIn("- AAA.NS", reply.text)
+        self.assertNotIn("()", reply.text)
 
     def test_help_command_lists_commands(self):
         reply = _handle_command("/help")
-        self.assertIn("/addstock", reply)
-        self.assertIn("/removestock", reply)
+        self.assertIn("/addstock", reply.text)
+        self.assertIn("/removestock", reply.text)
 
     def test_start_command_also_shows_help(self):
         reply = _handle_command("/start")
-        self.assertIn("/addstock", reply)
+        self.assertIn("/addstock", reply.text)
 
-    def test_addstock_appends_valid_new_symbol_with_its_name(self):
-        pbs.save_watchlist({"AAA.NS": "Company A"})
-        reply = _handle_command("/addstock TATASTEEL", name_fn=lambda s: "Tata Steel Limited")
-        self.assertIn("Tata Steel Limited (TATASTEEL.NS)", reply)
-        watchlist = pbs.load_watchlist(default={})
-        self.assertEqual(watchlist["TATASTEEL.NS"], "Tata Steel Limited")
-
-    def test_addstock_rejects_symbol_that_fails_validation(self):
-        pbs.save_watchlist({"AAA.NS": "Company A"})
-        reply = _handle_command("/addstock FAKESYMBOL", name_fn=lambda s: None)
-        self.assertIn("Could not find recent trading data", reply)
-        self.assertNotIn("FAKESYMBOL.NS", pbs.load_watchlist(default={}))
-
-    def test_addstock_rejects_malformed_symbol_without_calling_name_fn(self):
-        calls = []
-        reply = _handle_command("/addstock ../../etc", name_fn=lambda s: calls.append(s) or "irrelevant")
-        self.assertIn("doesn't look like a valid NSE ticker", reply)
-        self.assertEqual(calls, [], "must never even attempt to resolve an obviously malformed symbol")
-
-    def test_bare_addstock_with_no_symbol_gets_a_usage_reply_not_silence(self):
+    def test_bare_addstock_with_no_query_gets_a_usage_reply_not_silence(self):
         """Regression test for a real reported bug: '/addstock' sent
-        alone (e.g. tapped from Telegram's '/' menu and sent as-is, no
-        symbol typed after it) previously fell through _ADD_PATTERN's
-        match entirely and returned None -- no reply, no log entry,
-        indistinguishable from the message never arriving at all."""
+        alone (e.g. tapped from Telegram's '/' menu and sent as-is)
+        previously fell through the argument-capturing pattern entirely
+        and returned None -- no reply, no log entry, indistinguishable
+        from the message never having arrived at all."""
         reply = _handle_command("/addstock")
         self.assertIsNotNone(reply)
-        self.assertIn("Usage: /addstock", reply)
+        self.assertIn("Usage: /addstock", reply.text)
 
-    def test_bare_addstock_with_trailing_whitespace_only_gets_a_usage_reply(self):
-        reply = _handle_command("/addstock   ")
-        self.assertIsNotNone(reply)
-        self.assertIn("Usage: /addstock", reply)
+    def test_addstock_by_company_name_offers_matches_and_adds_nothing_yet(self):
+        pbs.save_watchlist({})
+        fake_search = MagicMock(return_value=[
+            {"symbol": "TATASTEEL.NS", "shortname": "TATA STEEL LIMITED", "exchange": "NSI"},
+        ])
+        reply = _handle_command("/addstock tata steel", search_fn=fake_search)
+        self.assertIn("Found 1 match", reply.text)
+        self.assertIsNotNone(reply.reply_markup)
+        self.assertIn("inline_keyboard", reply.reply_markup)
+        # Nothing was actually added -- confirmation is a separate, later step.
+        self.assertEqual(pbs.load_watchlist(default={}), {})
 
-    def test_bare_removestock_with_no_symbol_gets_a_usage_reply_not_silence(self):
-        reply = _handle_command("/removestock")
-        self.assertIsNotNone(reply)
-        self.assertIn("Usage: /removestock", reply)
+    def test_addstock_multiple_matches_offers_one_button_each_plus_cancel(self):
+        pbs.save_watchlist({})
+        fake_search = MagicMock(return_value=[
+            {"symbol": "AAA.NS", "shortname": "Company A", "exchange": "NSI"},
+            {"symbol": "BBB.NS", "shortname": "Company B", "exchange": "NSI"},
+        ])
+        reply = _handle_command("/addstock company", search_fn=fake_search)
+        self.assertIn("Found 2 matches", reply.text)
+        rows = reply.reply_markup["inline_keyboard"]
+        self.assertEqual(len(rows), 3)   # 2 candidates + Cancel
 
-    def test_addstock_is_a_no_op_if_symbol_already_present(self):
+    def test_addstock_falls_back_to_literal_ticker_when_search_finds_nothing(self):
+        pbs.save_watchlist({})
+        fake_search = MagicMock(return_value=[])
+        reply = _handle_command("/addstock TATASTEEL", search_fn=fake_search,
+                                 name_fn=lambda s: "Tata Steel Limited")
+        self.assertIn("Found 1 match", reply.text)
+        self.assertIn("Tata Steel Limited (TATASTEEL.NS)", reply.reply_markup["inline_keyboard"][0][0]["text"])
+
+    def test_addstock_no_search_results_and_no_valid_ticker_fallback_says_so(self):
+        pbs.save_watchlist({})
+        fake_search = MagicMock(return_value=[])
+        reply = _handle_command("/addstock ../../etc", search_fn=fake_search,
+                                 name_fn=lambda s: "irrelevant")
+        self.assertIn("Couldn't find any NSE-listed match", reply.text)
+
+    def test_addstock_omits_candidates_already_on_the_watchlist(self):
         pbs.save_watchlist({"TATASTEEL.NS": "Tata Steel Limited"})
-        reply = _handle_command("/addstock tatasteel", name_fn=lambda s: "Tata Steel Limited")
-        self.assertIn("already on the watchlist", reply)
-        self.assertEqual(len(pbs.load_watchlist(default={})), 1)
+        fake_search = MagicMock(return_value=[
+            {"symbol": "TATASTEEL.NS", "shortname": "TATA STEEL LIMITED", "exchange": "NSI"},
+        ])
+        reply = _handle_command("/addstock tata steel", search_fn=fake_search)
+        self.assertIn("already on the watchlist", reply.text)
 
-    def test_removestock_removes_present_symbol(self):
+    def test_removestock_alone_shows_a_tap_to_remove_picker(self):
+        pbs.save_watchlist({"AAA.NS": "Company A", "BBB.NS": "Company B"})
+        reply = _handle_command("/removestock")
+        self.assertIn("Tap a symbol to remove", reply.text)
+        rows = reply.reply_markup["inline_keyboard"]
+        self.assertEqual(len(rows), 3)   # 2 symbols + Cancel
+
+    def test_removestock_alone_on_empty_watchlist_says_so(self):
+        pbs.save_watchlist({})
+        reply = _handle_command("/removestock")
+        self.assertIn("currently empty", reply.text)
+
+    def test_removestock_with_symbol_removes_directly_no_confirm_needed(self):
         pbs.save_watchlist({"AAA.NS": "Company A", "BBB.NS": "Company B"})
         reply = _handle_command("/removestock AAA")
-        self.assertIn("Removed AAA.NS", reply)
+        self.assertIn("Removed AAA.NS", reply.text)
         self.assertEqual(pbs.load_watchlist(default={}), {"BBB.NS": "Company B"})
 
-    def test_removestock_on_absent_symbol_is_a_no_op(self):
+    def test_removestock_with_absent_symbol_is_a_no_op(self):
         pbs.save_watchlist({"BBB.NS": "Company B"})
         reply = _handle_command("/removestock AAA")
-        self.assertIn("isn't on the watchlist", reply)
-        self.assertEqual(pbs.load_watchlist(default={}), {"BBB.NS": "Company B"})
+        self.assertIn("isn't on the watchlist", reply.text)
 
     def test_unrecognized_text_returns_none_no_reply(self):
         self.assertIsNone(_handle_command("just a regular chat message"))
+
+
+class TestHandleCallbackQuery(_PortfolioBBotTestBase):
+    def test_add_callback_adds_the_symbol(self):
+        pbs.save_watchlist({})
+        reply = _handle_callback_query("pbadd:TATASTEEL.NS", name_fn=lambda s: "Tata Steel Limited")
+        self.assertIn("Added Tata Steel Limited (TATASTEEL.NS)", reply)
+        self.assertEqual(pbs.load_watchlist(default={})["TATASTEEL.NS"], "Tata Steel Limited")
+
+    def test_add_callback_no_longer_tradeable_is_not_added(self):
+        pbs.save_watchlist({})
+        reply = _handle_callback_query("pbadd:DELISTED.NS", name_fn=lambda s: None)
+        self.assertIn("Could not find recent trading data", reply)
+        self.assertEqual(pbs.load_watchlist(default={}), {})
+
+    def test_add_callback_already_present_is_a_no_op(self):
+        pbs.save_watchlist({"TATASTEEL.NS": "Tata Steel Limited"})
+        reply = _handle_callback_query("pbadd:TATASTEEL.NS", name_fn=lambda s: "Tata Steel Limited")
+        self.assertIn("already on the watchlist", reply)
+
+    def test_remove_callback_removes_the_symbol(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        reply = _handle_callback_query("pbrm:AAA.NS")
+        self.assertIn("Removed AAA.NS", reply)
+        self.assertEqual(pbs.load_watchlist(default={}), {})
+
+    def test_cancel_callback_changes_nothing(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        reply = _handle_callback_query("pbcancel")
+        self.assertEqual(reply, "Cancelled.")
+        self.assertEqual(pbs.load_watchlist(default={}), {"AAA.NS": "Company A"})
+
+    def test_unrecognized_callback_data_does_not_raise(self):
+        reply = _handle_callback_query("something_unexpected")
+        self.assertEqual(reply, "Unrecognized action.")
 
 
 class TestPollAndProcessCommands(_PortfolioBBotTestBase):
@@ -182,7 +274,7 @@ class TestPollAndProcessCommands(_PortfolioBBotTestBase):
         self.assertEqual(mock_send.call_args.kwargs.get("reply_markup"), QUICK_ACTIONS_KEYBOARD)
 
     def test_message_from_a_different_chat_is_silently_ignored(self):
-        updates = [{"update_id": 1, "message": {"chat": {"id": 111}, "text": "/addstock EVIL"}}]
+        updates = [{"update_id": 1, "message": {"chat": {"id": 111}, "text": "/addstock evil corp"}}]
 
         with patch("portfolio_b.telegram_bot.requests.get", return_value=self._mock_response(updates)), \
              patch("portfolio_b.telegram_bot.send_telegram_message") as mock_send:
@@ -190,7 +282,50 @@ class TestPollAndProcessCommands(_PortfolioBBotTestBase):
 
         self.assertEqual(processed, [])
         mock_send.assert_not_called()
+
+    def test_callback_query_from_configured_chat_is_processed(self):
+        pbs.save_watchlist({})
+        updates = [{"update_id": 1, "callback_query": {
+            "id": "cbq1", "data": "pbadd:AAA.NS", "message": {"chat": {"id": 999}},
+        }}]
+
+        with patch("portfolio_b.telegram_bot.requests.get", return_value=self._mock_response(updates)), \
+             patch("portfolio_b.telegram_bot.send_telegram_message") as mock_send, \
+             patch("portfolio_b.telegram_bot._answer_callback_query") as mock_answer:
+            processed = poll_and_process_commands("fake-token", chat_id="999",
+                                                    name_fn=lambda s: "Company A")
+
+        self.assertEqual(len(processed), 1)
+        mock_send.assert_called_once()
+        mock_answer.assert_called_once_with("fake-token", "cbq1")
+        self.assertIn("AAA.NS", pbs.load_watchlist(default={}))
+
+    def test_callback_query_from_a_different_chat_is_silently_ignored(self):
+        updates = [{"update_id": 1, "callback_query": {
+            "id": "cbq1", "data": "pbadd:EVIL.NS", "message": {"chat": {"id": 111}},
+        }}]
+
+        with patch("portfolio_b.telegram_bot.requests.get", return_value=self._mock_response(updates)), \
+             patch("portfolio_b.telegram_bot.send_telegram_message") as mock_send, \
+             patch("portfolio_b.telegram_bot._answer_callback_query") as mock_answer:
+            processed = poll_and_process_commands("fake-token", chat_id="999")
+
+        self.assertEqual(processed, [])
+        mock_send.assert_not_called()
+        mock_answer.assert_not_called()
         self.assertNotIn("EVIL.NS", pbs.load_watchlist(default={}))
+
+    def test_offset_advances_for_callback_queries_too(self):
+        updates = [{"update_id": 7, "callback_query": {
+            "id": "cbq1", "data": "pbcancel", "message": {"chat": {"id": 999}},
+        }}]
+
+        with patch("portfolio_b.telegram_bot.requests.get", return_value=self._mock_response(updates)), \
+             patch("portfolio_b.telegram_bot.send_telegram_message"), \
+             patch("portfolio_b.telegram_bot._answer_callback_query"):
+            poll_and_process_commands("fake-token", chat_id="999")
+
+        self.assertEqual(pbs.load_telegram_offset(), 7)
 
     def test_offset_advances_so_the_same_update_is_never_reprocessed(self):
         updates = [{"update_id": 5, "message": {"chat": {"id": 999}, "text": "/watchlist"}}]
@@ -226,12 +361,13 @@ class TestPollAndProcessCommands(_PortfolioBBotTestBase):
             poll_and_process_commands("fake-token", chat_id="999", long_poll_timeout=30)
 
         self.assertEqual(captured["telegram_timeout"], 30)
-        self.assertGreater(captured["requests_timeout"], 30, "the client timeout must exceed Telegram's own hold-open window")
+        self.assertGreater(captured["requests_timeout"], 30,
+                            "the client timeout must exceed Telegram's own hold-open window")
 
     def test_one_bad_update_does_not_block_the_rest_of_the_batch(self):
         updates = [
             {"update_id": 1, "message": {"chat": {"id": 999}, "text": "/help"}},
-            {"update_id": 2},   # malformed -- no "message" key at all
+            {"update_id": 2},   # malformed -- no "message" or "callback_query" key at all
             {"update_id": 3, "message": {"chat": {"id": 999}, "text": "/watchlist"}},
         ]
 
