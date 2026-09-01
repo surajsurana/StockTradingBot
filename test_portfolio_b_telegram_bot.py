@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import portfolio_b.state as pbs
 from portfolio_b.telegram_bot import (
-    QUICK_ACTIONS_KEYBOARD,
+    MAIN_MENU_KEYBOARD,
     CommandReply,
     _handle_callback_query,
     _handle_command,
@@ -136,15 +136,66 @@ class TestHandleCommand(_PortfolioBBotTestBase):
         reply = _handle_command("/start")
         self.assertIn("/addstock", reply.text)
 
-    def test_bare_addstock_with_no_query_gets_a_usage_reply_not_silence(self):
+    def test_bare_addstock_asks_what_to_add_instead_of_silence(self):
         """Regression test for a real reported bug: '/addstock' sent
         alone (e.g. tapped from Telegram's '/' menu and sent as-is)
-        previously fell through the argument-capturing pattern entirely
-        and returned None -- no reply, no log entry, indistinguishable
-        from the message never having arrived at all."""
+        used to fall through the argument-capturing pattern entirely
+        and return None -- no reply, no log entry, indistinguishable
+        from the message never having arrived at all. Now asks what to
+        add (ask-then-reply flow) rather than requiring the name in the
+        same message."""
         reply = _handle_command("/addstock")
         self.assertIsNotNone(reply)
-        self.assertIn("Usage: /addstock", reply.text)
+        self.assertIn("What stock", reply.text)
+
+    def test_bare_addstock_sets_pending_action(self):
+        _handle_command("/addstock")
+        self.assertEqual(pbs.load_pending_action(), "addstock")
+
+    def test_add_stock_button_also_asks_and_sets_pending_action(self):
+        reply = _handle_command("➕ Add Stock")
+        self.assertIsNotNone(reply)
+        self.assertIn("What stock", reply.text)
+        self.assertEqual(pbs.load_pending_action(), "addstock")
+
+    def test_follow_up_reply_after_pending_addstock_is_treated_as_the_query(self):
+        pbs.save_watchlist({})
+        pbs.save_pending_action("addstock")
+        fake_search = MagicMock(return_value=[
+            {"symbol": "TATASTEEL.NS", "shortname": "TATA STEEL LIMITED", "exchange": "NSI"},
+        ])
+        reply = _handle_command("Tata Steel", search_fn=fake_search)
+        self.assertIn("Found 1 match", reply.text)
+        self.assertIsNone(pbs.load_pending_action(), "must be cleared once consumed")
+
+    def test_sending_a_command_while_pending_clears_it_instead_of_misreading_it(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        pbs.save_pending_action("addstock")
+        reply = _handle_command("/watchlist")
+        self.assertIn("Company A", reply.text)
+        self.assertIsNone(pbs.load_pending_action())
+
+    def test_sending_watchlist_button_while_pending_clears_it_instead_of_misreading_it(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        pbs.save_pending_action("addstock")
+        reply = _handle_command("📋 Watchlist")
+        self.assertIn("Company A", reply.text)
+        self.assertIsNone(pbs.load_pending_action())
+
+    def test_watchlist_button_is_equivalent_to_slash_command(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        reply = _handle_command("📋 Watchlist")
+        self.assertIn("Company A (AAA.NS)", reply.text)
+
+    def test_help_button_is_equivalent_to_slash_command(self):
+        reply = _handle_command("❓ Help")
+        self.assertIn("Add Stock", reply.text)
+
+    def test_remove_stock_button_shows_picker(self):
+        pbs.save_watchlist({"AAA.NS": "Company A"})
+        reply = _handle_command("➖ Remove Stock")
+        self.assertIn("Tap a symbol", reply.text)
+        self.assertIsNotNone(reply.reply_markup)
 
     def test_addstock_by_company_name_offers_matches_and_adds_nothing_yet(self):
         pbs.save_watchlist({})
@@ -271,7 +322,7 @@ class TestPollAndProcessCommands(_PortfolioBBotTestBase):
 
         self.assertEqual(len(processed), 1)
         mock_send.assert_called_once()
-        self.assertEqual(mock_send.call_args.kwargs.get("reply_markup"), QUICK_ACTIONS_KEYBOARD)
+        self.assertEqual(mock_send.call_args.kwargs.get("reply_markup"), MAIN_MENU_KEYBOARD)
 
     def test_message_from_a_different_chat_is_silently_ignored(self):
         updates = [{"update_id": 1, "message": {"chat": {"id": 111}, "text": "/addstock evil corp"}}]

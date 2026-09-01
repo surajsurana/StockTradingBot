@@ -107,6 +107,18 @@ class TestPortfolioBState(unittest.TestCase):
         pbs.save_telegram_offset(42)
         self.assertEqual(pbs.load_telegram_offset(), 42)
 
+    def test_pending_action_defaults_to_none(self):
+        self.assertIsNone(pbs.load_pending_action())
+
+    def test_pending_action_round_trips(self):
+        pbs.save_pending_action("addstock")
+        self.assertEqual(pbs.load_pending_action(), "addstock")
+
+    def test_pending_action_can_be_cleared(self):
+        pbs.save_pending_action("addstock")
+        pbs.save_pending_action(None)
+        self.assertIsNone(pbs.load_pending_action())
+
 
 if __name__ == "__main__":
     unittest.main()

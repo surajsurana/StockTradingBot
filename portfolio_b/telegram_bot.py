@@ -68,6 +68,10 @@ MAX_ADD_CANDIDATES = 5
 # The "/" command menu Telegram shows next to the message box -- set
 # once at bot startup (see run_portfolio_b_bot_daemon.py) via
 # set_bot_commands(). No leading slash, per the Bot API's own convention.
+# Kept as a secondary discovery aid for typed usage -- MAIN_MENU_KEYBOARD
+# below (buttons under the text box, always visible) is the primary,
+# recommended way to use this bot, per explicit direction 2026-09-01
+# ("if its under the textbox like in petty cash it will be good").
 BOT_COMMANDS = [
     {"command": "watchlist", "description": "Show the current watchlist"},
     {"command": "addstock", "description": "Add a company, e.g. /addstock Tata Steel"},
@@ -75,22 +79,37 @@ BOT_COMMANDS = [
     {"command": "help", "description": "Show available commands"},
 ]
 
-# A persistent, tappable keyboard for the two commands that take no
-# argument. /addstock and /removestock stay in the "/" command menu
-# (BOT_COMMANDS above) instead, since they take a typed argument (or, for
-# /removestock, work with none -- see its own picker-keyboard below).
-# resize_keyboard shrinks it to fit instead of Telegram's oversized default.
-QUICK_ACTIONS_KEYBOARD = {
-    "keyboard": [[{"text": "/watchlist"}, {"text": "/help"}]],
+# Button labels for MAIN_MENU_KEYBOARD below -- also matched directly as
+# plain text in _handle_command() (tapping one of these buttons sends
+# its exact label as an ordinary text message, same as typing it).
+_WATCHLIST_BUTTON = "📋 Watchlist"
+_ADD_STOCK_BUTTON = "➕ Add Stock"
+_REMOVE_STOCK_BUTTON = "➖ Remove Stock"
+_HELP_BUTTON = "❓ Help"
+
+# A persistent, tappable keyboard covering all four actions -- always
+# visible under the text box (a Telegram ReplyKeyboardMarkup), not a
+# one-off inline keyboard attached to a single message. resize_keyboard
+# shrinks it to fit instead of Telegram's oversized default.
+MAIN_MENU_KEYBOARD = {
+    "keyboard": [
+        [{"text": _WATCHLIST_BUTTON}, {"text": _ADD_STOCK_BUTTON}],
+        [{"text": _REMOVE_STOCK_BUTTON}, {"text": _HELP_BUTTON}],
+    ],
     "resize_keyboard": True,
 }
+
+# load_pending_action()'s value while the bot is waiting for the user's
+# next plain-text reply to name a stock (see _handle_command()'s ask-
+# then-reply flow for Add Stock).
+_PENDING_ADDSTOCK = "addstock"
 
 
 @dataclass
 class CommandReply:
     """text: what to send back. reply_markup: None means the caller
     (poll_and_process_commands()) attaches the default
-    QUICK_ACTIONS_KEYBOARD; an explicit dict (e.g. an inline candidate
+    MAIN_MENU_KEYBOARD; an explicit dict (e.g. an inline candidate
     picker) overrides that for this one reply only."""
     text: str
     reply_markup: Optional[dict] = None
@@ -207,6 +226,41 @@ def _build_removal_keyboard(watchlist: dict) -> dict:
     return {"inline_keyboard": rows}
 
 
+def _search_and_offer_addstock(query: str, name_fn: Callable = fetch_company_name_if_tradeable,
+                                search_fn: Optional[Callable] = None) -> CommandReply:
+    """
+    Shared by both addstock paths -- typed inline ("/addstock Tata
+    Steel" in one message) and ask-then-reply (Add Stock tapped, THEN
+    the stock named in a follow-up message). Searches, builds the
+    confirm keyboard; never adds anything itself -- that only happens
+    when a button is actually tapped (_handle_callback_query()).
+    """
+    candidates = search_nse_symbol_candidates(query, search_fn=search_fn)
+    if not candidates:
+        # Fall back to treating the query as a literal ticker -- still
+        # always a confirm step (one candidate), never an immediate add,
+        # so typing an exact scrip code behaves the same way as
+        # searching by name.
+        symbol = _normalize_symbol(query)
+        if _VALID_SYMBOL_FORMAT.fullmatch(symbol):
+            name = name_fn(symbol)
+            if name is not None:
+                candidates = [{"symbol": symbol, "name": name}]
+
+    if not candidates:
+        return CommandReply(f"Couldn't find any NSE-listed match for '{query}'. "
+                             f"Try a different name, or the exact ticker (e.g. TATASTEEL).")
+
+    watchlist = get_watchlist_with_names()
+    candidates = [c for c in candidates if c["symbol"] not in watchlist]
+    if not candidates:
+        return CommandReply(f"'{query}' matches a symbol already on the watchlist.")
+
+    plural = "es" if len(candidates) > 1 else ""
+    return CommandReply(f"Found {len(candidates)} match{plural} for '{query}' -- tap the one you mean:",
+                         reply_markup=_build_candidate_keyboard(candidates))
+
+
 def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeable,
                      search_fn: Optional[Callable] = None) -> Optional[CommandReply]:
     """
@@ -216,70 +270,69 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
     regular trading notifications). Never raises -- an unexpected error
     is the caller's (poll_and_process_commands()) responsibility to
     catch, so one bad message can never abort the rest of a poll batch.
+
+    ASK-THEN-REPLY for Add Stock (confirmed 2026-09-01, per explicit
+    direction -- tapping Add Stock was immediately sending a bare
+    "/addstock" with no chance to type a name first): tapping
+    _ADD_STOCK_BUTTON (or sending bare "/addstock") does NOT search
+    anything yet -- it asks what to add and records that in
+    pbs.load_pending_action()/save_pending_action(). The NEXT message
+    is then checked FIRST, before any command pattern: if a stock name
+    is pending and this text isn't itself a recognized command/button,
+    it's treated as that stock's name. Sending any recognized command
+    or button while a reply is pending clears the pending state instead
+    of misreading it as a stock name (e.g. changing your mind and
+    tapping Watchlist instead).
     """
     text = text.strip()
 
-    if _WATCHLIST_PATTERN.match(text):
+    pending = pbs.load_pending_action()
+    is_known_trigger = (text.startswith("/") or
+                         text in (_WATCHLIST_BUTTON, _ADD_STOCK_BUTTON, _REMOVE_STOCK_BUTTON, _HELP_BUTTON))
+    if pending == _PENDING_ADDSTOCK and not is_known_trigger:
+        pbs.save_pending_action(None)
+        return _search_and_offer_addstock(text, name_fn=name_fn, search_fn=search_fn)
+
+    if text == _WATCHLIST_BUTTON or _WATCHLIST_PATTERN.match(text):
+        pbs.save_pending_action(None)
         watchlist = get_watchlist_with_names()
         if not watchlist:
             return CommandReply("Portfolio B's watchlist is currently empty.")
         lines = [f"- {name} ({symbol})" if name else f"- {symbol}" for symbol, name in watchlist.items()]
         return CommandReply("Portfolio B watchlist:\n" + "\n".join(lines))
 
-    if _HELP_PATTERN.match(text):
+    if text == _HELP_BUTTON or _HELP_PATTERN.match(text):
+        pbs.save_pending_action(None)
         return CommandReply(
             "Portfolio B commands:\n"
-            "/watchlist -- show the current list\n"
-            "/addstock NAME -- add a company, e.g. /addstock Tata Steel "
-            "(shows matching companies to confirm -- nothing is added until you tap one)\n"
-            "/removestock -- shows the current list to tap-and-remove from\n"
-            "/removestock SYMBOL -- remove a specific symbol directly")
+            "Add Stock -- name a company and I'll find it on the NSE for you to confirm\n"
+            "Remove Stock -- tap a symbol from the current list to remove it\n"
+            "Watchlist -- show the current list\n"
+            "(typed equivalents: /addstock NAME, /removestock [SYMBOL], /watchlist)")
 
-    # Matched BEFORE the argument-capturing patterns below, on just the
-    # command word -- so "/addstock" sent alone (no text typed after it,
-    # e.g. tapped straight from Telegram's "/" menu and sent as-is) gets
-    # a clear usage reply instead of silently doing nothing. This was a
-    # real, reported gap: a bare "/addstock" produced no reply, no log
-    # entry, and no error -- indistinguishable from the message never
-    # having arrived at all.
-    if re.match(r"^/addstock\b", text, re.IGNORECASE):
+    # Matched on just the command word/button, separately from the
+    # argument-capturing pattern below -- covers both the button (which
+    # never carries an inline argument) and a bare "/addstock" (e.g.
+    # tapped straight from Telegram's "/" menu and sent as-is, a real
+    # reported gap: it used to produce no reply, no log entry, nothing
+    # at all).
+    if text == _ADD_STOCK_BUTTON or re.match(r"^/addstock\b", text, re.IGNORECASE):
         add_match = _ADD_PATTERN.match(text)
         if not add_match:
-            return CommandReply("Usage: /addstock NAME (e.g. /addstock Tata Steel, or /addstock TATASTEEL)")
-        query = add_match.group(1).strip()
+            pbs.save_pending_action(_PENDING_ADDSTOCK)
+            return CommandReply("What stock would you like to add? Type the company name or ticker "
+                                 "(e.g. Tata Steel).")
+        pbs.save_pending_action(None)
+        return _search_and_offer_addstock(add_match.group(1).strip(), name_fn=name_fn, search_fn=search_fn)
 
-        candidates = search_nse_symbol_candidates(query, search_fn=search_fn)
-        if not candidates:
-            # Fall back to treating the query as a literal ticker --
-            # still always a confirm step (one candidate), never an
-            # immediate add, so typing an exact scrip code behaves the
-            # same way as searching by name.
-            symbol = _normalize_symbol(query)
-            if _VALID_SYMBOL_FORMAT.fullmatch(symbol):
-                name = name_fn(symbol)
-                if name is not None:
-                    candidates = [{"symbol": symbol, "name": name}]
-
-        if not candidates:
-            return CommandReply(f"Couldn't find any NSE-listed match for '{query}'. "
-                                 f"Try a different name, or the exact ticker (e.g. TATASTEEL).")
-
-        watchlist = get_watchlist_with_names()
-        candidates = [c for c in candidates if c["symbol"] not in watchlist]
-        if not candidates:
-            return CommandReply(f"'{query}' matches a symbol already on the watchlist.")
-
-        plural = "es" if len(candidates) > 1 else ""
-        return CommandReply(f"Found {len(candidates)} match{plural} for '{query}' -- tap the one you mean:",
-                             reply_markup=_build_candidate_keyboard(candidates))
-
-    if re.match(r"^/removestock\b", text, re.IGNORECASE):
+    if text == _REMOVE_STOCK_BUTTON or re.match(r"^/removestock\b", text, re.IGNORECASE):
+        pbs.save_pending_action(None)
         remove_match = _REMOVE_PATTERN.match(text)
         symbol_arg = remove_match.group(1) if remove_match else None
 
         if not symbol_arg:
-            # Sent alone -- show a tap-to-remove picker instead of
-            # requiring the exact symbol to be typed/remembered.
+            # Sent alone (or tapped as a button) -- show a tap-to-remove
+            # picker instead of requiring the exact symbol typed/remembered.
             watchlist = get_watchlist_with_names()
             if not watchlist:
                 return CommandReply("Portfolio B's watchlist is currently empty -- nothing to remove.")
@@ -305,6 +358,12 @@ def _handle_callback_query(data: str, name_fn: Callable = fetch_company_name_if_
     discipline as _handle_command(), enforced by the caller
     (poll_and_process_commands()).
     """
+    # Defensive: a button tap always resolves or cancels the add/remove
+    # flow it belongs to, so any stale "waiting for a stock name" state
+    # (there shouldn't be one at this point, but never leave it dangling
+    # if there somehow is) is cleared here too.
+    pbs.save_pending_action(None)
+
     if data == _CANCEL_CALLBACK:
         return "Cancelled."
 
@@ -364,10 +423,10 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
     and advances the persisted offset so the NEXT call never reprocesses
     the same update.
 
-    A plain command message gets QUICK_ACTIONS_KEYBOARD attached unless
+    A plain command message gets MAIN_MENU_KEYBOARD attached unless
     the CommandReply specifies its own reply_markup (e.g. the inline
     candidate/removal pickers). A callback query's reply always carries
-    QUICK_ACTIONS_KEYBOARD (the inline picker that triggered it has
+    MAIN_MENU_KEYBOARD (the inline picker that triggered it has
     already served its purpose and isn't re-sent).
 
     long_poll_timeout: 0 (the default) returns immediately with whatever
@@ -413,7 +472,7 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
                 reply = _handle_callback_query(data, name_fn=name_fn)
             except Exception as e:
                 reply = f"Something went wrong processing that: {e}"
-            send_telegram_message(reply, bot_token, chat_id, reply_markup=QUICK_ACTIONS_KEYBOARD)
+            send_telegram_message(reply, bot_token, chat_id, reply_markup=MAIN_MENU_KEYBOARD)
             _answer_callback_query(bot_token, callback_query.get("id", ""))
             processed.append((f"[button] {data}", reply))
             continue
@@ -431,7 +490,7 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
 
         if reply is not None:
             send_telegram_message(reply.text, bot_token, chat_id,
-                                   reply_markup=reply.reply_markup or QUICK_ACTIONS_KEYBOARD)
+                                   reply_markup=reply.reply_markup or MAIN_MENU_KEYBOARD)
             processed.append((message["text"], reply.text))
 
     if max_update_id > offset:

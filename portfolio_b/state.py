@@ -157,3 +157,34 @@ def save_telegram_offset(last_update_id: int) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"last_update_id": last_update_id}, f)
+
+
+def _pending_action_path() -> str:
+    return os.path.join(PORTFOLIO_B_STATE_DIR, "pending_action.json")
+
+
+def load_pending_action():
+    """
+    A one-shot 'the bot is waiting for a follow-up reply' flag -- e.g.
+    after "Add Stock" is tapped with no stock named yet, the NEXT plain
+    text message from the chat should be treated as the stock to search
+    for, rather than being silently ignored (see
+    portfolio_b/telegram_bot.py's _handle_command()). A single global
+    value, not keyed per chat, is safe here: this bot only ever acts on
+    ONE configured chat_id (see that module's own security note) -- there
+    is no second chat whose pending state could collide with this one.
+    Returns None if nothing is pending.
+    """
+    path = _pending_action_path()
+    if not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f).get("action")
+
+
+def save_pending_action(action) -> None:
+    """action: a short string (e.g. "addstock"), or None to clear it."""
+    path = _pending_action_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"action": action}, f)
