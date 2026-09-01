@@ -1,0 +1,19 @@
+{
+  "data_period": "2023-08-31 to 2026-08-31",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- omits the short side entirely, doesn't bias the long side's own measured performance. J=6-month formation: MINOR, a direct restatement of the paper's own most-cited specification. Single-vintage holding (vs. the paper's overlapping-portfolio construction): MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to 52-Week High Momentum's own single-vintage deviation; a single-vintage system realizes ONE entry point's path per qualifying episode, with materially higher variance than the paper's smoothed multi-vintage average. No skip period between formation and holding: MINOR-to-MODERATE, DIRECTIONALLY UNKNOWN -- the paper suggests a skip period reduces short-term reversal contamination, so omitting it could slightly understate net momentum performance, but this is a secondary refinement in the source material, not the headline result. Exit rule (126-trading-day time-stop only, no percentile-based early exit): N/A for the time-stop itself (direct analogue of the documented K=6-month holding period). Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all -- the original is a factor-return study with zero position-level risk management.",
+  "cross_sectional_momentum_risk_pct_per_unit": 0.01,
+  "cross_sectional_momentum_stop_loss_pct": 0.08,
+  "cross_sectional_momentum_percentile_threshold": 90.0,
+  "cross_sectional_momentum_formation_days": 126,
+  "cross_sectional_momentum_holding_period_trading_days": 126,
+  "cross_sectional_momentum_single_vintage": true,
+  "cross_sectional_momentum_skip_period": false,
+  "cross_sectional_momentum_percentile_based_early_exit": false
+}

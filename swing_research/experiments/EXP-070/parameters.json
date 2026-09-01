@@ -1,0 +1,25 @@
+{
+  "data_period": "2023-08-31 to 2026-08-31",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": true,
+  "slippage_modeled": true,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN, standard. 252-day formation: MINOR, a direct restatement of the paper's own preferred window. Close x Volume rupee-volume proxy: MINOR, standard practice in the literature itself. Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as every prior cross-sectional strategy. Regression-to-decile-sort translation: a genuine interpretive step beyond the paper's own literal test design -- MODERATE, DIRECTIONALLY UNKNOWN, disclosed as a bigger fidelity gap than a strategy whose source paper already IS a decile-sort/portfolio-construction design (e.g. every Jegadeesh-family strategy already in this program). Execution-realism configuration: by design, LIKELY UNDERSTATES the zero-cost backtest's own apparent edge (that is the entire point) -- the SW-003/SW-008 validation found the illiquidity-cost component specifically can be large for a strategy trading less-liquid names even when that strategy wasn't designed to select on liquidity at all; Amihud selects on liquidity DIRECTLY, so this effect is expected to be at least as large, plausibly larger. This is treated as a FIDELITY IMPROVEMENT relative to every prior strategy's zero-cost backtest, not an additional disclosed weakness -- the zero-cost number was the less faithful one for this specific strategy.",
+  "amihud_risk_pct_per_unit": 0.01,
+  "amihud_stop_loss_pct": 0.08,
+  "amihud_illiq_percentile_threshold": 90.0,
+  "amihud_formation_days": 252,
+  "amihud_holding_period_trading_days": 21,
+  "amihud_single_vintage": true,
+  "amihud_percentile_based_early_exit": false,
+  "execution_realism_config": {
+    "max_participation_pct_of_adv": 0.05,
+    "illiq_cost_k": 452.3434001905559,
+    "illiq_cost_calibration_anchor": "10bps one-way at Rs.100,000 for a median-ILLIQ universe stock",
+    "fill_timing": "next_day_open",
+    "methodology_note": "See execution_realism_framework_proposal.md and execution_realism_engine.py. Verdict and headline comparison-table metrics both reflect this configuration; the zero-cost baseline is saved separately for transparency only, under diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics."
+  }
+}

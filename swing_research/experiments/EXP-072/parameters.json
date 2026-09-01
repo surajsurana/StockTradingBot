@@ -1,0 +1,19 @@
+{
+  "data_period": "2023-08-31 to 2026-08-31",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Single-factor residual volatility vs. the paper's primary 3-factor residual: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- disclosed as the largest fidelity gap in this implementation. The paper's own robustness checks suggest the anomaly survives under a single-factor construction, but 'qualitatively unchanged' in a US large-cap sample is not a guarantee of the same magnitude on NSE's cross-section. Long-only (no long-short spread): measures only the long, low-idio-vol leg's own stock-selection return, a related but distinct question from the paper's own long-short factor return -- same reasoning as Betting Against Beta's identical long-only reduction. Formation window (kept faithful, not shortened): NEGLIGIBLE incremental risk beyond the single-factor substitution above -- this is the one dimension where fidelity to the paper is NOT reduced. Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior cross-sectional strategy's own single-vintage deviation. Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all. Uncontrolled short-term-reversal interaction: DIRECTIONALLY UNKNOWN, disclosed as a genuine, un-mitigated risk rather than a theoretical footnote -- if this platform's own Short-Term Reversal strategy (SW-006) and this one show materially overlapping entries in the backtest, that would be direct empirical evidence the interaction is live here, not just in the literature.",
+  "idiosyncratic_volatility_risk_pct_per_unit": 0.01,
+  "idiosyncratic_volatility_stop_loss_pct": 0.08,
+  "idiosyncratic_volatility_percentile_threshold": 10.0,
+  "idiosyncratic_volatility_formation_days": 21,
+  "idiosyncratic_volatility_holding_period_trading_days": 21,
+  "idiosyncratic_volatility_single_vintage": true,
+  "idiosyncratic_volatility_percentile_based_early_exit": false,
+  "idiosyncratic_volatility_factor_model": "single-factor (CAPM/market-model) residual, not the paper's primary 3-factor construction"
+}

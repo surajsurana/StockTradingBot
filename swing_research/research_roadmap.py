@@ -196,6 +196,7 @@ EXISTING_STRATEGY_TAGS = {
     "amihud_illiquidity": {"liquidity"},
     "max_effect": {"behavioral_lottery"},
     "idiosyncratic_volatility": {"risk_based"},
+    "turn_of_month": {"seasonality_calendar"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -1115,32 +1116,6 @@ CANDIDATES = [
         evidence_sufficiency_note="Sufficient evidence, but weak case for research priority given existing family overlap -- see diversification score.",
         academic_evidence_score=7, expected_robustness_score=6, operational_simplicity_score=6,
         research_value_score=4, data_availability_score=8, implementation_feasibility_score=7,
-    ),
-    CandidateProfile(
-        key="turn_of_month",
-        name="Turn-of-the-Month Effect",
-        authors="Ariel, R.A.",
-        publication="\"A Monthly Effect in Stock Returns\", Journal of Financial Economics, Vol. 18, No. 1",
-        year=1987,
-        asset_class="Broad market / single-stock equities, calendar-based",
-        direction="Long-only, held only across the turn-of-month window.",
-        factor_family="Calendar seasonality",
-        factor_tags={"seasonality_calendar"},
-        mechanism="Returns are disproportionately concentrated in the few trading days around each "
-                   "month's turn (last day of the month through the first few days of the next) -- "
-                   "originally linked to institutional cash-flow/payroll-driven buying patterns.",
-        typical_holding_period="A few days per month, in and out",
-        expected_trade_frequency="High-frequency by calendar (every month), but each holding period is very short",
-        data_requirements=["daily_ohlcv_history"],
-        known_strengths="Trivial to test -- pure calendar logic on data already in hand, essentially free to check.",
-        known_weaknesses="A textbook example of a classic seasonal anomaly that has PARTIALLY DECAYED "
-                          "since discovery as it became widely known and arbitraged in liquid developed "
-                          "markets -- real uncertainty about whether it still holds in the recent-period "
-                          "check this platform requires. Low economic magnitude even where it does hold.",
-        academic_replication_quality="Well-documented historically; more recent samples show materially weaker effects.",
-        evidence_sufficiency_note="Sufficient to test cheaply, but expect it may fail the recent-period gate.",
-        academic_evidence_score=6, expected_robustness_score=4, operational_simplicity_score=9,
-        research_value_score=4, data_availability_score=10, implementation_feasibility_score=10,
     ),
     CandidateProfile(
         key="turn_of_year",

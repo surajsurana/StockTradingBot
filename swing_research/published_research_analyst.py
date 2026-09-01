@@ -510,6 +510,112 @@ BETTING_AGAINST_BETA = PublishedStrategy(
 )
 
 
+TURN_OF_MONTH = PublishedStrategy(
+    name="Turn-of-the-Month Effect",
+    source_citation=(
+        "Ariel, R.A. (1987), \"A Monthly Effect in Stock Returns,\" Journal of Financial "
+        "Economics, Vol. 18, No. 1."
+    ),
+    mechanism=(
+        "Returns are disproportionately concentrated in the few trading days around each "
+        "month's turn (the last trading day of the month through the first few days of the "
+        "next) -- originally linked to institutional cash-flow/payroll-driven buying patterns "
+        "concentrating around month-end/month-start. First pure CALENDAR/SEASONALITY mechanism "
+        "in this program -- every prior strategy selects cross-sectionally against the "
+        "universe; this one has no per-symbol selection criterion at all."
+    ),
+    rules=(
+        "Turn-of-month window: the LAST trading day of the month through the THIRD trading day "
+        "of the following month (a 4-trading-day window, the paper's own '-1 to +3' "
+        "definition). The paper's finding is that essentially ALL of the market's cumulative "
+        "return over its sample period is concentrated in this window; the remainder of the "
+        "month is flat on average."
+    ),
+    variant_chosen=(
+        "Long-only, applied per-symbol to every stock in the universe uniformly (see "
+        "scope_reductions below for why) -- enter at Close on the last trading day of the "
+        "month, exit exactly 3 trading days later (computed by row position, not a calendar-day "
+        "approximation)."
+    ),
+    scope_reductions=(
+        "APPLIED PER-SYMBOL, UNIFORMLY, NOT AS A MARKET-INDEX TIMING SIGNAL (disclosed) -- the "
+        "original paper tests the aggregate market (index) return; this platform's Strategy "
+        "interface is per-symbol, so every symbol in the universe qualifies on the SAME "
+        "calendar day, a first for this program (every prior strategy narrows to a "
+        "cross-sectional decile before the shared engine's own max_units_total=10 cap applies). "
+        "Here that same, UNCHANGED cap applies across the ENTIRE undifferentiated universe "
+        "instead of a pre-selected subset. "
+        "DIVERSIFICATION FIX -- TWO ATTEMPTS, both disclosed (before any promotion decision): "
+        "ATTEMPT 1 (discarded): a first backtest with NO tie-breaker confirmed EMPIRICALLY that "
+        "this collapses onto the same alphabetically-early ~10 symbols (the frozen universe's "
+        "own ticker order, zero economic meaning) filling every month for the entire 10-year "
+        "history, touching only 10 of ~20 sectors. A fix restricting entry ELIGIBILITY to a "
+        "STATIC rotating ~1/4 slice of the universe (a fixed per-symbol bucket, unchanging every "
+        "time that quarter came due) improved coverage to 17/~20, but a follow-up check found "
+        "this was NOT a full fix: every symbol from the 3 sectors still missing had 12-125 OTHER "
+        "symbols in its SAME static bucket that came alphabetically before it, EVERY SINGLE TIME "
+        "that bucket was active -- a persistent, near-permanent structural exclusion, not "
+        "residual noise, since the underlying engine's fixed alphabetical iteration order was "
+        "never actually touched, only the size of the pool competing within it. "
+        "ATTEMPT 2 (current): replaces the static per-symbol bucket with a PER-MONTH COMBINED "
+        "RANK of (symbol, absolute month index) -- every calendar month, all currently-tradeable "
+        "symbols are ranked afresh by a deterministic hash mixing the symbol's own name with "
+        "that specific month, and only the top ELIGIBLE_PER_MONTH (40) are eligible. Because the "
+        "hash mixes in the month itself, both WHICH symbols are eligible and each eligible "
+        "symbol's own alphabetical standing relative to that month's specific cohort genuinely "
+        "reshuffle every month, instead of repeating the same fixed competitive landscape "
+        "forever -- giving a previously-excluded symbol periodic access to a favorable draw "
+        "roughly as often as any other symbol. Both attempts inject their column via "
+        "extra_columns_by_symbol, the same mechanism every prior strategy already uses for its "
+        "own cross-sectional signal -- NEITHER changes the shared backtesting engine or any "
+        "other strategy's own frozen results. "
+        "HOLDING PERIOD computed by ROW POSITION (exactly 3 trading days after entry), not the "
+        "generic trading-day-to-calendar-day approximation every other strategy in this program "
+        "uses -- that approximation is reasonable for 21+ trading day holds but would be "
+        "unreliable at this strategy's much shorter, weekend-sensitive horizon. "
+        "PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- the source paper is a market-return-pattern study with "
+        "no position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "First pure calendar/seasonality mechanism in this program -- no percentile ranking, no "
+        "external market-index series, no rolling-window formation period of any kind. Every "
+        "prior strategy's edge comes from a computed indicator selecting a subset of the "
+        "universe; this one's entry condition is calendar date alone, identical for every "
+        "symbol (narrowed only by the disclosed per-month eligibility fix above, not by any "
+        "ranking of the underlying signal itself). Needs essentially no historical warm-up "
+        "(min_lookback_days=1), the "
+        "opposite structural situation from Long-Term Reversal's multi-year-formation problem -- "
+        "this strategy should get many feasible walk-forward windows in the mandatory "
+        "recent-period check rather than being structurally starved of them."
+    ),
+    assumptions_impact=(
+        "Per-symbol application instead of an index-level timing signal: DIRECTIONALLY UNKNOWN "
+        "-- a real implementation might reasonably use an index proxy instead; this backtest "
+        "instead tells us whether the effect shows up in individual NSE stocks, a related but "
+        "distinct question from the paper's own index-return finding. "
+        "Per-month combined-rank diversification fix (Attempt 2): MODERATE, LIKELY POSITIVE for "
+        "external validity -- verified to close the persistent, structural exclusion Attempt 1 "
+        "left behind (the specific symbols/sectors previously locked out by a fixed 12-125-symbol "
+        "same-bucket alphabetical disadvantage now have a genuinely reshuffling monthly draw). "
+        "The shared engine's own iteration-order artifact still applies WITHIN any single month's "
+        "eligible cohort, but that cohort's composition (and each symbol's standing within it) "
+        "now changes every month rather than being fixed forever -- a genuine improvement in what "
+        "the backtest is actually testing, not a parameter tuned to change the verdict (both the "
+        "eligible-per-month count, 40, and the combined-rank design itself were chosen for "
+        "coverage-breadth reasoning before any backtest was re-run with them, not selected after "
+        "seeing results). "
+        "Row-position-based 3-trading-day exit (kept faithful, not approximated): NEGLIGIBLE "
+        "incremental risk -- this is more precise than the generic calendar-day approximation "
+        "used elsewhere, not less. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all -- and at "
+        "only a 3-trading-day hold, the 8% stop is far less likely to bind than in any other "
+        "strategy in this program, so its practical impact here is likely smaller than usual."
+    ),
+)
+
+
 IDIOSYNCRATIC_VOLATILITY_ANOMALY = PublishedStrategy(
     name="Idiosyncratic Volatility Anomaly",
     source_citation=(

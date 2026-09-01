@@ -1,0 +1,18 @@
+{
+  "data_period": "2023-08-31 to 2026-08-31",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. 1-month formation period: MINOR, a direct restatement of the paper's own headline specification. Single-vintage holding (vs. the paper's overlapping-portfolio construction): MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior cross-sectional strategy's own single-vintage deviation; note the much shorter holding period (1 month vs. 6 months) means meaningfully more trade turnover than the momentum strategies, a genuine behavioral difference worth weighing in the eventual portfolio-impact analysis, not just a weaker/stronger version of the same mechanism. Exit rule (21-trading-day time-stop only, no percentile-based early exit): N/A for the time-stop itself. Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all -- worth noting that buying stocks which just fell sharply places entries inherently closer (in percentage terms) to a plausible further-decline scenario than a momentum strategy's entries, though the SAME 8% convention is used regardless, disclosed as a point of interpretive difference, not a rule change.",
+  "short_term_reversal_risk_pct_per_unit": 0.01,
+  "short_term_reversal_stop_loss_pct": 0.08,
+  "short_term_reversal_percentile_threshold": 10.0,
+  "short_term_reversal_formation_days": 21,
+  "short_term_reversal_holding_period_trading_days": 21,
+  "short_term_reversal_single_vintage": true,
+  "short_term_reversal_percentile_based_early_exit": false
+}

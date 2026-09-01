@@ -25,7 +25,7 @@
     "display_name": "Minervini Trend Template Filter",
     "strategy_family": "swing_research published strategy",
     "research_verdict": "INCONCLUSIVE",
-    "research_verdict_source": "EXP-007..EXP-011",
+    "research_verdict_source": "EXP-055 (base, PASS), EXP-057 (recent-period, REJECT -- 0 trades, thin-window artifact reproducing the original finding), EXP-064 (robustness sub-period, PASS -- conflicts) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. Verdict UNCHANGED (INCONCLUSIVE). Supersedes EXP-008/EXP-009/EXP-011 as the authoritative record.",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -39,14 +39,14 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-002",
-    "primary_experiment_id": "EXP-008"
+    "primary_experiment_id": "EXP-055"
   },
   "fifty_two_week_high_momentum": {
     "strategy_key": "fifty_two_week_high_momentum",
     "display_name": "52-Week High Momentum",
     "strategy_family": "swing_research published strategy",
-    "research_verdict": "PASS",
-    "research_verdict_source": "EXP-012..EXP-014",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-054 (base, PASS), EXP-056 (recent-period, REJECT), EXP-060 (robustness sub-period, REJECT -- corroborates) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original PASS (EXP-013/EXP-014-era record) to REJECT. Supersedes prior record. Deployment Status (PAPER_TRADING) NOT changed by this update -- a demotion/retirement decision is a separate, explicit action requiring direct user approval, not implied by this research-record correction.",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -120,8 +120,8 @@
     "strategy_key": "cross_sectional_momentum",
     "display_name": "Cross-Sectional Momentum",
     "strategy_family": "swing_research published strategy",
-    "research_verdict": "PASS",
-    "research_verdict_source": "EXP-016, EXP-017",
+    "research_verdict": "INCONCLUSIVE",
+    "research_verdict_source": "EXP-059 (base, PASS), EXP-061 (recent-period, REJECT), EXP-065 (robustness sub-period, PASS -- conflicts) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original PASS to INCONCLUSIVE. Supersedes prior record. Deployment Status NOT changed by this update.",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -141,7 +141,7 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-006",
-    "primary_experiment_id": "EXP-016"
+    "primary_experiment_id": "EXP-059"
   },
   "pead": {
     "strategy_key": "pead",
@@ -175,7 +175,7 @@
     "display_name": "Short-Term Reversal",
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
-    "research_verdict_source": "EXP-020, EXP-021",
+    "research_verdict_source": "EXP-058 (base, PASS), EXP-062 (recent-period, PASS) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. Verdict UNCHANGED (PASS), magnitude materially revised upward (base CAGR ~22%->34.31%). Deployment Status (PAPER_TRADING) unchanged.",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -189,42 +189,42 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-008",
-    "primary_experiment_id": "EXP-020"
+    "primary_experiment_id": "EXP-058"
   },
   "betting_against_beta": {
     "strategy_key": "betting_against_beta",
     "display_name": "Betting Against Beta",
     "strategy_family": "swing_research published strategy",
-    "research_verdict": "REJECT",
-    "research_verdict_source": "EXP-024, EXP-025, EXP-026",
+    "research_verdict": "INCONCLUSIVE",
+    "research_verdict_source": "EXP-063 (base, PASS), EXP-066 (recent-period, REJECT), EXP-069 (robustness sub-period, PASS -- conflicts, unlike the original robustness check which corroborated) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original REJECT to INCONCLUSIVE. Supersedes EXP-024/EXP-025/EXP-026. Deployment Status (RESEARCH) unchanged.",
     "deployment_status": "RESEARCH",
     "deployment_status_history": [],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-009",
-    "primary_experiment_id": ""
+    "primary_experiment_id": "EXP-063"
   },
   "amihud_illiquidity": {
     "strategy_key": "amihud_illiquidity",
     "display_name": "Amihud Illiquidity Premium",
     "strategy_family": "swing_research published strategy",
-    "research_verdict": "PASS",
-    "research_verdict_source": "EXP-029, EXP-030, EXP-031 (robustness, conflicting)",
+    "research_verdict": "INCONCLUSIVE",
+    "research_verdict_source": "EXP-068 (base, PASS), EXP-070 (recent-period, REJECT -- thin, LOW evidence, 0/1 windows), EXP-071 (robustness sub-period, PASS -- conflicts) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original PASS to INCONCLUSIVE. Deployment Status (RESEARCH) unchanged.",
     "deployment_status": "RESEARCH",
     "deployment_status_history": [],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-010",
-    "primary_experiment_id": ""
+    "primary_experiment_id": "EXP-068"
   },
   "max_effect": {
     "strategy_key": "max_effect",
     "display_name": "MAX Effect (Lottery-Demand Anomaly)",
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
-    "research_verdict_source": "EXP-042 (base), EXP-043 (recent-period)",
+    "research_verdict_source": "EXP-052 (base, PASS), EXP-053 (recent-period, PASS) -- RE-VERIFIED under the generic candidate-ranking architecture fix (swing_research/candidate_ranking.py, 2026-08-31); verdict unchanged, magnitude revised (base CAGR 11.49%->8.92%, base OOS expectancy Rs152.39->Rs75.38/trade; recent-period OOS expectancy Rs26.56->Rs73.79/trade). Supersedes EXP-042/EXP-043 as the authoritative record. Deployment Status (PAPER_TRADING) unchanged -- this is a research-record update only.",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -238,7 +238,7 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-011",
-    "primary_experiment_id": "EXP-042"
+    "primary_experiment_id": "EXP-052"
   },
   "idiosyncratic_volatility": {
     "strategy_key": "idiosyncratic_volatility",
@@ -253,5 +253,19 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-012",
     "primary_experiment_id": "EXP-045"
+  },
+  "turn_of_month": {
+    "strategy_key": "turn_of_month",
+    "display_name": "Turn-of-the-Month Effect",
+    "strategy_family": "swing_research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-050 (base, PASS), EXP-051 (recent-period, PASS) -- under the generic candidate-ranking architecture fix (swing_research/candidate_ranking.py), replacing all prior SW-013-specific tie-break attempts",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-013",
+    "primary_experiment_id": "EXP-050"
   }
 }

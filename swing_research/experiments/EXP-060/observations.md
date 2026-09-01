@@ -1,0 +1,9 @@
+# Analysis: 52-Week High Momentum (REJECT)
+
+The overall book looks statistically appealing — PF 1.88, Sortino 2.02, +122% return on capital — but the auditor's rejection hinges entirely on the out-of-sample split showing -142.13 expectancy, which flatly contradicts the aggregate expectancy of +918.12. This is the classic signature of a strategy whose in-sample/walk-forward edge was concentrated in a narrow, non-repeating window rather than a stable structural effect.
+
+The monthly and rolling-return data support this: performance is dominated by a handful of explosive months (Jul/Sep 2023, Jan/Aug/Sep 2024, Aug 2026), all clustering in the 2023–2024 bull run, while 2025 gave back -22% annually. This is consistent with the single-vintage holding design — each qualifying breakout is a single, undiversified path over a ~93-day hold, so results are dominated by whichever handful of episodes happened to be sampled in-sample vs. out-of-sample, not a smoothed factor return as in the source paper's overlapping-portfolio construction.
+
+Sector and regime data reinforce a momentum/beta dependency rather than an idiosyncratic edge: P&L leans heavily on cyclical, high-beta groups (Capital Goods, Autos, Financials) and skews bullish-regime (~65% of P&L), while defensive/rate-sensitive names (FMCG, Construction, Metals) lost money — the strategy is essentially a levered bull-market beta play dressed as a breakout signal, which explains why unseen data reverses sign.
+
+**Follow-ups:** (1) Test the paper's actual K=6 overlapping-vintage construction to see if variance/expectancy stabilizes when path-risk is diversified across concurrent entries. (2) Segment OOS trades by regime/sector to confirm whether the negative expectancy is concentrated in the 2025 bearish stretch, which would indicate regime-dependency rather than total signal failure.

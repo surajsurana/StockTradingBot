@@ -1,6 +1,22 @@
 # Strategy Library: MAX Effect (Lottery-Demand Anomaly) (SW-011)
 
-**Status: Research complete. PASS on both checks performed — base run and recent-period. Deployment Status: RESEARCH — not promoted to PAPER_TRADING (per explicit direction; promotion requires a separate, later decision).**
+**Status: Research complete. PASS on both checks performed — base run and recent-period. Deployment Status: PAPER_TRADING (promoted 2026-08-23; see promotion record). Re-verified 2026-08-31 under the corrected candidate-ranking architecture — verdict unchanged.**
+
+## 2026-08-31 Re-Verification (Read This Before the Original Figures Below)
+
+SW-013 (Turn-of-the-Month)'s own research exposed that the shared backtesting engine and paper-trading engine both processed candidates in the frozen universe's ALPHABETICAL dict order and stopped once the position cap was full — meaning that on any day more symbols qualified than there was room for, alphabetical position (not signal strength) silently decided which got taken. This affects every cross-sectional strategy in this program, MAX Effect included, though the practical impact varies by how often a given strategy's own qualifying set exceeds capacity on the same day. A generic, program-wide fix (`swing_research/candidate_ranking.py`) now ranks candidates by each strategy's own already-computed percentile (MAX Effect's own `max_effect_percentile`, inverted so the calmest/lowest-MAX stocks rank highest — exactly the strategy's own documented selection direction) before applying the position cap, with a reproducible, symbol-name-independent tie-break for genuine ties.
+
+**Re-run under the fix**: base (EXP-052) and recent-period (EXP-053) both still PASS, both still with 100%/50% window consistency matching the original pattern, HIGH evidence quality on both. **The verdict does not change.** The magnitude does:
+
+| Metric | Original (EXP-042/043) | Re-verified (EXP-052/053) |
+|---|---|---|
+| Base CAGR | 11.49% | 8.92% |
+| Base Sharpe | 0.829 | 0.72 |
+| Base Max Drawdown | 41.95% | 45.76% |
+| Base OOS expectancy | +₹152.39/trade | +₹75.38/trade |
+| Recent-period OOS expectancy | +₹26.56/trade | +₹73.79/trade (improved) |
+
+The base run's edge estimate is genuinely weaker than originally recorded (the alphabetical bias had been overstating it); the recent-period estimate is actually stronger. Net: the strategy's PASS verdict was not an artifact of the bug — it holds up under an unbiased allocation mechanism — but the ORIGINAL figures below (Sections 2-8) reflect the pre-fix, now-superseded numbers and should be read with EXP-052/EXP-053's corrected figures as the authoritative current record, not a replacement narrative. Deployment Status (PAPER_TRADING) was not changed by this re-verification — this is a research-record correction, not a new promotion decision.
 
 ---
 
@@ -11,9 +27,9 @@
 | Strategy ID | SW-011 |
 | Strategy Name | MAX Effect (Lottery-Demand Anomaly) |
 | Research Source | Bali, T.G., Cakici, N. and Whitelaw, R.F. (2011), "Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns," *Journal of Financial Economics*, Vol. 99, No. 2 |
-| Research Verdict | **PASS** (base EXP-042 + recent-period EXP-043, clean, no conflict) |
-| Evidence Quality | **HIGH (90.0/100)** on both runs |
-| Deployment Status | RESEARCH (not promoted) |
+| Research Verdict | **PASS** (base EXP-042 + recent-period EXP-043 originally; RE-VERIFIED via EXP-052 + EXP-053, 2026-08-31, verdict unchanged — see re-verification note above) |
+| Evidence Quality | **HIGH (90.0/100)** on both runs, both before and after re-verification |
+| Deployment Status | PAPER_TRADING |
 
 ## Documented Rules vs. Implementation Assumptions
 

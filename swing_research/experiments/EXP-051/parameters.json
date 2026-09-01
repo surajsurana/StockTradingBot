@@ -1,0 +1,17 @@
+{
+  "data_period": "2023-08-28 to 2026-08-28",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Per-symbol application instead of an index-level timing signal: DIRECTIONALLY UNKNOWN -- a real implementation might reasonably use an index proxy instead; this backtest instead tells us whether the effect shows up in individual NSE stocks, a related but distinct question from the paper's own index-return finding. Per-month combined-rank diversification fix (Attempt 2): MODERATE, LIKELY POSITIVE for external validity -- verified to close the persistent, structural exclusion Attempt 1 left behind (the specific symbols/sectors previously locked out by a fixed 12-125-symbol same-bucket alphabetical disadvantage now have a genuinely reshuffling monthly draw). The shared engine's own iteration-order artifact still applies WITHIN any single month's eligible cohort, but that cohort's composition (and each symbol's standing within it) now changes every month rather than being fixed forever -- a genuine improvement in what the backtest is actually testing, not a parameter tuned to change the verdict (both the eligible-per-month count, 40, and the combined-rank design itself were chosen for coverage-breadth reasoning before any backtest was re-run with them, not selected after seeing results). Row-position-based 3-trading-day exit (kept faithful, not approximated): NEGLIGIBLE incremental risk -- this is more precise than the generic calendar-day approximation used elsewhere, not less. Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all -- and at only a 3-trading-day hold, the 8% stop is far less likely to bind than in any other strategy in this program, so its practical impact here is likely smaller than usual.",
+  "turn_of_month_risk_pct_per_unit": 0.01,
+  "turn_of_month_stop_loss_pct": 0.08,
+  "turn_of_month_exit_lag_trading_days": 3,
+  "turn_of_month_no_cross_sectional_selection": true,
+  "turn_of_month_percentile_based_early_exit": false,
+  "turn_of_month_eligible_per_month": 40
+}

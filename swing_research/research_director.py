@@ -842,3 +842,49 @@ def run_idiosyncratic_volatility_experiment(data: dict, start_date: date, end_da
                                                        "not the paper's primary 3-factor construction",
         },
     )
+
+
+def run_turn_of_month_experiment(data: dict, start_date: date, end_date: date,
+                                  starting_capital: float = 1_000_000, n_walk_forward_windows: int = 3,
+                                  narrative_api_key: str = "", narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                  experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                  knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                  skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Turn-of-the-
+    Month Effect -- unlike every prior strategy, no cross-sectional
+    percentile is computed up front, since this signal has no per-symbol
+    RANKING at all (every symbol is equally eligible from a pure calendar
+    standpoint). Instead, a PER-MONTH ELIGIBILITY column (varying by date,
+    not a per-symbol constant) is computed via compute_monthly_eligibility()
+    and injected the same way every prior strategy injects its own
+    cross-sectional column, via extra_columns_by_symbol -- see
+    TurnOfMonthStrategy's module docstring ("DIVERSIFICATION FIX -- TWO
+    ATTEMPTS") for the full account of why a first, STATIC rotation-bucket
+    attempt was found insufficient (persistent, verified exclusion of
+    specific symbols) and replaced with this per-month combined-rank
+    version.
+    """
+    from swing_research.strategies.turn_of_month import (
+        ELIGIBLE_PER_MONTH, TurnOfMonthStrategy, compute_monthly_eligibility,
+    )
+    from swing_research.published_research_analyst import TURN_OF_MONTH
+
+    eligibility_columns = compute_monthly_eligibility(data)
+
+    strategy = TurnOfMonthStrategy()
+    return run_generic_swing_experiment(
+        strategy, TURN_OF_MONTH, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        extra_columns_by_symbol=eligibility_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "turn_of_month_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "turn_of_month_stop_loss_pct": 0.08,
+            "turn_of_month_exit_lag_trading_days": 3,
+            "turn_of_month_no_cross_sectional_selection": True,
+            "turn_of_month_percentile_based_early_exit": False,
+            "turn_of_month_eligible_per_month": ELIGIBLE_PER_MONTH,
+        },
+    )

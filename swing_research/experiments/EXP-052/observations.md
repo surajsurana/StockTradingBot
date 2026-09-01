@@ -1,0 +1,9 @@
+# Performance Analysis: MAX Effect (Lottery-Demand Anomaly)
+
+The MAX effect bets against lottery-like stocks (high recent max daily returns), and being long-only here means the strategy is actually structured as a "sell/avoid lottery names" filter applied only on the long side — likely long the low-MAX names or fading short-term jackpot-runners. The numbers support a modest but real edge: PF of 1.20 and expectancy of ~₹120/trade over 1,126 trades is thin-but-durable, consistent with a slow-moving mispricing rather than a strong tradeable anomaly. Sharpe (0.72) and Sortino (0.70) confirm the edge exists but is not high-conviction — this tracks with an academic factor return, not an engineered signal.
+
+Sector P&L shows heavy dependence on Healthcare (₹65k, roughly half of total P&L) and IT/Construction Materials/FMCG/Financials as secondary contributors — while Consumer Durables (-₹16k), Services, Construction, and Media are structural drags. This concentration suggests the lottery-demand effect is sector-conditional, likely tied to retail-heavy, narrative-driven names (Healthcare, IT) versus commodity/cyclical sectors where MAX may proxy differently.
+
+Regime split (bullish ₹82.6k vs bearish ₹52.4k) shows the strategy works in both tapes but skews toward bullish days, plausible since lottery-chasing behavior (and the arbitrage against it) intensifies in risk-on markets. The 45.76% max drawdown and 0.96 recovery factor, however, reveal fragility — March 2020 (-43%) and 2025 drawdowns show the long-only structure has no hedge when broad risk-off hits, since the edge is a slow factor tilt, not a market-neutral spread.
+
+**Follow-ups:** (1) Test sector-neutralized MAX to isolate the effect from Healthcare/IT beta exposure. (2) Build a paired long-short (once SLB access exists) to see if the bearish-side avoidance is where the true alpha resides.

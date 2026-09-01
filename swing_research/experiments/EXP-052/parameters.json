@@ -1,0 +1,19 @@
+{
+  "data_period": "2016-08-29 to 2026-08-28",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. MAX(1) vs. MAX(5): MINOR -- MAX(1) is the paper's own primary, most-cited specification. 1-month formation period: MINOR, a direct restatement of the paper's own headline window. Single-vintage holding (vs. the paper's overlapping-portfolio construction): MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior cross-sectional strategy's own single-vintage deviation. Exit rule (21-trading-day time-stop only, no percentile-based early exit): N/A for the time-stop itself. Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all.",
+  "max_effect_risk_pct_per_unit": 0.01,
+  "max_effect_stop_loss_pct": 0.08,
+  "max_effect_percentile_threshold": 10.0,
+  "max_effect_formation_days": 21,
+  "max_effect_holding_period_trading_days": 21,
+  "max_effect_single_vintage": true,
+  "max_effect_percentile_based_early_exit": false,
+  "max_effect_variant": "MAX(1) -- single highest daily return in trailing month"
+}
