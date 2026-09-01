@@ -120,6 +120,26 @@ class TestHandleCommand(_PortfolioBBotTestBase):
         self.assertIn("doesn't look like a valid NSE ticker", reply)
         self.assertEqual(calls, [], "must never even attempt to resolve an obviously malformed symbol")
 
+    def test_bare_addstock_with_no_symbol_gets_a_usage_reply_not_silence(self):
+        """Regression test for a real reported bug: '/addstock' sent
+        alone (e.g. tapped from Telegram's '/' menu and sent as-is, no
+        symbol typed after it) previously fell through _ADD_PATTERN's
+        match entirely and returned None -- no reply, no log entry,
+        indistinguishable from the message never arriving at all."""
+        reply = _handle_command("/addstock")
+        self.assertIsNotNone(reply)
+        self.assertIn("Usage: /addstock", reply)
+
+    def test_bare_addstock_with_trailing_whitespace_only_gets_a_usage_reply(self):
+        reply = _handle_command("/addstock   ")
+        self.assertIsNotNone(reply)
+        self.assertIn("Usage: /addstock", reply)
+
+    def test_bare_removestock_with_no_symbol_gets_a_usage_reply_not_silence(self):
+        reply = _handle_command("/removestock")
+        self.assertIsNotNone(reply)
+        self.assertIn("Usage: /removestock", reply)
+
     def test_addstock_is_a_no_op_if_symbol_already_present(self):
         pbs.save_watchlist({"TATASTEEL.NS": "Tata Steel Limited"})
         reply = _handle_command("/addstock tatasteel", name_fn=lambda s: "Tata Steel Limited")

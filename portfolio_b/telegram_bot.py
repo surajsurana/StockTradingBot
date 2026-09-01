@@ -134,8 +134,17 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
                 "/addstock SYMBOL -- add a symbol (e.g. /addstock TATASTEEL)\n"
                 "/removestock SYMBOL -- remove a symbol")
 
-    add_match = _ADD_PATTERN.match(text)
-    if add_match:
+    # Matched BEFORE the argument-capturing patterns below, on just the
+    # command word -- so "/addstock" sent alone (no symbol typed after
+    # it, e.g. tapped straight from Telegram's "/" menu and sent as-is)
+    # gets a clear usage reply instead of silently doing nothing. This
+    # was a real, reported gap: a bare "/addstock" produced no reply, no
+    # log entry, and no error -- indistinguishable from the message
+    # never having arrived at all.
+    if re.match(r"^/addstock\b", text, re.IGNORECASE):
+        add_match = _ADD_PATTERN.match(text)
+        if not add_match:
+            return "Usage: /addstock SYMBOL (e.g. /addstock TATASTEEL)"
         symbol = _normalize_symbol(add_match.group(1))
         if not _VALID_SYMBOL_FORMAT.fullmatch(symbol):
             return f"'{symbol}' doesn't look like a valid NSE ticker -- not added."
@@ -150,8 +159,10 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
         label = f"{name} ({symbol})" if name else symbol
         return f"Added {label} to Portfolio B's watchlist ({len(watchlist)} symbols now)."
 
-    remove_match = _REMOVE_PATTERN.match(text)
-    if remove_match:
+    if re.match(r"^/removestock\b", text, re.IGNORECASE):
+        remove_match = _REMOVE_PATTERN.match(text)
+        if not remove_match:
+            return "Usage: /removestock SYMBOL (e.g. /removestock RVNL)"
         symbol = _normalize_symbol(remove_match.group(1))
         watchlist = get_watchlist_with_names()
         if symbol not in watchlist:
