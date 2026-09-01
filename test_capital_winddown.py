@@ -419,6 +419,124 @@ class TestCapitalWinddownIntegration(unittest.TestCase):
         self.assertEqual(result["reason"], "wind-down disabled")
 
 
+class TestReducedFloorWhileEquityAboveTarget(unittest.TestCase):
+    """current_equity (added 2026-09-01, per explicit direction): a
+    strategy whose CASH has already fallen below target -- the common
+    case once most of its pool is deployed into open positions, which
+    this module never touches -- gets zero further withdrawal under the
+    normal target, even though its total mark-to-market EQUITY is still
+    far above target. These tests cover the reduced-floor override that
+    fixes that, and confirm it changes nothing when current_equity is
+    omitted or already at/below target."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.patcher_pte = patch.object(pte, "PAPER_TRADING_STATE_DIR", self.tmpdir)
+        self.patcher_pte.start()
+        import deployment.capital_winddown as cwd
+        self.patcher_cwd = patch.object(cwd, "PAPER_TRADING_STATE_DIR", self.tmpdir)
+        self.patcher_cwd.start()
+        self.strategy_key = "reduced_floor_test_strategy"
+
+    def tearDown(self):
+        self.patcher_pte.stop()
+        self.patcher_cwd.stop()
+        shutil.rmtree(self.tmpdir)
+
+    def test_current_equity_omitted_is_a_complete_no_op(self):
+        """Cash already below the real target (50,000 < 100,000) withdraws
+        nothing today regardless of how large equity might be, exactly as
+        before this parameter existed, when current_equity isn't passed
+        at all -- proves the default behavior is byte-identical."""
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1))
+        self.assertEqual(result["withdrawn"], 0.0)
+
+    def test_reduced_floor_withdraws_even_though_cash_is_already_below_real_target(self):
+        """The core new scenario: cash (50,000) is already below the real
+        target (100,000) -- the normal rule would withdraw nothing -- but
+        current_equity (500,000, standing in for a large deployed
+        position value) is still far above target, so this must withdraw
+        toward the much lower reduced floor instead."""
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1),
+                                         current_equity=500_000.0)
+        self.assertGreater(result["withdrawn"], 0.0)
+        final_cash = pte.load_portfolio(self.strategy_key)["cash"]
+        self.assertLess(final_cash, 50_000.0)
+
+    def test_reduced_floor_converges_to_itself_not_below(self):
+        """Repeated daily calls with equity still above target must
+        converge cash down to reduced_floor_while_above_target and stop
+        there -- never below it, mirroring the existing snap-to-target
+        guarantee at the (now lower) floor."""
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        for day in range(1, 15):
+            apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                    as_of_date=datetime.date(2024, 1, day),
+                                    current_equity=500_000.0)
+        final_cash = pte.load_portfolio(self.strategy_key)["cash"]
+        self.assertAlmostEqual(final_cash, 10_000.0, delta=0.01,
+                                msg="must converge to the reduced floor (10%% of the 100,000 target by default), "
+                                    "not below it")
+
+    def test_reduced_floor_does_not_apply_once_equity_at_target(self):
+        """The moment current_equity is at or below the real target, this
+        must revert to normal behavior -- a strategy is never wound down
+        below its own real target just because current_equity was passed."""
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1),
+                                         current_equity=100_000.0)
+        self.assertEqual(result["withdrawn"], 0.0,
+                          "cash is already below the real target once equity <= target -- nothing to withdraw")
+
+    def test_reduced_floor_never_exceeds_idle_cash(self):
+        """The idle-cash cap (never withdraw money reserved for a queued
+        entry) must still hold under the reduced floor, exactly as it
+        does under the normal target."""
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit,
+                                         as_of_date=datetime.date(2024, 1, 1), current_equity=500_000.0)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertGreaterEqual(portfolio["cash"], result["reserved"],
+                                 "cash remaining after a reduced-floor withdrawal must still never dip "
+                                 "below what was reserved for a queued entry")
+
+    def test_reservation_sizing_still_uses_the_real_target_not_the_reduced_floor(self):
+        """estimate_reservation() mirrors _resolve_pending_fills()'s own
+        SEPARATE, fixed sizing_capital_cap -- current_equity/the reduced
+        floor must never change what gets reserved for a pending entry,
+        only how aggressively idle cash beyond that is withdrawn."""
+        strategy = _AlwaysQualifiesStrategy()
+        cfg = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        _seed_elevated_starting_cash(self.strategy_key, cash=50_000.0)
+        day1 = {"SYM.NS": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: day1,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=cfg)
+
+        result_without_equity = apply_capital_winddown(
+            self.strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit, as_of_date=datetime.date(2024, 1, 1))
+        reserved_without = result_without_equity["reserved"]
+
+        # Undo that call's (zero) withdrawal effect isn't needed -- reserved
+        # is computed fresh from cash + pending_entries each call, and
+        # neither changed. Re-run with current_equity supplied and confirm
+        # the reservation figure is identical.
+        result_with_equity = apply_capital_winddown(
+            self.strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit, as_of_date=datetime.date(2024, 1, 1),
+            current_equity=500_000.0)
+        self.assertEqual(result_with_equity["reserved"], reserved_without)
+
+
 class TestPerformanceMetricsUnaffectedByWinddown(unittest.TestCase):
     """A withdrawal is a capital-management action, never a trading
     result -- confirms it never distorts daily_pnl or compute_live_metrics()'s

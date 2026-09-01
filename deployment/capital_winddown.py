@@ -126,6 +126,7 @@ from deployment.settings import (
     PAPER_TRADING_STATE_DIR,
     PAPER_TRADING_WINDDOWN_DAILY_FRACTION,
     PAPER_TRADING_WINDDOWN_ENABLED,
+    PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET,
     PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
 )
 
@@ -307,7 +308,10 @@ def apply_capital_winddown(strategy_key: str, risk_pct_per_unit: float,
                             as_of_date: Optional[date_type] = None,
                             target_active_capital: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
                             daily_fraction: float = PAPER_TRADING_WINDDOWN_DAILY_FRACTION,
-                            enabled: bool = PAPER_TRADING_WINDDOWN_ENABLED) -> dict:
+                            enabled: bool = PAPER_TRADING_WINDDOWN_ENABLED,
+                            current_equity: Optional[float] = None,
+                            reduced_floor_while_above_target: float =
+                                PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET) -> dict:
     """
     Call ONCE per strategy, per daily cycle, strictly AFTER that day's
     run_daily()/run_pead_daily() call has fully completed -- see this
@@ -317,6 +321,30 @@ def apply_capital_winddown(strategy_key: str, risk_pct_per_unit: float,
     Mutates ONLY portfolio["cash"] (never positions, pending_entries/
     exits, trades, or daily_equity) and appends one line to this
     strategy's own winddown_log.jsonl when a withdrawal actually happens.
+
+    current_equity (added 2026-09-01, per explicit direction): this
+    module normally only ever compares CASH to target_active_capital --
+    a strategy whose cash has already fallen below target (the common
+    case once most of its pool is deployed into open POSITIONS, which
+    this module never touches) gets zero further withdrawal, even though
+    its total mark-to-market equity (cash + position value) is still far
+    above target. When the caller supplies current_equity (from that
+    day's run_daily() result -- see run_paper_trading.py's _run_one())
+    and it is still above target_active_capital, the withdrawal decision
+    uses reduced_floor_while_above_target (a much lower cash floor, see
+    its own settings.py docstring) instead of the real target for THIS
+    call only -- so any cash freed up by a position exiting today (or
+    already sitting there) gets aggressively skimmed toward that lower
+    floor, rather than waiting for cash alone to exceed the full target.
+    The moment current_equity is at or below target_active_capital, this
+    reverts to the normal target -- a strategy is never wound down below
+    its own real target. Omitting current_equity (the default, None) is
+    a complete no-op for this behavior -- byte-identical to before this
+    parameter existed. NOTE: this only changes the WITHDRAWAL floor --
+    estimate_reservation() below is deliberately still called with the
+    real target_active_capital, since it mirrors _resolve_pending_fills()'s
+    own SEPARATE, fixed sizing_capital_cap, which this feature does not
+    change.
 
     Returns {"withdrawn": float, "reserved": float, "idle_cash": float,
     "remaining_cash": float, "reason": Optional[str]} -- "reason" is set
@@ -345,10 +373,14 @@ def apply_capital_winddown(strategy_key: str, risk_pct_per_unit: float,
     # only PENDING entries, never open positions).
     fully_idle = not portfolio.get("positions") and not portfolio.get("pending_entries")
 
-    withdrawal = compute_winddown_withdrawal(cash, reserved, target_active_capital, daily_fraction,
+    withdrawal_floor = (reduced_floor_while_above_target
+                         if current_equity is not None and current_equity > target_active_capital
+                         else target_active_capital)
+
+    withdrawal = compute_winddown_withdrawal(cash, reserved, withdrawal_floor, daily_fraction,
                                                immediate_if_fully_idle=fully_idle)
     if withdrawal <= 0:
-        reason = None if cash <= target_active_capital else "no idle cash after reservation"
+        reason = None if cash <= withdrawal_floor else "no idle cash after reservation"
         return {"withdrawn": 0.0, "reserved": reserved, "idle_cash": idle_cash,
                 "remaining_cash": round(cash, 2), "reason": reason}
 

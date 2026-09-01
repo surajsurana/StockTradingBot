@@ -98,6 +98,31 @@ PAPER_TRADING_WINDDOWN_ENABLED = os.environ.get("PAPER_TRADING_WINDDOWN_ENABLED"
 PAPER_TRADING_WINDDOWN_TARGET_CAPITAL = float(os.environ.get("PAPER_TRADING_WINDDOWN_TARGET_CAPITAL", 100_000))
 PAPER_TRADING_WINDDOWN_DAILY_FRACTION = float(os.environ.get("PAPER_TRADING_WINDDOWN_DAILY_FRACTION", 0.90))
 
+# PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET: added 2026-09-01,
+# per explicit direction, for strategies still sitting on a much larger
+# pool (e.g. Rs.10,00,000) than the target because most of it is tied up
+# in open POSITIONS, not idle cash -- compute_winddown_withdrawal() only
+# ever acts on cash, so a strategy whose cash has already fallen below
+# PAPER_TRADING_WINDDOWN_TARGET_CAPITAL (common once most of the pool is
+# deployed) gets zero further withdrawal under the normal target, even
+# though its total mark-to-market EQUITY is still far above target. This
+# knob is a SEPARATE, much lower cash floor that applies ONLY while a
+# strategy's current equity is still above the real target (see
+# apply_capital_winddown()'s current_equity parameter) -- it does not
+# change the real target itself, and reverts to the normal
+# PAPER_TRADING_WINDDOWN_TARGET_CAPITAL floor the moment equity has
+# actually reached target. Explicit direction named "leave 10% of cash
+# to buy new signals" -- 10% of the real target by default. Confirmed
+# accepted trade-off (2026-09-01): sizing off a much smaller cash pool
+# will very likely shrink new-signal position sizes below
+# PAPER_TRADING_MIN_POSITION_VALUE_RUPEES for these strategies until
+# their existing open positions have unwound and equity has actually
+# reached target -- prioritizing fast convergence to target capital over
+# continued new-trade generation in the meantime.
+PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET = float(
+    os.environ.get("PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET",
+                    PAPER_TRADING_WINDDOWN_TARGET_CAPITAL * 0.10))
+
 # NARROW, EXPLICIT EXCEPTION (2026-08-04, per explicit direction): the ONLY
 # thing ever imported from config/settings.py anywhere in deployment/.
 # Exists solely so paper-trading Telegram notifications land in the same

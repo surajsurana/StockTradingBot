@@ -317,11 +317,19 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
         # accurate, current cash figure. Isolated in its own try/except,
         # same discipline as drift-report generation below -- a wind-down
         # failure must never take down the rest of this strategy's run.
+        # current_equity=result["mark_to_market_equity"] (added 2026-09-01,
+        # per explicit direction): lets wind-down skim toward a much
+        # lower cash floor while this strategy's total equity is still
+        # above target, even on days its cash alone has already fallen
+        # below target (the common case once most of the pool is
+        # deployed into open positions) -- see apply_capital_winddown()'s
+        # own current_equity docstring.
         # See deployment/capital_winddown.py for the full design.
         try:
             winddown = apply_capital_winddown(
                 strategy_key, risk_pct_per_unit=_strategy_instance_for(strategy_key).risk_pct_per_unit,
                 as_of_date=date_type.fromisoformat(result["as_of_date"]),
+                current_equity=result.get("mark_to_market_equity"),
             )
             if winddown["withdrawn"] > 0:
                 print(f"[{strategy_key}] Capital wind-down: withdrew {winddown['withdrawn']} "
