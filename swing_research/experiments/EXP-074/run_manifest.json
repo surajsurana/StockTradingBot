@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-09-02T14:21:46.348848",
+  "strategy_name": "idiosyncratic_volatility",
+  "strategy_variant": "Idiosyncratic Volatility Anomaly (single-factor market-model residual vol, 1mo formation, bottom-decile percentile, 1mo single-vintage, long-only)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 10,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "ffa57024cef4aafea7b0a485327d50806f588e54",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? strategies/pullback_continuation.py",
+      "?? test_kite_connection.py"
+    ]
+  }
+}
