@@ -9,7 +9,7 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from reporting.telegram_notifier import send_telegram_message, set_bot_commands
+from reporting.telegram_notifier import delete_bot_commands, send_telegram_message, set_bot_commands
 
 
 class TestSendTelegramMessageReplyMarkup(unittest.TestCase):
@@ -47,6 +47,19 @@ class TestSetBotCommands(unittest.TestCase):
             set_bot_commands("tok", commands)
         self.assertIn("setMyCommands", mock_post.call_args.args[0])
         self.assertEqual(mock_post.call_args.kwargs["json"]["commands"], commands)
+
+
+class TestDeleteBotCommands(unittest.TestCase):
+    def test_not_configured_is_a_no_op(self):
+        result = delete_bot_commands("")
+        self.assertEqual(result, {"status": "not_configured"})
+
+    def test_calls_the_right_endpoint(self):
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {"ok": True}
+        with patch("reporting.telegram_notifier.requests.post", return_value=fake_resp) as mock_post:
+            delete_bot_commands("tok")
+        self.assertIn("deleteMyCommands", mock_post.call_args.args[0])
 
 
 if __name__ == "__main__":

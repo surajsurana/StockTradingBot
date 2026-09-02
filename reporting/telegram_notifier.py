@@ -84,6 +84,28 @@ def set_bot_commands(bot_token: str, commands: list) -> dict:
     return result
 
 
+def delete_bot_commands(bot_token: str) -> dict:
+    """
+    Clears the bot's command menu (the "/" icon next to Telegram's
+    message box) via the Bot API's deleteMyCommands -- the counterpart
+    to set_bot_commands() above, for a bot that wants ONLY its own
+    custom reply-keyboard buttons (see portfolio_b/telegram_bot.py's
+    MAIN_MENU_KEYBOARD) as its interface, not Telegram's separate
+    built-in command list. No-ops (prints) if bot_token isn't configured
+    yet, same fallback convention as every other function here.
+    """
+    if not bot_token:
+        print("[TELEGRAM -- not configured, skipping deleteMyCommands]")
+        return {"status": "not_configured"}
+
+    url = f"https://api.telegram.org/bot{bot_token}/deleteMyCommands"
+    resp = requests.post(url)
+    result = resp.json()
+    if not result.get("ok"):
+        print(f"WARNING: deleteMyCommands failed (status {resp.status_code}): {result}")
+    return result
+
+
 def get_chat_id(bot_token: str):
     """
     Helper for one-time setup: after you've messaged your bot at least once,

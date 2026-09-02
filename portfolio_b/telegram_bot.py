@@ -39,7 +39,7 @@ import requests
 from data.fetch_historical import fetch_daily_candles
 from portfolio_b import state as pbs
 from portfolio_b.engine import get_watchlist_with_names
-from reporting.telegram_notifier import send_telegram_message, set_bot_commands
+from reporting.telegram_notifier import delete_bot_commands, send_telegram_message
 
 _WATCHLIST_PATTERN = re.compile(r"^/watchlist\b", re.IGNORECASE)
 _HELP_PATTERN = re.compile(r"^/help\b|^/start\b", re.IGNORECASE)
@@ -65,19 +65,14 @@ _CANCEL_CALLBACK = "pbcancel"
 # buttons/how much callback_data a single message can carry.
 MAX_ADD_CANDIDATES = 5
 
-# The "/" command menu Telegram shows next to the message box -- set
-# once at bot startup (see run_portfolio_b_bot_daemon.py) via
-# set_bot_commands(). No leading slash, per the Bot API's own convention.
-# Kept as a secondary discovery aid for typed usage -- MAIN_MENU_KEYBOARD
-# below (buttons under the text box, always visible) is the primary,
-# recommended way to use this bot, per explicit direction 2026-09-01
-# ("if its under the textbox like in petty cash it will be good").
-BOT_COMMANDS = [
-    {"command": "watchlist", "description": "Show the current watchlist"},
-    {"command": "addstock", "description": "Add a company, e.g. /addstock Tata Steel"},
-    {"command": "removestock", "description": "Remove a symbol (tap-to-pick if sent alone)"},
-    {"command": "help", "description": "Show available commands"},
-]
+# The "/" command menu Telegram shows next to the message box is
+# deliberately CLEARED (see run_long_polling_loop()'s delete_bot_commands()
+# call), not populated -- confirmed 2026-09-01, per explicit direction
+# ("we dont need the menu button at all, can we remove it"). Typed slash
+# commands (/watchlist, /addstock NAME, /removestock [SYMBOL]) still
+# work -- Telegram just no longer advertises them in that separate menu.
+# MAIN_MENU_KEYBOARD below (buttons under the text box, always visible)
+# is the one and only recommended interface.
 
 # Button labels for MAIN_MENU_KEYBOARD below -- also matched directly as
 # plain text in _handle_command() (tapping one of these buttons sends
@@ -502,12 +497,13 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
 def run_long_polling_loop(bot_token: str, chat_id: str) -> None:
     """
     Runs forever, processing Telegram commands as they arrive -- the
-    body of run_portfolio_b_bot_daemon.py's systemd service. Registers
-    the command menu once at startup (idempotent -- also re-runs safely
-    on every service restart), then loops poll_and_process_commands()
-    with long_poll_timeout=30 -- each call already blocks server-side
-    until a message arrives or 30s elapses, so no additional sleep()
-    between iterations is needed or wanted.
+    body of run_portfolio_b_bot_daemon.py's systemd service. Clears the
+    "/" command menu once at startup (idempotent -- also re-runs safely
+    on every service restart; see delete_bot_commands()'s own docstring
+    for why this bot deliberately has none), then loops
+    poll_and_process_commands() with long_poll_timeout=30 -- each call
+    already blocks server-side until a message arrives or 30s elapses,
+    so no additional sleep() between iterations is needed or wanted.
 
     A single poll's own network error (Telegram briefly unreachable,
     DNS hiccup, ...) is logged and the loop continues on the NEXT
@@ -515,7 +511,7 @@ def run_long_polling_loop(bot_token: str, chat_id: str) -> None:
     Restart=always is the outer safety net for anything this inner
     catch doesn't handle.
     """
-    set_bot_commands(bot_token, BOT_COMMANDS)
+    delete_bot_commands(bot_token)
     print("Portfolio B Telegram bot: long-polling started.")
     while True:
         try:
