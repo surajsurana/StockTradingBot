@@ -24,6 +24,7 @@ import argparse
 import datetime
 
 from data.fetch_historical import fetch_all
+from deployment.daily_details_store import save_detail
 from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from portfolio_c import state as pcs
 from portfolio_c.daily import resolve_portfolio_c_at_open, run_portfolio_c_daily
@@ -43,6 +44,11 @@ def _run_eod(force: bool) -> None:
 
     if result["status"] == "processed":
         message = format_portfolio_c_message(result)
+        # Still sent directly (Portfolio C is already just one message a
+        # day, not the per-strategy noise problem Portfolio A had) --
+        # ALSO cached so the Details command can surface it again on
+        # request (deployment/daily_details_store.py).
+        save_detail("Portfolio C", message)
         send_telegram_message(message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
 

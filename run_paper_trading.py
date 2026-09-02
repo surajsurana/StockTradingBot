@@ -79,6 +79,7 @@ from reporting.telegram_templates import format_daily_summary, format_execution_
 
 from deployment.base import DeploymentStatus
 from deployment.capital_winddown import apply_capital_winddown
+from deployment.daily_details_store import save_detail
 from deployment.deployment_manager import get_strategy, list_strategies
 from deployment.drift_report import generate_drift_report
 from deployment.paper_trading_engine import (
@@ -208,6 +209,24 @@ def _resolve_at_open_one(strategy_key: str) -> None:
 
 
 def _send_notification(strategy_key: str, record, result: dict) -> None:
+    """
+    CACHES this strategy's full daily report instead of sending it to
+    Telegram directly (changed 2026-09-02, per explicit direction --
+    "for so many strategy im getting so many telegram messages... I
+    only need summary message and if I ask I can get more details").
+    Was previously one full Telegram message PER STRATEGY, every single
+    day, whether or not anything happened -- on top of the combined
+    format_daily_summary() message _run_all_due() already sends at the
+    end (still sent, unchanged, below). The cached text is available on
+    request via portfolio_b/telegram_bot.py's Details button/command
+    (deployment/daily_details_store.py's load_details()).
+
+    _send_execution_notification() (the near-market-open "something
+    actually filled" alert) and _send_error_notification() (a real
+    failure) are UNCHANGED -- both are already conditional/rare, exactly
+    the kind of message worth an immediate Telegram send, unlike this
+    one which fired unconditionally every day.
+    """
     metrics = compute_live_metrics(strategy_key)
 
     text = format_strategy_notification(
@@ -221,7 +240,7 @@ def _send_notification(strategy_key: str, record, result: dict) -> None:
         expectancy=metrics.get("expectancy"), strategy_id=record.strategy_id,
         report_links=_report_links(strategy_key, record, result),
     )
-    send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    save_detail(record.display_name, text)
 
 
 def _send_error_notification(strategy_key: str, display_name: str, error: Exception) -> None:

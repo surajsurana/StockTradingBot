@@ -454,5 +454,33 @@ class TestSendDailySummary(unittest.TestCase):
         self.assertEqual(invested, 850_000.0)   # (800,000-100,000) + (200,000-50,000)
 
 
+class TestSendNotificationCachesInsteadOfSending(unittest.TestCase):
+    """Regression coverage for a real reported problem (2026-09-02): a
+    full Telegram message per strategy, every single day regardless of
+    activity, on top of the already-existing combined daily summary --
+    "so many strategy... so many telegram messages." _send_notification()
+    now caches instead (deployment/daily_details_store.py), available on
+    request via the Portfolio B bot's Details command; the combined
+    summary (_send_daily_summary(), tested above) is unchanged."""
+
+    @patch("run_paper_trading.save_detail")
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_strategy_notification", return_value="the full report text")
+    @patch("run_paper_trading.compute_live_metrics", return_value={})
+    @patch("run_paper_trading._report_links", return_value={})
+    def test_caches_the_report_instead_of_sending_to_telegram(self, _mock_links, _mock_metrics, _mock_format,
+                                                                 mock_send, mock_save_detail):
+        record = StrategyRecord(strategy_id="SW-002", strategy_key="minervini_trend_template_filter",
+                                 strategy_family="swing_research published strategy", display_name="Minervini",
+                                 research_verdict=ResearchVerdict.INCONCLUSIVE,
+                                 deployment_status=DeploymentStatus.PAPER_TRADING)
+        result = {"new_entries": [], "new_exits": [], "mark_to_market_equity": 1_000_000.0}
+
+        rpt._send_notification("minervini_trend_template_filter", record, result)
+
+        mock_save_detail.assert_called_once_with("Minervini", "the full report text")
+        mock_send.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

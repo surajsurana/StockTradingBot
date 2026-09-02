@@ -37,6 +37,7 @@ from typing import Callable, Optional
 import requests
 
 from data.fetch_historical import fetch_daily_candles
+from deployment.daily_details_store import load_details
 from portfolio_b import state as pbs
 from portfolio_b.engine import get_watchlist_with_names
 from reporting.telegram_notifier import delete_bot_commands, send_telegram_message
@@ -45,6 +46,7 @@ _WATCHLIST_PATTERN = re.compile(r"^/watchlist\b", re.IGNORECASE)
 _HELP_PATTERN = re.compile(r"^/help\b|^/start\b", re.IGNORECASE)
 _ADD_PATTERN = re.compile(r"^/addstock\s+(.+)", re.IGNORECASE)
 _REMOVE_PATTERN = re.compile(r"^/removestock\s*(\S+)?", re.IGNORECASE)
+_DETAILS_PATTERN = re.compile(r"^/details\b", re.IGNORECASE)
 
 # A ticker-shaped query (alphanumeric plus '&' and '-', both appear in
 # real NSE tickers e.g. "M&M.NS", "L&TFH.NS") is tried as a DIRECT ticker
@@ -81,15 +83,17 @@ _WATCHLIST_BUTTON = "📋 Watchlist"
 _ADD_STOCK_BUTTON = "➕ Add Stock"
 _REMOVE_STOCK_BUTTON = "➖ Remove Stock"
 _HELP_BUTTON = "❓ Help"
+_DETAILS_BUTTON = "📊 Details"
 
-# A persistent, tappable keyboard covering all four actions -- always
+# A persistent, tappable keyboard covering all five actions -- always
 # visible under the text box (a Telegram ReplyKeyboardMarkup), not a
 # one-off inline keyboard attached to a single message. resize_keyboard
 # shrinks it to fit instead of Telegram's oversized default.
 MAIN_MENU_KEYBOARD = {
     "keyboard": [
-        [{"text": _WATCHLIST_BUTTON}, {"text": _ADD_STOCK_BUTTON}],
-        [{"text": _REMOVE_STOCK_BUTTON}, {"text": _HELP_BUTTON}],
+        [{"text": _WATCHLIST_BUTTON}, {"text": _DETAILS_BUTTON}],
+        [{"text": _ADD_STOCK_BUTTON}, {"text": _REMOVE_STOCK_BUTTON}],
+        [{"text": _HELP_BUTTON}],
     ],
     "resize_keyboard": True,
 }
@@ -105,9 +109,15 @@ class CommandReply:
     """text: what to send back. reply_markup: None means the caller
     (poll_and_process_commands()) attaches the default
     MAIN_MENU_KEYBOARD; an explicit dict (e.g. an inline candidate
-    picker) overrides that for this one reply only."""
+    picker) overrides that for this one reply only. extra_messages: an
+    optional list of ADDITIONAL messages sent right after `text`, each
+    as its own Telegram message (e.g. Details' one-message-per-strategy
+    breakdown) -- Telegram caps a single message at 4096 characters, and
+    several full strategy reports concatenated would routinely exceed
+    that."""
     text: str
     reply_markup: Optional[dict] = None
+    extra_messages: Optional[list] = None
 
 
 def _normalize_symbol(raw: str) -> str:
@@ -283,7 +293,8 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
 
     pending = pbs.load_pending_action()
     is_known_trigger = (text.startswith("/") or
-                         text in (_WATCHLIST_BUTTON, _ADD_STOCK_BUTTON, _REMOVE_STOCK_BUTTON, _HELP_BUTTON))
+                         text in (_WATCHLIST_BUTTON, _ADD_STOCK_BUTTON, _REMOVE_STOCK_BUTTON,
+                                   _HELP_BUTTON, _DETAILS_BUTTON))
     if pending == _PENDING_ADDSTOCK and not is_known_trigger:
         pbs.save_pending_action(None)
         return _search_and_offer_addstock(text, name_fn=name_fn, search_fn=search_fn)
@@ -296,6 +307,16 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
         lines = [f"- {name} ({symbol})" if name else f"- {symbol}" for symbol, name in watchlist.items()]
         return CommandReply("Portfolio B watchlist:\n" + "\n".join(lines))
 
+    if text == _DETAILS_BUTTON or _DETAILS_PATTERN.match(text):
+        pbs.save_pending_action(None)
+        details = load_details()
+        if not details:
+            return CommandReply("No details cached for today yet -- check back after today's runs "
+                                 "(~9:30 AM and mid-afternoon IST).")
+        plural = "s" if len(details) != 1 else ""
+        return CommandReply(f"Today's full details ({len(details)} item{plural}):",
+                             extra_messages=list(details.values()))
+
     if text == _HELP_BUTTON or _HELP_PATTERN.match(text):
         pbs.save_pending_action(None)
         return CommandReply(
@@ -303,7 +324,9 @@ def _handle_command(text: str, name_fn: Callable = fetch_company_name_if_tradeab
             "Add Stock -- name a company and I'll find it on the NSE for you to confirm\n"
             "Remove Stock -- tap a symbol from the current list to remove it\n"
             "Watchlist -- show the current list\n"
-            "(typed equivalents: /addstock NAME, /removestock [SYMBOL], /watchlist)")
+            "Details -- today's full per-strategy/portfolio breakdown, instead of a separate "
+            "message for each\n"
+            "(typed equivalents: /addstock NAME, /removestock [SYMBOL], /watchlist, /details)")
 
     # Matched on just the command word/button, separately from the
     # argument-capturing pattern below -- covers both the button (which
@@ -486,6 +509,8 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
         if reply is not None:
             send_telegram_message(reply.text, bot_token, chat_id,
                                    reply_markup=reply.reply_markup or MAIN_MENU_KEYBOARD)
+            for extra in (reply.extra_messages or []):
+                send_telegram_message(extra, bot_token, chat_id)
             processed.append((message["text"], reply.text))
 
     if max_update_id > offset:

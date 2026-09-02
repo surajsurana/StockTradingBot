@@ -25,6 +25,7 @@ import argparse
 import datetime
 
 from data.fetch_historical import fetch_all
+from deployment.daily_details_store import save_detail
 from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from portfolio_b import state as pbs
 from portfolio_b.daily import resolve_portfolio_b_at_open, run_portfolio_b_daily
@@ -44,6 +45,10 @@ def _run_eod(force: bool) -> None:
 
     if result["status"] == "processed":
         message = format_portfolio_b_message(result)
+        # Still sent directly (Portfolio B is already just one message a
+        # day) -- ALSO cached so the Details command can surface it
+        # again on request (deployment/daily_details_store.py).
+        save_detail("Portfolio B", message)
         send_telegram_message(message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
 

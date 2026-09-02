@@ -305,12 +305,61 @@ class TestHandleCallbackQuery(_PortfolioBBotTestBase):
         self.assertEqual(reply, "Unrecognized action.")
 
 
+class TestDetailsCommand(_PortfolioBBotTestBase):
+    """Reported directly (2026-09-02): "for so many strategy im getting
+    so many telegram messages... I only need summary message and if I
+    ask I can get more details." Portfolio A's per-strategy messages
+    (and Portfolio B/C's own) are now cached instead of sent (see
+    deployment/daily_details_store.py) -- Details is how you ask for
+    them back."""
+
+    def test_no_details_cached_says_so(self):
+        with patch("portfolio_b.telegram_bot.load_details", return_value={}):
+            reply = _handle_command("/details")
+        self.assertIn("No details cached", reply.text)
+        self.assertIsNone(reply.extra_messages)
+
+    def test_details_button_is_equivalent_to_slash_command(self):
+        with patch("portfolio_b.telegram_bot.load_details", return_value={"Minervini": "report text"}):
+            reply = _handle_command("📊 Details")
+        self.assertIn("1 item", reply.text)
+        self.assertEqual(reply.extra_messages, ["report text"])
+
+    def test_multiple_cached_entries_all_become_extra_messages(self):
+        cached = {"Minervini": "report A", "Portfolio C": "report B", "Portfolio B": "report C"}
+        with patch("portfolio_b.telegram_bot.load_details", return_value=cached):
+            reply = _handle_command("/details")
+        self.assertIn("3 items", reply.text)
+        self.assertEqual(reply.extra_messages, ["report A", "report B", "report C"])
+
+    def test_sending_details_while_pending_clears_it_instead_of_misreading_it(self):
+        pbs.save_pending_action("addstock")
+        with patch("portfolio_b.telegram_bot.load_details", return_value={}):
+            _handle_command("📊 Details")
+        self.assertIsNone(pbs.load_pending_action())
+
+
 class TestPollAndProcessCommands(_PortfolioBBotTestBase):
     def _mock_response(self, updates: list):
         resp = MagicMock()
         resp.raise_for_status = MagicMock()
         resp.json.return_value = {"ok": True, "result": updates}
         return resp
+
+    def test_extra_messages_are_each_sent_as_their_own_telegram_message(self):
+        updates = [{"update_id": 1, "message": {"chat": {"id": 999}, "text": "/details"}}]
+        cached = {"Minervini": "report A", "Portfolio C": "report B"}
+
+        with patch("portfolio_b.telegram_bot.requests.get", return_value=self._mock_response(updates)), \
+             patch("portfolio_b.telegram_bot.load_details", return_value=cached), \
+             patch("portfolio_b.telegram_bot.send_telegram_message") as mock_send:
+            poll_and_process_commands("fake-token", chat_id="999")
+
+        # 1 summary reply + 2 extra messages = 3 separate sends
+        self.assertEqual(mock_send.call_count, 3)
+        sent_texts = [call.args[0] for call in mock_send.call_args_list]
+        self.assertIn("report A", sent_texts)
+        self.assertIn("report B", sent_texts)
 
     def test_message_from_configured_chat_is_processed_and_replied_to_with_keyboard(self):
         pbs.save_watchlist({"AAA.NS": "Company A"})
