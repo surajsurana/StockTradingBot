@@ -78,7 +78,7 @@ from reporting.telegram_notifier import send_telegram_message
 from reporting.telegram_templates import format_daily_summary, format_execution_notification, format_strategy_notification
 
 from deployment.base import DeploymentStatus
-from deployment.capital_winddown import apply_capital_winddown
+from deployment.capital_winddown import apply_capital_winddown, cumulative_withdrawn_up_to
 from deployment.daily_details_store import save_detail
 from deployment.deployment_manager import get_strategy, list_strategies
 from deployment.drift_report import generate_drift_report
@@ -425,8 +425,23 @@ def _send_daily_summary(run_results: list) -> None:
     # combines everything booked historically AND today's unrealized
     # movement, per direct user feedback that a separate "unrealized"
     # figure was confusing jargon.
+    #
+    # WIND-DOWN-AWARE (fixed 2026-09-03, per direct user report -- Total
+    # P&L was showing a huge, confusing negative number): a strategy's
+    # cash withdrawn by deployment/capital_winddown.py is a deliberate
+    # capital-management action, not a trading loss -- capital_winddown.py's
+    # own module docstring already documents this exact "add back the
+    # cumulative amount withdrawn" treatment for compute_live_metrics()'s
+    # CAGR/Sharpe and run_daily()'s own daily_pnl, but this SEPARATE
+    # calculation was never updated to match, so a heavily wound-down
+    # strategy (e.g. SW-007 PEAD, wound from Rs.10,00,000 down to its
+    # Rs.1,00,000 floor) made its own withdrawn capital look like a real
+    # ~Rs.9,00,000 loss here, dragging the whole portfolio's total deeply
+    # (and wrongly) negative. cumulative_withdrawn_up_to() is the exact
+    # same existing, already-tested helper those other two call sites use.
     total_starting_capital = sum(load_portfolio(r["strategy_key"])["starting_capital"] for r in run_results)
-    total_pnl = round(portfolio_equity_total - total_starting_capital, 2)
+    total_withdrawn = sum(cumulative_withdrawn_up_to(r["strategy_key"], date_type.today()) for r in run_results)
+    total_pnl = round(portfolio_equity_total - total_starting_capital + total_withdrawn, 2)
 
     open_positions_total = 0
     cash_total = 0.0

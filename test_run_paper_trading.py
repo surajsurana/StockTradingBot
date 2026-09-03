@@ -426,6 +426,56 @@ class TestSendDailySummary(unittest.TestCase):
         total_pnl = mock_format.call_args.kwargs["total_pnl"]
         self.assertEqual(total_pnl, 50_000.0)
 
+    @patch("run_paper_trading.cumulative_withdrawn_up_to", return_value=0.0)
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio")
+    def test_total_pnl_never_double_counts_when_nothing_was_withdrawn(self, mock_load_portfolio, _mock_metrics,
+                                                                         mock_format, _mock_send, _mock_withdrawn):
+        """A strategy that has never had a wind-down withdrawal gets
+        cumulative_withdrawn_up_to() == 0.0 -- confirms the fix below is a
+        complete no-op for the common case, byte-identical to before."""
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0, "cash": 1_050_000.0}
+        run_results = [{
+            "strategy_key": "s1", "display_name": "S1",
+            "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
+                       "mark_to_market_equity": 1_050_000.0, "daily_pnl": 5000.0, "open_positions_detail": []},
+        }]
+
+        rpt._send_daily_summary(run_results)
+
+        self.assertEqual(mock_format.call_args.kwargs["total_pnl"], 50_000.0)
+
+    @patch("run_paper_trading.cumulative_withdrawn_up_to")
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio")
+    def test_total_pnl_adds_back_wind_down_withdrawals_not_a_real_loss(self, mock_load_portfolio, _mock_metrics,
+                                                                          mock_format, _mock_send, mock_withdrawn):
+        """Regression test for a real reported bug (2026-09-03): a
+        heavily wound-down strategy (starting_capital still the old
+        Rs.10,00,000 default, cash swept down to the Rs.1,00,000 floor
+        by deployment/capital_winddown.py) made its own deliberately
+        withdrawn capital look like a real ~Rs.9,00,000 trading loss,
+        dragging the whole summary's Total P&L deeply and wrongly
+        negative. Withdrawn capital must be added back, exactly like
+        compute_live_metrics()'s CAGR/Sharpe and daily_pnl already do."""
+        mock_load_portfolio.return_value = {"positions": {}, "starting_capital": 1_000_000.0, "cash": 100_000.0}
+        mock_withdrawn.return_value = 900_000.0   # everything above the target was withdrawn over time
+        run_results = [{
+            "strategy_key": "pead", "display_name": "PEAD",
+            "result": {"new_entries": [], "new_exits": [], "new_pending_entries": [], "new_pending_exits": [],
+                       "mark_to_market_equity": 100_000.0, "daily_pnl": 0.0, "open_positions_detail": []},
+        }]
+
+        rpt._send_daily_summary(run_results)
+
+        # Without the fix this would be 100,000 - 1,000,000 = -900,000 --
+        # the withdrawal is real capital-management, not a trading loss.
+        self.assertEqual(mock_format.call_args.kwargs["total_pnl"], 0.0)
+
     @patch("run_paper_trading.send_telegram_message")
     @patch("run_paper_trading.format_daily_summary")
     @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
