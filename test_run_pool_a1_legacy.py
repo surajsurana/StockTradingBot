@@ -1,24 +1,70 @@
 """Tests for run_pool_a1_legacy.py -- the fully-silent, exit-only daily
-pass for the 4 strategies set aside into Pool A1 on 2026-09-03 (52-Week
-High Momentum, Minervini, Cross-Sectional Momentum, Short-Term Reversal).
-Mirrors the mocking style already used in test_run_paper_trading.py
-(patch each collaborator at its run_pool_a1_legacy import site, never
-the real deployment/paper_trading_engine implementation)."""
+pass for the 3 strategies set aside into Pool A1 on 2026-09-03 (Minervini,
+Cross-Sectional Momentum, Short-Term Reversal). Mirrors the mocking style
+already used in test_run_paper_trading.py (patch each collaborator at its
+run_pool_a1_legacy import site, never the real deployment/paper_trading_engine
+implementation).
+
+Every _run_one/_resolve_one_at_open test below also patches get_strategy
+to return a PAPER_TRADING record -- required because of the registry
+guard (_guard_still_paper_trading) added after the fifty_two_week_high_momentum
+incident (see run_pool_a1_legacy.py's own module docstring): without it,
+these functions now return early before doing anything, since the real
+local registry is not what's under test here."""
 
 import unittest
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, call, patch
 
 import run_pool_a1_legacy as pool_a1
+from deployment.base import DeploymentStatus
+
+
+def _paper_trading_record():
+    record = MagicMock()
+    record.deployment_status = DeploymentStatus.PAPER_TRADING
+    return record
+
+
+class TestGuardStillPaperTrading(unittest.TestCase):
+    """The safeguard added after the fifty_two_week_high_momentum incident:
+    a strategy that is no longer PAPER_TRADING in the registry (retired,
+    or never registered) must be skipped, not silently processed."""
+
+    @patch("run_pool_a1_legacy.get_strategy", return_value=None)
+    def test_not_in_registry_returns_false(self, mock_get):
+        self.assertFalse(pool_a1._guard_still_paper_trading("some_key"))
+
+    @patch("run_pool_a1_legacy.get_strategy")
+    def test_archived_returns_false(self, mock_get):
+        record = MagicMock()
+        record.deployment_status = DeploymentStatus.ARCHIVED
+        mock_get.return_value = record
+        self.assertFalse(pool_a1._guard_still_paper_trading("fifty_two_week_high_momentum"))
+
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
+    def test_paper_trading_returns_true(self, mock_get):
+        self.assertTrue(pool_a1._guard_still_paper_trading("short_term_reversal"))
+
+    @patch("run_pool_a1_legacy.pte.run_daily")
+    @patch("run_pool_a1_legacy.fetch_all")
+    @patch("run_pool_a1_legacy.pte.load_portfolio")
+    @patch("run_pool_a1_legacy.get_strategy", return_value=None)
+    def test_run_one_skips_entirely_when_not_paper_trading(self, mock_get, mock_load, mock_fetch, mock_run_daily):
+        pool_a1._run_one("fifty_two_week_high_momentum")
+        mock_load.assert_not_called()
+        mock_fetch.assert_not_called()
+        mock_run_daily.assert_not_called()
 
 
 class TestRunOneSkipsFetchWhenFullyWoundDown(unittest.TestCase):
     """A strategy with zero open positions and zero pending exits has
     nothing left to do -- must not fetch data or call run_daily at all."""
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily")
     @patch("run_pool_a1_legacy.fetch_all")
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {}, "pending_exits": {}})
-    def test_no_fetch_no_run_daily_when_nothing_held(self, mock_load, mock_fetch, mock_run_daily):
+    def test_no_fetch_no_run_daily_when_nothing_held(self, mock_load, mock_fetch, mock_run_daily, mock_get):
         pool_a1._run_one("short_term_reversal")
         mock_fetch.assert_not_called()
         mock_run_daily.assert_not_called()
@@ -28,11 +74,12 @@ class TestRunOneFetchesOnlyHeldSymbols(unittest.TestCase):
     """Pool A1 must never fetch the full universe -- only symbols actually
     still open (positions) or awaiting a queued exit fill (pending_exits)."""
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio",
            return_value={"positions": {"TCS": {}}, "pending_exits": {"INFY": {}}})
-    def test_fetch_all_called_with_sorted_union_of_held_symbols(self, mock_load, mock_fetch, mock_run_daily):
+    def test_fetch_all_called_with_sorted_union_of_held_symbols(self, mock_load, mock_fetch, mock_run_daily, mock_get):
         pool_a1._run_one("minervini_trend_template_filter")
         mock_fetch.assert_called_once_with(["INFY", "TCS"], period="3y")
 
@@ -42,17 +89,19 @@ class TestRunOneAlwaysCallsRunDailyWithEntriesDisabled(unittest.TestCase):
     every single call, unconditionally -- this is the one line that turns
     a normal daily pass into a wind-down-only pass."""
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {"TCS": {}}, "pending_exits": {}})
-    def test_entries_enabled_false_passed_to_run_daily(self, mock_load, mock_fetch, mock_run_daily):
+    def test_entries_enabled_false_passed_to_run_daily(self, mock_load, mock_fetch, mock_run_daily, mock_get):
         pool_a1._run_one("cross_sectional_momentum")
         self.assertEqual(mock_run_daily.call_args.kwargs["entries_enabled"], False)
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {"TCS": {}}, "pending_exits": {}})
-    def test_no_compute_extra_columns_fn_passed(self, mock_load, mock_fetch, mock_run_daily):
+    def test_no_compute_extra_columns_fn_passed(self, mock_load, mock_fetch, mock_run_daily, mock_get):
         """Confirms the deliberate lean-fetch design: no cross-sectional
         percentile computation is wired in for the exit-only pass."""
         pool_a1._run_one("cross_sectional_momentum")
@@ -111,20 +160,22 @@ class TestResolveOneAtOpen(unittest.TestCase):
     only QUEUED by the EOD pass, not filled, until this resolves it
     against today's real Open."""
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.resolve_pending_fills_at_open")
     @patch("run_pool_a1_legacy.fetch_all")
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"pending_entries": {}, "pending_exits": {}})
-    def test_nothing_pending_skips_fetch_and_resolve(self, mock_load, mock_fetch, mock_resolve):
+    def test_nothing_pending_skips_fetch_and_resolve(self, mock_load, mock_fetch, mock_resolve, mock_get):
         pool_a1._resolve_one_at_open("short_term_reversal")
         mock_fetch.assert_not_called()
         mock_resolve.assert_not_called()
 
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.resolve_pending_fills_at_open",
            return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio",
            return_value={"pending_entries": {}, "pending_exits": {"TCS": {}}})
-    def test_pending_exit_triggers_lightweight_open_fetch(self, mock_load, mock_fetch, mock_resolve):
+    def test_pending_exit_triggers_lightweight_open_fetch(self, mock_load, mock_fetch, mock_resolve, mock_get):
         pool_a1._resolve_one_at_open("minervini_trend_template_filter")
         # fetch_open_data_fn is passed lazily -- invoke it ourselves to prove
         # it resolves to the expected lightweight, pending-symbols-only fetch.
@@ -144,22 +195,25 @@ class TestNeverSendsTelegram(unittest.TestCase):
 
 
 class TestStrategyKeysMatchApprovedScope(unittest.TestCase):
-    """Exactly the 4 strategies still carrying Rs.10,00,000-scale capital
-    (verified against live VPS state 2026-09-03) are classified into Pool
-    A1 -- PEAD (already wound to the Rs.1,00,000 floor), MAX Effect, and
-    Turn-of-Month (already seeded at Rs.1,00,000) must stay in Pool A
-    untouched, per explicit scope."""
+    """Exactly the 3 strategies still carrying Rs.10,00,000-scale capital
+    among Pool A's CURRENTLY ACTIVE (PAPER_TRADING) strategies are
+    classified into Pool A1 -- PEAD (already wound to the Rs.1,00,000
+    floor), MAX Effect, and Turn-of-Month (already seeded at
+    Rs.1,00,000) must stay in Pool A untouched. fifty_two_week_high_momentum
+    is EXCLUDED even though its leftover paper capital is also large --
+    it was already ARCHIVED/REJECT under governance before this
+    restructuring and is not one of Pool A's active strategies (see
+    run_pool_a1_legacy.py's own module docstring for the incident where
+    an earlier version of this list wrongly included it)."""
 
-    def test_exactly_four_approved_keys(self):
+    def test_exactly_three_approved_keys(self):
         self.assertEqual(
             set(pool_a1.POOL_A1_STRATEGY_KEYS),
-            {
-                "fifty_two_week_high_momentum",
-                "minervini_trend_template_filter",
-                "cross_sectional_momentum",
-                "short_term_reversal",
-            },
+            {"minervini_trend_template_filter", "cross_sectional_momentum", "short_term_reversal"},
         )
+
+    def test_archived_strategy_not_included(self):
+        self.assertNotIn("fifty_two_week_high_momentum", pool_a1.POOL_A1_STRATEGY_KEYS)
 
 
 if __name__ == "__main__":
