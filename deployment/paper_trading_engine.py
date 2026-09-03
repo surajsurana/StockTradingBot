@@ -449,7 +449,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
               as_of_date: Optional[date_type] = None, force: bool = False,
               execution_config: Optional[ExecutionRealismConfig] = None,
               min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
-              sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> dict:
+              sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
+              entries_enabled: bool = True) -> dict:
     """
     The idempotent daily runner. Call this once per trading day, after
     market close, for a given strategy already registered in the
@@ -493,6 +494,17 @@ def run_daily(strategy_key: str, strategy: Strategy,
     function's own same-day-close path below) is sized off
     min(cash, sizing_capital_cap), never uncapped cash alone. Defaults to
     PAPER_TRADING_WINDDOWN_TARGET_CAPITAL.
+    entries_enabled (added 2026-09-03, per explicit direction -- winding
+    down a legacy/large-pool paper-trading book by capital rather than by
+    force-selling): True (the default, unchanged behavior for every
+    existing caller) detects and queues/fills new signals normally.
+    False skips ONLY the "detect a brand-new entry" branch below (the
+    `elif ... entry_signal_at()` block) -- mechanical stop-loss checks
+    and the strategy's own exit_signal_at() for ALREADY-HELD positions
+    are completely unaffected, so a book run this way keeps monitoring
+    and exiting exactly as before, it just never opens anything new,
+    letting it wind itself down to zero positions over time as each
+    holding's own exit condition eventually fires.
 
     Returns a summary dict: {"status": "processed"|"skipped_already_processed",
     "as_of_date":..., "new_entries": [...], "new_exits": [...],
@@ -636,7 +648,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
                     "unrealized_pnl_pct": round((current_price / pos_state["entry_price"] - 1) * 100, 2)
                     if pos_state["entry_price"] else None,
                 })
-        elif symbol not in pending_entries and symbol not in pending_exits:
+        elif entries_enabled and symbol not in pending_entries and symbol not in pending_exits:
             signal = strategy.entry_signal_at(row)
             if signal is not None:
                 risk_per_share = signal.entry_price - signal.stop_loss

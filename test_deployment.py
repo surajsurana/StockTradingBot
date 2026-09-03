@@ -260,6 +260,47 @@ class TestPaperTradingEngine(unittest.TestCase):
         portfolio = pte.load_portfolio(self.strategy_key)
         self.assertNotIn("SYM", portfolio["positions"])
 
+    def test_entries_disabled_skips_a_new_signal_that_would_otherwise_fire(self):
+        """entries_enabled=False (added 2026-09-03, per explicit direction
+        -- winding down a legacy paper-trading book by capital rather than
+        force-selling): a strategy that would normally take this entry
+        must NOT open a new position when entries are disabled."""
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1), entries_enabled=False)
+        self.assertEqual(result["new_entries"], [])
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("SYM", portfolio["positions"])
+        self.assertEqual(portfolio["cash"], portfolio["starting_capital"], "no cash should be committed at all")
+
+    def test_entries_disabled_still_processes_stop_loss_on_existing_positions(self):
+        """The other half of the guarantee: entries_enabled=False must
+        change NOTHING about how an ALREADY-HELD position is monitored
+        and exited -- only new-signal detection is skipped."""
+        strategy = _AlwaysQualifiesStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))   # entries enabled here -- opens the position normally
+
+        stop_hit_data = {"SYM": _one_day_df("2024-01-02", 95, 96, 85, 92)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: stop_hit_data,
+                                as_of_date=datetime.date(2024, 1, 2), entries_enabled=False)
+        self.assertEqual(len(result["new_exits"]), 1)
+        self.assertEqual(result["new_exits"][0]["reason"], "stop_loss")
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("SYM", portfolio["positions"])
+
+    def test_entries_enabled_true_is_the_default_unchanged_behavior(self):
+        """Confirms omitting entries_enabled entirely is byte-identical to
+        every existing caller's current behavior -- a complete no-op for
+        anyone not explicitly opting into the new parameter."""
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1))
+        self.assertEqual(len(result["new_entries"]), 1)
+
     def test_cash_decreases_by_cost_on_entry(self):
         strategy = _AlwaysQualifiesStrategy()
         data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
