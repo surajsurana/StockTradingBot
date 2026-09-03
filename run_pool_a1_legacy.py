@@ -45,6 +45,21 @@ Pool A, B and C and not Pool A1"). Check on it manually (this script's
 own print() output, or deployment/state/paper_trading_legacy/<key>/)
 if you ever want to.
 
+Two passes, mirroring run_paper_trading.py's own --all-due /
+--resolve-at-open split, for the SAME reason: this reuses
+_DEFAULT_EXECUTION_CONFIG's fill_timing="next_day_open" (Pool A's own
+live execution assumption, kept identical here rather than silently
+switching to same_day_close), which means a new exit detected by an EOD
+run() call is only QUEUED into pending_exits, not filled yet -- it
+needs a SEPARATE pass the next morning against the real Open to
+actually fill (deployment/paper_trading_engine.py's own
+resolve_pending_fills_at_open()). Without this second pass a queued
+exit would sit in pending_exits forever and this book would never
+actually finish winding down. Run `--resolve-at-open` once, daily,
+shortly after market open (e.g. 9:30 IST, same slot as Pool A's own
+counterpart); run with no flag once, daily, after EOD (e.g. 15:40 IST,
+just after Pool A's own 15:35 --all-due).
+
 Runs in its own isolated state directory
 (deployment/state/paper_trading_legacy/) -- a separate directory tree
 from deployment/state/paper_trading/ (Pool A's now-fresh Rs.1,00,000
@@ -57,6 +72,7 @@ just for this process's whole lifetime rather than one test) and always
 called with entries_enabled=False.
 """
 
+import argparse
 import datetime
 import os
 
@@ -98,14 +114,41 @@ def _run_one(strategy_key: str) -> None:
     print(f"[{strategy_key}] {result}")
 
 
-def main():
+def _resolve_one_at_open(strategy_key: str) -> None:
+    spec = _SPECS_BY_KEY[strategy_key]
+    strategy = spec.strategy_factory()
+
+    portfolio = pte.load_portfolio(strategy_key)
+    pending_symbols = sorted(set(portfolio.get("pending_entries", {})) | set(portfolio.get("pending_exits", {})))
+    if not pending_symbols:
+        print(f"[{strategy_key}] Pool A1: nothing pending at open.")
+        return
+
+    print(f"[{strategy_key}] Pool A1: resolving {len(pending_symbols)} pending fill(s) at today's real Open...")
+    result = pte.resolve_pending_fills_at_open(
+        strategy_key, strategy, fetch_open_data_fn=lambda: fetch_all(pending_symbols, period="5d"),
+        execution_config=pte.ExecutionRealismConfig(fill_timing="next_day_open"),
+    )
+    print(f"[{strategy_key}] {result}")
+
+
+def main(resolve_at_open: bool = False):
     pte.PAPER_TRADING_STATE_DIR = POOL_A1_STATE_DIR
     for strategy_key in POOL_A1_STRATEGY_KEYS:
         try:
-            _run_one(strategy_key)
+            if resolve_at_open:
+                _resolve_one_at_open(strategy_key)
+            else:
+                _run_one(strategy_key)
         except Exception as e:
-            print(f"ERROR: Pool A1 '{strategy_key}' failed: {type(e).__name__}: {e}")
+            stage = "the open-resolution pass" if resolve_at_open else "today's paper trading run"
+            print(f"ERROR: Pool A1 '{strategy_key}' failed during {stage}: {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--resolve-at-open", action="store_true",
+                         help="Resolve fills queued by a prior EOD run against today's real market Open. "
+                              "Run with no flag for the normal end-of-day exit-detection pass.")
+    args = parser.parse_args()
+    main(resolve_at_open=args.resolve_at_open)

@@ -1,9 +1,9 @@
 """Tests for run_pool_a1_legacy.py -- the fully-silent, exit-only daily
-pass for the 3 strategies set aside into Pool A1 on 2026-09-03 (Minervini,
-Cross-Sectional Momentum, Short-Term Reversal). Mirrors the mocking style
-already used in test_run_paper_trading.py (patch each collaborator at its
-run_pool_a1_legacy import site, never the real deployment/paper_trading_engine
-implementation)."""
+pass for the 4 strategies set aside into Pool A1 on 2026-09-03 (52-Week
+High Momentum, Minervini, Cross-Sectional Momentum, Short-Term Reversal).
+Mirrors the mocking style already used in test_run_paper_trading.py
+(patch each collaborator at its run_pool_a1_legacy import site, never
+the real deployment/paper_trading_engine implementation)."""
 
 import unittest
 from unittest.mock import call, patch
@@ -89,6 +89,48 @@ class TestMainIsolatesStateDirAndContinuesPastFailure(unittest.TestCase):
             mock_run_one.call_args_list,
             [call(k) for k in pool_a1.POOL_A1_STRATEGY_KEYS],
         )
+
+    @patch("run_pool_a1_legacy._resolve_one_at_open")
+    @patch("run_pool_a1_legacy._run_one")
+    def test_resolve_at_open_true_calls_resolve_not_run_one(self, mock_run_one, mock_resolve):
+        pool_a1.main(resolve_at_open=True)
+        mock_run_one.assert_not_called()
+        self.assertEqual(mock_resolve.call_args_list, [call(k) for k in pool_a1.POOL_A1_STRATEGY_KEYS])
+
+    @patch("run_pool_a1_legacy._resolve_one_at_open")
+    @patch("run_pool_a1_legacy._run_one")
+    def test_resolve_at_open_false_is_the_default_and_calls_run_one(self, mock_run_one, mock_resolve):
+        pool_a1.main()
+        mock_resolve.assert_not_called()
+        self.assertEqual(mock_run_one.call_args_list, [call(k) for k in pool_a1.POOL_A1_STRATEGY_KEYS])
+
+
+class TestResolveOneAtOpen(unittest.TestCase):
+    """The next-morning counterpart to _run_one() -- required because Pool
+    A1 reuses fill_timing="next_day_open", so a newly-detected exit is
+    only QUEUED by the EOD pass, not filled, until this resolves it
+    against today's real Open."""
+
+    @patch("run_pool_a1_legacy.pte.resolve_pending_fills_at_open")
+    @patch("run_pool_a1_legacy.fetch_all")
+    @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"pending_entries": {}, "pending_exits": {}})
+    def test_nothing_pending_skips_fetch_and_resolve(self, mock_load, mock_fetch, mock_resolve):
+        pool_a1._resolve_one_at_open("short_term_reversal")
+        mock_fetch.assert_not_called()
+        mock_resolve.assert_not_called()
+
+    @patch("run_pool_a1_legacy.pte.resolve_pending_fills_at_open",
+           return_value={"new_entries": [], "new_exits": []})
+    @patch("run_pool_a1_legacy.fetch_all", return_value={})
+    @patch("run_pool_a1_legacy.pte.load_portfolio",
+           return_value={"pending_entries": {}, "pending_exits": {"TCS": {}}})
+    def test_pending_exit_triggers_lightweight_open_fetch(self, mock_load, mock_fetch, mock_resolve):
+        pool_a1._resolve_one_at_open("minervini_trend_template_filter")
+        # fetch_open_data_fn is passed lazily -- invoke it ourselves to prove
+        # it resolves to the expected lightweight, pending-symbols-only fetch.
+        mock_resolve.call_args.kwargs["fetch_open_data_fn"]()
+        mock_fetch.assert_called_once_with(["TCS"], period="5d")
+        self.assertEqual(mock_resolve.call_args.kwargs["execution_config"].fill_timing, "next_day_open")
 
 
 class TestNeverSendsTelegram(unittest.TestCase):
