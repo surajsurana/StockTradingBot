@@ -888,3 +888,84 @@ def run_turn_of_month_experiment(data: dict, start_date: date, end_date: date,
             "turn_of_month_eligible_per_month": ELIGIBLE_PER_MONTH,
         },
     )
+
+
+def run_overnight_return_experiment(data: dict, start_date: date, end_date: date,
+                                     starting_capital: float = 1_000_000,
+                                     n_walk_forward_windows: int = 3,
+                                     narrative_api_key: str = "",
+                                     narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                     experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                     knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                     skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Overnight
+    Return Anomaly -- computes the 21-day cumulative overnight-return
+    cross-sectional percentile ONCE up front (same pattern as every prior
+    cross-sectional strategy), reused across every walk-forward window.
+
+    UNLIKE most prior strategies but LIKE Amihud (SW-010): passes
+    walk_forward_fn=execution_realism_engine.run_walk_forward_execution_realistic
+    and a full_period_trade_adjuster, both pre-bound with next-day-open
+    fill timing ONLY (no ADV participation cap, no ILLIQ-derived cost --
+    this strategy's own disclosed methodological tension is specifically
+    about FILL TIMING, not trading cost/liquidity, so only that one
+    execution-realism dimension is turned on, per this framework's own
+    "config-driven, per explicit direction" philosophy: turning on a
+    dimension is a deliberate per-strategy decision, not a bundle). See
+    OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own
+    module docstrings for why even this does NOT achieve a pure
+    overnight-only round trip (the single most important disclosed gap
+    for this strategy) -- the ACCEPTANCE VERDICT here still reflects
+    next-day-open fills, not a same-day-close backtest, for the same
+    reason Amihud's does: it is the more realistic of the two available
+    options, not because it fully solves the fidelity gap.
+    """
+    from functools import partial
+
+    from swing_research.strategies.overnight_return_anomaly import OvernightReturnAnomalyStrategy
+    from swing_research.published_research_analyst import OVERNIGHT_RETURN_ANOMALY
+    from swing_research.cross_sectional import compute_overnight_return_percentile_ranks
+    from swing_research.execution_realism_engine import (
+        apply_execution_realism, run_walk_forward_execution_realistic,
+    )
+
+    overnight_percentiles = compute_overnight_return_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("overnight_percentile") for symbol, series in overnight_percentiles.items()}
+
+    execution_realism_kwargs = dict(fill_timing="next_day_open")
+    walk_forward_fn = partial(run_walk_forward_execution_realistic, **execution_realism_kwargs)
+
+    def full_period_trade_adjuster(trades: list, full_data: dict) -> list:
+        return apply_execution_realism(trades, full_data, **execution_realism_kwargs)["trades"]
+
+    strategy = OvernightReturnAnomalyStrategy()
+    return run_generic_swing_experiment(
+        strategy, OVERNIGHT_RETURN_ANOMALY, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        walk_forward_fn=walk_forward_fn, full_period_trade_adjuster=full_period_trade_adjuster,
+        extra_parameters={
+            "overnight_return_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "overnight_return_stop_loss_pct": 0.08,
+            "overnight_return_percentile_threshold": 90.0,
+            "overnight_return_formation_days": 21,
+            "overnight_return_holding_period_trading_days": 1,
+            "overnight_return_single_vintage": True,
+            "overnight_return_percentile_based_early_exit": False,
+            "transaction_costs_modeled": False, "slippage_modeled": False,
+            "execution_realism_config": {
+                "fill_timing": "next_day_open",
+                "methodology_note": (
+                    "See OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own module "
+                    "docstrings for the full disclosed gap: next-day-open fills on a 1-trading-day "
+                    "hold still span one full intraday session, not a pure overnight-only round trip. "
+                    "The zero-cost/same-day-close baseline is saved separately for transparency only, "
+                    "under diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics, "
+                    "and is explicitly NOT used for the verdict."
+                ),
+            },
+        },
+    )

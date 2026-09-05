@@ -487,3 +487,50 @@ def compute_idiosyncratic_volatility_percentile_ranks(data: dict, market_close: 
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+OVERNIGHT_RETURN_FORMATION_DAYS = 21  # 1 month -- this program's convention, see strategy module docstring
+
+
+def compute_overnight_return_score(price_history: pd.DataFrame) -> pd.Series:
+    """
+    Lou, Polk & Skouras (2019)'s cumulative overnight (Close-to-Open)
+    return over a trailing formation window. Daily overnight return_t =
+    Open_t / Close_{t-1} - 1 (captures ONLY the close-to-open move, zero
+    intraday-session exposure -- unlike compute_momentum_score()'s
+    Close-to-Close construction). The formation-period figure compounds
+    these daily overnight returns over OVERNIGHT_RETURN_FORMATION_DAYS
+    trading days: product(1 + overnight_return_t) - 1.
+    """
+    daily_overnight_return = price_history["Open"] / price_history["Close"].shift(1) - 1
+    return (1 + daily_overnight_return).rolling(OVERNIGHT_RETURN_FORMATION_DAYS).apply(
+        lambda window: window.prod() - 1, raw=True
+    )
+
+
+def compute_overnight_return_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of overnight_percentile (0-100), indexed by
+    date} -- each symbol's cross-sectional percentile rank, among whatever
+    symbols have a valid (non-NaN, i.e. >=21 bars of history) formation
+    overnight return that day, of its own cumulative overnight return.
+    HIGH percentile means a STRONGER recent cumulative overnight return --
+    this strategy's entry condition is percentile >=90 (top decile), the
+    paper's own long-side persistence finding. Same vectorized
+    .rank(axis=1, pct=True) construction as every other cross-sectional
+    signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_overnight_return_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

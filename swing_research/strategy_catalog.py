@@ -211,4 +211,11 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_turn_of_month_experiment"]
         ).run_turn_of_month_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="overnight_return_anomaly",
+        variant_description="Overnight Return Anomaly (21-day cumulative Close-to-Open return, top-decile percentile, 1-trading-day single-vintage hold, next-day-open fills)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_overnight_return_experiment"]
+        ).run_overnight_return_experiment,
+    ),
 ]

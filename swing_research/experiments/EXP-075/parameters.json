@@ -1,0 +1,22 @@
+{
+  "data_period": "2024-09-04 to 2026-09-04",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 1,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN, standard. 21-day formation window: MINOR-to-MODERATE -- a restatement into this program's own convention, not the paper's single prescribed window. Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as every prior cross-sectional strategy. 1-trading-day hold under next-day-open fills (see scope_reductions above): MATERIAL, LIKELY UNDERSTATES the pure overnight-only effect specifically, since the contaminating intraday-session return this implementation cannot avoid is expected to work directly against the effect under test -- this result should be read as a LOWER-BOUND test of the underlying mechanism, not a faithful isolation of it.",
+  "overnight_return_risk_pct_per_unit": 0.01,
+  "overnight_return_stop_loss_pct": 0.08,
+  "overnight_return_percentile_threshold": 90.0,
+  "overnight_return_formation_days": 21,
+  "overnight_return_holding_period_trading_days": 1,
+  "overnight_return_single_vintage": true,
+  "overnight_return_percentile_based_early_exit": false,
+  "execution_realism_config": {
+    "fill_timing": "next_day_open",
+    "methodology_note": "See OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own module docstrings for the full disclosed gap: next-day-open fills on a 1-trading-day hold still span one full intraday session, not a pure overnight-only round trip. The zero-cost/same-day-close baseline is saved separately for transparency only, under diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics, and is explicitly NOT used for the verdict."
+  }
+}

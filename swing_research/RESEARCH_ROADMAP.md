@@ -10,17 +10,17 @@ Maintained by `swing_research/research_roadmap.py` (Published Research Analyst's
 |---|---|---|---|
 | Turtle Trading -- System 2 | SW-001 | REJECT | ARCHIVED |
 | Minervini Trend Template Filter | SW-002 | INCONCLUSIVE | PAPER_TRADING |
-| 52-Week High Momentum | SW-003 | PASS | PAPER_TRADING |
+| 52-Week High Momentum | SW-003 | REJECT | ARCHIVED |
 | MA Crossover | SW-004 | REJECT | ARCHIVED |
 | Mean Reversion | SW-005 | REJECT | ARCHIVED |
-| Cross-Sectional Momentum | SW-006 | PASS | PAPER_TRADING |
+| Cross-Sectional Momentum | SW-006 | INCONCLUSIVE | PAPER_TRADING |
 | Post-Earnings Announcement Drift (PEAD) | SW-007 | NOT_YET_EVALUATED | PAPER_TRADING |
 | Short-Term Reversal | SW-008 | PASS | PAPER_TRADING |
-| Betting Against Beta | SW-009 | REJECT | RESEARCH |
-| Amihud Illiquidity Premium | SW-010 | PASS | RESEARCH |
+| Betting Against Beta | SW-009 | INCONCLUSIVE | RESEARCH |
+| Amihud Illiquidity Premium | SW-010 | INCONCLUSIVE | RESEARCH |
 | MAX Effect (Lottery-Demand Anomaly) | SW-011 | PASS | PAPER_TRADING |
 | Idiosyncratic Volatility Anomaly | SW-012 | INCONCLUSIVE | RESEARCH |
-| Turn-of-the-Month Effect | SW-013 | PASS | RESEARCH |
+| Turn-of-the-Month Effect | SW-013 | PASS | PAPER_TRADING |
 
 ## Scoring Methodology
 
@@ -45,17 +45,17 @@ Diversification is scored dynamically against the live portfolio above (a strate
 | 1 | Overnight Return Anomaly | Lou, 2019 | Market microstructure / attention-driven | 8.5/10 | 10.0/10 |
 | 2 | Long-Term (De Bondt-Thaler) Reversal | De Bondt, 1985 | Reversal (long-horizon overreaction) | 8.2/10 | 10.0/10 |
 | 3 | High-Volume Return Premium | Gervais, 2001 | Volume-driven attention/visibility premium | 7.8/10 | 10.0/10 |
-| 4 | Realized Low Volatility (Nifty100 Low Volatility 30 methodology) | NSE Indices Limited, 2016 | Risk-based (realized volatility, not beta) | 7.55/10 | 8.5/10 |
-| 5 | Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002) | Sehgal, 2002 | Reversal (long-horizon, India-specific evidence) | 7.55/10 | 10.0/10 |
-| 6 | Downside Beta / Downside Risk | Ang, 2006 | Risk-based (downside-conditional) | 7.55/10 | 8.5/10 |
-| 7 | Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology) | NSE Indices Limited, 2011 | Risk-adjusted regression alpha | 7.15/10 | 8.5/10 |
-| 8 | Turn-of-the-Year / January Effect | Keim, 1983 | Calendar seasonality | 7.0/10 | 8.0/10 |
-| 9 | Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology) | NSE Indices Limited, 2017 | Combined risk-based (alpha + volatility) | 6.9/10 | 8.5/10 |
-| 10 | Day-of-the-Week (Weekend) Effect | French, 1980 | Calendar seasonality | 6.9/10 | 8.0/10 |
-| 11 | Turnover / Liquidity Anomaly | Datar, 1998 | Liquidity risk premium | 6.85/10 | 8.0/10 |
-| 12 | Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology) | NSE Indices Limited, 2019 | Momentum (risk-adjusted, blended horizon) | 6.3/10 | 3.0/10 |
-| 13 | Industry Momentum | Moskowitz, 1999 | Momentum (industry-level, not stock-level) | 5.95/10 | 3.0/10 |
-| 14 | Volume-Based Momentum and Contrarian Strategies (Maheshwari & Dhankar 2017) | Maheshwari, 2017 | Momentum/reversal, VOLUME-conditioned | 5.8/10 | 3.0/10 |
+| 4 | Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002) | Sehgal, 2002 | Reversal (long-horizon, India-specific evidence) | 7.55/10 | 10.0/10 |
+| 5 | Realized Low Volatility (Nifty100 Low Volatility 30 methodology) | NSE Indices Limited, 2016 | Risk-based (realized volatility, not beta) | 7.45/10 | 8.0/10 |
+| 6 | Downside Beta / Downside Risk | Ang, 2006 | Risk-based (downside-conditional) | 7.45/10 | 8.0/10 |
+| 7 | Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology) | NSE Indices Limited, 2019 | Momentum (risk-adjusted, blended horizon) | 7.2/10 | 7.5/10 |
+| 8 | Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology) | NSE Indices Limited, 2011 | Risk-adjusted regression alpha | 7.05/10 | 8.0/10 |
+| 9 | Turnover / Liquidity Anomaly | Datar, 1998 | Liquidity risk premium | 7.05/10 | 9.0/10 |
+| 10 | Industry Momentum | Moskowitz, 1999 | Momentum (industry-level, not stock-level) | 6.85/10 | 7.5/10 |
+| 11 | Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology) | NSE Indices Limited, 2017 | Combined risk-based (alpha + volatility) | 6.8/10 | 8.0/10 |
+| 12 | Turn-of-the-Year / January Effect | Keim, 1983 | Calendar seasonality | 6.8/10 | 7.0/10 |
+| 13 | Volume-Based Momentum and Contrarian Strategies (Maheshwari & Dhankar 2017) | Maheshwari, 2017 | Momentum/reversal, VOLUME-conditioned | 6.7/10 | 7.5/10 |
+| 14 | Day-of-the-Week (Weekend) Effect | French, 1980 | Calendar seasonality | 6.7/10 | 7.0/10 |
 
 ## Full Comparison Table (every candidate, every score)
 
@@ -64,20 +64,20 @@ Diversification is scored dynamically against the live portfolio above (a strate
 | Overnight Return Anomaly | IMPLEMENTABLE | 8/10 | 10/10 | 8/10 | 10.0/10 | 6/10 | 9/10 | 8/10 | 8.5/10 |
 | Long-Term (De Bondt-Thaler) Reversal | IMPLEMENTABLE | 9/10 | 10/10 | 7/10 | 10.0/10 | 6/10 | 5/10 | 9/10 | 8.2/10 |
 | High-Volume Return Premium | IMPLEMENTABLE | 6/10 | 10/10 | 9/10 | 10.0/10 | 5/10 | 7/10 | 6/10 | 7.8/10 |
-| Realized Low Volatility (Nifty100 Low Volatility 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 9/10 | 8.5/10 | 5/10 | 9/10 | 3/10 | 7.55/10 |
 | Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002) | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 10.0/10 | 6/10 | 5/10 | 5/10 | 7.55/10 |
-| Downside Beta / Downside Risk | IMPLEMENTABLE | 7/10 | 10/10 | 8/10 | 8.5/10 | 6/10 | 6/10 | 5/10 | 7.55/10 |
-| Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 7/10 | 8.5/10 | 5/10 | 6/10 | 7/10 | 7.15/10 |
-| Turn-of-the-Year / January Effect | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 8.0/10 | 3/10 | 9/10 | 3/10 | 7.0/10 |
-| Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 7/10 | 8.5/10 | 5/10 | 6/10 | 2/10 | 6.9/10 |
-| Day-of-the-Week (Weekend) Effect | IMPLEMENTABLE | 5/10 | 10/10 | 10/10 | 8.0/10 | 2/10 | 9/10 | 2/10 | 6.9/10 |
-| Turnover / Liquidity Anomaly | IMPLEMENTABLE | 7/10 | 8/10 | 6/10 | 8.0/10 | 6/10 | 6/10 | 5/10 | 6.85/10 |
+| Realized Low Volatility (Nifty100 Low Volatility 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 9/10 | 8.0/10 | 5/10 | 9/10 | 3/10 | 7.45/10 |
+| Downside Beta / Downside Risk | IMPLEMENTABLE | 7/10 | 10/10 | 8/10 | 8.0/10 | 6/10 | 6/10 | 5/10 | 7.45/10 |
+| Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 7.5/10 | 6/10 | 7/10 | 4/10 | 7.2/10 |
+| Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 7/10 | 8.0/10 | 5/10 | 6/10 | 7/10 | 7.05/10 |
+| Turnover / Liquidity Anomaly | IMPLEMENTABLE | 7/10 | 8/10 | 6/10 | 9.0/10 | 6/10 | 6/10 | 5/10 | 7.05/10 |
+| Industry Momentum | IMPLEMENTABLE | 7/10 | 8/10 | 7/10 | 7.5/10 | 6/10 | 6/10 | 4/10 | 6.85/10 |
+| Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 7/10 | 8.0/10 | 5/10 | 6/10 | 2/10 | 6.8/10 |
+| Turn-of-the-Year / January Effect | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 7.0/10 | 3/10 | 9/10 | 3/10 | 6.8/10 |
+| Volume-Based Momentum and Contrarian Strategies (Maheshwari & Dhankar 2017) | IMPLEMENTABLE | 5/10 | 10/10 | 7/10 | 7.5/10 | 5/10 | 6/10 | 6/10 | 6.7/10 |
+| Day-of-the-Week (Weekend) Effect | IMPLEMENTABLE | 5/10 | 10/10 | 10/10 | 7.0/10 | 2/10 | 9/10 | 2/10 | 6.7/10 |
 | Value (Earnings Yield / Book-to-Market) | NOT_CURRENTLY_IMPLEMENTABLE | 10/10 | 2/10 | 1/10 | 10.0/10 | 8/10 | 5/10 | 9/10 | N/A (blocked) |
-| Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology) | IMPLEMENTABLE | 6/10 | 10/10 | 8/10 | 3.0/10 | 6/10 | 7/10 | 4/10 | 6.3/10 |
 | Quality (Piotroski F-Score / Novy-Marx Gross Profitability / QMJ) | NOT_CURRENTLY_IMPLEMENTABLE | 9/10 | 2/10 | 1/10 | 10.0/10 | 8/10 | 4/10 | 8/10 | N/A (blocked) |
-| Industry Momentum | IMPLEMENTABLE | 7/10 | 8/10 | 7/10 | 3.0/10 | 6/10 | 6/10 | 4/10 | 5.95/10 |
 | Asset Growth Anomaly | NOT_CURRENTLY_IMPLEMENTABLE | 8/10 | 2/10 | 1/10 | 10.0/10 | 7/10 | 5/10 | 6/10 | N/A (blocked) |
-| Volume-Based Momentum and Contrarian Strategies (Maheshwari & Dhankar 2017) | IMPLEMENTABLE | 5/10 | 10/10 | 7/10 | 3.0/10 | 5/10 | 6/10 | 6/10 | 5.8/10 |
 | Accruals Anomaly | NOT_CURRENTLY_IMPLEMENTABLE | 8/10 | 2/10 | 1/10 | 10.0/10 | 7/10 | 4/10 | 6/10 | N/A (blocked) |
 | Analyst Earnings-Revision Momentum | NOT_CURRENTLY_IMPLEMENTABLE | 7/10 | 1/10 | 1/10 | 10.0/10 | 6/10 | 5/10 | 6/10 | N/A (blocked) |
 | Net Share Issuance / Buyback Anomaly | NOT_CURRENTLY_IMPLEMENTABLE | 7/10 | 1/10 | 1/10 | 10.0/10 | 6/10 | 5/10 | 5/10 | N/A (blocked) |
@@ -124,22 +124,22 @@ Diversification is scored dynamically against the live portfolio above (a strate
 **Known risk:** Less overwhelming replication evidence than the classics (BAB, Amihud, momentum); effect size in the original paper is modest.
 
 
-### 4. Realized Low Volatility (Nifty100 Low Volatility 30 methodology) (NSE Indices Limited, 2016)
-
-**Why this:** Real, live, audited methodology; trivially simple to compute (a rolling standard deviation, no regression machinery needed at all) -- the lowest implementation risk of any candidate in this India-specific batch.
-
-**Portfolio overlap:** Betting Against Beta (SW-009, REJECT/RESEARCH) shares: risk_based; Idiosyncratic Volatility Anomaly (SW-012, INCONCLUSIVE/RESEARCH) shares: risk_based
-
-**Known risk:** Shares this program's 'risk_based' tag directly with Betting Against Beta (SW-009, REJECT) -- raw volatility and beta are correlated risk measures (a low-vol stock is very often also a low-beta stock), so this candidate should be read as a CLOSE cousin of the just-rejected strategy, not an independent test. A REJECT on BAB is meaningful, but non-trivial, prior evidence about how this family performs on this exact universe/period, not proof this specific measure fails too.
-
-
-### 5. Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002) (Sehgal, S. and Balakrishnan, A., 2002)
+### 4. Long-Term Contrarian with 1-Year Skip Period (Sehgal & Balakrishnan 2002) (Sehgal, S. and Balakrishnan, A., 2002)
 
 **Why this:** Direct India-specific evidence for the long-term reversal effect already on the global roadmap (De Bondt-Thaler) -- corroborating, independent confirmation rather than a purely US/global finding being assumed to transfer. The 1-year skip-period detail is a genuine, disclosed methodological refinement worth carrying into whichever long-term-reversal implementation is eventually built.
 
 **Portfolio overlap:** None -- no existing strategy shares this factor family.
 
 **Known risk:** Same factor family (reversal_long_horizon) as the global roadmap's De Bondt-Thaler candidate -- this is best treated as ADDITIONAL EVIDENCE for that same candidate (and its skip-period detail folded into that implementation), not a fully independent second candidate to implement separately.
+
+
+### 5. Realized Low Volatility (Nifty100 Low Volatility 30 methodology) (NSE Indices Limited, 2016)
+
+**Why this:** Real, live, audited methodology; trivially simple to compute (a rolling standard deviation, no regression machinery needed at all) -- the lowest implementation risk of any candidate in this India-specific batch.
+
+**Portfolio overlap:** Betting Against Beta (SW-009, INCONCLUSIVE/RESEARCH) shares: risk_based; Idiosyncratic Volatility Anomaly (SW-012, INCONCLUSIVE/RESEARCH) shares: risk_based
+
+**Known risk:** Shares this program's 'risk_based' tag directly with Betting Against Beta (SW-009, REJECT) -- raw volatility and beta are correlated risk measures (a low-vol stock is very often also a low-beta stock), so this candidate should be read as a CLOSE cousin of the just-rejected strategy, not an independent test. A REJECT on BAB is meaningful, but non-trivial, prior evidence about how this family performs on this exact universe/period, not proof this specific measure fails too.
 
 
 **Why not the rest of the top 20:** lower total score, driven variously by family overlap with existing strategies (e.g. Industry Momentum vs. SW-003/SW-006), documented historical decay (the calendar-seasonality cluster), or a thinner academic replication record than the candidates above -- see the full comparison table for the exact scores behind each.

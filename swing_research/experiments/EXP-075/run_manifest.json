@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-09-05T19:14:58.541083",
+  "strategy_name": "overnight_return_anomaly",
+  "strategy_variant": "Overnight Return Anomaly (21-day cumulative Close-to-Open return, top-decile percentile, 1-trading-day single-vintage hold, next-day-open fills)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 15
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 1,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "f222f63d879a5ac20024651e0d74c1c068c5e3ae",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/RESEARCH_ROADMAP.md",
+      " M swing_research/cross_sectional.py",
+      " M swing_research/knowledge_base.jsonl",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_director.py",
+      " M swing_research/strategy_catalog.py",
+      " M test_strategy_catalog.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/strategies/overnight_return_anomaly.py",
+      "?? test_kite_connection.py",
+      "?? test_overnight_return_anomaly.py"
+    ]
+  }
+}
