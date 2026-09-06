@@ -119,6 +119,11 @@ _STRATEGY_FACTORIES = {
         "display_name": spec.display_name,
         "strategy_factory": spec.strategy_factory,
         **({"compute_extra_columns_fn": spec.compute_extra_columns_fn} if spec.compute_extra_columns_fn else {}),
+        # execution_config: per-strategy override (added 2026-09-06, for Overnight Return Anomaly --
+        # see strategy_catalog.py's PaperTradingStrategySpec.execution_config_factory docstring).
+        # Resolved HERE (not lazily like strategy_factory) since an ExecutionRealismConfig is cheap,
+        # immutable config data, not an expensive Strategy instantiation.
+        **({"execution_config": spec.execution_config_factory()} if spec.execution_config_factory else {}),
     }
     for spec in PAPER_TRADING_STRATEGY_SPECS
 }
@@ -317,7 +322,7 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
             result = run_daily(
                 strategy_key, strategy, fetch_data_fn=lambda: data,
                 compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
-                force=force, execution_config=_DEFAULT_EXECUTION_CONFIG,
+                force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
             )
         print(f"[{strategy_key}] {result}")
 

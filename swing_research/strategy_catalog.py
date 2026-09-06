@@ -67,6 +67,18 @@ class PaperTradingStrategySpec:
     display_name: str
     strategy_factory: Callable                      # zero-arg -> a swing_research.base.Strategy instance
     compute_extra_columns_fn: Optional[Callable] = None   # data (dict) -> {symbol: Series}, or None
+    execution_config_factory: Optional[Callable] = None   # zero-arg -> a
+    # deployment.paper_trading_engine.ExecutionRealismConfig, lazy (same reason
+    # strategy_factory/compute_extra_columns_fn are lazy: keeps this module's own import graph free
+    # of deployment/ at load time) -- or None to use run_paper_trading.py's own
+    # _DEFAULT_EXECUTION_CONFIG. Added 2026-09-06 for Overnight Return Anomaly's promotion: its
+    # research verdict (EXP-078) was validated under fill_timing="close_to_next_open", NOT the
+    # platform default "next_day_open", so live paper trading must use that SAME config or it would
+    # silently re-run under the exact contamination (an extra intraday session on the exit leg)
+    # that made the strategy's FIRST research run (EXP-076) REJECT -- "we must not play with
+    # strategy rules" applies to this mismatch as much as it did to a missing target_price
+    # mechanism. None (every other strategy) is a complete no-op -- byte-identical to before this
+    # field existed.
 
 
 PAPER_TRADING_STRATEGY_SPECS = [
@@ -149,6 +161,22 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # No compute_extra_columns_fn -- a per-symbol pattern signal (new N-day high + volume
         # confirmation), not a cross-sectional decile sort; same "no natural ranking measure"
         # situation as Turtle System 2/Turn-of-the-Month.
+    ),
+    PaperTradingStrategySpec(
+        strategy_key="overnight_return_anomaly",
+        display_name="Overnight Return Anomaly",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.overnight_return_anomaly", fromlist=["OvernightReturnAnomalyStrategy"]
+        ).OvernightReturnAnomalyStrategy(),
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_overnight_return_percentile_ranks"]
+        ).compute_overnight_return_percentile_ranks(data), "overnight_percentile"),
+        execution_config_factory=lambda: __import__(
+            "deployment.paper_trading_engine", fromlist=["ExecutionRealismConfig"]
+        ).ExecutionRealismConfig(fill_timing="close_to_next_open"),
+        # See PaperTradingStrategySpec.execution_config_factory's own docstring above -- this MUST
+        # match the fill timing EXP-078 (PASS) was actually validated under, or live paper trading
+        # would silently re-run under EXP-076's REJECTed, contaminated mechanics.
     ),
 ]
 

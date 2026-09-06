@@ -219,6 +219,40 @@ class _TargetPriceStrategy(Strategy):
         # deliberately, matching a real fixed-target strategy.
 
 
+class _OneDayHoldStrategy(Strategy):
+    """Test double matching OvernightReturnAnomalyStrategy's shape (added
+    2026-09-06, for fill_timing="close_to_next_open") -- fires on the
+    first bar, and exit_signal_at() returns the CURRENT row's Close once
+    one calendar day has elapsed (a raw, pre-substitution exit price the
+    engine's close_to_next_open mode is meant to override with that
+    day's Open instead)."""
+    name = "one_day_hold_test_strategy"
+    max_units = 1
+    risk_pct_per_unit = 0.01
+    min_lookback_days = 0
+
+    def precompute(self, price_history):
+        df = price_history.copy()
+        df["signal_day"] = False
+        if len(df) > 0:
+            df.iloc[-1, df.columns.get_loc("signal_day")] = True
+        df["date"] = df.index.date
+        return df
+
+    def entry_signal_at(self, row):
+        if not bool(row.signal_day):
+            return None
+        entry_price = float(row.Close)
+        return Signal(symbol="", direction="BUY", entry_price=entry_price,
+                      stop_loss=entry_price * 0.5, strategy_name=self.name)
+
+    def exit_signal_at(self, row, open_position):
+        entry_date = open_position.units[0].entry_date
+        if entry_date is not None and (row.date - entry_date).days >= 1:
+            return float(row.Close)   # the RAW price close_to_next_open must override
+        return None
+
+
 def _one_day_df(date_str, open_, high, low, close):
     idx = pd.DatetimeIndex([pd.Timestamp(date_str)])
     return pd.DataFrame({"Open": [open_], "High": [high], "Low": [low], "Close": [close],
@@ -416,6 +450,65 @@ class TestPaperTradingEngine(unittest.TestCase):
                       as_of_date=datetime.date(2024, 1, 2), execution_config=config)
         portfolio = pte.load_portfolio(self.strategy_key)
         self.assertAlmostEqual(portfolio["positions"]["SYM"]["target_price"], 110.0)
+
+    def test_close_to_next_open_entry_fills_immediately_at_close(self):
+        """Added 2026-09-06 for Overnight Return Anomaly's promotion --
+        the entry side needs NO special handling under close_to_next_open:
+        it must fill immediately (same as the same_day_close default),
+        never deferred to pending_entries the way next_day_open defers it."""
+        strategy = _OneDayHoldStrategy()
+        config = pte.ExecutionRealismConfig(fill_timing="close_to_next_open")
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                                as_of_date=datetime.date(2024, 1, 1), execution_config=config)
+        self.assertEqual(len(result["new_entries"]), 1)
+        self.assertEqual(result["new_pending_entries"], [])
+        self.assertAlmostEqual(result["new_entries"][0]["entry_price"], 100.0)  # that day's Close
+
+    def test_close_to_next_open_exit_fills_immediately_at_that_days_open_not_close(self):
+        """The core new capability: an exit detected today must fill at
+        TODAY's own Open (already-known historical data by the time this
+        EOD script runs), substituting whatever raw exit_price the
+        strategy/engine computed (here, the strategy's own exit_signal_at()
+        returning that day's Close) -- and must NOT be deferred to
+        pending_exits the way next_day_open defers it, since there is no
+        future unknown price here to wait for."""
+        strategy = _OneDayHoldStrategy()
+        config = pte.ExecutionRealismConfig(fill_timing="close_to_next_open")
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=config)
+
+        # Exit day: Open=103, Close=109 -- if the engine wrongly used Close
+        # (the strategy's own raw exit_signal_at() return value) instead of
+        # substituting Open, this test would catch it.
+        exit_data = {"SYM": _one_day_df("2024-01-02", 103, 112, 102, 109)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: exit_data,
+                                as_of_date=datetime.date(2024, 1, 2), execution_config=config)
+        self.assertEqual(len(result["new_exits"]), 1)
+        self.assertEqual(result["new_pending_exits"], [])
+        self.assertAlmostEqual(result["new_exits"][0]["exit_price"], 103.0)   # that day's Open, not 109 (Close)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("SYM", portfolio["positions"])
+
+    def test_close_to_next_open_stop_loss_exit_also_fills_at_that_days_open(self):
+        """Consistency with execution_realism_engine.py's own
+        close_to_next_open mode (used for EXP-078's research validation),
+        which substitutes the exit price uniformly regardless of WHY the
+        trade closed -- so a stop-loss-triggered exit here must also fill
+        at that day's Open, not the raw stop_loss price."""
+        strategy = _OneDayHoldStrategy()   # stop_loss = entry * 0.5 = 50.0
+        config = pte.ExecutionRealismConfig(fill_timing="close_to_next_open")
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1), execution_config=config)
+
+        # Low(40) breaches the 50.0 stop -- Open(60) is what should fill.
+        stop_hit_data = {"SYM": _one_day_df("2024-01-02", 60, 65, 40, 45)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: stop_hit_data,
+                                as_of_date=datetime.date(2024, 1, 2), execution_config=config)
+        self.assertEqual(result["new_exits"][0]["reason"], "stop_loss")
+        self.assertAlmostEqual(result["new_exits"][0]["exit_price"], 60.0)
 
     def test_cash_decreases_by_cost_on_entry(self):
         strategy = _AlwaysQualifiesStrategy()

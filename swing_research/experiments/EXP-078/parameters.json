@@ -1,0 +1,22 @@
+{
+  "data_period": "2016-09-06 to 2026-09-04",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN, standard. 21-day formation window: MINOR-to-MODERATE -- a restatement into this program's own convention, not the paper's single prescribed window. Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as every prior cross-sectional strategy. 1-trading-day hold under close_to_next_open fills (see scope_reductions above): MINOR, a direct, faithful isolation of the paper's own overnight round trip as of the 2026-09-06 fix -- the prior next_day_open-based run's MATERIAL, LIKELY-UNDERSTATING contamination no longer applies.",
+  "overnight_return_risk_pct_per_unit": 0.01,
+  "overnight_return_stop_loss_pct": 0.08,
+  "overnight_return_percentile_threshold": 90.0,
+  "overnight_return_formation_days": 21,
+  "overnight_return_holding_period_trading_days": 1,
+  "overnight_return_single_vintage": true,
+  "overnight_return_percentile_based_early_exit": false,
+  "execution_realism_config": {
+    "fill_timing": "close_to_next_open",
+    "methodology_note": "Re-run 2026-09-06 (see OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own module docstrings): the original 2026-09-05 run (EXP-076) used next_day_open, which shifts BOTH entry and exit to an Open price, spanning a full extra intraday session the source papers say moves opposite the effect under test -- REJECTed under that contaminated condition. close_to_next_open (execution_realism_engine.py, added 2026-09-06) leaves entry at that day's Close and substitutes only exit_date's own Open, giving the pure Close(entry_date) -> Open(exit_date) overnight round trip the paper describes. The zero-cost/same-day-close baseline is saved separately for transparency only, under diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics, and is explicitly NOT used for the verdict."
+  }
+}

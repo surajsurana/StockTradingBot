@@ -153,6 +153,40 @@ class TestFillTiming(unittest.TestCase):
         self.assertEqual(len(result["trades"]), 1)
         self.assertEqual(result["trades"][0].entry_price, t.entry_price)
 
+    def test_close_to_next_open_leaves_entry_alone_and_substitutes_only_exit(self):
+        """Added 2026-09-06 for Overnight Return Anomaly's re-run --
+        purpose-built asymmetric mode: entry_price (already that day's
+        Close, from the raw simulation) is UNTOUCHED; only exit_price is
+        replaced, with exit_date's OWN Open (not the day after, unlike
+        next_day_open) -- since a 1-trading-day hold already makes
+        exit_date the very next trading day after entry_date, this gives
+        exactly Close(entry_date) -> Open(exit_date), the pure overnight
+        round trip next_day_open's symmetric shift cannot express."""
+        dates = pd.bdate_range("2023-01-01", periods=80)
+        df = _make_price_history()
+        data = {"TEST.NS": df}
+        t = _make_trade(entry_idx=40, exit_idx=41, dates=dates)  # a genuine 1-trading-day hold
+        result = apply_execution_realism([t], data, fill_timing="close_to_next_open")
+        r = result["trades"][0]
+        self.assertAlmostEqual(r.entry_price, t.entry_price)  # untouched
+        exit_pos = list(df.index.date).index(t.exit_date)
+        self.assertAlmostEqual(r.exit_price, float(df.iloc[exit_pos]["Open"]))  # exit_date's OWN open
+
+    def test_close_to_next_open_trade_at_end_of_data_is_skipped_not_crashed(self):
+        import datetime as _dt
+        from dataclasses import replace as _replace
+
+        df = _make_price_history(n=50)
+        data = {"TEST.NS": df}
+        dates = pd.bdate_range("2023-01-01", periods=50)
+        t = _make_trade(entry_idx=40, exit_idx=49, dates=dates)
+        # Force exit_date to a date with no bar at all in df, to exercise the skip path.
+        t = _replace(t, exit_date=dates[-1].date() + _dt.timedelta(days=30))
+        result = apply_execution_realism([t], data, fill_timing="close_to_next_open")
+        self.assertEqual(result["skipped_no_next_day"], 1)
+        self.assertEqual(len(result["trades"]), 1)
+        self.assertEqual(result["trades"][0].entry_price, t.entry_price)
+
 
 class TestApproximateDailyEquity(unittest.TestCase):
     def test_dense_series_reproduces_baseline_metrics_exactly_for_zero_effect_change(self):

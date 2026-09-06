@@ -19,13 +19,17 @@ from strategies.base import Signal as AgentSignal
 from swing_research.base import Signal as SwingSignal
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
-# The two already-PASS Swing Research strategies Portfolio C tests the
-# agent layer against -- see the design review's Part 3 recommendation
-# ("anchor on a validated Swing strategy" over reviving a REJECT strategy
-# or a fully autonomous scan). Confirmed 2026-09-01, per explicit
-# direction, alongside Portfolio B (a separate, fixed-watchlist track,
-# built after Portfolio C).
-ANCHOR_STRATEGY_KEYS = ("max_effect", "short_term_reversal")
+# The Swing Research strategies Portfolio C tests the agent layer
+# against -- see the design review's Part 3 recommendation ("anchor on a
+# validated Swing strategy" over reviving a REJECT strategy or a fully
+# autonomous scan). max_effect/short_term_reversal confirmed 2026-09-01,
+# per explicit direction, alongside Portfolio B (a separate, fixed-
+# watchlist track, built after Portfolio C). ma_pullback/
+# volume_backed_breakout added 2026-09-06, per explicit direction, after
+# their own promotion to Pool A (SW-014/SW-015) -- both informally
+# backtested (not walk-forward validated the way the original two were),
+# same caveat that applies to their Pool A deployment.
+ANCHOR_STRATEGY_KEYS = ("max_effect", "short_term_reversal", "ma_pullback", "volume_backed_breakout")
 
 _SPECS_BY_KEY = {spec.strategy_key: spec for spec in PAPER_TRADING_STRATEGY_SPECS}
 

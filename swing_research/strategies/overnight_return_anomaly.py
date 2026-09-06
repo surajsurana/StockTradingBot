@@ -47,34 +47,29 @@ candidate per the regenerated roadmap, swing_research/RESEARCH_ROADMAP.md)
    Estimated impact: MINOR-to-MODERATE -- the papers show the persistence
    effect exists across several formation windows, but effect size is not
    guaranteed to be identical at every horizon.
-3. *** THE SINGLE MOST IMPORTANT DISCLOSED GAP FOR THIS STRATEGY ***
-   HOLDING PERIOD = 1 TRADING DAY, the shortest this program's
+3. HOLDING PERIOD = 1 TRADING DAY, the shortest this program's
    Trade-based (single entry_price/exit_price per trade, no intra-trade
    session accounting) backtesting engine can express -- deliberately
-   the shortest possible hold, to get as close as this engine can to
-   isolating the overnight component alone. Combined with next-day-open
-   fill timing (see run_overnight_return_experiment() in
-   research_director.py), this still does NOT achieve a pure
-   buy-at-close/sell-at-next-open round trip: with fill_timing=
-   "next_day_open", BOTH the entry and exit price get shifted to an
-   Open price (see execution_realism_engine.py's apply_execution_realism()
-   -- entry_date and exit_date each resolve to the NEXT trading day's
-   Open), so a 1-trading-day hold is actually filled Open(t+1) to
-   Open(t+2) -- ONE FULL INTRADAY SESSION plus its flanking overnight
-   moves, not overnight return alone. Per the source papers' own central
-   finding, that intraday session's return is expected to move in the
-   OPPOSITE direction from the overnight-persistence effect being tested
-   here -- so this implementation's measured return is a NET of the
-   effect under test and a same-magnitude, oppositely-signed
-   contaminating effect, not the pure signal the papers isolate.
-   Estimated impact: MATERIAL, DIRECTIONALLY UNKNOWN (specifically:
-   LIKELY UNDERSTATES the pure overnight-only effect, since the
-   intraday-reversal component the paper documents works directly
-   against it here) -- this is disclosed as the primary reason this
-   strategy's result should be read as a LOWER-BOUND test of the
-   underlying mechanism, not a faithful isolation of it. A true
-   overnight-only backtest would require a different, session-aware
-   execution model this program does not have.
+   the shortest possible hold, to isolate the overnight component alone.
+   FIXED 2026-09-06 (was previously the single most important disclosed
+   gap in this strategy, contaminating its original 2026-09-05 run,
+   EXP-076): combined with fill_timing="close_to_next_open" (added
+   2026-09-06 to execution_realism_engine.py, purpose-built for this
+   strategy -- see run_overnight_return_experiment() in
+   research_director.py and that engine function's own new branch), this
+   NOW achieves a genuine buy-at-close/sell-at-next-open round trip.
+   The ORIGINAL run used fill_timing="next_day_open", which shifts BOTH
+   the entry and exit to an Open price, so a 1-trading-day hold actually
+   filled Open(t+1) to Open(t+2) -- one full intraday session plus its
+   flanking overnight moves, not overnight return alone, netting the
+   effect under test against a same-magnitude, oppositely-signed
+   contaminating return per the papers' own "tug of war" finding.
+   close_to_next_open leaves entry_price at that day's Close (correct,
+   no substitution needed) and replaces only exit_price with exit_date's
+   OWN Open (not the day after) -- since this strategy's 1-trading-day
+   hold already makes exit_date the very next trading day after entry,
+   this is now exactly Close(entry_date) -> Open(exit_date), the pure
+   overnight round trip the papers describe.
 4. EXIT RULE: ONLY the unconditional 1-trading-day time-stop above, OR
    the synthetic protective stop below, whichever comes first.
    Deliberately NO percentile-based early exit -- same discipline

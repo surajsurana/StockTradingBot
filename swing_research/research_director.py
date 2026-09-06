@@ -906,20 +906,30 @@ def run_overnight_return_experiment(data: dict, start_date: date, end_date: date
 
     UNLIKE most prior strategies but LIKE Amihud (SW-010): passes
     walk_forward_fn=execution_realism_engine.run_walk_forward_execution_realistic
-    and a full_period_trade_adjuster, both pre-bound with next-day-open
-    fill timing ONLY (no ADV participation cap, no ILLIQ-derived cost --
-    this strategy's own disclosed methodological tension is specifically
-    about FILL TIMING, not trading cost/liquidity, so only that one
-    execution-realism dimension is turned on, per this framework's own
-    "config-driven, per explicit direction" philosophy: turning on a
-    dimension is a deliberate per-strategy decision, not a bundle). See
-    OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own
-    module docstrings for why even this does NOT achieve a pure
-    overnight-only round trip (the single most important disclosed gap
-    for this strategy) -- the ACCEPTANCE VERDICT here still reflects
-    next-day-open fills, not a same-day-close backtest, for the same
-    reason Amihud's does: it is the more realistic of the two available
-    options, not because it fully solves the fidelity gap.
+    and a full_period_trade_adjuster, both pre-bound with fill timing ONLY
+    (no ADV participation cap, no ILLIQ-derived cost -- this strategy's
+    own disclosed methodological tension is specifically about FILL
+    TIMING, not trading cost/liquidity, so only that one execution-realism
+    dimension is turned on).
+
+    RE-RUN 2026-09-06 (the original 2026-09-05 run, EXP-076, REJECTed
+    under contaminated conditions): uses fill_timing="close_to_next_open"
+    (added 2026-09-06), NOT "next_day_open". next_day_open shifts BOTH
+    the entry and exit to an Open price, which for a 1-trading-day hold
+    means the realized round trip spans Open(t+1) to Open(t+2) -- a full
+    EXTRA intraday session on top of the overnight gap this strategy
+    means to isolate, which the source papers' own "tug of war" finding
+    says moves in the OPPOSITE direction from the effect under test. This
+    was EXP-076's central, disclosed flaw. close_to_next_open leaves
+    entry_price alone (already that day's Close -- correct) and only
+    substitutes exit_price with exit_date's OWN Open (not the day after)
+    -- since the strategy's 1-trading-day hold already makes exit_date
+    the very next trading day after entry, this now gives EXACTLY
+    Close(entry_date) -> Open(exit_date), the pure overnight round trip
+    the paper actually describes. See OvernightReturnAnomalyStrategy's
+    and OVERNIGHT_RETURN_ANOMALY's own module docstrings (updated
+    alongside this fix) and execution_realism_engine.py's own
+    close_to_next_open branch for the full explanation.
     """
     from functools import partial
 
@@ -933,7 +943,7 @@ def run_overnight_return_experiment(data: dict, start_date: date, end_date: date
     overnight_percentiles = compute_overnight_return_percentile_ranks(data)
     extra_columns = {symbol: series.rename("overnight_percentile") for symbol, series in overnight_percentiles.items()}
 
-    execution_realism_kwargs = dict(fill_timing="next_day_open")
+    execution_realism_kwargs = dict(fill_timing="close_to_next_open")
     walk_forward_fn = partial(run_walk_forward_execution_realistic, **execution_realism_kwargs)
 
     def full_period_trade_adjuster(trades: list, full_data: dict) -> list:
@@ -957,11 +967,16 @@ def run_overnight_return_experiment(data: dict, start_date: date, end_date: date
             "overnight_return_percentile_based_early_exit": False,
             "transaction_costs_modeled": False, "slippage_modeled": False,
             "execution_realism_config": {
-                "fill_timing": "next_day_open",
+                "fill_timing": "close_to_next_open",
                 "methodology_note": (
-                    "See OvernightReturnAnomalyStrategy's and OVERNIGHT_RETURN_ANOMALY's own module "
-                    "docstrings for the full disclosed gap: next-day-open fills on a 1-trading-day "
-                    "hold still span one full intraday session, not a pure overnight-only round trip. "
+                    "Re-run 2026-09-06 (see OvernightReturnAnomalyStrategy's and "
+                    "OVERNIGHT_RETURN_ANOMALY's own module docstrings): the original 2026-09-05 run "
+                    "(EXP-076) used next_day_open, which shifts BOTH entry and exit to an Open price, "
+                    "spanning a full extra intraday session the source papers say moves opposite the "
+                    "effect under test -- REJECTed under that contaminated condition. "
+                    "close_to_next_open (execution_realism_engine.py, added 2026-09-06) leaves entry "
+                    "at that day's Close and substitutes only exit_date's own Open, giving the pure "
+                    "Close(entry_date) -> Open(exit_date) overnight round trip the paper describes. "
                     "The zero-cost/same-day-close baseline is saved separately for transparency only, "
                     "under diagnostic_zero_cost_baseline / walk_forward_diagnostic_zero_cost_metrics, "
                     "and is explicitly NOT used for the verdict."

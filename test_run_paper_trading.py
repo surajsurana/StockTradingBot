@@ -50,6 +50,7 @@ class TestStrategyFactoryExtraColumnNaming(unittest.TestCase):
         "short_term_reversal": "reversal_percentile",
         "minervini_trend_template_filter": "rs_percentile",
         "cross_sectional_momentum": "momentum_percentile",
+        "overnight_return_anomaly": "overnight_percentile",
     }
 
     def test_extra_columns_are_named_what_precompute_expects(self):
@@ -86,6 +87,36 @@ class TestStrategyFactoryExtraColumnNaming(unittest.TestCase):
                 self.assertIn(expected_column, df.columns)
                 self.assertTrue(df[expected_column].notna().any(),
                                  f"{strategy_key}: {expected_column} column exists but is entirely NaN")
+
+
+class TestPerStrategyExecutionConfigOverride(unittest.TestCase):
+    """Regression test for the exact same class of silent-mismatch bug
+    TestStrategyFactoryExtraColumnNaming above guards against, but for
+    execution_config instead of the percentile column: Overnight Return
+    Anomaly's research verdict (EXP-078, PASS) was validated under
+    fill_timing="close_to_next_open", NOT this file's own
+    _DEFAULT_EXECUTION_CONFIG ("next_day_open") every other strategy
+    uses. Without the override wiring (strategy_catalog.py's
+    execution_config_factory -> this file's _STRATEGY_FACTORIES dict ->
+    _run_one()'s config.get("execution_config", ...) fallback), live
+    paper trading would silently re-run under EXP-076's REJECTed,
+    contaminated mechanics instead."""
+
+    def test_overnight_return_anomaly_uses_close_to_next_open(self):
+        config = rpt._STRATEGY_FACTORIES["overnight_return_anomaly"]
+        self.assertIn("execution_config", config)
+        self.assertEqual(config["execution_config"].fill_timing, "close_to_next_open")
+
+    def test_every_other_strategy_has_no_override(self):
+        """Confirms this is an OPT-IN, per-strategy mechanism -- every
+        strategy that never set execution_config_factory in the catalog
+        must have no "execution_config" key in _STRATEGY_FACTORIES at
+        all, falling through to _DEFAULT_EXECUTION_CONFIG unchanged."""
+        for strategy_key, config in rpt._STRATEGY_FACTORIES.items():
+            if strategy_key == "overnight_return_anomaly":
+                continue
+            with self.subTest(strategy_key=strategy_key):
+                self.assertNotIn("execution_config", config)
 
 
 def _fake_record(strategy_key, display_name):

@@ -21,6 +21,9 @@ Maintained by `swing_research/research_roadmap.py` (Published Research Analyst's
 | MAX Effect (Lottery-Demand Anomaly) | SW-011 | PASS | PAPER_TRADING |
 | Idiosyncratic Volatility Anomaly | SW-012 | INCONCLUSIVE | RESEARCH |
 | Turn-of-the-Month Effect | SW-013 | PASS | PAPER_TRADING |
+| Moving Average Pullback | SW-014 | NOT_YET_EVALUATED | PAPER_TRADING |
+| Volume-Backed Breakout | SW-015 | NOT_YET_EVALUATED | PAPER_TRADING |
+| Overnight Return Anomaly | SW-016 | PASS | PAPER_TRADING |
 
 ## Scoring Methodology
 

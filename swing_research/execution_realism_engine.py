@@ -241,6 +241,37 @@ def apply_execution_realism(trades: list, data: dict,
                 new_trades.append(t)
                 continue
             entry_price, exit_price = new_entry, new_exit
+        elif fill_timing == "close_to_next_open":
+            # Added 2026-09-06, purpose-built for Overnight Return
+            # Anomaly's re-run -- a genuine "buy at close, sell at next
+            # day's open" round trip, DIFFERENT from "next_day_open"
+            # above (which shifts BOTH legs one session later, adding an
+            # extra full trading day's exposure on each side -- exactly
+            # the disclosed fidelity gap that contaminated EXP-076's
+            # original REJECT). entry_price is left as-is: the raw
+            # simulation's own entry_price already IS that day's Close
+            # (every strategy's entry_signal_at() returns row.Close), the
+            # correct "buy at close" leg with no substitution needed.
+            # Only exit_price is replaced -- with exit_date's OWN Open
+            # (not the day after, the way _next_trading_day_open works),
+            # since the strategy's 1-trading-day holding period already
+            # makes exit_date the very next trading day after entry_date
+            # -- so this is exactly Close(entry_date) -> Open(exit_date),
+            # the pure overnight return, nothing more. Only meaningful for
+            # a strategy whose own holding period is deliberately exactly
+            # one overnight gap; not a general-purpose realism option
+            # other strategies should reach for.
+            df = data.get(symbol)
+            if df is None or df.empty:
+                skipped_no_next_day += 1
+                new_trades.append(t)
+                continue
+            exit_day_rows = df[df.index.date == exit_date]
+            if exit_day_rows.empty:
+                skipped_no_next_day += 1
+                new_trades.append(t)
+                continue
+            exit_price = float(exit_day_rows.iloc[0]["Open"])
 
         # 2. Volume-relative sizing cap -- rescale quantity (and PnL
         # proportionally, exact since PnL is linear in quantity here).

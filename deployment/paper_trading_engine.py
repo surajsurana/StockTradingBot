@@ -632,6 +632,29 @@ def run_daily(strategy_key: str, strategy: Strategy,
 
             if exit_price is not None:
                 quantity = pos_state["quantity"]
+                if execution_config.fill_timing == "close_to_next_open":
+                    # Added 2026-09-06, purpose-built for Overnight Return
+                    # Anomaly's promotion to live paper trading -- matches
+                    # execution_realism_engine.py's own close_to_next_open
+                    # mode used for its research validation (EXP-078).
+                    # DIFFERENT from "next_day_open" below: this EOD script
+                    # only ever runs AFTER today's market close, so by the
+                    # time it detects an exit condition using TODAY's row,
+                    # today's Open is already known historical data, not a
+                    # future unknown price -- no deferral to tomorrow is
+                    # needed or correct here. Substitutes today's own Open
+                    # for whatever exit_price was computed above (stop_loss/
+                    # target/signal_exit), then falls through to the
+                    # ordinary immediate-fill path below (the "else"
+                    # branch), since this value is not "next_day_open".
+                    # The entry side needs no equivalent change: it already
+                    # fills immediately at that day's Close (the ordinary
+                    # same_day_close path), which for this strategy's
+                    # entry_signal_at() already IS the correct "buy at
+                    # close" leg -- together this yields exactly
+                    # Close(entry_date) -> Open(exit_date), the pure
+                    # overnight round trip.
+                    exit_price = float(row.Open)
                 if execution_config.fill_timing == "next_day_open":
                     # Queue for tomorrow's Open -- NOT filled today, per
                     # explicit direction (no lookahead: today's decision,
