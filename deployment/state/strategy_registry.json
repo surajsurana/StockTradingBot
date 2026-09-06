@@ -280,5 +280,47 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-013",
     "primary_experiment_id": "EXP-050"
+  },
+  "ma_pullback": {
+    "strategy_key": "ma_pullback",
+    "display_name": "Moving Average Pullback",
+    "strategy_family": "swing_research ported strategy (informally backtested, not walk-forward validated)",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1788672741.997075,
+        "reason": "Per explicit direction (2026-09-06): informally backtested (5yr/26-symbol, single-pass, no walk-forward validation) in strategies/ track, then ported to Pool A. research_verdict deliberately left NOT_YET_EVALUATED -- never run through the rigorous swing_research walk-forward pipeline, same precedent as PEAD (SW-007)."
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-014",
+    "primary_experiment_id": ""
+  },
+  "volume_backed_breakout": {
+    "strategy_key": "volume_backed_breakout",
+    "display_name": "Volume-Backed Breakout",
+    "strategy_family": "swing_research ported strategy (informally backtested, not walk-forward validated)",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1788672742.0158238,
+        "reason": "Per explicit direction (2026-09-06): informally backtested (5yr/26-symbol, single-pass, no walk-forward validation) in strategies/ track, then ported to Pool A. research_verdict deliberately left NOT_YET_EVALUATED -- never run through the rigorous swing_research walk-forward pipeline, same precedent as PEAD (SW-007)."
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-015",
+    "primary_experiment_id": ""
   }
 }

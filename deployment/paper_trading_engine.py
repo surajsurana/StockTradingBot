@@ -371,7 +371,9 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
             continue
         cash -= cost + execution_config.brokerage_flat_rs
         positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
-                              "quantity": quantity, "stop_loss": stop_loss}
+                              "quantity": quantity, "stop_loss": stop_loss,
+                              **({"target_price": pending["target_price"]}
+                                 if pending.get("target_price") is not None else {})}
         new_entries.append({"symbol": symbol, "entry_price": fill_price, "quantity": quantity,
                              "stop_loss": stop_loss, "fill_timing": "next_day_open",
                              "signal_date": pending["signal_date"],
@@ -506,6 +508,15 @@ def run_daily(strategy_key: str, strategy: Strategy,
     letting it wind itself down to zero positions over time as each
     holding's own exit condition eventually fires.
 
+    Fixed profit targets (added 2026-09-06, per explicit direction -- "we
+    must not play with strategy rules"): if a strategy's entry_signal_at()
+    sets Signal.target_price, this function checks it mechanically at the
+    SAME priority tier as the stop-loss check (against the day's High,
+    BEFORE the strategy's own exit_signal_at() is consulted) -- see
+    Signal.target_price's own docstring in swing_research/base.py. A
+    complete no-op (byte-identical prior behavior) for every strategy that
+    leaves target_price at its None default.
+
     Returns a summary dict: {"status": "processed"|"skipped_already_processed",
     "as_of_date":..., "new_entries": [...], "new_exits": [...],
     "new_pending_entries": [...], "new_pending_exits": [...] (signals
@@ -601,9 +612,18 @@ def run_daily(strategy_key: str, strategy: Strategy,
             )
             exit_price = None
             exit_reason = None
+            target_price = pos_state.get("target_price")
             if float(row.Low) <= pos_state["stop_loss"]:
                 exit_price = pos_state["stop_loss"]
                 exit_reason = "stop_loss"
+            elif target_price is not None and float(row.High) >= target_price:
+                # Engine-level, mechanical target check (added 2026-09-06,
+                # same tier/priority as the stop-loss check above, BEFORE
+                # the strategy's own exit_signal_at()) -- see Signal.target_price's
+                # own docstring in swing_research/base.py. A no-op for
+                # every strategy that never sets target_price (None here).
+                exit_price = target_price
+                exit_reason = "target"
             else:
                 signal_exit = strategy.exit_signal_at(row, open_position)
                 if signal_exit is not None:
@@ -664,7 +684,9 @@ def run_daily(strategy_key: str, strategy: Strategy,
                         pending_entries[symbol] = {"stop_loss": signal.stop_loss,
                                                     "signal_date": target_date.isoformat(),
                                                     "signal_price": signal.entry_price,
-                                                    "confidence": signal.confidence}
+                                                    "confidence": signal.confidence,
+                                                    **({"target_price": signal.target_price}
+                                                       if signal.target_price is not None else {})}
                         new_pending_entries.append({"symbol": symbol, "stop_loss": signal.stop_loss,
                                                      "signal_date": target_date.isoformat(),
                                                      "signal_price": signal.entry_price})
@@ -678,6 +700,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
                             positions[symbol] = {
                                 "entry_price": fill_price, "entry_date": target_date.isoformat(),
                                 "quantity": quantity, "stop_loss": signal.stop_loss,
+                                **({"target_price": signal.target_price}
+                                   if signal.target_price is not None else {}),
                             }
                             new_entries.append({"symbol": symbol, "entry_price": fill_price,
                                                  "quantity": quantity, "stop_loss": signal.stop_loss})

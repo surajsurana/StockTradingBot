@@ -189,6 +189,36 @@ class _ConfidenceBySymbolStrategy(Strategy):
         return None
 
 
+class _TargetPriceStrategy(Strategy):
+    """Test double for Signal.target_price (added 2026-09-06, "we must not
+    play with strategy rules") -- fires on the first bar, sets a FIXED
+    target_price 10% above entry, and (like a real fixed-target strategy)
+    never implements its own exit_signal_at() -- the exit is meant to be
+    entirely engine-mechanical (stop-loss or target), same as
+    ma_pullback.py/volume_backed_breakout_pool_a.py."""
+    name = "target_price_test_strategy"
+    max_units = 1
+    risk_pct_per_unit = 0.01
+    min_lookback_days = 0
+
+    def precompute(self, price_history):
+        df = price_history.copy()
+        df["signal_day"] = False
+        if len(df) > 0:
+            df.iloc[-1, df.columns.get_loc("signal_day")] = True
+        return df
+
+    def entry_signal_at(self, row):
+        if not bool(row.signal_day):
+            return None
+        entry_price = float(row.Close)
+        return Signal(symbol="", direction="BUY", entry_price=entry_price,
+                      stop_loss=entry_price * 0.9, target_price=entry_price * 1.1,
+                      strategy_name=self.name)
+        # exit_signal_at left at the base class default (always None) --
+        # deliberately, matching a real fixed-target strategy.
+
+
 def _one_day_df(date_str, open_, high, low, close):
     idx = pd.DatetimeIndex([pd.Timestamp(date_str)])
     return pd.DataFrame({"Open": [open_], "High": [high], "Low": [low], "Close": [close],
@@ -300,6 +330,92 @@ class TestPaperTradingEngine(unittest.TestCase):
         result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
                                 as_of_date=datetime.date(2024, 1, 1))
         self.assertEqual(len(result["new_entries"]), 1)
+
+    def test_target_price_none_by_default_is_a_complete_noop(self):
+        """Every strategy already in this program leaves target_price at
+        its None default -- confirms that path is untouched: an existing
+        strategy's position (no target_price key at all in the persisted
+        dict) is unaffected by the new elif branch."""
+        strategy = _AlwaysQualifiesStrategy()
+        data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: data,
+                      as_of_date=datetime.date(2024, 1, 1))
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("target_price", portfolio["positions"]["SYM"])
+
+    def test_target_price_hit_closes_position_at_target(self):
+        """The core new capability ("we must not play with strategy
+        rules") -- a strategy that sets target_price gets a real,
+        engine-mechanical exit at that price once the day's High reaches
+        it, exactly like the existing stop-loss mechanism."""
+        strategy = _TargetPriceStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertAlmostEqual(portfolio["positions"]["SYM"]["target_price"], 110.0)
+
+        # Target is entry(100) * 1.1 = 110 -- today's High reaches it.
+        target_hit_data = {"SYM": _one_day_df("2024-01-02", 108, 112, 107, 109)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: target_hit_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        self.assertEqual(len(result["new_exits"]), 1)
+        self.assertEqual(result["new_exits"][0]["reason"], "target")
+        self.assertAlmostEqual(result["new_exits"][0]["exit_price"], 110.0)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertNotIn("SYM", portfolio["positions"])
+
+    def test_target_not_hit_position_stays_open(self):
+        strategy = _TargetPriceStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))
+
+        # High(105) stays below the target(110), Low(103) stays above the stop(90).
+        no_hit_data = {"SYM": _one_day_df("2024-01-02", 103, 105, 103, 104)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: no_hit_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        self.assertEqual(result["new_exits"], [])
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertIn("SYM", portfolio["positions"])
+
+    def test_stop_loss_still_takes_priority_over_target_same_day(self):
+        """If a single day's range is wide enough to touch BOTH the stop
+        and the target (a large gap/whipsaw), the stop-loss check must
+        still win -- same documented priority as the module's own
+        "protective-stop hits are checked... BEFORE checking the
+        strategy's own signal-based exit" convention, now extended to
+        also come before the target check."""
+        strategy = _TargetPriceStrategy()
+        entry_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: entry_data,
+                      as_of_date=datetime.date(2024, 1, 1))
+
+        # Stop is 90, target is 110 -- one wild day's Low/High span both.
+        whipsaw_data = {"SYM": _one_day_df("2024-01-02", 100, 115, 85, 95)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: whipsaw_data,
+                                as_of_date=datetime.date(2024, 1, 2))
+        self.assertEqual(len(result["new_exits"]), 1)
+        self.assertEqual(result["new_exits"][0]["reason"], "stop_loss")
+        self.assertAlmostEqual(result["new_exits"][0]["exit_price"], 90.0)
+
+    def test_target_price_survives_next_day_open_queue_and_fill(self):
+        """target_price must be carried through the pending_entries ->
+        positions round trip under fill_timing="next_day_open" -- the
+        SAME kind of gap a naive change could silently drop (confidence
+        already has this exact "carried through the queue" precedent)."""
+        strategy = _TargetPriceStrategy()
+        config = pte.ExecutionRealismConfig(fill_timing="next_day_open")
+        detect_data = {"SYM": _one_day_df("2024-01-01", 100, 101, 99, 100)}
+        result = pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: detect_data,
+                                as_of_date=datetime.date(2024, 1, 1), execution_config=config)
+        self.assertEqual(len(result["new_pending_entries"]), 1)
+
+        fill_data = {"SYM": _one_day_df("2024-01-02", 101, 103, 100, 102)}
+        pte.run_daily(self.strategy_key, strategy, fetch_data_fn=lambda: fill_data,
+                      as_of_date=datetime.date(2024, 1, 2), execution_config=config)
+        portfolio = pte.load_portfolio(self.strategy_key)
+        self.assertAlmostEqual(portfolio["positions"]["SYM"]["target_price"], 110.0)
 
     def test_cash_decreases_by_cost_on_entry(self):
         strategy = _AlwaysQualifiesStrategy()

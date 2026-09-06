@@ -130,6 +130,26 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # this strategy (date-driven, not percentile-driven); candidate_ranking.py's
         # date-seeded tie-break is the sole ordering mechanism, same as Turtle System 2.
     ),
+    PaperTradingStrategySpec(
+        strategy_key="ma_pullback",
+        display_name="Moving Average Pullback",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.ma_pullback", fromlist=["MaPullbackStrategy"]
+        ).MaPullbackStrategy(),
+        # No compute_extra_columns_fn -- a per-symbol pattern signal (uptrend + pullback +
+        # bullish reaction), not a cross-sectional decile sort; same "no natural ranking
+        # measure" situation as Turtle System 2/Turn-of-the-Month.
+    ),
+    PaperTradingStrategySpec(
+        strategy_key="volume_backed_breakout",
+        display_name="Volume-Backed Breakout",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.volume_backed_breakout_pool_a", fromlist=["VolumeBackedBreakoutPoolAStrategy"]
+        ).VolumeBackedBreakoutPoolAStrategy(),
+        # No compute_extra_columns_fn -- a per-symbol pattern signal (new N-day high + volume
+        # confirmation), not a cross-sectional decile sort; same "no natural ranking measure"
+        # situation as Turtle System 2/Turn-of-the-Month.
+    ),
 ]
 
 

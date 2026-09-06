@@ -57,6 +57,19 @@ class Signal:
     confidence: float = 1.0
     strategy_name: str = ""
     reason: str = ""
+    target_price: Optional[float] = None
+    # Added 2026-09-06, per explicit direction ("we must not play with
+    # strategy rules") -- an OPTIONAL fixed profit target, checked by the
+    # ENGINE (deployment/paper_trading_engine.py) the same mechanical way
+    # it already checks stop_loss (against the day's High, before the
+    # strategy's own exit_signal_at() is consulted), for strategies whose
+    # PUBLISHED/documented design exits at a fixed price rather than a
+    # time-stop or signal-based rule. None (the default) is a COMPLETE
+    # no-op for every strategy that doesn't set it -- byte-identical
+    # behavior to before this field existed. Only ma_pullback.py and
+    # volume_backed_breakout_pool_a.py set this so far; every other
+    # strategy in this program is faithfully time-stop/signal-exit based
+    # already and leaves this at None.
 
 
 @dataclass

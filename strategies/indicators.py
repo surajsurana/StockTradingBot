@@ -35,3 +35,16 @@ def bollinger_bands(close: pd.Series, period: int = 20, num_std: float = 2.0):
     upper = middle + num_std * std
     lower = middle - num_std * std
     return lower, middle, upper
+
+
+def macd(close: pd.Series, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9):
+    """Standard MACD: fast EMA minus slow EMA, with its own EMA as the
+    signal line. Returns (macd_line, signal_line, histogram) -- histogram
+    = macd_line - signal_line, positive once the fast EMA is accelerating
+    away from the slow EMA faster than the signal line has caught up."""
+    fast_ema = close.ewm(span=fast_period, adjust=False).mean()
+    slow_ema = close.ewm(span=slow_period, adjust=False).mean()
+    macd_line = fast_ema - slow_ema
+    signal_line = macd_line.ewm(span=signal_period, adjust=False).mean()
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
