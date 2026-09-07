@@ -18,10 +18,11 @@ import pandas as pd
 
 from research_lab.base import Signal, Strategy
 from research_lab.knowledge_base import load_conclusions, seed_orb_history
+from research_lab.pairs_base import PairSignal, PairStrategy
 from research_lab.quant_researcher import Hypothesis
 from research_lab.research_director import (
     build_ranking_prompt, build_review_prompt, hard_filter, parse_ranking_response, rank_and_select,
-    review_research_history, run_experiment_phase2,
+    review_research_history, run_backtest_with_audit, run_experiment_phase2,
 )
 
 
@@ -231,6 +232,93 @@ class TestRunExperimentPhase2Governance(unittest.TestCase):
         self.assertIn("REJECT", loaded["verdict"])
         # the enthusiastic narrative made it into observations, but did NOT flip the verdict
         self.assertIn("AMAZING", loaded["observations"])
+
+
+def _flat_bars(date_str, closes):
+    idx = pd.date_range(f"{date_str} 09:15", periods=len(closes), freq="5min")
+    return pd.DataFrame([{"Open": c, "High": c, "Low": c, "Close": c, "Volume": 1000} for c in closes], index=idx)
+
+
+class _FiresOnDivergencePairStrategy(PairStrategy):
+    """No correlation gate (the engine doesn't own that -- the real
+    strategy does), so no daily data is needed to get one deterministic
+    pair trade out of the fixture below."""
+    name = "fires_on_divergence"
+
+    def generate_pair_signal(self, bars_a_so_far, bars_b_so_far, spread_context=None):
+        mean, std = spread_context.get("baseline_mean"), spread_context.get("baseline_std")
+        if mean is None or std is None:
+            return None
+        z = (float(bars_a_so_far.iloc[-1]["Close"]) / float(bars_b_so_far.iloc[-1]["Close"]) - mean) / std
+        if abs(z) < 2.0:
+            return None
+        return PairSignal(long_leg="b" if z > 0 else "a", entry_zscore=z, stop_zscore=3.5,
+                          target_zscore=0.5, confidence=0.5, strategy_name=self.name)
+
+
+class TestPairsGovernance(unittest.TestCase):
+    """Same governance guarantee as above, through the pairs engine: the
+    Auditor's verdict is decided before the narrative and survives it.
+    Plus the one pairs-specific accounting rule -- capital is counted per
+    PAIR, not per underlying symbol."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        baseline_days = [d.strftime("%Y-%m-%d") for d in pd.bdate_range("2026-01-05", periods=20)]
+        df_a = pd.concat([_flat_bars(d, [200, 210, 200, 210]) for d in baseline_days]
+                         + [_flat_bars("2026-02-03", [200, 220, 215, 206])])
+        df_b = pd.concat([_flat_bars(d, [100, 100, 100, 100]) for d in baseline_days]
+                         + [_flat_bars("2026-02-03", [100, 100, 100, 100])])
+        self.data = {"A": df_a, "B": df_b}
+        self.pairs = [("A", "B")]
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def test_capital_is_counted_per_pair_not_per_leg(self):
+        result = run_backtest_with_audit(
+            _FiresOnDivergencePairStrategy(), self.data, 100000, None, date(2026, 1, 5), date(2026, 2, 3),
+            n_walk_forward_windows=1, use_pairs=True, pairs=self.pairs,
+        )
+        # one pair trade: short 227 A @220 -> 206, long 500 B flat = +3178 on ONE
+        # 100000 bucket (the pair), not two (its legs) -> 3.18%, not 1.59%.
+        self.assertEqual(len(result["all_trades"]), 1)
+        self.assertAlmostEqual(result["out_of_sample_metrics"]["return_on_capital_pct"], 3.18)
+
+    def test_use_pairs_requires_pairs_and_excludes_cross_sectional(self):
+        with self.assertRaises(ValueError):
+            run_backtest_with_audit(_FiresOnDivergencePairStrategy(), self.data, 100000, None,
+                                    date(2026, 1, 5), date(2026, 2, 3), use_pairs=True, pairs=[])
+        with self.assertRaises(ValueError):
+            run_backtest_with_audit(_FiresOnDivergencePairStrategy(), self.data, 100000, None,
+                                    date(2026, 1, 5), date(2026, 2, 3), use_pairs=True, pairs=self.pairs,
+                                    use_cross_sectional=True, sector_map={"A": "x", "B": "x"})
+
+    def test_reject_verdict_preserved_and_pairs_recorded(self):
+        import json
+
+        exp_dir = os.path.join(self.tmp_dir, "experiments")
+        kb_path = os.path.join(self.tmp_dir, "kb.jsonl")
+        hyp = Hypothesis(name="Pairs Test", mechanism="m", rationale="r", rules="rules", distinctiveness="d")
+        # One trade is far below the Auditor's minimum sample -> REJECT,
+        # whatever the (mocked, enthusiastic) narrative says.
+        exp_id = run_experiment_phase2(
+            hypothesis=hyp, strategy=_FiresOnDivergencePairStrategy(), data=self.data,
+            capital_per_symbol=100000, start_date=date(2026, 1, 5), end_date=date(2026, 2, 3),
+            n_walk_forward_windows=1, use_pairs=True, pairs=self.pairs,
+            narrative_call_fn=lambda p: "Market-neutral GENIUS, approve immediately!",
+            experiments_dir=exp_dir, knowledge_base_path=kb_path, skip_regime_breakdown=True,
+        )
+        with open(os.path.join(exp_dir, exp_id, "verdict.md"), encoding="utf-8") as f:
+            self.assertIn("REJECT", f.read())
+        with open(os.path.join(exp_dir, exp_id, "parameters.json"), encoding="utf-8") as f:
+            params = json.load(f)
+        self.assertEqual(params["pairs"], ["A/B"])
+        self.assertEqual(sorted(params["symbols"]), ["A", "B"])
+        with open(os.path.join(exp_dir, exp_id, "metrics.json"), encoding="utf-8") as f:
+            metrics = json.load(f)
+        self.assertEqual(metrics["total_trades"], 1)
+        self.assertAlmostEqual(metrics["return_on_capital_pct"], 3.18)
 
 
 if __name__ == "__main__":

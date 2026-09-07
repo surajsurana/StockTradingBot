@@ -1,0 +1,74 @@
+{
+  "total_trades": 7,
+  "win_rate": 0.7143,
+  "profit_factor": 6.163,
+  "expectancy": 399.33,
+  "cagr": 1.72,
+  "sharpe_ratio": 3.079,
+  "sortino_ratio": 11.435,
+  "max_drawdown_pct": 0.08,
+  "recovery_factor": 7.013,
+  "monthly_returns_pct": {
+    "2026-06": 0.59,
+    "2026-08": -0.03
+  },
+  "annual_returns_pct": {
+    "2026": 0.56
+  },
+  "total_pnl": 2795.3,
+  "return_on_capital_pct": 0.56,
+  "walk_forward_metrics": [
+    {
+      "total_trades": 6,
+      "win_rate": 0.8333,
+      "profit_factor": 8.371,
+      "expectancy": 489.68,
+      "cagr": 3.69,
+      "sharpe_ratio": 4.678,
+      "sortino_ratio": 18.055,
+      "max_drawdown_pct": 0.08,
+      "recovery_factor": 7.371,
+      "monthly_returns_pct": {
+        "2026-06": 0.59
+      },
+      "annual_returns_pct": {
+        "2026": 0.59
+      },
+      "total_pnl": 2938.1,
+      "return_on_capital_pct": 0.59
+    }
+  ],
+  "out_of_sample_metrics": {
+    "total_trades": 1,
+    "win_rate": 0.0,
+    "profit_factor": 0.0,
+    "expectancy": -142.8,
+    "cagr": -0.17,
+    "sharpe_ratio": -2.421,
+    "sortino_ratio": -2.421,
+    "max_drawdown_pct": 0.03,
+    "recovery_factor": -1.0,
+    "monthly_returns_pct": {
+      "2026-08": -0.03
+    },
+    "annual_returns_pct": {
+      "2026": -0.03
+    },
+    "total_pnl": -142.8,
+    "return_on_capital_pct": -0.03
+  },
+  "audit_checks": {
+    "total_trades": 7,
+    "out_of_sample_trades": 1,
+    "walk_forward_consistency_fraction": 1.0,
+    "out_of_sample_expectancy": -142.8
+  },
+  "sector_breakdown": {
+    "Unknown": 2795.3
+  },
+  "time_of_day_breakdown": {
+    "9.0": 2409.2,
+    "10.0": 386.1
+  },
+  "regime_breakdown": {}
+}

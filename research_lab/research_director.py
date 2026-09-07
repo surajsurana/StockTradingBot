@@ -37,8 +37,8 @@ from typing import Callable, Optional
 
 import pandas as pd
 
-from research_lab import backtesting_engineer, experiment_manager, market_simulator, performance_analyst, \
-    statistical_auditor
+from research_lab import backtesting_engineer, experiment_manager, market_simulator, pairs_simulator, \
+    performance_analyst, statistical_auditor
 from research_lab.base import Strategy
 from research_lab.knowledge_base import load_entries, record_conclusion, rejected_mechanisms
 from research_lab.performance_analyst import compute_regime_breakdown, compute_sector_breakdown, \
@@ -117,7 +117,13 @@ def review_research_history(api_key: str = "", call_fn: Optional[Callable[[str],
     prior_conclusions = (render_conclusions_for_prompt(conclusions_path) if conclusions_path
                           else render_conclusions_for_prompt())
     prompt = build_review_prompt(entries, prior_conclusions)
-    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=2048))
+    # max_tokens=2048 was enough when history was just the short SEED-ORB
+    # entries, but as real experiments accumulate (each with a lengthy
+    # follow_up_ideas writeup in the knowledge base) Claude's extended
+    # thinking over the larger input can consume the whole budget before
+    # any text block is produced -- the same failure mode already fixed
+    # for the hypothesis-generation call below at max_tokens=16384.
+    call = call_fn or (lambda p: call_claude(p, api_key, max_tokens=16384))
     conclusion_text = call(prompt)
 
     exp_ids = [e.exp_id for e in entries]
@@ -266,7 +272,8 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
                              n_walk_forward_windows: int = 4, use_cross_sectional: bool = False,
                              sector_map: Optional[dict] = None,
                              nifty_data: Optional[pd.DataFrame] = None,
-                             leader_laggard_n: int = 5) -> dict:
+                             leader_laggard_n: int = 5, use_pairs: bool = False,
+                             pairs: Optional[list] = None, daily_data: Optional[dict] = None) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via backtesting_engineer.walk_forward_split(). The LAST window
@@ -283,9 +290,24 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
     MarketState.nifty_return_since_open_pct. Output shape is identical
     either way, so everything downstream (metrics/audit) is unaffected by
     which engine ran.
+
+    use_pairs: routes each window through pairs_simulator.simulate_pairs()
+    for a PairStrategy (research_lab/pairs_base.py). `pairs` (list of
+    (symbol_a, symbol_b)) is then required; `daily_data` ({symbol: daily
+    DataFrame}) feeds the correlation filter and is deliberately passed
+    through UNWINDOWED -- its 60-day lookback needs pre-window history,
+    and it's only ever read strictly before each simulated day anyway.
+    Capital denominator: one capital_per_symbol bucket PER PAIR (not per
+    underlying symbol -- `data` holds both legs of every pair, so
+    len(data) would double-count).
     """
     if use_cross_sectional and not sector_map:
         raise ValueError("use_cross_sectional=True requires a sector_map.")
+    if use_pairs and not pairs:
+        raise ValueError("use_pairs=True requires a non-empty pairs list.")
+    if use_pairs and use_cross_sectional:
+        raise ValueError("use_pairs and use_cross_sectional are mutually exclusive.")
+    capital_buckets = len(pairs) if use_pairs else len(data)
 
     windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
     walk_forward_metrics = []
@@ -303,12 +325,17 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
                 windowed_data, strategy, capital_per_symbol, risk_params.risk_per_trade_pct, sector_map,
                 risk_params=risk_params, nifty_data=windowed_nifty, leader_laggard_n=leader_laggard_n,
             )
+        elif use_pairs:
+            result = pairs_simulator.simulate_pairs(
+                windowed_data, pairs, strategy, capital_per_symbol,
+                daily_data=daily_data, risk_params=risk_params,
+            )
         else:
             result = backtesting_engineer.run_backtest(
                 strategy, windowed_data, capital_per_symbol, risk_params.risk_per_trade_pct, risk_params,
             )
         metrics = backtesting_engineer.compute_metrics(
-            result["trades"], capital_per_symbol * len(data), result["trading_calendar"],
+            result["trades"], capital_per_symbol * capital_buckets, result["trading_calendar"],
         )
         walk_forward_metrics.append(metrics)
         all_trades_by_window.append(result["trades"])
@@ -334,7 +361,9 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
                            narrative_call_fn: Optional[Callable[[str], str]] = None,
                            experiments_dir: Optional[str] = None, knowledge_base_path: Optional[str] = None,
                            skip_regime_breakdown: bool = False, use_cross_sectional: bool = False,
-                           nifty_data: Optional[pd.DataFrame] = None, leader_laggard_n: int = 5) -> str:
+                           nifty_data: Optional[pd.DataFrame] = None, leader_laggard_n: int = 5,
+                           use_pairs: bool = False, pairs: Optional[list] = None,
+                           daily_data: Optional[dict] = None) -> str:
     """
     Phase 2: given an already-implemented Strategy for the already-selected
     hypothesis, runs the full backtest -> audit -> narrative -> save
@@ -353,6 +382,9 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
     run_backtest_with_audit() -- for a Strategy that uses market_state.
     sector_map is loaded once, below, and reused for both this and the
     (unrelated) post-backtest sector P&L breakdown.
+    use_pairs/pairs/daily_data: see run_backtest_with_audit() -- for a
+    PairStrategy; `strategy` is then a pairs_base.PairStrategy, not a
+    base.Strategy. capital_per_symbol is then capital PER PAIR.
     """
     risk_params = risk_params or RiskParameters()
     sector_map = load_sector_map()
@@ -360,11 +392,13 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
         strategy, data, capital_per_symbol, risk_params, start_date, end_date, n_walk_forward_windows,
         use_cross_sectional=use_cross_sectional, sector_map=sector_map if use_cross_sectional else None,
         nifty_data=nifty_data, leader_laggard_n=leader_laggard_n,
+        use_pairs=use_pairs, pairs=pairs, daily_data=daily_data,
     )
     verdict = backtest_result["verdict"]
 
+    capital_buckets = len(pairs) if use_pairs else len(data)
     combined_metrics = backtesting_engineer.compute_metrics(
-        backtest_result["all_trades"], capital_per_symbol * len(data),
+        backtest_result["all_trades"], capital_per_symbol * capital_buckets,
         sorted({d for df in data.values() for d in df.index.date}),
     )
 
@@ -408,6 +442,7 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
                     "max_trades_per_day": risk_params.max_trades_per_day,
                     "daily_loss_limit_pct": risk_params.daily_loss_limit_pct,
                     "capital_per_symbol": capital_per_symbol, "symbols": list(data.keys()),
+                    "pairs": [f"{a}/{b}" for a, b in pairs] if use_pairs else None,
                     "n_walk_forward_windows": n_walk_forward_windows},
         data_period=f"{start_date} to {end_date}",
         metrics={**combined_metrics, "walk_forward_metrics": backtest_result["walk_forward_metrics"],

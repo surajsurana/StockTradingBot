@@ -27,6 +27,12 @@ research_lab/research_director.py's module docstring for why):
         market_state param (breadth/relative-strength/leader-laggard) --
         routes through research_lab/market_simulator.py instead of the
         single-symbol engine, and also fetches NIFTY intraday data.
+        Pass --pairs for a PairStrategy (research_lab/pairs_base.py) --
+        trades only research_lab/pairs_candidates.py's pre-selected
+        same-sector pairs through research_lab/pairs_simulator.py, and
+        also fetches daily candles for the correlation filter. --limit
+        is ignored in pairs mode. --pairs and --cross-sectional are
+        mutually exclusive.
 """
 
 import argparse
@@ -159,11 +165,15 @@ def run_propose(n: int):
 
 
 def run_continue(strategy_module: str, strategy_class: str, days: int, limit: int, windows: int,
-                  from_experiment: str = None, cross_sectional: bool = False):
+                  from_experiment: str = None, cross_sectional: bool = False, pairs: bool = False):
     from research_lab.research_director import run_experiment_phase2
     from research_lab.risk_manager_research import RiskParameters
     from data.fetch_kite_intraday import fetch_all_intraday
     from research_lab.quant_researcher import Hypothesis
+
+    if pairs and cross_sectional:
+        print("--pairs and --cross-sectional are mutually exclusive -- a strategy is one or the other.")
+        sys.exit(1)
 
     selection_reasoning = ""
     if from_experiment:
@@ -199,7 +209,16 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
     strategy_cls = getattr(module, strategy_class)
     strategy = strategy_cls()
 
-    symbols = LIQUID_UNIVERSE[:limit]
+    pair_list = None
+    if pairs:
+        from research_lab.pairs_candidates import PAIR_CANDIDATES, pair_symbols, validate_pair_candidates
+        validate_pair_candidates()   # loud failure BEFORE any fetch if the sector CSV disagrees
+        pair_list = PAIR_CANDIDATES
+        symbols = pair_symbols(pair_list)
+        print(f"Pairs mode: {len(pair_list)} pre-selected same-sector pairs "
+              f"({', '.join(f'{a}/{b}' for a, b in pair_list)})")
+    else:
+        symbols = LIQUID_UNIVERSE[:limit]
     to_date = date.today()
     from_date = to_date - timedelta(days=days)
     print(f"Fetching {days} days of 5-minute intraday candles for {len(symbols)} symbol(s) via Kite...")
@@ -218,6 +237,14 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
         print("Cross-sectional mode: fetching NIFTY 50 intraday candles for market_state...")
         nifty_data = fetch_nifty_intraday("5minute", from_date, to_date, settings)
 
+    daily_data = None
+    if pairs:
+        from data.fetch_historical import fetch_all
+        print("Pairs mode: fetching 2y of daily candles via yfinance for the 60-day correlation filter...")
+        daily_raw = fetch_all([f"{s}.NS" for s in symbols], period="2y")
+        daily_data = {key.removesuffix(".NS"): df for key, df in daily_raw.items()}
+        print(f"Daily data available for {len(daily_data)} symbol(s)")
+
     exp_id = run_experiment_phase2(
         hypothesis=winner, strategy=strategy, data=data,
         capital_per_symbol=settings.RESEARCH_LAB_VIRTUAL_CAPITAL,
@@ -226,6 +253,7 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
         risk_params=RiskParameters(), n_walk_forward_windows=windows,
         narrative_api_key=settings.ANTHROPIC_API_KEY,
         use_cross_sectional=cross_sectional, nifty_data=nifty_data,
+        use_pairs=pairs, pairs=pair_list, daily_data=daily_data,
     )
 
     from research_lab.experiment_manager import load_experiment
@@ -255,6 +283,10 @@ def main():
                               "instead of the single-symbol engine, and fetch NIFTY intraday data for "
                               "market_state.nifty_return_since_open_pct. Required for a Strategy whose "
                               "generate_signal() actually reads the market_state param.")
+    parser.add_argument("--pairs", action="store_true",
+                         help="Run a PairStrategy through research_lab/pairs_simulator.py on "
+                              "research_lab/pairs_candidates.py's pre-selected same-sector pairs only "
+                              "(ignores --limit), and fetch daily candles for the correlation filter.")
     args = parser.parse_args()
 
     if args.propose:
@@ -264,7 +296,8 @@ def main():
             print("--continue requires --strategy-module and --strategy-class")
             sys.exit(1)
         run_continue(args.strategy_module, args.strategy_class, args.days, args.limit, args.windows,
-                     from_experiment=args.from_experiment, cross_sectional=args.cross_sectional)
+                     from_experiment=args.from_experiment, cross_sectional=args.cross_sectional,
+                     pairs=args.pairs)
     else:
         print(__doc__)
 
