@@ -11,13 +11,40 @@ must still be caught, not missed). Run with:
 """
 
 import datetime
+import shutil
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
+import pool_d.state as pool_d_state
 from research_lab.base import Signal, Strategy
 from pool_d.engine import RISK_PER_TRADE_PCT, process_tick
 from run_pool_d import _is_market_hours
+
+
+class _IsolatedStateTestCase(unittest.TestCase):
+    """process_tick() calls pool_d.state.append_trade() on every exit --
+    unpatched, that writes real trades.jsonl entries into the actual
+    deployment/state/pool_d/ directory (confirmed: running this suite
+    once polluted that file with fake "SYM" trades). Every test class
+    that exercises an exit path inherits this to redirect append_trade()
+    at its two module-level path constants, same pattern as
+    test_deployment.py's own patch.object(pte, "PAPER_TRADING_STATE_DIR", ...)."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.patcher_dir = patch.object(pool_d_state, "POOL_D_STATE_DIR", self.tmpdir)
+        self.patcher_trades = patch.object(
+            pool_d_state, "POOL_D_TRADES_PATH", f"{self.tmpdir}/trades.jsonl")
+        self.patcher_dir.start()
+        self.patcher_trades.start()
+
+    def tearDown(self):
+        self.patcher_dir.stop()
+        self.patcher_trades.stop()
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 class _FixedEntryStrategy(Strategy):
@@ -65,7 +92,7 @@ def _base_state():
             "trades_today_by_symbol": {}, "realized_pnl_today_by_symbol": {}}
 
 
-class TestEntry(unittest.TestCase):
+class TestEntry(_IsolatedStateTestCase):
     def test_entry_opens_a_correctly_sized_position(self):
         state = _base_state()
         bars = _bars([(9, 15, 100, 101, 99, 100)])
@@ -107,7 +134,7 @@ class TestEntry(unittest.TestCase):
         self.assertEqual(result["new_entries"], [])
 
 
-class TestExit(unittest.TestCase):
+class TestExit(_IsolatedStateTestCase):
     def _open_position(self, state, entry_hh_mm=(9, 20), entry_price=100.0, stop_loss=95.0, target=110.0):
         entry_ts = pd.Timestamp(2026, 9, 7, *entry_hh_mm)
         state["positions"]["SYM"] = {
