@@ -39,7 +39,9 @@ tested against yfinance's own (undocumented) rate limits at this scale.
 Disclosed, not silently assumed to be fine.
 """
 
+import json
 import multiprocessing
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
@@ -159,3 +161,103 @@ def fetch_recent_earnings_events_chunked(symbols: list, as_of_date: date, lookba
                                        [(chunk, as_of_date, lookback_days) for chunk in chunks]):
             all_events.extend(chunk_events)
     return all_events
+
+
+# ---------------------------------------------------------------------------
+# Full announcement-date HISTORY (added 2026-09-07 for the Earnings
+# Announcement Premium research, swing_research/strategies/
+# earnings_announcement_premium.py). Everything above keeps only the most
+# recent announcement; this keeps every past one. Verified live 2026-09-07
+# that get_earnings_dates() reaches much further back than the "~24
+# quarters" this module's docstring was written against: RELIANCE 78
+# reported quarters (from 2007), TCS 87 (2005), CIPLA 85 (2004), PIIND 52
+# (2013) -- enough for a full 10-year backtest. Same yfinance reliability
+# and memory-leak caveats as above apply, hence the chunked variant and
+# the on-disk cache (a full ~457-symbol scan is minutes of wall time and
+# should be done once, then refreshed, not repeated per experiment run).
+# ---------------------------------------------------------------------------
+EARNINGS_DATES_FULL_HISTORY_LIMIT = 100   # yfinance raises "Yahoo caps limit at 100" above this (verified
+                                          # 2026-09-07); 100 rows still covers every NSE listing's full
+                                          # history (the longest seen, TCS, has 87 reported quarters)
+ANNOUNCEMENT_DATES_CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             "announcement_dates_cache.json")
+
+
+def fetch_announcement_date_history(symbols: list, limit: int = EARNINGS_DATES_FULL_HISTORY_LIMIT) -> dict:
+    """{symbol: sorted list of datetime.date} of every REPORTED announcement
+    (Reported EPS present -- forward-scheduled rows are dropped, same rule
+    as fetch_recent_earnings_events). DATE ONLY, the time component is not
+    trusted (see module docstring). Symbols that fail or return nothing
+    are omitted, not mapped to an empty list, so a caller can tell "not
+    fetched" from "fetched, no history"."""
+    history = {}
+    for symbol in symbols:
+        try:
+            df = yf.Ticker(symbol).get_earnings_dates(limit=limit)
+        except Exception:
+            continue
+        if df is None or df.empty or "Reported EPS" not in df.columns:
+            continue
+        reported = df[df["Reported EPS"].notna()]
+        if reported.empty:
+            continue
+        history[symbol] = sorted({ts.date() for ts in reported.index})
+    return history
+
+
+def _fetch_history_chunk_worker(args) -> dict:
+    symbols_chunk, limit = args
+    return fetch_announcement_date_history(symbols_chunk, limit=limit)
+
+
+def fetch_announcement_date_history_chunked(symbols: list, limit: int = EARNINGS_DATES_FULL_HISTORY_LIMIT,
+                                            chunk_size: int = DEFAULT_SCAN_CHUNK_SIZE) -> dict:
+    """Same contract as fetch_announcement_date_history(); same subprocess-
+    per-batch isolation as fetch_recent_earnings_events_chunked() for the
+    same yfinance memory-leak reason."""
+    if len(symbols) <= chunk_size:
+        return fetch_announcement_date_history(symbols, limit=limit)
+    chunks = [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
+    history = {}
+    with multiprocessing.Pool(processes=1, maxtasksperchild=1) as pool:
+        for chunk_history in pool.imap(_fetch_history_chunk_worker, [(chunk, limit) for chunk in chunks]):
+            history.update(chunk_history)
+    return history
+
+
+def load_announcement_dates_cache(path: str = ANNOUNCEMENT_DATES_CACHE_PATH) -> dict:
+    """{symbol: sorted list of datetime.date} from the on-disk cache, or {}."""
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    return {symbol: sorted(date.fromisoformat(d) for d in dates)
+            for symbol, dates in payload.get("dates_by_symbol", {}).items()}
+
+
+def save_announcement_dates_cache(dates_by_symbol: dict, path: str = ANNOUNCEMENT_DATES_CACHE_PATH) -> None:
+    payload = {
+        "source": "yfinance Ticker.get_earnings_dates() -- reported rows only, date component only",
+        "fetched_at": date.today().isoformat(),
+        "symbol_count": len(dates_by_symbol),
+        "dates_by_symbol": {symbol: [d.isoformat() for d in sorted(dates)]
+                            for symbol, dates in sorted(dates_by_symbol.items())},
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=1)
+
+
+def get_announcement_date_history(symbols: list, path: str = ANNOUNCEMENT_DATES_CACHE_PATH,
+                                  refresh: bool = False, fetch_fn=None) -> dict:
+    """Cache-first: symbols already in the cache are served from disk;
+    only the missing ones (or all, with refresh=True) are fetched, then
+    the cache is rewritten. fetch_fn is injectable for tests (defaults to
+    the chunked fetcher). Returns {symbol: sorted dates} for the requested
+    symbols that have any history."""
+    cached = {} if refresh else load_announcement_dates_cache(path)
+    missing = [s for s in symbols if s not in cached]
+    if missing:
+        fetch = fetch_fn or fetch_announcement_date_history_chunked
+        cached.update(fetch(missing))
+        save_announcement_dates_cache(cached, path)
+    return {s: cached[s] for s in symbols if s in cached}

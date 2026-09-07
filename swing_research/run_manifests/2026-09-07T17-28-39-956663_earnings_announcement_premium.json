@@ -1,0 +1,49 @@
+{
+  "generated_at": "2026-09-07T17:28:39.956663",
+  "strategy_name": "earnings_announcement_premium",
+  "strategy_variant": "Earnings Announcement Premium (Frazzini-Lamont: buy expected announcers at the prior month-end close, hold to month-end; ranked by 4-year volume concentration ratio, lagged 3 months; long only)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 5,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "b65cffecb6450b933fd27e1ab46002c41fca325e",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M data/fetch_earnings_calendar.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_director.py",
+      " M swing_research/strategy_catalog.py",
+      " M test_strategy_catalog.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? data/announcement_dates_cache.json",
+      "?? deployment/state/daily_details.json",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/announcement_features.py",
+      "?? swing_research/strategies/earnings_announcement_premium.py",
+      "?? test_earnings_announcement_premium.py",
+      "?? test_kite_connection.py"
+    ]
+  }
+}

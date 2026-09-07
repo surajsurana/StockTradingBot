@@ -286,4 +286,13 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_high_volume_return_premium_experiment"]
         ).run_high_volume_return_premium_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="earnings_announcement_premium",
+        variant_description=("Earnings Announcement Premium (Frazzini-Lamont: buy expected announcers at the prior "
+                             "month-end close, hold to month-end; ranked by 4-year volume concentration ratio, "
+                             "lagged 3 months; long only)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_earnings_announcement_premium_experiment"]
+        ).run_earnings_announcement_premium_experiment,
+    ),
 ]

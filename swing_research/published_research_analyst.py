@@ -1058,3 +1058,72 @@ HIGH_VOLUME_RETURN_PREMIUM = PublishedStrategy(
         "structurally significant in that NEITHER exists in the source paper at all."
     ),
 )
+
+
+EARNINGS_ANNOUNCEMENT_PREMIUM = PublishedStrategy(
+    name="Earnings Announcement Premium",
+    source_citation=(
+        "Frazzini, A. and Lamont, O.A. (2007), \"The Earnings Announcement Premium and Trading "
+        "Volume,\" NBER Working Paper 13090; Barber, B.M., De George, E.T., Lehavy, R. and Trueman, B. "
+        "(2013), \"The earnings announcement premium around the globe,\" Journal of Financial "
+        "Economics 108(1), 118-138."
+    ),
+    mechanism=(
+        "A scheduled earnings announcement is an attention-grabbing event: attention-constrained "
+        "individual investors who rarely sell short are net BUYERS of any stock in the news, and "
+        "volume predictably surges at the release -- the resulting price pressure lifts the stock "
+        "before, at and after the announcement (F&L Table VII: ~25 bps in the 10 days before, ~21 bps "
+        "in the 3-day window, ~30 bps after). Stocks whose past volume concentrates in announcement "
+        "months carry the bulk of the premium (153 bps/month vs 39 bps for low-concentration stocks). "
+        "Distinct from PEAD (SW-007), which enters AFTER the announcement conditional on the surprise "
+        "sign; this enters BEFORE it, unconditionally, and holds through it."
+    ),
+    rules=(
+        "Expected announcer for month t = announced in the same calendar month one year earlier, "
+        "restricted to firms with exactly 4 announcements in the prior 12 months (93% forecast "
+        "accuracy). On the last trading day of month t-1 buy every expected announcer; hold until the "
+        "last trading day of month t; re-form monthly. Cross-sectional sort by the volume "
+        "concentration ratio: the share of the stock's total volume over the previous 4 years that "
+        "fell in its actual announcement months, lagged 3 months. US 1973-2004: long-short 61 "
+        "bps/month (t > 5, Sharpe 0.94), 153 bps/month for high-concentration stocks (~18%/yr). "
+        "Global 1990-2009 (46 countries): announcement months beat other months by ~11%/yr; India "
+        "within-country coefficient +0.287%/month, t = 0.63 (positive, not significant)."
+    ),
+    variant_chosen=(
+        "F&L's previous-year-announcement-month forecast (their more accurate method) with the "
+        "exactly-4-announcements restriction; month-end-to-month-end holding exactly as published; "
+        "the volume concentration ratio used as the entry RANKING (Signal.confidence) rather than a "
+        "quintile cut, because this engine holds at most 10 positions -- ranking all qualifying "
+        "announcers and taking the top of the list is the high-concentration group in practice. "
+        "Ratio computed from as few as 24 months / 8 announcement months (F&L: 48) as a disclosed "
+        "warm-up relaxation. Announcement dates from yfinance's reported-earnings history (date only)."
+    ),
+    scope_reductions=(
+        "LONG ONLY (expected-announcer leg only; the expected non-announcer short leg dropped -- same "
+        "reason as every prior strategy). 8% protective stop-loss and 1% risk-per-unit sizing, NOT "
+        "PART OF THE ORIGINAL METHODOLOGY AT ALL. At most 10 positions vs F&L's value-weighted "
+        "portfolio of hundreds of announcers. India-specific published evidence is weak (see rules) -- "
+        "disclosed before the experiment, not after."
+    ),
+    distinctiveness=(
+        "First swing candidate sourced by literature search per explicit direction (2026-09-07), and "
+        "the first calendar/event-scheduled entry in this program: entries fire only on a month's last "
+        "trading day for stocks with a scheduled event NEXT month. Nothing in Pool A trades the "
+        "pre-announcement window -- PEAD trades the post-announcement drift, Turn-of-the-Month trades "
+        "the calendar itself irrespective of firm events."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. "
+        "yfinance announcement dates (unofficial, date-only, 7-day dedupe): MINOR -- only the month "
+        "matters, matching F&L's own tolerance of Compustat's day-level ambiguity. "
+        "Exactly-4 restriction over a trailing 365-day window: MINOR, a direct restatement. "
+        "Volume concentration ratio as ranking with a 24-month warm-up relaxation: MODERATE, "
+        "DIRECTIONALLY UNKNOWN -- with ~150-250 expected announcers in a results month, this ranking "
+        "decides which 10 are held. "
+        "Calendar-derived month-end detection: NEGLIGIBLE. "
+        "Protective stop-loss (8%): MODERATE, one-directional -- announcement months are the most "
+        "volatile months, so the stop fires more often here than elsewhere. "
+        "10 equal-risk positions vs a broad value-weighted portfolio: MODERATE -- changes dispersion, "
+        "not the sign of the effect."
+    ),
+)

@@ -1,0 +1,22 @@
+{
+  "data_period": "2021-09-07 to 2026-09-07",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN, standard. yfinance announcement dates (unofficial, date-only, 7-day dedupe): MINOR -- only the month matters, matching F&L's own tolerance of Compustat's day-level ambiguity. Exactly-4 restriction over a trailing 365-day window: MINOR, a direct restatement. Volume concentration ratio as ranking with a 24-month warm-up relaxation: MODERATE, DIRECTIONALLY UNKNOWN -- with ~150-250 expected announcers in a results month, this ranking decides which 10 are held. Calendar-derived month-end detection: NEGLIGIBLE. Protective stop-loss (8%): MODERATE, one-directional -- announcement months are the most volatile months, so the stop fires more often here than elsewhere. 10 equal-risk positions vs a broad value-weighted portfolio: MODERATE -- changes dispersion, not the sign of the effect.",
+  "eap_risk_pct_per_unit": 0.01,
+  "eap_stop_loss_pct": 0.08,
+  "eap_required_prior_year_announcements": 4,
+  "eap_entry_exit": "last trading day of month t-1 close -> last trading day of month t close",
+  "eap_ranking": "volume concentration ratio (Signal.confidence), NaN ranks last",
+  "eap_vcr_window_months": 48,
+  "eap_vcr_lag_months": 3,
+  "eap_vcr_min_months": 24,
+  "eap_vcr_min_announcement_months": 8,
+  "eap_announcement_history_coverage": "437/457",
+  "eap_long_only": true
+}

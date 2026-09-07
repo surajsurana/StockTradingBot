@@ -1031,3 +1031,65 @@ def run_high_volume_return_premium_experiment(data: dict, start_date: date, end_
             "high_volume_percentile_based_early_exit": False,
         },
     )
+
+
+def run_earnings_announcement_premium_experiment(data: dict, start_date: date, end_date: date,
+                                                  starting_capital: float = 1_000_000,
+                                                  n_walk_forward_windows: int = 3,
+                                                  narrative_api_key: str = "",
+                                                  narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                                  experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                                  knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                                  skip_regime_breakdown: bool = False,
+                                                  announcement_dates_by_symbol: Optional[dict] = None) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Earnings
+    Announcement Premium. The one thing it adds: per-symbol announcement
+    DATE history (data/fetch_earnings_calendar.get_announcement_date_history,
+    cache-first -- the first full-universe fetch is minutes of yfinance
+    calls, later runs read data/announcement_dates_cache.json), turned
+    into the three per-day feature columns by
+    swing_research/announcement_features.py and joined through
+    extra_columns_by_symbol exactly like every cross-sectional signal.
+    announcement_dates_by_symbol is injectable so tests never touch the
+    network. Default same-day-close, zero-cost engine, same as most
+    strategies here -- no fill-timing sensitivity was flagged (entries and
+    exits are both at a month-end close, nothing overnight-specific).
+    """
+    from swing_research.strategies.earnings_announcement_premium import (
+        EarningsAnnouncementPremiumStrategy, REQUIRED_PRIOR_YEAR_ANNOUNCEMENTS, STOP_LOSS_PCT,
+    )
+    from swing_research.published_research_analyst import EARNINGS_ANNOUNCEMENT_PREMIUM
+    from swing_research.announcement_features import (
+        VCR_LAG_MONTHS, VCR_MIN_ANNOUNCEMENT_MONTHS, VCR_MIN_MONTHS, VCR_WINDOW_MONTHS,
+        compute_announcement_features_by_symbol,
+    )
+
+    if announcement_dates_by_symbol is None:
+        from data.fetch_earnings_calendar import get_announcement_date_history
+        announcement_dates_by_symbol = get_announcement_date_history(list(data.keys()))
+    covered = sum(1 for symbol in data if announcement_dates_by_symbol.get(symbol))
+    print(f"Announcement-date history available for {covered}/{len(data)} symbol(s)")
+    extra_columns = compute_announcement_features_by_symbol(data, announcement_dates_by_symbol)
+
+    strategy = EarningsAnnouncementPremiumStrategy()
+    return run_generic_swing_experiment(
+        strategy, EARNINGS_ANNOUNCEMENT_PREMIUM, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "eap_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "eap_stop_loss_pct": STOP_LOSS_PCT,
+            "eap_required_prior_year_announcements": REQUIRED_PRIOR_YEAR_ANNOUNCEMENTS,
+            "eap_entry_exit": "last trading day of month t-1 close -> last trading day of month t close",
+            "eap_ranking": "volume concentration ratio (Signal.confidence), NaN ranks last",
+            "eap_vcr_window_months": VCR_WINDOW_MONTHS,
+            "eap_vcr_lag_months": VCR_LAG_MONTHS,
+            "eap_vcr_min_months": VCR_MIN_MONTHS,
+            "eap_vcr_min_announcement_months": VCR_MIN_ANNOUNCEMENT_MONTHS,
+            "eap_announcement_history_coverage": f"{covered}/{len(data)}",
+            "eap_long_only": True,
+        },
+    )

@@ -86,7 +86,7 @@ class TestResearchExperimentCatalogStructure(unittest.TestCase):
         "turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
         "cross_sectional_momentum", "short_term_reversal", "betting_against_beta", "amihud_illiquidity",
         "max_effect", "idiosyncratic_volatility", "turn_of_month", "overnight_return_anomaly",
-        "high_volume_return_premium",
+        "high_volume_return_premium", "earnings_announcement_premium",
     }
 
     def test_no_duplicate_keys(self):
