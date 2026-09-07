@@ -1,0 +1,61 @@
+{
+  "total_trades": 4,
+  "win_rate": 0.25,
+  "profit_factor": 0.582,
+  "expectancy": -312.88,
+  "cagr": -1.51,
+  "sharpe_ratio": -1.894,
+  "sortino_ratio": -2.15,
+  "max_drawdown_pct": 0.4,
+  "recovery_factor": -0.629,
+  "monthly_returns_pct": {
+    "2026-07": 0.15,
+    "2026-08": -0.2,
+    "2026-09": -0.2
+  },
+  "annual_returns_pct": {
+    "2026": -0.25
+  },
+  "total_pnl": -1251.51,
+  "return_on_capital_pct": -0.25,
+  "walk_forward_metrics": [],
+  "out_of_sample_metrics": {
+    "total_trades": 4,
+    "win_rate": 0.25,
+    "profit_factor": 0.582,
+    "expectancy": -312.88,
+    "cagr": -1.51,
+    "sharpe_ratio": -1.894,
+    "sortino_ratio": -2.15,
+    "max_drawdown_pct": 0.4,
+    "recovery_factor": -0.629,
+    "monthly_returns_pct": {
+      "2026-07": 0.15,
+      "2026-08": -0.2,
+      "2026-09": -0.2
+    },
+    "annual_returns_pct": {
+      "2026": -0.25
+    },
+    "total_pnl": -1251.51,
+    "return_on_capital_pct": -0.25
+  },
+  "audit_checks": {
+    "total_trades": 4,
+    "out_of_sample_trades": 4,
+    "walk_forward_consistency_fraction": 0.0,
+    "out_of_sample_expectancy": -312.88
+  },
+  "sector_breakdown": {
+    "Information Technology": -256.29,
+    "Financial Services": -995.22
+  },
+  "time_of_day_breakdown": {
+    "9.0": -1251.51
+  },
+  "regime_breakdown": {
+    "bullish": 0.0,
+    "bearish": -1251.51,
+    "unknown": 0.0
+  }
+}

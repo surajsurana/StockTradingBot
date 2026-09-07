@@ -1,0 +1,64 @@
+{
+  "total_trades": 5,
+  "win_rate": 0.8,
+  "profit_factor": 3.147,
+  "expectancy": 427.41,
+  "cagr": 2.63,
+  "sharpe_ratio": 2.297,
+  "sortino_ratio": 5.198,
+  "max_drawdown_pct": 0.2,
+  "recovery_factor": 2.149,
+  "monthly_returns_pct": {
+    "2026-08": -0.08,
+    "2026-09": 0.51
+  },
+  "annual_returns_pct": {
+    "2026": 0.43
+  },
+  "total_pnl": 2137.07,
+  "return_on_capital_pct": 0.43,
+  "walk_forward_metrics": [],
+  "out_of_sample_metrics": {
+    "total_trades": 5,
+    "win_rate": 0.8,
+    "profit_factor": 3.147,
+    "expectancy": 427.41,
+    "cagr": 2.63,
+    "sharpe_ratio": 2.297,
+    "sortino_ratio": 5.198,
+    "max_drawdown_pct": 0.2,
+    "recovery_factor": 2.149,
+    "monthly_returns_pct": {
+      "2026-08": -0.08,
+      "2026-09": 0.51
+    },
+    "annual_returns_pct": {
+      "2026": 0.43
+    },
+    "total_pnl": 2137.07,
+    "return_on_capital_pct": 0.43
+  },
+  "audit_checks": {
+    "total_trades": 5,
+    "out_of_sample_trades": 5,
+    "walk_forward_consistency_fraction": 0.0,
+    "out_of_sample_expectancy": 427.41
+  },
+  "sector_breakdown": {
+    "Oil Gas & Consumable Fuels": 1154.4,
+    "Information Technology": 794.39,
+    "Financial Services": 188.28
+  },
+  "time_of_day_breakdown": {
+    "10.0": 794.39,
+    "11.0": 608.65,
+    "12.0": 1154.4,
+    "13.0": -995.37,
+    "15.0": 575.0
+  },
+  "regime_breakdown": {
+    "bullish": 0.0,
+    "bearish": 2137.07,
+    "unknown": 0.0
+  }
+}

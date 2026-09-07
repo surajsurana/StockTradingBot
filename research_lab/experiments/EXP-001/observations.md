@@ -1,0 +1,9 @@
+## Analysis
+
+The rejection is well-supported by the numbers, and the small sample size actually explains a lot about *why* the strategy looks the way it does. With only 4 trades total, every statistic here — win rate, profit factor, Sharpe — is essentially noise dressed up as signal. One or two bad trades can swing expectancy from positive to deeply negative, which appears to be exactly what happened: total P&L of -1,251.51 driven almost entirely by losses concentrated in a narrow window.
+
+Mechanistically, Gap-and-Go with VWAP Hold Confirmation depends on continuation momentum after a gap, confirmed by price holding above/below VWAP. The regime breakdown is telling: all -1,251.51 of P&L occurred in "bearish" Nifty regimes, with zero contribution from bullish days. This suggests the setup either didn't trigger in bullish regimes (too few gap-and-go signals) or the VWAP-hold confirmation failed specifically in bearish tape, where gaps are more likely to fade or reverse rather than continue — a classic failure mode for gap-continuation strategies in weak-breadth markets.
+
+Sector concentration compounds the concern: Financial Services alone accounts for -995.22 (80% of losses), with Information Technology contributing the remainder. All trades entered in the same 9:00 hour bucket, meaning there's no time-of-day diversification to assess robustness.
+
+Follow-up ideas: (1) Re-test with a regime filter that excludes bearish Nifty days entirely, since the mechanism seems to depend on genuine bullish follow-through; (2) Widen the entry-hour window and sector universe to accumulate enough trades (30+) before drawing any conclusion, rather than relying on a structurally rare, low-frequency setup.

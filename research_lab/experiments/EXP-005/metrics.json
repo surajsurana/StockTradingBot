@@ -1,0 +1,72 @@
+{
+  "total_trades": 236,
+  "win_rate": 0.4364,
+  "profit_factor": 0.841,
+  "expectancy": -50.61,
+  "cagr": -4.75,
+  "sharpe_ratio": -2.239,
+  "sortino_ratio": -2.964,
+  "max_drawdown_pct": 0.9,
+  "recovery_factor": -0.882,
+  "monthly_returns_pct": {
+    "2026-07": -0.78,
+    "2026-08": 0.08,
+    "2026-09": -0.1
+  },
+  "annual_returns_pct": {
+    "2026": -0.8
+  },
+  "total_pnl": -11944.45,
+  "return_on_capital_pct": -0.8,
+  "walk_forward_metrics": [],
+  "out_of_sample_metrics": {
+    "total_trades": 236,
+    "win_rate": 0.4364,
+    "profit_factor": 0.841,
+    "expectancy": -50.61,
+    "cagr": -4.75,
+    "sharpe_ratio": -2.239,
+    "sortino_ratio": -2.964,
+    "max_drawdown_pct": 0.9,
+    "recovery_factor": -0.882,
+    "monthly_returns_pct": {
+      "2026-07": -0.78,
+      "2026-08": 0.08,
+      "2026-09": -0.1
+    },
+    "annual_returns_pct": {
+      "2026": -0.8
+    },
+    "total_pnl": -11944.45,
+    "return_on_capital_pct": -0.8
+  },
+  "audit_checks": {
+    "total_trades": 236,
+    "out_of_sample_trades": 236,
+    "walk_forward_consistency_fraction": 0.0,
+    "out_of_sample_expectancy": -50.61
+  },
+  "sector_breakdown": {
+    "Information Technology": 2011.6,
+    "Consumer Durables": 1944.6,
+    "Telecommunication": 800.8,
+    "Fast Moving Consumer Goods": 124.6,
+    "Oil Gas & Consumable Fuels": -96.3,
+    "Construction": -2126.5,
+    "Automobile and Auto Components": -5945.0,
+    "Financial Services": -8658.25
+  },
+  "time_of_day_breakdown": {
+    "10.0": 393.25,
+    "11.0": -768.65,
+    "12.0": -4428.15,
+    "13.0": -4832.4,
+    "14.0": -1772.5,
+    "15.0": -536.0
+  },
+  "regime_breakdown": {
+    "bullish": 0.0,
+    "bearish": -11944.45,
+    "unknown": 0.0
+  }
+}

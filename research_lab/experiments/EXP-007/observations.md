@@ -1,0 +1,7 @@
+## Analysis
+
+The verdict is a straightforward sample-size rejection, and the underlying numbers confirm why no conclusion can be drawn. With only 5 trades, every headline metric — 80% win rate, 3.15 profit factor, 2.30 Sharpe — is being driven by 4 winners and 1 loser. A single trade flipping outcome would swing win rate to 60% and could easily turn the profit factor or Sharpe negative. The "5.2 Sortino" and "2.15 recovery factor" are similarly artifacts of a tiny, low-drawdown sample rather than evidence of genuine downside control.
+
+The distribution of that P&L makes the fragility obvious: the entire net gain of ₹2,137 is essentially two large trades — Oil & Gas (₹1,154) and Information Technology (₹794) — while Financial Services contributed a token ₹188. Timing shows the same concentration risk: the 13:00 entry bucket alone lost ₹995, nearly wiping out the 12:00 bucket's gain, meaning the strategy's "edge" lives or dies on 2-3 specific entry hours. Most strikingly, 100% of realized P&L came from bearish-Nifty-regime days (₹2,137 of ₹2,137), with bullish and unknown regimes contributing exactly zero trades or P&L — this isn't a robustness finding, it's an absence of data in other regimes.
+
+Follow-up ideas: (1) Re-run this exact logic over a much longer lookback (multiple quarters/years) to get to n≥30 before judging regime or sector dependence. (2) Explicitly test whether the VWAP-extension-fade mechanism requires bearish-day volatility/mean-reversion conditions to trigger at all, since the bullish bucket had zero signals, not just zero profit.

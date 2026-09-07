@@ -79,6 +79,50 @@ def _trade_pnl(direction: str, entry_price: float, exit_price: float, quantity: 
     return (entry_price - exit_price) * quantity
 
 
+def _daily_atr(prior_bars_by_date: dict, prior_days: list, period: int = 14) -> Optional[float]:
+    """
+    A daily-bar ATR derived from INTRADAY bars aggregated into one
+    synthetic daily OHLC row per trading day (Open=day's first bar Open,
+    High=day's max High, Low=day's min Low, Close=day's last bar Close)
+    -- avoids a separate data/fetch_historical.py (yfinance) pull just for
+    ATR, since the intraday data already fetched has everything a daily
+    aggregate needs. Standard True Range / rolling mean construction,
+    computed only from `prior_days` (already upstream-filtered to strictly
+    before the day being simulated -- no lookahead introduced here).
+    None if fewer than period+1 days are available.
+    """
+    if len(prior_days) < period + 1:
+        return None
+    rows = []
+    for d in prior_days:
+        day_bars = prior_bars_by_date[d]
+        rows.append({"High": float(day_bars["High"].max()), "Low": float(day_bars["Low"].min()),
+                      "Close": float(day_bars.iloc[-1]["Close"])})
+    daily = pd.DataFrame(rows)
+    prev_close = daily["Close"].shift(1)
+    tr = pd.concat([daily["High"] - daily["Low"], (daily["High"] - prev_close).abs(),
+                    (daily["Low"] - prev_close).abs()], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    last = atr.iloc[-1]
+    return float(last) if not pd.isna(last) else None
+
+
+def _max_vwap_extension_atr(day_bars: pd.DataFrame, atr: float) -> Optional[float]:
+    """One day's own max |Close - cumulative intraday VWAP| in ATR units --
+    the building block for avg_max_vwap_extension_atr_20d below. Uses the
+    SAME atr_14d value for every day in the trailing window (a disclosed
+    simplification -- ATR moves slowly enough day-to-day that recomputing
+    a historically-exact ATR for each of 20 individual days was judged not
+    worth the added complexity; see
+    vwap_extension_exhaustion_fade.py's own module docstring)."""
+    if atr is None or atr <= 0 or day_bars.empty:
+        return None
+    typical_price = (day_bars["High"] + day_bars["Low"] + day_bars["Close"]) / 3
+    vwap = (typical_price * day_bars["Volume"]).cumsum() / day_bars["Volume"].cumsum()
+    extension = (day_bars["Close"] - vwap).abs() / atr
+    return float(extension.max()) if not extension.empty else None
+
+
 def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int = 20) -> dict:
     """
     Multi-day context for the day about to be simulated, computed ONLY
@@ -100,11 +144,22 @@ def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int 
     candle's volume unusually high for a 10:35am candle", not just the
     opening range, since a hypothesis's reference event can occur anywhere
     in the morning (e.g. EXP-003's PDH poke, checked up to 90 min in).
+    atr_14d: a 14-daily-bar ATR (see _daily_atr() above), or None if fewer
+    than 15 prior days are available -- added for the VWAP Extension
+    Exhaustion Fade hypothesis (2026-09-07), the first to need a
+    volatility-normalized distance measure.
+    avg_max_vwap_extension_atr_20d: the trailing `lookback_days` average of
+    each day's own max |Close-VWAP| in atr_14d units (see
+    _max_vwap_extension_atr() above) -- "how far does this stock typically
+    get pulled from its own VWAP on a normal day," the stock-specific
+    baseline the Exhaustion Fade hypothesis compares today's live
+    extension against. None if atr_14d itself is None or fewer than 5
+    prior days are available.
     """
     prior_bars = df[df.index.date < trade_date]
     if prior_bars.empty:
         return {"prior_close": None, "prior_high": None, "avg_first_15min_volume_20d": None,
-                "avg_volume_by_slot_20d": {}}
+                "avg_volume_by_slot_20d": {}, "atr_14d": None, "avg_max_vwap_extension_atr_20d": None}
 
     prior_close = float(prior_bars.iloc[-1]["Close"])
     last_day = sorted(prior_bars.index.date)[-1]
@@ -112,24 +167,35 @@ def _compute_day_context(df: pd.DataFrame, trade_date: date, lookback_days: int 
 
     prior_bars = prior_bars.copy()
     prior_bars["trade_date"] = prior_bars.index.date
-    prior_days = sorted(prior_bars["trade_date"].unique())[-lookback_days:]
+    all_prior_days = sorted(prior_bars["trade_date"].unique())
+    prior_bars_by_date = {d: prior_bars[prior_bars["trade_date"] == d] for d in all_prior_days}
+    atr_14d = _daily_atr(prior_bars_by_date, all_prior_days, period=14)
+
+    prior_days = all_prior_days[-lookback_days:]
     if len(prior_days) < 5:
         return {"prior_close": prior_close, "prior_high": prior_high,
-                "avg_first_15min_volume_20d": None, "avg_volume_by_slot_20d": {}}
+                "avg_first_15min_volume_20d": None, "avg_volume_by_slot_20d": {},
+                "atr_14d": atr_14d, "avg_max_vwap_extension_atr_20d": None}
 
     first_15min_volumes = []
     volumes_by_slot = {}
+    extensions = []
     for d in prior_days:
-        day_bars = prior_bars[prior_bars["trade_date"] == d]
+        day_bars = prior_bars_by_date[d]
         if len(day_bars) >= 3:
             first_15min_volumes.append(float(day_bars.iloc[:3]["Volume"].sum()))
         for slot_idx, vol in enumerate(day_bars["Volume"].tolist()):
             volumes_by_slot.setdefault(slot_idx, []).append(float(vol))
+        ext = _max_vwap_extension_atr(day_bars, atr_14d)
+        if ext is not None:
+            extensions.append(ext)
     avg_volume = sum(first_15min_volumes) / len(first_15min_volumes) if first_15min_volumes else None
     avg_volume_by_slot = {slot: sum(vols) / len(vols) for slot, vols in volumes_by_slot.items()}
+    avg_extension = sum(extensions) / len(extensions) if extensions else None
 
     return {"prior_close": prior_close, "prior_high": prior_high,
-            "avg_first_15min_volume_20d": avg_volume, "avg_volume_by_slot_20d": avg_volume_by_slot}
+            "avg_first_15min_volume_20d": avg_volume, "avg_volume_by_slot_20d": avg_volume_by_slot,
+            "atr_14d": atr_14d, "avg_max_vwap_extension_atr_20d": avg_extension}
 
 
 def simulate_symbol(df: pd.DataFrame, strategy: Strategy, capital: float,

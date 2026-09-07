@@ -239,6 +239,52 @@ class TestComputeDayContext(unittest.TestCase):
         ctx = _compute_day_context(df, date(2026, 1, 4))
         self.assertEqual(ctx["avg_volume_by_slot_20d"], {})
 
+    def test_atr_14d_hand_calculated_on_a_flat_constant_range_fixture(self):
+        # _multi_day_df: every day's High = close+0.2, Low = close-0.2, and
+        # close is constant across all days here -> True Range = 0.4 every
+        # day (High-Low dominates; gap-vs-prior-close terms are only 0.2
+        # each since price never moves day to day) -> ATR(14) = 0.4 exactly.
+        df = self._multi_day_df(n_days=20, last_day_close=100.0)
+        ctx = _compute_day_context(df, date(2026, 1, 21))
+        self.assertAlmostEqual(ctx["atr_14d"], 0.4, places=8)
+
+    def test_atr_14d_none_when_fewer_than_15_prior_days(self):
+        df = self._multi_day_df(n_days=10)
+        ctx = _compute_day_context(df, date(2026, 1, 11))
+        self.assertIsNone(ctx["atr_14d"])
+
+    def test_avg_max_vwap_extension_zero_on_a_symmetric_flat_fixture(self):
+        # High/Low are symmetric around a constant Close every bar, so
+        # typical_price == Close on every bar -> VWAP == Close always ->
+        # zero extension every day.
+        df = self._multi_day_df(n_days=20, last_day_close=100.0)
+        ctx = _compute_day_context(df, date(2026, 1, 21))
+        self.assertAlmostEqual(ctx["avg_max_vwap_extension_atr_20d"], 0.0, places=8)
+
+    def test_avg_max_vwap_extension_positive_when_price_pulls_away_from_vwap(self):
+        # Each day: first bar establishes a low-price, low-volume base,
+        # then price and volume both jump for the rest of the day -- Close
+        # pulls well away from the volume-weighted VWAP, giving a real,
+        # positive, hand-verifiable extension every day.
+        dfs = []
+        for day in range(1, 21):
+            idx = pd.date_range(f"2026-01-{day:02d} 09:15", periods=5, freq="5min")
+            dfs.append(pd.DataFrame({
+                "Open": [100, 100, 100, 100, 100], "High": [100.2, 110.2, 110.2, 110.2, 110.2],
+                "Low": [99.8, 109.8, 109.8, 109.8, 109.8], "Close": [100, 110, 110, 110, 110],
+                "Volume": [1000, 1000, 1000, 1000, 1000],
+            }, index=idx))
+        df = pd.concat(dfs)
+        ctx = _compute_day_context(df, date(2026, 1, 21))
+        self.assertIsNotNone(ctx["avg_max_vwap_extension_atr_20d"])
+        self.assertGreater(ctx["avg_max_vwap_extension_atr_20d"], 0.0)
+
+    def test_avg_max_vwap_extension_none_when_atr_unavailable(self):
+        df = self._multi_day_df(n_days=10)  # < 15 prior days -> atr_14d is None
+        ctx = _compute_day_context(df, date(2026, 1, 11))
+        self.assertIsNone(ctx["atr_14d"])
+        self.assertIsNone(ctx["avg_max_vwap_extension_atr_20d"])
+
 
 class TestWalkForwardSplit(unittest.TestCase):
     def test_splits_into_requested_number_of_windows(self):

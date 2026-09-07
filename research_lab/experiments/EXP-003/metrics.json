@@ -1,0 +1,44 @@
+{
+  "total_trades": 0,
+  "win_rate": 0.0,
+  "profit_factor": null,
+  "expectancy": 0.0,
+  "cagr": 0.0,
+  "sharpe_ratio": null,
+  "sortino_ratio": null,
+  "max_drawdown_pct": 0.0,
+  "recovery_factor": null,
+  "monthly_returns_pct": {},
+  "annual_returns_pct": {},
+  "total_pnl": 0.0,
+  "return_on_capital_pct": 0.0,
+  "walk_forward_metrics": [],
+  "out_of_sample_metrics": {
+    "total_trades": 0,
+    "win_rate": 0.0,
+    "profit_factor": null,
+    "expectancy": 0.0,
+    "cagr": 0.0,
+    "sharpe_ratio": null,
+    "sortino_ratio": null,
+    "max_drawdown_pct": 0.0,
+    "recovery_factor": null,
+    "monthly_returns_pct": {},
+    "annual_returns_pct": {},
+    "total_pnl": 0.0,
+    "return_on_capital_pct": 0.0
+  },
+  "audit_checks": {
+    "total_trades": 0,
+    "out_of_sample_trades": 0,
+    "walk_forward_consistency_fraction": 0.0,
+    "out_of_sample_expectancy": 0.0
+  },
+  "sector_breakdown": {},
+  "time_of_day_breakdown": {},
+  "regime_breakdown": {
+    "bullish": 0.0,
+    "bearish": 0.0,
+    "unknown": 0.0
+  }
+}

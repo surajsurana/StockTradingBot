@@ -37,6 +37,14 @@ import os
 import sys
 from datetime import date, timedelta
 
+# Windows' console defaults to a legacy codepage (cp1252) that can't encode
+# characters like an arrow (U+2192) an LLM's own free-text response might
+# use -- reconfigure stdout to UTF-8 so a real research finding never
+# crashes the CLI just because of how it happened to be phrased. Read-only
+# display fix, touches no actual data/logic.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 from config import settings
 
 PENDING_PROPOSAL_PATH = os.path.join(os.path.dirname(__file__), "research_lab", "pending_proposal.json")

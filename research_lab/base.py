@@ -56,8 +56,14 @@ class Strategy:
         "avg_volume_by_slot_20d" (dict {bar_index: avg_volume}, or {} if
         unavailable) -- for checking whether a specific candle later in the
         morning has unusual volume for ITS time slot, not just the opening
-        range. None if a strategy doesn't need any multi-day context (e.g.
-        a pure intraday opening-range strategy).
+        range. Also "atr_14d" (float or None, a 14-daily-bar ATR derived
+        from intraday bars aggregated into synthetic daily OHLC) and
+        "avg_max_vwap_extension_atr_20d" (float or None, the trailing
+        20-day average of each day's own max |Close-VWAP| in atr_14d
+        units) -- added 2026-09-07 for the VWAP Extension Exhaustion Fade
+        hypothesis, the first needing a volatility-normalized distance
+        measure. None if a strategy doesn't need any multi-day context
+        (e.g. a pure intraday opening-range strategy).
 
         market_state: a research_lab.market_state.MarketState snapshot of
         the WHOLE universe at this same bar (breadth, sector breadth,

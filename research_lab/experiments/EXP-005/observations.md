@@ -1,0 +1,9 @@
+## Why the Strategy Was Rejected
+
+The Breadth-Thrust Laggard Catch-Up hypothesis rests on the idea that laggard names or sectors will "catch up" once broad market breadth turns positive. The out-of-sample expectancy of -₹50.61/trade confirms this mechanism did not translate into real edge on unseen data, despite whatever in-sample/walk-forward strength existed.
+
+The regime breakdown is the clearest tell: **all -₹11,944.45 of P&L occurred in the 'bearish' regime bucket**, with bullish and unknown regimes contributing exactly zero. This suggests the OOS window was dominated by bearish Nifty days, and the catch-up mechanism simply doesn't work (or wasn't tested) when breadth-thrust signals fire in a falling market -- laggards likely kept lagging rather than catching up, consistent with a profit factor of 0.841 and win rate of 43.6%.
+
+Sector and time-of-day data reinforce a concentration problem rather than a broad-based failure: **Financial Services (-8,658) and Automobile (-5,945) account for ~123% of total losses**, while IT, Consumer Durables, and Telecom were profitable. Similarly, losses cluster in the **12:00-13:00 entry window (-9,260 combined)**, while 10:00 was the only clearly positive hour. This looks like a strategy whose few winning pockets were overwhelmed by two sectors and a narrow midday window.
+
+**Follow-up ideas:** (1) Re-test the mechanism conditioned strictly on bullish/neutral breadth regimes only, excluding bearish days entirely, since the bearish-regime dependency may be the actual failure mode. (2) Investigate whether Financial Services/Auto laggards have structurally different mean-reversion behavior (higher beta, index concentration) that breaks the catch-up assumption, and consider sector-exclusion or sector-specific calibration in a revised hypothesis.
