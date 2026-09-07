@@ -19,6 +19,7 @@ data/nse_tick_sizes.json
 deployment/state/paper_trading/
 deployment/state/portfolio_c/
 deployment/state/portfolio_b/
+deployment/state/pool_d/
 deployment/reports/
 deployment/certification_experiments/
 deployment/certification_knowledge_base.jsonl
