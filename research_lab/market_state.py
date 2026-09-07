@@ -36,6 +36,11 @@ class MarketState:
                                                            # return_over_lookback_minutes_pct below), not
                                                            # EXP-004-specific.
     universe_size: int = 0                             # how many symbols had valid data this bar
+    return_since_prior_close: dict = field(default_factory=dict)  # {symbol: % return from the PRIOR day's
+                                                                   # close to this bar} -- the overnight move
+                                                                   # included, unlike relative_strength. Added
+                                                                   # 2026-09-07 for End-of-Day Reversal's ROD3
+                                                                   # rank; empty if no prior closes were given.
 
 
 def _vwap_so_far(bars: pd.DataFrame) -> Optional[float]:
@@ -85,18 +90,25 @@ def return_over_lookback_minutes_pct(bars: pd.DataFrame, lookback_minutes: int =
 
 def compute_market_state(bars_so_far_by_symbol: dict, sector_map: dict, timestamp,
                           nifty_bars_so_far: Optional[pd.DataFrame] = None,
-                          leader_laggard_n: int = 5) -> MarketState:
+                          leader_laggard_n: int = 5,
+                          prior_close_by_symbol: Optional[dict] = None) -> MarketState:
     """
     bars_so_far_by_symbol: {symbol: DataFrame of TODAY's bars up to and
     including `timestamp`} for every symbol with data at this bar (symbols
     with no bar yet this timestamp should simply be omitted by the caller,
     not passed as empty/None -- see market_simulator.py). Pure function --
     no lookahead, since it only ever sees what the caller passes in.
+
+    prior_close_by_symbol: optional {symbol: prior day's close} (from each
+    symbol's own day context) -- fills return_since_prior_close for the
+    symbols it covers; symbols with no/invalid prior close are left out.
     """
     above_vwap_count = 0
     valid_count = 0
     sector_counts = {}   # sector -> [above_count, total_count]
     relative_strength = {}
+    return_since_prior_close = {}
+    prior_close_by_symbol = prior_close_by_symbol or {}
 
     for symbol, bars in bars_so_far_by_symbol.items():
         if bars is None or bars.empty:
@@ -104,6 +116,9 @@ def compute_market_state(bars_so_far_by_symbol: dict, sector_map: dict, timestam
         ret = _return_since_open_pct(bars)
         if ret is not None:
             relative_strength[symbol] = ret
+        prior_close = prior_close_by_symbol.get(symbol)
+        if prior_close is not None and prior_close > 0:
+            return_since_prior_close[symbol] = (float(bars.iloc[-1]["Close"]) / prior_close - 1) * 100
 
         vwap = _vwap_so_far(bars)
         if vwap is None:
@@ -135,4 +150,5 @@ def compute_market_state(bars_so_far_by_symbol: dict, sector_map: dict, timestam
         sector_breadth_pct_above_vwap=sector_breadth, relative_strength=relative_strength,
         leaders=leaders, laggards=laggards, nifty_return_since_open_pct=nifty_return,
         nifty_return_last_15min_pct=nifty_return_15min, universe_size=valid_count,
+        return_since_prior_close=return_since_prior_close,
     )

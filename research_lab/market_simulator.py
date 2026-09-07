@@ -144,6 +144,7 @@ def simulate_universe_cross_sectional(data: dict, strategy: Strategy, capital_pe
             market_state = compute_market_state(
                 bars_so_far_by_symbol, sector_map, ts,
                 nifty_bars_so_far=nifty_so_far, leader_laggard_n=leader_laggard_n,
+                prior_close_by_symbol={s: day_contexts[s].get("prior_close") for s in bars_so_far_by_symbol},
             )
 
             # 3. New signals -- only for symbols with a bar exactly at `ts`

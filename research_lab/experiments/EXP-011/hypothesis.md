@@ -1,0 +1,13 @@
+# End-of-Day Reversal
+
+## Mechanism
+At 15:00 (the close of the 14:55 five-minute candle), rank every stock in the liquid universe by its return from the prior day's close to now (ROD3: overnight + first half hour + middle of the day). Buy the bottom quintile (the day's losers) and short the top quintile (the day's winners) in equal notional, and hold both to the 15:30 close -- a pure 30-minute position squared off with the day.
+
+## Rationale
+Baltussen, Da & Soebhag (2025, 'End-of-Day Reversal'): in the cross-section of US stocks 1993-2019 the ROD3 return strongly and negatively predicts the last-half-hour return (t-statistics above 10 in quintile sorts), earning 3.78 bps/day value-weighted (~9.5%/yr) and 6.86 bps/day equal-weighted (~17.3%/yr), present in almost every 3-year window and within the largest, most liquid stocks (3.41 bps/day). The authors attribute it to attention-induced retail buying of the day's losers and to short-sellers closing out risk before the close -- price pressure that is transitory (it reverts the next day) and is distinct from, and opposite in sign to, market-level intraday momentum (Gao/Han/Li/Zhou 2018). Related lineage: Heston, Korajczyk & Sadka (JF 2010) on intraday cross-sectional periodicity, confirmed for India by Murphy & Thirumalai (2017).
+
+## Rules
+Entry: on the 14:55 bar, compute ROD3 = close / prior close - 1 for all symbols with a bar; BUY if own ROD3 rank is in the bottom 20% of the universe, SELL (intraday short) if in the top 20%, otherwise no trade. Exit: mandatory EOD square-off on the 15:25 bar (~15:30 price). No stop or target in the source; a symmetric 5% stop/target is set only so the engine can size (equal notional per position) and practically never fires in 30 minutes. One trade per symbol per day. Judged NET of Zerodha intraday charges plus a 2 bps/side spread assumption, because the documented gross edge is of the same order as an Indian retail round-trip.
+
+## Why this candidate was selected
+Selected by literature search (2026-09-07) per explicit direction to source intraday candidates the way swing candidates are sourced -- from documented academic evidence -- after five LLM-proposed mechanisms (EXP-001 to EXP-010) all failed out-of-sample. Ranked above market intraday momentum (Gao et al. 2018: index-level, and the Asia-Pacific/India evidence is weak or diminished) and above interday cross-sectional momentum (Heston et al. 2010 / Schlie & Zhou 2024: returns cover only ~20% of the quoted spread, a trade-timing effect rather than a strategy). Known headwind, stated up front: the gross edge is small per trade, so this experiment is the first judged net of transaction costs; a net-negative result would be a clean, cheap REJECT.

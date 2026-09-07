@@ -165,11 +165,18 @@ def run_propose(n: int):
 
 
 def run_continue(strategy_module: str, strategy_class: str, days: int, limit: int, windows: int,
-                  from_experiment: str = None, cross_sectional: bool = False, pairs: bool = False):
+                  from_experiment: str = None, cross_sectional: bool = False, pairs: bool = False,
+                  apply_costs: bool = True):
     from research_lab.research_director import run_experiment_phase2
     from research_lab.risk_manager_research import RiskParameters
+    from research_lab.transaction_costs import IntradayCostModel
     from data.fetch_kite_intraday import fetch_all_intraday
     from research_lab.quant_researcher import Hypothesis
+
+    cost_model = IntradayCostModel() if apply_costs else None
+    print("Transaction costs: " + ("Zerodha intraday schedule + "
+          f"{cost_model.spread_bps_per_side:.0f} bps/side spread (net-of-cost verdict)"
+          if cost_model else "NONE (gross verdict, --no-costs)"))
 
     if pairs and cross_sectional:
         print("--pairs and --cross-sectional are mutually exclusive -- a strategy is one or the other.")
@@ -253,7 +260,7 @@ def run_continue(strategy_module: str, strategy_class: str, days: int, limit: in
         risk_params=RiskParameters(), n_walk_forward_windows=windows,
         narrative_api_key=settings.ANTHROPIC_API_KEY,
         use_cross_sectional=cross_sectional, nifty_data=nifty_data,
-        use_pairs=pairs, pairs=pair_list, daily_data=daily_data,
+        use_pairs=pairs, pairs=pair_list, daily_data=daily_data, cost_model=cost_model,
     )
 
     from research_lab.experiment_manager import load_experiment
@@ -287,6 +294,10 @@ def main():
                          help="Run a PairStrategy through research_lab/pairs_simulator.py on "
                               "research_lab/pairs_candidates.py's pre-selected same-sector pairs only "
                               "(ignores --limit), and fetch daily candles for the correlation filter.")
+    parser.add_argument("--no-costs", action="store_true",
+                         help="Judge the experiment GROSS of transaction costs (the pre-EXP-011 behaviour). "
+                              "By default research_lab/transaction_costs.py's Zerodha intraday schedule plus a "
+                              "2 bps/side spread assumption is deducted from every trade before the Auditor.")
     args = parser.parse_args()
 
     if args.propose:
@@ -297,7 +308,7 @@ def main():
             sys.exit(1)
         run_continue(args.strategy_module, args.strategy_class, args.days, args.limit, args.windows,
                      from_experiment=args.from_experiment, cross_sectional=args.cross_sectional,
-                     pairs=args.pairs)
+                     pairs=args.pairs, apply_costs=not args.no_costs)
     else:
         print(__doc__)
 

@@ -41,6 +41,7 @@ from research_lab import backtesting_engineer, experiment_manager, market_simula
     performance_analyst, statistical_auditor
 from research_lab.base import Strategy
 from research_lab.knowledge_base import load_entries, record_conclusion, rejected_mechanisms
+from research_lab.transaction_costs import IntradayCostModel, apply_transaction_costs
 from research_lab.performance_analyst import compute_regime_breakdown, compute_sector_breakdown, \
     compute_time_of_day_breakdown, load_sector_map
 from research_lab.quant_researcher import Hypothesis, propose_hypotheses
@@ -273,7 +274,8 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
                              sector_map: Optional[dict] = None,
                              nifty_data: Optional[pd.DataFrame] = None,
                              leader_laggard_n: int = 5, use_pairs: bool = False,
-                             pairs: Optional[list] = None, daily_data: Optional[dict] = None) -> dict:
+                             pairs: Optional[list] = None, daily_data: Optional[dict] = None,
+                             cost_model: Optional[IntradayCostModel] = None) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via backtesting_engineer.walk_forward_split(). The LAST window
@@ -300,6 +302,14 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
     Capital denominator: one capital_per_symbol bucket PER PAIR (not per
     underlying symbol -- `data` holds both legs of every pair, so
     len(data) would double-count).
+
+    cost_model: if given, every window's trades are converted to
+    NET-of-cost P&L (research_lab/transaction_costs.py) before metrics
+    and the Auditor see them; "gross_total_pnl" and
+    "total_transaction_costs" are reported alongside. None = gross, the
+    behaviour every experiment before EXP-011 was judged on. Not applied
+    on the pairs path (combined pair Trades carry a price ratio, not real
+    prices) -- printed as a warning, never silently skipped.
     """
     if use_cross_sectional and not sector_map:
         raise ValueError("use_cross_sectional=True requires a sector_map.")
@@ -308,10 +318,14 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
     if use_pairs and use_cross_sectional:
         raise ValueError("use_pairs and use_cross_sectional are mutually exclusive.")
     capital_buckets = len(pairs) if use_pairs else len(data)
+    if cost_model is not None and use_pairs:
+        print("WARNING: transaction costs are not modelled for pairs trades -- this run is GROSS of costs.")
 
     windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
     walk_forward_metrics = []
     all_trades_by_window = []
+    gross_total_pnl = 0.0
+    total_transaction_costs = 0.0
 
     for w_start, w_end in windows:
         windowed_data = {
@@ -334,11 +348,16 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
             result = backtesting_engineer.run_backtest(
                 strategy, windowed_data, capital_per_symbol, risk_params.risk_per_trade_pct, risk_params,
             )
+        window_trades = result["trades"]
+        gross_total_pnl += sum(t.pnl for t in window_trades)
+        if cost_model is not None and not use_pairs:
+            window_trades, window_cost = apply_transaction_costs(window_trades, cost_model)
+            total_transaction_costs += window_cost
         metrics = backtesting_engineer.compute_metrics(
-            result["trades"], capital_per_symbol * capital_buckets, result["trading_calendar"],
+            window_trades, capital_per_symbol * capital_buckets, result["trading_calendar"],
         )
         walk_forward_metrics.append(metrics)
-        all_trades_by_window.append(result["trades"])
+        all_trades_by_window.append(window_trades)
 
     out_of_sample_metrics = walk_forward_metrics[-1] if walk_forward_metrics else {}
     consistency_metrics = walk_forward_metrics[:-1]
@@ -351,6 +370,8 @@ def run_backtest_with_audit(strategy: Strategy, data: dict, capital_per_symbol: 
         "verdict": verdict, "walk_forward_metrics": consistency_metrics,
         "out_of_sample_metrics": out_of_sample_metrics, "out_of_sample_trades": out_of_sample_trades,
         "all_trades": all_trades, "windows": windows,
+        "gross_total_pnl": round(gross_total_pnl, 2),
+        "total_transaction_costs": round(total_transaction_costs, 2),
     }
 
 
@@ -363,7 +384,8 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
                            skip_regime_breakdown: bool = False, use_cross_sectional: bool = False,
                            nifty_data: Optional[pd.DataFrame] = None, leader_laggard_n: int = 5,
                            use_pairs: bool = False, pairs: Optional[list] = None,
-                           daily_data: Optional[dict] = None) -> str:
+                           daily_data: Optional[dict] = None,
+                           cost_model: Optional[IntradayCostModel] = None) -> str:
     """
     Phase 2: given an already-implemented Strategy for the already-selected
     hypothesis, runs the full backtest -> audit -> narrative -> save
@@ -392,7 +414,7 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
         strategy, data, capital_per_symbol, risk_params, start_date, end_date, n_walk_forward_windows,
         use_cross_sectional=use_cross_sectional, sector_map=sector_map if use_cross_sectional else None,
         nifty_data=nifty_data, leader_laggard_n=leader_laggard_n,
-        use_pairs=use_pairs, pairs=pairs, daily_data=daily_data,
+        use_pairs=use_pairs, pairs=pairs, daily_data=daily_data, cost_model=cost_model,
     )
     verdict = backtest_result["verdict"]
 
@@ -443,9 +465,13 @@ def run_experiment_phase2(hypothesis: Hypothesis, strategy: Strategy, data: dict
                     "daily_loss_limit_pct": risk_params.daily_loss_limit_pct,
                     "capital_per_symbol": capital_per_symbol, "symbols": list(data.keys()),
                     "pairs": [f"{a}/{b}" for a, b in pairs] if use_pairs else None,
-                    "n_walk_forward_windows": n_walk_forward_windows},
+                    "n_walk_forward_windows": n_walk_forward_windows,
+                    "cost_model": cost_model.describe() if cost_model is not None else None},
         data_period=f"{start_date} to {end_date}",
-        metrics={**combined_metrics, "walk_forward_metrics": backtest_result["walk_forward_metrics"],
+        metrics={**combined_metrics,
+                 "gross_total_pnl": backtest_result["gross_total_pnl"],
+                 "total_transaction_costs": backtest_result["total_transaction_costs"],
+                 "walk_forward_metrics": backtest_result["walk_forward_metrics"],
                  "out_of_sample_metrics": backtest_result["out_of_sample_metrics"],
                  "audit_checks": verdict.checks,
                  "sector_breakdown": sector_breakdown, "time_of_day_breakdown": time_of_day_breakdown,

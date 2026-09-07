@@ -1,0 +1,95 @@
+{
+  "total_trades": 1008,
+  "win_rate": 0.2917,
+  "profit_factor": 0.338,
+  "expectancy": -24.08,
+  "cagr": -2.44,
+  "sharpe_ratio": -28.186,
+  "sortino_ratio": -13.869,
+  "max_drawdown_pct": 0.61,
+  "recovery_factor": -1.0,
+  "monthly_returns_pct": {
+    "2026-06": -0.11,
+    "2026-07": -0.23,
+    "2026-08": -0.22,
+    "2026-09": -0.04
+  },
+  "annual_returns_pct": {
+    "2026": -0.61
+  },
+  "total_pnl": -24270.98,
+  "return_on_capital_pct": -0.61,
+  "gross_total_pnl": 3337.52,
+  "total_transaction_costs": 27608.5,
+  "walk_forward_metrics": [
+    {
+      "total_trades": 512,
+      "win_rate": 0.3145,
+      "profit_factor": 0.4,
+      "expectancy": -24.02,
+      "cagr": -2.47,
+      "sharpe_ratio": -23.794,
+      "sortino_ratio": -13.288,
+      "max_drawdown_pct": 0.31,
+      "recovery_factor": -1.0,
+      "monthly_returns_pct": {
+        "2026-06": -0.11,
+        "2026-07": -0.19
+      },
+      "annual_returns_pct": {
+        "2026": -0.31
+      },
+      "total_pnl": -12296.43,
+      "return_on_capital_pct": -0.31
+    }
+  ],
+  "out_of_sample_metrics": {
+    "total_trades": 496,
+    "win_rate": 0.2681,
+    "profit_factor": 0.26,
+    "expectancy": -24.14,
+    "cagr": -2.4,
+    "sharpe_ratio": -32.466,
+    "sortino_ratio": -14.304,
+    "max_drawdown_pct": 0.3,
+    "recovery_factor": -1.0,
+    "monthly_returns_pct": {
+      "2026-07": -0.03,
+      "2026-08": -0.22,
+      "2026-09": -0.04
+    },
+    "annual_returns_pct": {
+      "2026": -0.3
+    },
+    "total_pnl": -11974.55,
+    "return_on_capital_pct": -0.3
+  },
+  "audit_checks": {
+    "total_trades": 1008,
+    "out_of_sample_trades": 496,
+    "walk_forward_consistency_fraction": 0.0,
+    "out_of_sample_expectancy": -24.14
+  },
+  "sector_breakdown": {
+    "Construction": -201.27,
+    "Healthcare": -490.0,
+    "Construction Materials": -557.7,
+    "Telecommunication": -623.92,
+    "Oil Gas & Consumable Fuels": -764.65,
+    "Consumer Durables": -1027.26,
+    "Automobile and Auto Components": -1272.3,
+    "Power": -1669.36,
+    "Metals & Mining": -1940.46,
+    "Fast Moving Consumer Goods": -2276.91,
+    "Information Technology": -2856.81,
+    "Financial Services": -10590.35
+  },
+  "time_of_day_breakdown": {
+    "14.0": -24270.98
+  },
+  "regime_breakdown": {
+    "bullish": 0.0,
+    "bearish": -24270.98,
+    "unknown": 0.0
+  }
+}

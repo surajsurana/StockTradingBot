@@ -321,5 +321,56 @@ class TestPairsGovernance(unittest.TestCase):
         self.assertAlmostEqual(metrics["return_on_capital_pct"], 3.18)
 
 
+class _BuysOnceWithWideStop(Strategy):
+    """Fires one BUY on the second bar with a 5% stop -> 200 shares at 100
+    -> a Rs.20,000 position squared off flat at EOD: gross P&L exactly 0,
+    so anything below zero is the cost model and nothing else."""
+    name = "buys_once"
+
+    def __init__(self):
+        self.fired = False
+
+    def generate_signal(self, todays_bars_so_far, context=None, market_state=None):
+        if self.fired or len(todays_bars_so_far) < 2:
+            return None
+        self.fired = True
+        return Signal(symbol="", direction="BUY", entry_price=100.0, stop_loss=95.0, target=105.0,
+                      confidence=0.5, strategy_name=self.name)
+
+
+class TestCostModelWiring(unittest.TestCase):
+    def setUp(self):
+        idx = pd.date_range("2026-01-05 09:15", periods=8, freq="5min")
+        prices = [100.0] * 8
+        self.data = {"TESTSYM": pd.DataFrame({
+            "Open": prices, "High": prices, "Low": prices, "Close": prices, "Volume": [1000] * 8,
+        }, index=idx)}
+
+    def test_costs_are_deducted_before_metrics_and_reported(self):
+        from research_lab.risk_manager_research import RiskParameters
+        from research_lab.transaction_costs import IntradayCostModel
+
+        model = IntradayCostModel(spread_bps_per_side=0.0)
+        # walk_forward_split() needs a span of at least one day
+        result = run_backtest_with_audit(
+            _BuysOnceWithWideStop(), self.data, 100000, RiskParameters(), date(2026, 1, 5), date(2026, 1, 6),
+            n_walk_forward_windows=1, cost_model=model,
+        )
+        expected_cost = model.round_trip_cost(20000.0, 20000.0)
+        self.assertEqual(result["gross_total_pnl"], 0.0)
+        self.assertAlmostEqual(result["total_transaction_costs"], round(expected_cost, 2), places=2)
+        self.assertAlmostEqual(result["out_of_sample_metrics"]["total_pnl"], -round(expected_cost, 2), places=2)
+
+    def test_no_cost_model_is_gross(self):
+        from research_lab.risk_manager_research import RiskParameters
+
+        result = run_backtest_with_audit(
+            _BuysOnceWithWideStop(), self.data, 100000, RiskParameters(), date(2026, 1, 5), date(2026, 1, 6),
+            n_walk_forward_windows=1,
+        )
+        self.assertEqual(result["total_transaction_costs"], 0.0)
+        self.assertEqual(result["out_of_sample_metrics"]["total_pnl"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
