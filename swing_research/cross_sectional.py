@@ -534,3 +534,57 @@ def compute_overnight_return_percentile_ranks(data: dict) -> dict:
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+VOLUME_SHOCK_RECENT_DAYS = 5      # "a day or a week" -- the paper's own recent-window language
+VOLUME_SHOCK_BASELINE_DAYS = 252  # 1 trading year -- the stock's own typical volume level
+
+
+def compute_volume_shock_score(price_history: pd.DataFrame) -> pd.Series:
+    """
+    Gervais, Kaniel & Mingelgrin (2001)'s volume "shock" -- a stock's
+    recent trading activity relative to its OWN typical level, since raw
+    volume differs enormously across stocks by size alone and can't be
+    compared cross-sectionally without normalizing each stock against
+    itself first. score_t = (mean Volume over the trailing
+    VOLUME_SHOCK_RECENT_DAYS) / (mean Volume over the trailing
+    VOLUME_SHOCK_BASELINE_DAYS, ENDING right before the recent window --
+    no overlap between the two windows, so the recent window's own volume
+    never inflates its own baseline).
+    """
+    volume = price_history["Volume"]
+    recent_avg = volume.rolling(VOLUME_SHOCK_RECENT_DAYS).mean()
+    # Baseline ends immediately before the recent window starts: shift by
+    # VOLUME_SHOCK_RECENT_DAYS first, then take the trailing baseline mean,
+    # so today's baseline reflects days [t - recent - baseline, t - recent).
+    baseline_avg = volume.shift(VOLUME_SHOCK_RECENT_DAYS).rolling(VOLUME_SHOCK_BASELINE_DAYS).mean()
+    return recent_avg / baseline_avg.replace(0, float("nan"))
+
+
+def compute_volume_shock_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of volume_shock_percentile (0-100), indexed
+    by date} -- each symbol's cross-sectional percentile rank, among
+    whatever symbols have a valid (non-NaN) volume shock score that day,
+    of its own recent-vs-typical volume ratio. HIGH percentile means an
+    UNUSUALLY LARGE recent volume spike relative to that stock's own
+    history -- this strategy's entry condition is percentile >=90 (top
+    decile), the paper's own long-side finding (high-volume shocks predict
+    price appreciation over the following month). Same vectorized
+    .rank(axis=1, pct=True) construction as every other cross-sectional
+    signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_volume_shock_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

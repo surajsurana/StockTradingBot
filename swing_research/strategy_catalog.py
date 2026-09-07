@@ -178,6 +178,19 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # match the fill timing EXP-078 (PASS) was actually validated under, or live paper trading
         # would silently re-run under EXP-076's REJECTed, contaminated mechanics.
     ),
+    PaperTradingStrategySpec(
+        strategy_key="high_volume_return_premium",
+        display_name="High-Volume Return Premium",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.high_volume_return_premium", fromlist=["HighVolumeReturnPremiumStrategy"]
+        ).HighVolumeReturnPremiumStrategy(),
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_volume_shock_percentile_ranks"]
+        ).compute_volume_shock_percentile_ranks(data), "volume_shock_percentile"),
+        # No execution_config_factory -- no fill-timing sensitivity was flagged for this strategy
+        # (unlike Overnight Return Anomaly), so the platform default is the correct, validated basis
+        # (EXP-080 was run with no execution-realism configuration, same as most other strategies).
+    ),
 ]
 
 
@@ -261,9 +274,16 @@ RESEARCH_EXPERIMENT_SPECS = [
     ),
     ResearchExperimentSpec(
         strategy_key="overnight_return_anomaly",
-        variant_description="Overnight Return Anomaly (21-day cumulative Close-to-Open return, top-decile percentile, 1-trading-day single-vintage hold, next-day-open fills)",
+        variant_description="Overnight Return Anomaly (21-day cumulative Close-to-Open return, top-decile percentile, 1-trading-day single-vintage hold, close-to-next-open fills)",
         runner_getter=lambda: __import__(
             "swing_research.research_director", fromlist=["run_overnight_return_experiment"]
         ).run_overnight_return_experiment,
+    ),
+    ResearchExperimentSpec(
+        strategy_key="high_volume_return_premium",
+        variant_description="High-Volume Return Premium (5-day recent / 252-day baseline volume shock, top-decile percentile, 1-month single-vintage hold)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_high_volume_return_premium_experiment"]
+        ).run_high_volume_return_premium_experiment,
     ),
 ]

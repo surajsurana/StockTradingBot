@@ -1,0 +1,9 @@
+# Analysis: High-Volume Return Premium
+
+The PASS verdict is driven almost entirely by the out-of-sample expectancy (+38.57/trade) rather than robust risk-adjusted performance. The underlying numbers show a fragile, regime-dependent effect: Sharpe (0.23) and Sortino (0.213) are weak, profit factor barely clears breakeven (1.09), and recovery factor (0.253) signals thin compensation for the 10.54% drawdown. Win rate (43.66%) confirms this is a "few large winners" strategy, not a consistently repeatable edge.
+
+The regime breakdown is the clearest mechanistic tell: bearish-day entries contributed +10,182.96 while bullish-day entries lost -7,444.74. For a long-only, high-volume-shock strategy, this is counterintuitive if the thesis is "volume shock precedes momentum continuation" — instead it looks like the strategy is really capturing post-shock mean-reversion/oversold bounces that happen to occur more often when Nifty itself was bearish, i.e., success may be riding broad-market snapback rather than a volume-specific premium. Sector concentration reinforces fragility: Financial Services alone (+4,821.83) and Capital Goods/FMCG/Realty carry the book, while Construction Materials, Consumer Services, and Chemicals bled over -5,700 combined — a handful of sector bets, not a diversified cross-sectional effect.
+
+Given the disclosed single-vintage holding and undisclosed-in-paper stop-loss/sizing (moderate-to-material, direction unknown) plus the 5-day/252-day window choice (moderate, direction unknown), the true edge magnitude is uncertain even though the pass condition was met.
+
+**Follow-ups:** (1) Decompose bearish-day trades to test whether the mechanism is actually market-reversal, not volume-shock-specific, by controlling for Nifty return directly. (2) Re-run with alternate window lengths (e.g., 10-day/126-day) to see if sector concentration and the bullish/bearish asymmetry persist, isolating construction-choice sensitivity from genuine signal.

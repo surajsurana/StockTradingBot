@@ -984,3 +984,50 @@ def run_overnight_return_experiment(data: dict, start_date: date, end_date: date
             },
         },
     )
+
+
+def run_high_volume_return_premium_experiment(data: dict, start_date: date, end_date: date,
+                                               starting_capital: float = 1_000_000,
+                                               n_walk_forward_windows: int = 3,
+                                               narrative_api_key: str = "",
+                                               narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                               experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                               knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                               skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the High-Volume
+    Return Premium -- computes the volume-shock cross-sectional
+    percentile ONCE up front (same pattern as every prior cross-sectional
+    strategy), reused across every walk-forward window. No execution-
+    realism configuration needed (unlike Amihud/Overnight Return
+    Anomaly) -- this strategy has no documented fill-timing or
+    liquidity-cost sensitivity of its own, so the default same-day-close,
+    zero-cost backtest is the appropriate baseline, same as most other
+    strategies in this program.
+    """
+    from swing_research.strategies.high_volume_return_premium import HighVolumeReturnPremiumStrategy
+    from swing_research.published_research_analyst import HIGH_VOLUME_RETURN_PREMIUM
+    from swing_research.cross_sectional import compute_volume_shock_percentile_ranks
+
+    volume_shock_percentiles = compute_volume_shock_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("volume_shock_percentile")
+                     for symbol, series in volume_shock_percentiles.items()}
+
+    strategy = HighVolumeReturnPremiumStrategy()
+    return run_generic_swing_experiment(
+        strategy, HIGH_VOLUME_RETURN_PREMIUM, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "high_volume_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "high_volume_stop_loss_pct": 0.08,
+            "high_volume_percentile_threshold": 90.0,
+            "high_volume_shock_recent_days": 5,
+            "high_volume_shock_baseline_days": 252,
+            "high_volume_holding_period_trading_days": 21,
+            "high_volume_single_vintage": True,
+            "high_volume_percentile_based_early_exit": False,
+        },
+    )

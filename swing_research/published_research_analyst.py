@@ -994,3 +994,67 @@ OVERNIGHT_RETURN_ANOMALY = PublishedStrategy(
         "longer applies."
     ),
 )
+
+
+HIGH_VOLUME_RETURN_PREMIUM = PublishedStrategy(
+    name="High-Volume Return Premium",
+    source_citation=(
+        "Gervais, S., Kaniel, R. and Mingelgrin, D.H. (2001), \"The High-Volume Return Premium,\" "
+        "The Journal of Finance, Vol. 56, No. 3."
+    ),
+    mechanism=(
+        "An INVESTOR RECOGNITION / VISIBILITY effect (building on Merton, 1987): a sudden spike in "
+        "a stock's trading volume, relative to its own typical level, draws attention to it and "
+        "temporarily expands its investor base and demand -- this takes time to fully play out, "
+        "producing predictable subsequent price appreciation. Distinct from Amihud's illiquidity "
+        "premium (SW-010), which uses volume as the DENOMINATOR of a liquidity-cost proxy -- this "
+        "strategy selects on volume ITSELF (a visibility/attention shock), not a cost measure "
+        "volume happens to enter into."
+    ),
+    rules=(
+        "Volume shock = a stock's recent (day-to-week) trading volume relative to its own typical "
+        "(longer-run) trading volume. Cross-sectional decile sort by this shock ratio at each "
+        "formation date. Long the TOP decile (largest positive shock) -- the paper's own long-side "
+        "finding. Holding period: approximately one month."
+    ),
+    variant_chosen=(
+        "Recent window = 5 trading days (1 week, the paper's own upper-bound recent-window "
+        "language), baseline window = 252 trading days (1 year, ending immediately before the "
+        "recent window, no overlap) -- this program's own reasoned operationalization of "
+        "\"recent vs. typical\" volume, since the paper's own precise ratio construction was not "
+        "independently reproduced here. See swing_research/cross_sectional.py's "
+        "VOLUME_SHOCK_RECENT_DAYS/VOLUME_SHOCK_BASELINE_DAYS. 21-trading-day (1-month) holding "
+        "period -- a direct restatement of the paper's own headline horizon."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy). SINGLE-VINTAGE "
+        "HOLDING with an 8% protective stop-loss and 1% risk-per-unit sizing, NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- same disclosed pattern as every other strategy. The "
+        "recent/baseline volume-shock window lengths are a reasoned, disclosed interpretive "
+        "choice (same category as Amihud's regression-to-decile-sort translation, SW-010), not "
+        "an independently-reproduced replication of the paper's own precise construction."
+    ),
+    distinctiveness=(
+        "First strategy in this program selecting on a VOLUME metric alone as an "
+        "attention/visibility signal, rather than volume entering as a cost-proxy denominator "
+        "(Amihud, SW-010) or a confirmation filter alongside a price pattern. Zero new data needed "
+        "(Volume is already a column in every OHLCV pull this program makes). Deliberately chosen "
+        "over Long-Term (De Bondt-Thaler) Reversal, the roadmap's own #2-ranked candidate, which "
+        "was set aside per explicit direction (2026-09-06) for its 3-5 year holding period -- "
+        "operationally mismatched with every other strategy in this program (1.5 to 76 days) and "
+        "poorly suited to this platform's 10-year history (too few non-overlapping multi-year eras "
+        "to walk-forward validate with real confidence)."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. "
+        "Volume-shock window construction (5-day recent / 252-day baseline): MODERATE, "
+        "DIRECTIONALLY UNKNOWN -- a different choice of window lengths could plausibly move both "
+        "which stocks qualify and the measured effect size; not an independently-reproduced "
+        "replication of the paper's own precise ratio. "
+        "21-day holding period: MINOR, a direct restatement of the paper's own headline horizon. "
+        "Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as "
+        "every prior cross-sectional strategy. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all."
+    ),
+)

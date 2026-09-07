@@ -1,0 +1,19 @@
+{
+  "data_period": "2024-09-04 to 2026-09-04",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 1,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN, standard. Volume-shock window construction (5-day recent / 252-day baseline): MODERATE, DIRECTIONALLY UNKNOWN -- a different choice of window lengths could plausibly move both which stocks qualify and the measured effect size; not an independently-reproduced replication of the paper's own precise ratio. 21-day holding period: MINOR, a direct restatement of the paper's own headline horizon. Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN, same reasoning as every prior cross-sectional strategy. Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but structurally significant in that NEITHER exists in the source paper at all.",
+  "high_volume_risk_pct_per_unit": 0.01,
+  "high_volume_stop_loss_pct": 0.08,
+  "high_volume_percentile_threshold": 90.0,
+  "high_volume_shock_recent_days": 5,
+  "high_volume_shock_baseline_days": 252,
+  "high_volume_holding_period_trading_days": 21,
+  "high_volume_single_vintage": true,
+  "high_volume_percentile_based_early_exit": false
+}
