@@ -26,8 +26,10 @@ exactly as before.
 
 import os
 import sys
+import threading
 import time
 import io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from typing import Optional
 
@@ -102,8 +104,35 @@ def get_instrument_token(tradingsymbol: str, headers: dict) -> Optional[int]:
     return tokens.get(tradingsymbol)
 
 
+class _RateLimiter:
+    """Thread-safe pacing of Kite historical requests: at most one request
+    start every `min_interval` seconds across ALL threads (Kite's
+    documented ceiling is 3 requests/second). Added 2026-09-10 so Pool D
+    can fetch the Nifty 500 concurrently inside a 5-minute cron slot
+    without exceeding the limit -- the sequential per-symbol sleeps below
+    stay as they were for single-threaded callers."""
+
+    def __init__(self, min_interval: float):
+        self.min_interval = min_interval
+        self._lock = threading.Lock()
+        self._next_allowed = 0.0
+
+    def wait(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            delay = self._next_allowed - now
+            self._next_allowed = max(now, self._next_allowed) + self.min_interval
+        if delay > 0:
+            time.sleep(delay)
+
+
+KITE_REQUESTS_PER_SECOND = 3
+_rate_limiter = _RateLimiter(min_interval=1.0 / KITE_REQUESTS_PER_SECOND)
+
+
 def _fetch_one_chunk(instrument_token: int, interval: str, from_date: date, to_date: date,
                       headers: dict) -> list:
+    _rate_limiter.wait()
     resp = requests.get(
         HISTORICAL_URL_TEMPLATE.format(instrument_token=instrument_token, interval=interval),
         headers=headers,
@@ -148,31 +177,62 @@ def fetch_intraday_candles(instrument_token: int, interval: str, from_date: date
     return df
 
 
+def _fetch_symbol(symbol: str, interval: str, from_date: date, to_date: date, headers: dict,
+                  rate_limit_delay: float) -> Optional[pd.DataFrame]:
+    token = get_instrument_token(symbol, headers)
+    if token is None:
+        print(f"WARNING: no instrument_token found for {symbol} -- skipping.")
+        return None
+    try:
+        df = fetch_intraday_candles(token, interval, from_date, to_date, headers, rate_limit_delay=rate_limit_delay)
+    except Exception as e:
+        print(f"WARNING: could not fetch intraday data for {symbol}: {e}")
+        return None
+    if df.empty:
+        print(f"WARNING: no intraday data returned for {symbol} -- skipping.")
+        return None
+    return df
+
+
 def fetch_all_intraday(symbols: list[str], interval: str, from_date: date, to_date: date,
-                        settings, rate_limit_delay: float = 0.35) -> dict[str, pd.DataFrame]:
+                        settings, rate_limit_delay: float = 0.35, max_workers: int = 1,
+                        on_symbol=None) -> dict[str, pd.DataFrame]:
     """
     symbols: bare NSE trading symbols, e.g. ["RELIANCE", "TCS"] (no .NS).
     Skips any symbol whose instrument_token can't be found or whose fetch
     fails, with a warning -- same fail-soft convention as
     data/fetch_historical.py's fetch_all().
+
+    max_workers > 1 fetches symbols concurrently; every request is still
+    paced by the module-wide _RateLimiter (3/s), so this only removes
+    the serial latency, never the rate limit. on_symbol(symbol, df), if
+    given, is called as each symbol arrives and its DataFrame is then
+    DROPPED instead of collected -- for a caller that wants to reduce
+    each symbol to something small (Pool D's day context) without ever
+    holding the whole universe's history in memory at once.
     """
     headers = get_market_data_session(settings)
+    _load_instrument_tokens(headers)   # warm the token cache once, before any threads start
     data = {}
-    for symbol in symbols:
-        token = get_instrument_token(symbol, headers)
-        if token is None:
-            print(f"WARNING: no instrument_token found for {symbol} -- skipping.")
-            continue
-        try:
-            df = fetch_intraday_candles(token, interval, from_date, to_date, headers,
-                                         rate_limit_delay=rate_limit_delay)
-            if df.empty:
-                print(f"WARNING: no intraday data returned for {symbol} -- skipping.")
-                continue
+
+    def handle(symbol, df):
+        if df is None:
+            return
+        if on_symbol is not None:
+            on_symbol(symbol, df)
+        else:
             data[symbol] = df
-        except Exception as e:
-            print(f"WARNING: could not fetch intraday data for {symbol}: {e}")
-        time.sleep(rate_limit_delay)
+
+    if max_workers <= 1:
+        for symbol in symbols:
+            handle(symbol, _fetch_symbol(symbol, interval, from_date, to_date, headers, rate_limit_delay))
+            time.sleep(rate_limit_delay)
+        return data
+
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(_fetch_symbol, s, interval, from_date, to_date, headers, 0.0): s for s in symbols}
+        for future in as_completed(futures):
+            handle(futures[future], future.result())
     return data
 
 

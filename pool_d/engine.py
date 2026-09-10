@@ -29,9 +29,7 @@ trivially testable with any `now` a test wants to pass in.
 import datetime
 from typing import Optional
 
-from research_lab.backtesting_engineer import (
-    Trade, _check_exit, _compute_day_context, _risk_per_share, _trade_pnl,
-)
+from research_lab.backtesting_engineer import Trade, _check_exit, _risk_per_share, _trade_pnl
 from research_lab.risk_manager_research import RiskParameters, should_block_new_trade
 from research_lab.strategies.vwap_extension_exhaustion_fade import VwapExtensionExhaustionFadeStrategy
 
@@ -45,20 +43,6 @@ FORCE_SQUARE_OFF_HOUR = 15.42    # 15:25 -- a few minutes' buffer before the rea
 
 def _hour_float(ts) -> float:
     return ts.hour + ts.minute / 60
-
-
-def compute_todays_context(history_by_symbol: dict, today: datetime.date) -> dict:
-    """history_by_symbol: {symbol: DataFrame} of the trailing ~90 days of
-    5-minute bars (fetched ONCE per day, before the first tick, by
-    run_pool_d.py -- expensive relative to a single-day fetch, so never
-    repeated within the same day). Returns {symbol: context dict} via
-    research_lab's own _compute_day_context(), reused verbatim."""
-    context_by_symbol = {}
-    for symbol, df in history_by_symbol.items():
-        if df is None or df.empty:
-            continue
-        context_by_symbol[symbol] = _compute_day_context(df, today)
-    return context_by_symbol
 
 
 def process_tick(state: dict, todays_bars_by_symbol: dict, context_by_symbol: dict,

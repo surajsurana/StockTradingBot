@@ -172,7 +172,9 @@ def _send_execution_notification(strategy_key: str, record, result: dict) -> Non
             save_detail(f"{record.display_name} fills", text)
         except Exception as cache_error:   # a Details-cache hiccup must never fail the run
             print(f"WARNING: could not cache the fill notification: {type(cache_error).__name__}: {cache_error}")
-        print(text)
+        print(f"[{strategy_key}] fills not sent to Telegram (single daily summary mode): "
+              f"{len(result['new_entries'])} entr{'y' if len(result['new_entries']) == 1 else 'ies'}, "
+              f"{len(result['new_exits'])} exit{'' if len(result['new_exits']) == 1 else 's'} -- cached for Details.")
         return
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
@@ -495,7 +497,7 @@ def _send_daily_summary(run_results: list) -> None:
             save_detail("Pool A summary", text)
         except Exception as cache_error:   # a Details-cache hiccup must never fail the run
             print(f"WARNING: could not cache the Pool A summary: {type(cache_error).__name__}: {cache_error}")
-        print(text)
+        print("Pool A summary not sent to Telegram (single daily summary mode) -- cached for Details.")
         return
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 

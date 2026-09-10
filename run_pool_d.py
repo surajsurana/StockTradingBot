@@ -18,13 +18,22 @@ with any `now` a test wants to pass in. A tick outside market hours (a
 weekend, a holiday, or simply the cron firing a few minutes either side
 of the window) is a fast, cheap no-op -- no Kite calls made at all.
 
-Universe: the full LIQUID_UNIVERSE (~150 names, 2026-09-10; was its
-first 20 before). Each tick fetches only today's bars for every symbol
-(~150 Kite calls at 3 requests/second, well inside a 5-minute slot);
-the first tick of a day additionally fetches 90 days of history for the
-strategy's context. A lock file guards against two ticks overlapping.
+Universe (2026-09-10, per explicit direction): the Nifty 500 -- the same
+frozen universe Pool A trades (swing_research/universe.py, ~457 names,
+Kite bare symbols). Was the 20-name, then 150-name, LIQUID_UNIVERSE.
+At Kite's 3-requests/second ceiling that is ~2.5 minutes of fetching per
+tick, done concurrently (data/fetch_kite_intraday.py's rate limiter
+paces every request) so it fits the 5-minute cron slot; a lock file
+guards against two ticks overlapping if one runs long.
 
-    python run_pool_d.py             # normal tick -- what cron calls
+The day's context (90 days of history per symbol -> the strategy's ATR
+and VWAP-extension baselines) is computed BEFORE the open by a separate
+--prepare run at 09:00, one symbol at a time so the whole universe's
+history is never held in memory (the VPS has 458 MB). If --prepare did
+not run, the first tick does it itself (slower first tick, same result).
+
+    python run_pool_d.py --prepare   # 09:00 cron: today's context + daily counters reset
+    python run_pool_d.py             # */5 09:15-15:30 cron: one tick
     python run_pool_d.py --force     # bypass the market-hours check (manual testing only)
 """
 
@@ -37,15 +46,17 @@ from config import settings
 from data.fetch_kite_intraday import fetch_all_intraday
 from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
 from reporting.telegram_notifier import send_telegram_message
-from run_experiment import LIQUID_UNIVERSE
+from research_lab.backtesting_engineer import _compute_day_context
+from swing_research.universe import get_swing_universe
 
-from pool_d.engine import compute_todays_context, process_tick
+from pool_d.engine import process_tick
 from pool_d.state import POOL_D_LOCK_PATH, POOL_D_STATE_DIR, load_state, save_state
 
-POOL_D_SYMBOLS = list(LIQUID_UNIVERSE)
+POOL_D_SYMBOLS = [s[:-3] if s.endswith(".NS") else s for s in get_swing_universe()]   # Kite wants bare symbols
 STARTING_CAPITAL = settings.RESEARCH_LAB_VIRTUAL_CAPITAL   # Rs.1,00,000 -- ONE shared book
 CONTEXT_HISTORY_DAYS = 90   # comfortably covers atr_14d (needs 15) + the 20-day extension baseline
 LOCK_STALE_MINUTES = 15
+FETCH_WORKERS = 3
 
 MARKET_OPEN_HOUR = 9.25    # 9:15
 MARKET_CLOSE_HOUR = 15.50  # 15:30
@@ -101,24 +112,54 @@ def run_tick(now: datetime.datetime = None, force: bool = False) -> dict:
         _release_lock()
 
 
+def prepare_day(state: dict, today: datetime.date) -> None:
+    """Today's context for every symbol (one symbol in memory at a time)
+    plus the daily counter reset. Idempotent per day."""
+    print(f"Preparing {today.isoformat()} -- resetting daily counters and computing fresh context "
+          f"({len(POOL_D_SYMBOLS)} symbols, {CONTEXT_HISTORY_DAYS}-day history, {FETCH_WORKERS} workers)...")
+    from_date = today - datetime.timedelta(days=CONTEXT_HISTORY_DAYS)
+    context_by_symbol = {}
+
+    def reduce_to_context(symbol, df):
+        context_by_symbol[symbol] = _compute_day_context(df, today)
+
+    fetch_all_intraday(POOL_D_SYMBOLS, "5minute", from_date, today, settings,
+                       max_workers=FETCH_WORKERS, on_symbol=reduce_to_context)
+    state["context_by_symbol"] = context_by_symbol
+    state["positions"] = {}   # nothing is ever held overnight
+    state["trades_today_by_symbol"] = {}
+    state["realized_pnl_today"] = 0.0
+    state["last_processed_date"] = today.isoformat()
+    save_state(state)
+    print(f"Context ready for {len(context_by_symbol)} symbol(s).")
+
+
+def run_prepare(now: datetime.datetime = None) -> None:
+    now = now or datetime.datetime.now()
+    if now.weekday() >= 5:
+        print("Weekend -- nothing to prepare.")
+        return
+    if not _acquire_lock(now):
+        print("Another Pool D process is running -- skipping prepare.")
+        return
+    try:
+        state = load_state(STARTING_CAPITAL)
+        if state["last_processed_date"] == now.date().isoformat():
+            print("Already prepared for today.")
+            return
+        prepare_day(state, now.date())
+    finally:
+        _release_lock()
+
+
 def _run_tick_locked(now: datetime.datetime) -> dict:
     state = load_state(STARTING_CAPITAL)
     today = now.date()
-    today_iso = today.isoformat()
 
-    if state["last_processed_date"] != today_iso:
-        print(f"First tick of {today_iso} -- resetting daily counters and computing fresh context "
-              f"({len(POOL_D_SYMBOLS)} symbols, {CONTEXT_HISTORY_DAYS}-day history)...")
-        from_date = today - datetime.timedelta(days=CONTEXT_HISTORY_DAYS)
-        history = fetch_all_intraday(POOL_D_SYMBOLS, "5minute", from_date, today, settings)
-        state["context_by_symbol"] = compute_todays_context(history, today)
-        state["positions"] = {}   # nothing is ever held overnight
-        state["trades_today_by_symbol"] = {}
-        state["realized_pnl_today"] = 0.0
-        state["last_processed_date"] = today_iso
-        save_state(state)
+    if state["last_processed_date"] != today.isoformat():
+        prepare_day(state, today)   # --prepare didn't run (or failed): do it now, slower first tick
 
-    todays_bars = fetch_all_intraday(POOL_D_SYMBOLS, "5minute", today, today, settings)
+    todays_bars = fetch_all_intraday(POOL_D_SYMBOLS, "5minute", today, today, settings, max_workers=FETCH_WORKERS)
     if not todays_bars:
         print("No today's-bars data available yet (pre-market, or a data delay) -- skipping this tick.")
         return {"new_entries": [], "new_exits": []}
@@ -141,8 +182,13 @@ def _run_tick_locked(now: datetime.datetime) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true", help="Bypass the market-hours check (manual testing only)")
+    parser.add_argument("--prepare", action="store_true",
+                         help="Compute today's context before the open (09:00 cron); no trading")
     args = parser.parse_args()
-    run_tick(force=args.force)
+    if args.prepare:
+        run_prepare()
+    else:
+        run_tick(force=args.force)
 
 
 if __name__ == "__main__":
