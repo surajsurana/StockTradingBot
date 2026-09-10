@@ -133,6 +133,18 @@ PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET = float(
 # production trading behavior.
 from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID   # noqa: F401 (re-exported for deployment/'s own callers)
 
+# TELEGRAM_SINGLE_DAILY_SUMMARY (added 2026-09-10, per explicit direction:
+# "i just want a single message on telegram each day ... i dont want
+# purchase and sell messages"): when True, every per-run Telegram send --
+# Pool A's market-open fill alerts and end-of-day summary, Portfolio B/C's
+# daily and fill messages, Pool D's fill alerts, and the per-strategy
+# failure alerts -- is suppressed (still printed to the run's log, and
+# cached for the Details command where a cache already existed). The ONE
+# message of the day is reporting/pool_summary.py's, sent by
+# send_daily_pool_summary.py from cron after every pool has run; a book
+# that failed to run shows up there as "not updated today".
+TELEGRAM_SINGLE_DAILY_SUMMARY = os.environ.get("TELEGRAM_SINGLE_DAILY_SUMMARY", "1") == "1"
+
 DEPLOYMENT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(DEPLOYMENT_DIR, "state")
 PAPER_TRADING_STATE_DIR = os.path.join(STATE_DIR, "paper_trading")

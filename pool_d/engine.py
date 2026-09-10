@@ -124,7 +124,8 @@ def process_tick(state: dict, todays_bars_by_symbol: dict, context_by_symbol: di
                 )
                 append_trade({"symbol": symbol, "entry_price": position["entry_price"],
                               "exit_price": exit_price, "quantity": position["quantity"],
-                              "pnl": round(pnl, 2), "reason": exit_reason, "direction": position["direction"]})
+                              "pnl": round(pnl, 2), "reason": exit_reason, "direction": position["direction"],
+                              "exit_date": now.date().isoformat()})
                 new_exits.append({"symbol": symbol, "exit_price": exit_price, "pnl": round(pnl, 2),
                                    "reason": exit_reason, "direction": position["direction"]})
                 del state["positions"][symbol]

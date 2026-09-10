@@ -25,7 +25,16 @@ import datetime
 
 from data.fetch_historical import fetch_all
 from deployment.daily_details_store import save_detail
-from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
+
+
+def _send_or_log(message: str) -> None:
+    """One Telegram message a day, from send_daily_pool_summary.py (2026-09-10)
+    -- Portfolio C's own messages are logged, not sent, while that switch is on."""
+    if TELEGRAM_SINGLE_DAILY_SUMMARY:
+        print(message)
+        return
+    send_telegram_message(message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 from portfolio_c import state as pcs
 from portfolio_c.daily import resolve_portfolio_c_at_open, run_portfolio_c_daily
 from portfolio_c.report import format_portfolio_c_message
@@ -49,7 +58,7 @@ def _run_eod(force: bool) -> None:
         # ALSO cached so the Details command can surface it again on
         # request (deployment/daily_details_store.py).
         save_detail("Portfolio C", message)
-        send_telegram_message(message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+        _send_or_log(message)
 
 
 def _run_resolve_at_open() -> None:
@@ -70,7 +79,7 @@ def _run_resolve_at_open() -> None:
             **result, "open_positions": len(updated["positions"]), "cash": updated["cash"],
             "mark_to_market_equity": updated["cash"] + positions_value,
         })
-        send_telegram_message(message, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+        _send_or_log(message)
 
 
 def main():

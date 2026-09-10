@@ -87,7 +87,7 @@ from deployment.paper_trading_engine import (
     resolve_pending_fills_at_open, run_daily,
 )
 from deployment.scheduler import is_due_now, strategies_due_now
-from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
@@ -165,6 +165,15 @@ def _send_execution_notification(strategy_key: str, record, result: dict) -> Non
         mode="PAPER", strategy_display_name=record.display_name,
         new_entries=result["new_entries"], new_exits=result["new_exits"], strategy_id=record.strategy_id,
     )
+    if TELEGRAM_SINGLE_DAILY_SUMMARY:
+        # Fills are no longer alerted individually (2026-09-10) -- cached for
+        # the Details command and visible in the daily pool summary's numbers.
+        try:
+            save_detail(f"{record.display_name} fills", text)
+        except Exception as cache_error:   # a Details-cache hiccup must never fail the run
+            print(f"WARNING: could not cache the fill notification: {type(cache_error).__name__}: {cache_error}")
+        print(text)
+        return
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
 
@@ -258,6 +267,10 @@ def _send_error_notification(strategy_key: str, display_name: str, error: Except
         f"Other strategies in this run are not affected.\n\n"
         f"```\n{type(error).__name__}: {error}\n```"
     )
+    if TELEGRAM_SINGLE_DAILY_SUMMARY:
+        # Surfaces in the daily pool summary as "Not updated today: <strategy>".
+        print(text)
+        return
     try:
         send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
     except Exception as notify_error:
@@ -476,6 +489,14 @@ def _send_daily_summary(run_results: list) -> None:
         blended_win_rate=blended_win_rate,
         booked_pnl_today=booked_pnl_today, total_pnl=total_pnl,
     )
+    if TELEGRAM_SINGLE_DAILY_SUMMARY:
+        # Superseded by send_daily_pool_summary.py's all-pools message (2026-09-10).
+        try:
+            save_detail("Pool A summary", text)
+        except Exception as cache_error:   # a Details-cache hiccup must never fail the run
+            print(f"WARNING: could not cache the Pool A summary: {type(cache_error).__name__}: {cache_error}")
+        print(text)
+        return
     send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
 

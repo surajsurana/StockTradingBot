@@ -27,7 +27,7 @@ import sys
 
 from config import settings
 from data.fetch_kite_intraday import fetch_all_intraday
-from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from deployment.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
 from reporting.telegram_notifier import send_telegram_message
 from run_experiment import LIQUID_UNIVERSE
 
@@ -92,7 +92,10 @@ def run_tick(now: datetime.datetime = None, force: bool = False) -> dict:
     print(f"[{now.strftime('%H:%M')}] {len(result['new_entries'])} new entr{'y' if len(result['new_entries']) == 1 else 'ies'}, "
           f"{len(result['new_exits'])} new exit{'s' if len(result['new_exits']) != 1 else ''}.")
     if result["new_entries"] or result["new_exits"]:
-        send_telegram_message(_format_notification(result), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+        if TELEGRAM_SINGLE_DAILY_SUMMARY:
+            print(_format_notification(result))   # fills roll up into send_daily_pool_summary.py's message
+        else:
+            send_telegram_message(_format_notification(result), TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
     return result
 

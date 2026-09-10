@@ -128,8 +128,20 @@ def _fake_record(strategy_key, display_name):
     )
 
 
+def _legacy_per_run_messages(test_case):
+    """These tests verify the per-run Telegram sends themselves. Since
+    2026-09-10 those sends are gated off by default
+    (deployment.settings.TELEGRAM_SINGLE_DAILY_SUMMARY -- one all-pools
+    message a day instead), so run them with the switch OFF; the ON path
+    is covered by TestSingleDailySummarySwitch below."""
+    patcher = patch.object(rpt, "TELEGRAM_SINGLE_DAILY_SUMMARY", False)
+    patcher.start()
+    test_case.addCleanup(patcher.stop)
+
+
 class TestRunOneExceptionIsolation(unittest.TestCase):
     def setUp(self):
+        _legacy_per_run_messages(self)
         self.record = _fake_record("fake_strategy", "Fake Strategy")
         rpt._STRATEGY_FACTORIES["fake_strategy"] = {
             "display_name": "Fake Strategy",
@@ -302,6 +314,7 @@ class TestResolveAtOpenOne(unittest.TestCase):
     covered in test_deployment.py's TestResolvePendingFillsAtOpen."""
 
     def setUp(self):
+        _legacy_per_run_messages(self)
         self.record = _fake_record("fake_strategy", "Fake Strategy")
         rpt._STRATEGY_FACTORIES["fake_strategy"] = {
             "display_name": "Fake Strategy",
@@ -415,6 +428,9 @@ class TestSendDailySummary(unittest.TestCase):
     filled, so new_entries/new_exits (actual fills only) is routinely
     empty at EOD time. Also covers the new cumulative "Total P&L" figure
     (equity minus starting capital)."""
+
+    def setUp(self):
+        _legacy_per_run_messages(self)
 
     @patch("run_paper_trading.send_telegram_message")
     @patch("run_paper_trading.format_daily_summary")
@@ -561,6 +577,51 @@ class TestSendNotificationCachesInsteadOfSending(unittest.TestCase):
 
         mock_save_detail.assert_called_once_with("Minervini", "the full report text")
         mock_send.assert_not_called()
+
+
+class TestSingleDailySummarySwitch(unittest.TestCase):
+    """With deployment.settings.TELEGRAM_SINGLE_DAILY_SUMMARY on (the
+    default since 2026-09-10), none of Pool A's own per-run messages --
+    fill alerts, failure alerts, the end-of-day Pool A summary -- reach
+    Telegram; the one message of the day is send_daily_pool_summary.py's."""
+
+    def setUp(self):
+        patcher = patch.object(rpt, "TELEGRAM_SINGLE_DAILY_SUMMARY", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.record = _fake_record("fake_strategy", "Fake Strategy")
+
+    @patch("run_paper_trading.save_detail")
+    @patch("run_paper_trading.send_telegram_message")
+    def test_execution_notification_is_cached_not_sent(self, mock_send, mock_save):
+        rpt._send_execution_notification("fake_strategy", self.record, {
+            "new_entries": [{"symbol": "X.NS", "entry_price": 105.0, "quantity": 10, "stop_loss": 90.0}],
+            "new_exits": [],
+        })
+        mock_send.assert_not_called()
+        mock_save.assert_called_once()
+
+    @patch("run_paper_trading.send_telegram_message")
+    def test_error_notification_is_logged_not_sent(self, mock_send):
+        rpt._send_error_notification("fake_strategy", "Fake Strategy", RuntimeError("boom"))
+        mock_send.assert_not_called()
+
+    @patch("run_paper_trading.save_detail")
+    @patch("run_paper_trading.send_telegram_message")
+    @patch("run_paper_trading.format_daily_summary", return_value="pool a summary")
+    @patch("run_paper_trading.compute_live_metrics", return_value={"total_trades": 0, "win_rate": 0.0})
+    @patch("run_paper_trading.load_portfolio", return_value={"starting_capital": 100000.0, "cash": 100000.0,
+                                                             "positions": {}})
+    def test_pool_a_daily_summary_is_cached_not_sent(self, _mock_pf, _mock_metrics, _mock_format, mock_send,
+                                                    mock_save):
+        rpt._send_daily_summary([{
+            "strategy_key": "fake_strategy", "display_name": "Fake Strategy",
+            "result": {"new_entries": [], "new_exits": [], "open_positions": 0, "daily_pnl": 0.0,
+                       "mark_to_market_equity": 100000.0, "cash": 100000.0, "new_pending_entries": [],
+                       "new_pending_exits": []},
+        }])
+        mock_send.assert_not_called()
+        mock_save.assert_called_once()
 
 
 if __name__ == "__main__":
