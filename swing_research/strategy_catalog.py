@@ -191,6 +191,33 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # (unlike Overnight Return Anomaly), so the platform default is the correct, validated basis
         # (EXP-080 was run with no execution-realism configuration, same as most other strategies).
     ),
+    PaperTradingStrategySpec(
+        strategy_key="earnings_announcement_premium",
+        display_name="Earnings Announcement Premium",
+        # Live construction differs from research in exactly one injected dependency: the NSE
+        # holiday calendar, so "today is the month's last trading day" can be answered for the
+        # final bar (see the strategy's IMPLEMENTATION ASSUMPTIONS item 5).
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.earnings_announcement_premium",
+            fromlist=["EarningsAnnouncementPremiumStrategy"],
+        ).EarningsAnnouncementPremiumStrategy(
+            is_last_trading_day_fn=__import__(
+                "deployment.nse_trading_calendar", fromlist=["is_last_trading_day_of_month"]
+            ).is_last_trading_day_of_month,
+        ),
+        # Three feature columns per symbol (a DataFrame, joined like any Series) from the
+        # announcement-date cache, refreshed in full once it is more than 30 days old so the
+        # trailing-12-month announcement count keeps tracking newly-reported quarters.
+        compute_extra_columns_fn=lambda data: __import__(
+            "swing_research.announcement_features", fromlist=["compute_announcement_features_by_symbol"]
+        ).compute_announcement_features_by_symbol(
+            data,
+            __import__("data.fetch_earnings_calendar", fromlist=["get_announcement_date_history"])
+            .get_announcement_date_history(list(data.keys()), max_age_days=30),
+        ),
+        # No execution_config_factory: EXP-081 ran on the default same-day-close research engine,
+        # so the platform default (next_day_open) applies live, same as High-Volume Return Premium.
+    ),
 ]
 
 

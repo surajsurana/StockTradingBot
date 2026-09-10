@@ -225,14 +225,29 @@ def fetch_announcement_date_history_chunked(symbols: list, limit: int = EARNINGS
     return history
 
 
+def _read_cache_payload(path: str) -> Optional[dict]:
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def load_announcement_dates_cache(path: str = ANNOUNCEMENT_DATES_CACHE_PATH) -> dict:
     """{symbol: sorted list of datetime.date} from the on-disk cache, or {}."""
-    if not os.path.exists(path):
+    payload = _read_cache_payload(path)
+    if payload is None:
         return {}
-    with open(path, encoding="utf-8") as f:
-        payload = json.load(f)
     return {symbol: sorted(date.fromisoformat(d) for d in dates)
             for symbol, dates in payload.get("dates_by_symbol", {}).items()}
+
+
+def announcement_dates_cache_age_days(path: str = ANNOUNCEMENT_DATES_CACHE_PATH,
+                                      today: Optional[date] = None) -> Optional[int]:
+    """Days since the cache was last written, or None if there is no cache."""
+    payload = _read_cache_payload(path)
+    if payload is None or not payload.get("fetched_at"):
+        return None
+    return ((today or date.today()) - date.fromisoformat(payload["fetched_at"])).days
 
 
 def save_announcement_dates_cache(dates_by_symbol: dict, path: str = ANNOUNCEMENT_DATES_CACHE_PATH) -> None:
@@ -248,12 +263,25 @@ def save_announcement_dates_cache(dates_by_symbol: dict, path: str = ANNOUNCEMEN
 
 
 def get_announcement_date_history(symbols: list, path: str = ANNOUNCEMENT_DATES_CACHE_PATH,
-                                  refresh: bool = False, fetch_fn=None) -> dict:
+                                  refresh: bool = False, fetch_fn=None,
+                                  max_age_days: Optional[int] = None, today: Optional[date] = None) -> dict:
     """Cache-first: symbols already in the cache are served from disk;
     only the missing ones (or all, with refresh=True) are fetched, then
     the cache is rewritten. fetch_fn is injectable for tests (defaults to
     the chunked fetcher). Returns {symbol: sorted dates} for the requested
-    symbols that have any history."""
+    symbols that have any history.
+
+    max_age_days: if given and the cache was written more than that many
+    days ago, EVERY requested symbol is re-fetched (a full refresh) so
+    newly-reported quarters keep arriving -- the live Earnings Announcement
+    Premium run depends on the trailing-12-month announcement count staying
+    current. None (research) never refreshes an existing entry."""
+    if max_age_days is not None and not refresh:
+        age = announcement_dates_cache_age_days(path, today=today)
+        if age is not None and age > max_age_days:
+            print(f"Announcement-date cache is {age} days old (> {max_age_days}) -- refreshing all "
+                  f"{len(symbols)} symbol(s) via yfinance...")
+            refresh = True
     cached = {} if refresh else load_announcement_dates_cache(path)
     missing = [s for s in symbols if s not in cached]
     if missing:

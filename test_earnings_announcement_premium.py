@@ -138,6 +138,48 @@ class TestPrecompute(unittest.TestCase):
         precomputed = EarningsAnnouncementPremiumStrategy().precompute(_bdays("2024-01-02", "2024-03-28"))
         self.assertFalse(precomputed["qualifies"].any())
 
+    def test_final_bar_month_end_answered_by_the_injected_calendar_in_live_mode(self):
+        df = _bdays("2024-01-02", "2024-01-31")   # ends ON a month end, as a live run on Jan 31 would
+        df["expected_announcer_next_month"] = True
+        df["announcements_prior_12m"] = 4
+        research = EarningsAnnouncementPremiumStrategy().precompute(df)
+        self.assertFalse(bool(research["is_month_end"].iloc[-1]))
+        self.assertFalse(bool(research["qualifies"].iloc[-1]))
+
+        live = EarningsAnnouncementPremiumStrategy(
+            is_last_trading_day_fn=lambda d: d == datetime.date(2024, 1, 31)).precompute(df)
+        self.assertTrue(bool(live["is_month_end"].iloc[-1]))
+        self.assertTrue(bool(live["qualifies"].iloc[-1]))
+        # earlier bars still come from the data itself, never from the calendar hook
+        self.assertFalse(bool(live.loc["2024-01-30"]["is_month_end"]))
+
+
+class TestAnnouncementDateCacheRefresh(unittest.TestCase):
+    def test_stale_cache_triggers_a_full_refetch_fresh_cache_does_not(self):
+        import json
+        import os
+        import tempfile
+        from data.fetch_earnings_calendar import get_announcement_date_history
+
+        path = os.path.join(tempfile.mkdtemp(), "cache.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"fetched_at": "2026-01-01", "dates_by_symbol": {"A.NS": ["2025-07-15"]}}, f)
+        calls = []
+
+        def fake_fetch(symbols):
+            calls.append(list(symbols))
+            return {s: [datetime.date(2025, 7, 15), datetime.date(2025, 10, 15)] for s in symbols}
+
+        fresh = get_announcement_date_history(["A.NS"], path=path, fetch_fn=fake_fetch,
+                                              max_age_days=30, today=datetime.date(2026, 1, 20))
+        self.assertEqual(calls, [])                      # 19 days old: served from cache
+        self.assertEqual(fresh["A.NS"], [datetime.date(2025, 7, 15)])
+
+        stale = get_announcement_date_history(["A.NS"], path=path, fetch_fn=fake_fetch,
+                                              max_age_days=30, today=datetime.date(2026, 3, 1))
+        self.assertEqual(calls, [["A.NS"]])              # 59 days old: everything re-fetched
+        self.assertEqual(len(stale["A.NS"]), 2)
+
 
 class TestEntrySignal(unittest.TestCase):
     def _precomputed(self, vcr):

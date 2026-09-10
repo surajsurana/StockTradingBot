@@ -80,8 +80,12 @@ program was paused on cost grounds)
 5. MONTH-END DETECTION from the trading calendar itself (a day is the
    month's last trading day if the next bar's month differs). This uses
    the exchange holiday calendar, which is published in advance, not any
-   price information; the final bar of a series is never treated as a
-   month end. Live paper trading would need an explicit calendar check.
+   price information. The final bar of a series has no next bar: in
+   research it is never treated as a month end; in live paper trading
+   the strategy is constructed with is_last_trading_day_fn =
+   deployment/nse_trading_calendar.is_last_trading_day_of_month, which
+   answers from NSE's published holiday list (added 2026-09-10 for the
+   SW-018 promotion -- a calendar lookup, not a rule change).
    Estimated impact: NEGLIGIBLE.
 6. EXIT RULE: ONLY the next month-end close after entry, OR the
    protective stop below. No early exit on any signal.
@@ -100,7 +104,7 @@ Rebalance frequency: features computed DAILY, but entries and exits only
 ever fire on a month's last trading day.
 """
 
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 
@@ -119,6 +123,12 @@ class EarningsAnnouncementPremiumStrategy(Strategy):
     risk_pct_per_unit = 0.01
     min_lookback_days = MIN_LOOKBACK_TRADING_DAYS
 
+    def __init__(self, is_last_trading_day_fn: Optional[Callable[[object], bool]] = None):
+        # None (research): the series' final bar is never a month end.
+        # Live: deployment/nse_trading_calendar.is_last_trading_day_of_month,
+        # so today -- always the final bar in a daily run -- can be one.
+        self.is_last_trading_day_fn = is_last_trading_day_fn
+
     def precompute(self, price_history: pd.DataFrame) -> pd.DataFrame:
         df = price_history.copy()
 
@@ -135,7 +145,11 @@ class EarningsAnnouncementPremiumStrategy(Strategy):
         months = pd.Series(df.index.month, index=df.index)
         is_month_end = months.ne(months.shift(-1))
         if len(is_month_end):
-            is_month_end.iloc[-1] = False   # the series' final bar: tomorrow is unknown
+            # The series' final bar has no next bar: unknown (False) in research,
+            # answered from the NSE holiday calendar in live paper trading.
+            final_date = df.index[-1].date()
+            is_month_end.iloc[-1] = (bool(self.is_last_trading_day_fn(final_date))
+                                     if self.is_last_trading_day_fn is not None else False)
         df["is_month_end"] = is_month_end.values
 
         df["qualifies"] = (df["is_month_end"]
