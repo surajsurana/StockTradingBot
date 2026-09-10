@@ -118,15 +118,22 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
 
     d_pf = _read_json(os.path.join(state_dir, POOL_D_DIRNAME, "portfolio.json")) or {}
     d_trades = _read_jsonl(os.path.join(state_dir, POOL_D_DIRNAME, "trades.jsonl"))
-    d_today = (sum(float(v) for v in (d_pf.get("realized_pnl_today_by_symbol") or {}).values())
-               if d_pf.get("last_processed_date") == today.isoformat() else 0.0)
+    d_is_today = d_pf.get("last_processed_date") == today.isoformat()
+    if "realized_pnl_today" in d_pf:      # single shared book (since 2026-09-10)
+        d_today = float(d_pf["realized_pnl_today"])
+    else:                                  # pre-2026-09-10 per-symbol layout
+        d_today = sum(float(v) for v in (d_pf.get("realized_pnl_today_by_symbol") or {}).values())
+    d_positions = d_pf.get("positions") or {}
     pool_d = {
+        "positions": len(d_positions),
+        "deployed": round(sum(float(p["entry_price"]) * int(p["quantity"]) for p in d_positions.values()), 2),
+        "cash": round(float(d_pf.get("cash", 0) or 0), 2),
         "realised": round(sum(float(t.get("pnl", 0) or 0) for t in d_trades), 2),
-        "realised_today": round(d_today, 2),
+        "realised_today": round(d_today if d_is_today else 0.0, 2),
         "trades_total": len(d_trades),
-        "trades_today": sum(int(v) for v in (d_pf.get("trades_today_by_symbol") or {}).values())
-        if d_pf.get("last_processed_date") == today.isoformat() else 0,
-        "updated_today": d_pf.get("last_processed_date") == today.isoformat(),
+        "trades_today": (sum(int(v) for v in (d_pf.get("trades_today_by_symbol") or {}).values())
+                         if d_is_today else 0),
+        "updated_today": d_is_today,
     }
 
     pools = {"A": _pool_totals(pool_a), "A1": _pool_totals(pool_a1), "B": _pool_totals(pool_b),
@@ -135,8 +142,8 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     # the legacy books are winding down and are not part of the live picture).
     counted = [pools["A"], pools["B"], pools["C"]]
     overall = {
-        "deployed": round(sum(p["deployed"] for p in counted), 2),
-        "cash": round(sum(p["cash"] for p in counted), 2),
+        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"], 2),
+        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"], 2),
         "unrealised": round(sum(p["unrealised"] for p in counted), 2),
         "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"], 2),
         "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"], 2),
@@ -189,6 +196,7 @@ def format_pool_summary(summary: dict) -> str:
     lines += _pool_block("Pool C", pools["C"], f"{pools['C']['positions']} positions")
     lines += [
         f"*Pool D (intraday)* -- {d['trades_today']} trades today, {d['trades_total']} total",
+        f"Deployed {inr(d['deployed'])} | Cash {inr(d['cash'])}",
         f"Realised {inr(d['realised'], signed=True)} (today {inr(d['realised_today'], signed=True)})",
         "",
         f"*All pools (A, B, C, D -- A1 not counted)* -- {o['positions']} positions",

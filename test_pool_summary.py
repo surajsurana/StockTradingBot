@@ -53,8 +53,8 @@ def _state_tree():
         "positions": {"C.NS": {"entry_price": 12.0, "quantity": 1000, "stop_loss": 11.0}},
     })
     _write(os.path.join(root, "pool_d", "portfolio.json"), {
-        "last_processed_date": "2026-09-10", "positions": {},
-        "realized_pnl_today_by_symbol": {"A": 60.0, "B": -10.0}, "trades_today_by_symbol": {"A": 1, "B": 1},
+        "last_processed_date": "2026-09-10", "positions": {}, "starting_capital": 100000.0, "cash": 100108.0,
+        "realized_pnl_today": 50.0, "trades_today_by_symbol": {"A": 1, "B": 1},
     })
     _write(os.path.join(root, "pool_d", "trades.jsonl"),
            [{"symbol": "A", "pnl": 60.0}, {"symbol": "B", "pnl": -10.0}, {"symbol": "A", "pnl": 58.0}], jsonl=True)
@@ -89,11 +89,13 @@ class TestBuildPoolSummary(unittest.TestCase):
         d = self.summary["pool_d"]
         self.assertAlmostEqual(d["realised"], 108.0)
         self.assertAlmostEqual(d["realised_today"], 50.0)
+        self.assertAlmostEqual(d["cash"], 100108.0)
         self.assertEqual((d["trades_today"], d["trades_total"]), (2, 3))
 
     def test_overall_totals_include_pool_d_realised_and_exclude_a1(self):
         o = self.summary["overall"]
-        self.assertAlmostEqual(o["deployed"], 50000 + 12000)          # A + C; A1's 20,000 not counted
+        self.assertAlmostEqual(o["deployed"], 50000 + 12000)          # A + C (+ D's 0); A1's 20,000 not counted
+        self.assertAlmostEqual(o["cash"], 140000 + 100000 + 88000 + 100108)   # A + B + C + D
         self.assertAlmostEqual(o["unrealised"], 2000.0 + 500.0)        # A1's -1,000 not counted
         self.assertAlmostEqual(o["realised"], -750.0 + 108.0)
         self.assertAlmostEqual(o["realised_today"], 250.0 + 50.0)
