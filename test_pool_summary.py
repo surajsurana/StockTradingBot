@@ -91,12 +91,13 @@ class TestBuildPoolSummary(unittest.TestCase):
         self.assertAlmostEqual(d["realised_today"], 50.0)
         self.assertEqual((d["trades_today"], d["trades_total"]), (2, 3))
 
-    def test_overall_totals_include_pool_d_realised(self):
+    def test_overall_totals_include_pool_d_realised_and_exclude_a1(self):
         o = self.summary["overall"]
-        self.assertAlmostEqual(o["deployed"], 50000 + 20000 + 12000)
+        self.assertAlmostEqual(o["deployed"], 50000 + 12000)          # A + C; A1's 20,000 not counted
+        self.assertAlmostEqual(o["unrealised"], 2000.0 + 500.0)        # A1's -1,000 not counted
         self.assertAlmostEqual(o["realised"], -750.0 + 108.0)
         self.assertAlmostEqual(o["realised_today"], 250.0 + 50.0)
-        self.assertEqual(o["positions"], 3)
+        self.assertEqual(o["positions"], 2)
 
     def test_symbol_without_a_price_falls_back_to_entry(self):
         summary = build_pool_summary(self.root, {"alpha": "Alpha"}, lambda symbols: {}, today=TODAY)
@@ -117,7 +118,8 @@ class TestFormat(unittest.TestCase):
                                      lambda symbols: {s: PRICES[s] for s in symbols}, today=TODAY)
         text = format_pool_summary(summary)
         for needle in ("*Paper Trading -- Thu 10 Sep 2026*", "*Pool A*", "*Pool A1", "*Pool B*", "*Pool C*",
-                       "*Pool D (intraday)*", "*All pools*", "Deployed Rs.50,000 | Cash Rs.1,40,000",
+                       "*Pool D (intraday)*", "*All pools (A, B, C, D -- A1 not counted)*",
+                       "Deployed Rs.50,000 | Cash Rs.1,40,000",
                        "Unrealised +Rs.2,000 | Realised -Rs.750 (today +Rs.250)", "Not updated today: Beta"):
             self.assertIn(needle, text)
         self.assertNotIn("_", text)

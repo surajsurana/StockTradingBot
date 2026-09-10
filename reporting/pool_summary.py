@@ -131,13 +131,16 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
 
     pools = {"A": _pool_totals(pool_a), "A1": _pool_totals(pool_a1), "B": _pool_totals(pool_b),
              "C": _pool_totals(pool_c)}
+    # "All pools" deliberately EXCLUDES A1 (per explicit direction, 2026-09-10:
+    # the legacy books are winding down and are not part of the live picture).
+    counted = [pools["A"], pools["B"], pools["C"]]
     overall = {
-        "deployed": round(sum(p["deployed"] for p in pools.values()), 2),
-        "cash": round(sum(p["cash"] for p in pools.values()), 2),
-        "unrealised": round(sum(p["unrealised"] for p in pools.values()), 2),
-        "realised": round(sum(p["realised"] for p in pools.values()) + pool_d["realised"], 2),
-        "realised_today": round(sum(p["realised_today"] for p in pools.values()) + pool_d["realised_today"], 2),
-        "positions": sum(p["positions"] for p in pools.values()),
+        "deployed": round(sum(p["deployed"] for p in counted), 2),
+        "cash": round(sum(p["cash"] for p in counted), 2),
+        "unrealised": round(sum(p["unrealised"] for p in counted), 2),
+        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"], 2),
+        "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"], 2),
+        "positions": sum(p["positions"] for p in counted),
     }
     return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "overall": overall,
             "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c}}
@@ -188,7 +191,7 @@ def format_pool_summary(summary: dict) -> str:
         f"*Pool D (intraday)* -- {d['trades_today']} trades today, {d['trades_total']} total",
         f"Realised {inr(d['realised'], signed=True)} (today {inr(d['realised_today'], signed=True)})",
         "",
-        f"*All pools* -- {o['positions']} positions",
+        f"*All pools (A, B, C, D -- A1 not counted)* -- {o['positions']} positions",
         f"Deployed {inr(o['deployed'])} | Cash {inr(o['cash'])}",
         f"Unrealised {inr(o['unrealised'], signed=True)} | Realised {inr(o['realised'], signed=True)} "
         f"(today {inr(o['realised_today'], signed=True)})",
