@@ -20,6 +20,7 @@ deployment/state/paper_trading/
 deployment/state/portfolio_c/
 deployment/state/portfolio_b/
 deployment/state/pool_d/
+deployment/state/archived/
 deployment/reports/
 deployment/certification_experiments/
 deployment/certification_knowledge_base.jsonl
