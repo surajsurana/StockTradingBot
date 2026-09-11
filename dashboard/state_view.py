@@ -17,120 +17,128 @@ from typing import Callable, Optional
 
 from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_summary  # noqa: F401
 
-POOL_DIRS = {"A": "paper_trading", "A1": "paper_trading_legacy", "B": "portfolio_b", "C": "portfolio_c"}
+# Pool A1 (the legacy wind-down books) is deliberately absent from the
+# dashboard, per explicit direction 2026-09-11 -- it stays in the daily
+# Telegram summary only.
+POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c"}
+POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D"}
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
 # draw them and highlight what ran today without hand-maintained HTML.
 # ----------------------------------------------------------------------------
-AGENTS = [
-    {"id": "quant_researcher", "name": "Quant Researcher", "module": "research_lab/quant_researcher.py",
-     "kind": "LLM", "program": "Intraday research lab",
-     "role": "Proposes a batch of new intraday hypotheses, each with mechanism, rules and why it is distinct "
-             "from everything already tried -- informed by the full experiment history and the established "
-             "cross-experiment conclusions."},
-    {"id": "research_director", "name": "Research Director", "module": "research_lab/research_director.py",
-     "kind": "LLM + rules", "program": "Intraday research lab",
-     "role": "Reviews the whole experiment history for cross-cutting lessons, hard-filters proposals against "
-             "data the lab actually has, ranks the survivors, and runs the full experiment pipeline end to end."},
-    {"id": "backtesting_engineer", "name": "Backtesting Engineer", "module": "research_lab/backtesting_engineer.py",
-     "kind": "Mechanical", "program": "Intraday research lab",
-     "role": "Simulates a strategy bar by bar on real 5-minute Kite data: stops before targets, mandatory "
-             "square-off, no lookahead; computes every metric the Auditor judges."},
-    {"id": "statistical_auditor", "name": "Statistical Auditor", "module": "research_lab/statistical_auditor.py",
-     "kind": "Rules only", "program": "Both programs",
-     "role": "The gate. PASS only if there are enough trades, enough walk-forward windows are positive, and "
-             "the untouched out-of-sample holdout has positive expectancy. No LLM can override it."},
-    {"id": "performance_analyst", "name": "Performance Analyst", "module": "research_lab/performance_analyst.py",
-     "kind": "LLM", "program": "Both programs",
-     "role": "Writes the plain-English narrative of why a verdict makes sense -- sector, regime and "
-             "time-of-day breakdowns -- after the verdict is already decided."},
-    {"id": "risk_manager_research", "name": "Risk Manager (research)", "module": "research_lab/risk_manager_research.py",
-     "kind": "Rules only", "program": "Intraday research lab + Pool D",
-     "role": "1% risk per trade, max 3 trades per symbol per day, 2% daily loss limit -- the same limits in "
-             "the backtest and in Pool D's live ticks."},
-    {"id": "knowledge_base", "name": "Knowledge Base", "module": "research_lab/knowledge_base.py",
-     "kind": "Memory", "program": "Both programs",
-     "role": "Every experiment's verdict and key reason, plus the established conclusions (e.g. the 15 bps "
-             "minimum-edge rule) that future proposals are screened against."},
-    {"id": "published_research_analyst", "name": "Published Research Analyst",
-     "module": "swing_research/published_research_analyst.py", "kind": "Human-curated record",
-     "program": "Swing research",
-     "role": "For each literature-sourced swing strategy: the citation, the documented rules, the variant "
-             "chosen, every scope reduction, and the estimated impact of each implementation assumption."},
-    {"id": "swing_director", "name": "Swing Research Director", "module": "swing_research/research_director.py",
-     "kind": "Mechanical + LLM narrative", "program": "Swing research",
-     "role": "Runs a published strategy over the frozen Nifty 500 universe: continuous full-period run for "
-             "the headline numbers, walk-forward windows for the Auditor, benchmarks, evidence-quality score."},
-    {"id": "evidence_quality", "name": "Evidence Quality", "module": "swing_research/evidence_quality.py",
-     "kind": "Rules only", "program": "Swing research",
-     "role": "Outcome-blind 0-100 score of how much a result can be trusted: trade count, out-of-sample "
-             "trade count, window count, data coverage."},
-    {"id": "deployment_manager", "name": "Deployment Manager", "module": "deployment/deployment_manager.py",
-     "kind": "Registry", "program": "Live",
-     "role": "The strategy registry: permanent SW-IDs, research verdict, deployment status and its audit "
-             "trail. Nothing runs live unless it is PAPER_TRADING here."},
-    {"id": "paper_trading_engine", "name": "Paper Trading Engine", "module": "deployment/paper_trading_engine.py",
-     "kind": "Mechanical", "program": "Pool A / A1",
-     "role": "Once a day after the close: checks stops and targets, asks each strategy for exits and "
-             "entries, queues entries for the next open, marks the book, writes the report."},
-    {"id": "fundamental_agent", "name": "Fundamental Agent", "module": "fundamentals/fundamental_agent.py",
-     "kind": "LLM", "program": "Portfolio B / C",
-     "role": "Reads the company's fundamentals and returns a health assessment for a candidate."},
-    {"id": "news_agent", "name": "News Agent", "module": "news/news_agent.py", "kind": "LLM", "program": "Portfolio B / C",
-     "role": "Scans recent headlines for the candidate and returns sentiment and event risk."},
-    {"id": "research_analyst", "name": "Research Analyst", "module": "research/", "kind": "LLM", "program": "Portfolio B / C",
-     "role": "Combines the signal, fundamentals and news into a verdict on whether the setup is worth taking."},
-    {"id": "portfolio_manager", "name": "Portfolio Manager", "module": "portfolio/", "kind": "LLM", "program": "Portfolio B / C",
-     "role": "Decides which of today's approved candidates make the book and at what weight."},
-    {"id": "risk_manager_live", "name": "Risk Manager (live)", "module": "risk/", "kind": "Rules", "program": "Portfolio B / C",
-     "role": "Sizes every position against its stop and blocks anything that breaches the book's limits."},
-    {"id": "pool_d_engine", "name": "Pool D Intraday Engine", "module": "pool_d/engine.py", "kind": "Mechanical",
-     "program": "Pool D",
-     "role": "Every 5 minutes during market hours: fetches today's bars for the Nifty 500, checks exits "
-             "(catching stops hit on a missed poll), takes new signals on one shared Rs.1,00,000 book, "
-             "squares off by 15:25."},
-    {"id": "pool_summary", "name": "Daily Pool Summary", "module": "reporting/pool_summary.py", "kind": "Mechanical",
-     "program": "Reporting",
-     "role": "The one Telegram message a day: deployed, cash, unrealised and realised P&L per pool."},
+DESKS = [
+    {"id": "research_lab", "name": "Intraday Research Lab", "icon": "\U0001F52C",
+     "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data."},
+    {"id": "swing_research", "name": "Swing Research", "icon": "\U0001F4DA",
+     "blurb": "Takes strategies from the academic literature and proves them on years of NSE data."},
+    {"id": "trading_desk", "name": "Trading Desk", "icon": "\U0001F4C8",
+     "blurb": "Runs every approved strategy as a paper book, day after day."},
+    {"id": "portfolio_team", "name": "Portfolio B & C Team", "icon": "\U0001F9E0",
+     "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
+    {"id": "reporting", "name": "Reporting", "icon": "\U0001F4E8",
+     "blurb": "Keeps the books and sends the one message a day."},
 ]
 
-# Two pipelines as node/edge graphs with grid positions (col, row) -- the page lays them out.
+# job = what a visitor sees on the card; detail = shown on click. status_from
+# names the schedule job whose presence in today's log means "worked today";
+# "market" means active while the market is open; None = works on request.
+AGENTS = [
+    {"id": "quant_researcher", "name": "Quant Researcher", "icon": "\U0001F4A1", "desk": "research_lab", "kind": "AI",
+     "job": "Proposes new intraday ideas", "status_from": None,
+     "detail": "Writes a batch of fresh hypotheses -- each with a mechanism, rules and why it differs from "
+               "everything already tried -- after reading the full history of what failed and why."},
+    {"id": "research_director", "name": "Research Director", "icon": "\U0001F9ED", "desk": "research_lab", "kind": "AI + rules",
+     "job": "Picks what gets tested", "status_from": None,
+     "detail": "Draws cross-cutting lessons from every past experiment, throws out ideas the lab has no data "
+               "for, ranks the rest and runs the chosen one through the whole pipeline."},
+    {"id": "backtesting_engineer", "name": "Backtesting Engineer", "icon": "\u2699\ufe0f", "desk": "research_lab", "kind": "Mechanical",
+     "job": "Simulates trades bar by bar", "status_from": None,
+     "detail": "Real Kite 5-minute candles, stops checked before targets, forced square-off at the close, "
+               "no peeking ahead -- and, since EXP-011, net of real transaction costs."},
+    {"id": "statistical_auditor", "name": "Statistical Auditor", "icon": "\u2696\ufe0f", "desk": "research_lab", "kind": "Rules only",
+     "job": "Says PASS or REJECT", "status_from": None,
+     "detail": "The gate nobody can talk round: enough trades, enough positive walk-forward windows, and a "
+               "positive result on the untouched out-of-sample slice -- or it is a REJECT."},
+    {"id": "performance_analyst", "name": "Performance Analyst", "icon": "\U0001F4DD", "desk": "research_lab", "kind": "AI",
+     "job": "Explains each verdict", "status_from": None,
+     "detail": "After the verdict is decided, writes the plain-English story: which sectors, regimes and "
+               "times of day carried or sank the result."},
+    {"id": "knowledge_base", "name": "Knowledge Base", "icon": "\U0001F5C4\ufe0f", "desk": "research_lab", "kind": "Memory",
+     "job": "Remembers every result", "status_from": None,
+     "detail": "Every experiment's verdict and reason, plus standing rules like the 15-bps minimum-edge "
+               "rule that all future ideas are checked against."},
+    {"id": "published_research_analyst", "name": "Literature Analyst", "icon": "\U0001F4D6", "desk": "swing_research", "kind": "Curated",
+     "job": "Documents the published rules", "status_from": None,
+     "detail": "For each strategy taken from a paper: the citation, the exact rules, the variant chosen, and "
+               "every simplification with its estimated impact."},
+    {"id": "swing_director", "name": "Swing Director", "icon": "\U0001F3AF", "desk": "swing_research", "kind": "Mechanical + AI",
+     "job": "Runs the multi-year backtests", "status_from": None,
+     "detail": "Full-period run for the headline numbers, walk-forward windows for the Auditor, "
+               "benchmarks, and an evidence-quality score that ignores the outcome."},
+    {"id": "evidence_quality", "name": "Evidence Scorer", "icon": "\U0001F4CF", "desk": "swing_research", "kind": "Rules only",
+     "job": "Rates how trustworthy a result is", "status_from": None,
+     "detail": "0-100 from trade count, out-of-sample trade count, window count and data coverage -- "
+               "calculated before anyone looks at whether the strategy made money."},
+    {"id": "deployment_manager", "name": "Registrar", "icon": "\U0001F4CB", "desk": "trading_desk", "kind": "Registry",
+     "job": "Keeps the strategy register", "status_from": None,
+     "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
+               "trades unless it is marked PAPER_TRADING here."},
+    {"id": "paper_trading_engine", "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
+     "job": "Runs the Pool A books after the close", "status_from": "eod_a",
+     "detail": "Checks stops and targets, asks each strategy for exits and entries, queues the entries for "
+               "the next open, marks the book and writes the report."},
+    {"id": "pool_d_engine", "name": "Intraday Trader", "icon": "\u26A1", "desk": "trading_desk", "kind": "Mechanical",
+     "job": "Trades Pool D every 5 minutes", "status_from": "market",
+     "detail": "Fetches today's bars for the Nifty 500, catches stops even on a missed poll, takes new "
+               "signals on one shared Rs.1,00,000 book, squares off by 15:25."},
+    {"id": "fundamental_agent", "name": "Fundamentals Analyst", "icon": "\U0001F4CA", "desk": "portfolio_team", "kind": "AI",
+     "job": "Checks the company's health", "status_from": "eod_c",
+     "detail": "Reads the fundamentals of each candidate and grades them."},
+    {"id": "news_agent", "name": "News Analyst", "icon": "\U0001F4F0", "desk": "portfolio_team", "kind": "AI",
+     "job": "Scans the headlines", "status_from": "eod_c",
+     "detail": "Looks for event risk and sentiment in recent news about the candidate."},
+    {"id": "research_analyst", "name": "Research Analyst", "icon": "\U0001F50E", "desk": "portfolio_team", "kind": "AI",
+     "job": "Forms the verdict", "status_from": "eod_c",
+     "detail": "Weighs the signal, the fundamentals and the news and says whether the setup is worth taking."},
+    {"id": "portfolio_manager", "name": "Portfolio Manager", "icon": "\U0001F454", "desk": "portfolio_team", "kind": "AI",
+     "job": "Decides what makes the book", "status_from": "eod_c",
+     "detail": "Chooses among the approved candidates and sets their weights."},
+    {"id": "risk_manager_live", "name": "Risk Manager", "icon": "\U0001F6E1\ufe0f", "desk": "portfolio_team", "kind": "Rules",
+     "job": "Sizes and vetoes", "status_from": "eod_c",
+     "detail": "Sizes every position against its stop and blocks anything that breaches the book's limits."},
+    {"id": "pool_summary", "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
+     "job": "Sends the daily Telegram", "status_from": "summary",
+     "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
+               "message of the day at 16:05."},
+]
+
+# Two stories told as strips of steps with icons; the page draws them.
 FLOWS = {
+    "daily": {
+        "title": "A trading day",
+        "steps": [
+            {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
+            {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
+            {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
+            {"id": "eod_a", "icon": "\U0001F4BC", "label": "15:35", "text": "Swing Trader closes what needs closing, queues new entries"},
+            {"id": "eod_c", "icon": "\U0001F9E0", "label": "15:45", "text": "Portfolio B & C team debates today's candidates"},
+            {"id": "summary", "icon": "\U0001F4E8", "label": "16:05", "text": "Bookkeeper sends the one Telegram message"},
+        ],
+    },
     "research": {
         "title": "How a strategy earns its place",
-        "nodes": [
-            {"id": "idea", "label": "Idea", "sub": "Literature search (swing) or Quant Researcher (intraday)", "col": 0, "row": 0},
-            {"id": "record", "label": "Documented rules", "sub": "Published Research Analyst record / hypothesis", "col": 1, "row": 0},
-            {"id": "build", "label": "Strategy code", "sub": "Rules as written, every assumption disclosed", "col": 2, "row": 0},
-            {"id": "backtest", "label": "Backtest", "sub": "Real data, no lookahead, net of costs (intraday)", "col": 3, "row": 0},
-            {"id": "walk", "label": "Walk-forward", "sub": "Sequential windows, last one held out", "col": 4, "row": 0},
-            {"id": "audit", "label": "Statistical Auditor", "sub": "PASS / REJECT -- rules only", "col": 5, "row": 0},
-            {"id": "narrative", "label": "Performance Analyst", "sub": "Explains the verdict", "col": 5, "row": 1},
-            {"id": "kb", "label": "Knowledge Base", "sub": "Experiment record + conclusions", "col": 4, "row": 1},
-            {"id": "promote", "label": "Promotion checklist", "sub": "Registry, catalog, VPS, first run", "col": 6, "row": 0},
-            {"id": "poola", "label": "Pool A paper trading", "sub": "Rs.1,00,000 book per strategy", "col": 7, "row": 0},
+        "steps": [
+            {"id": "idea", "icon": "\U0001F4A1", "label": "Idea", "text": "From a published paper, or the Quant Researcher"},
+            {"id": "rules", "icon": "\U0001F4D6", "label": "Rules", "text": "Written down exactly, every simplification disclosed"},
+            {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
+            {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only"},
+            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book"},
+            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A, watched every day"},
         ],
-        "edges": [["idea", "record"], ["record", "build"], ["build", "backtest"], ["backtest", "walk"],
-                  ["walk", "audit"], ["audit", "narrative"], ["narrative", "kb"], ["kb", "idea"],
-                  ["audit", "promote"], ["promote", "poola"]],
-    },
-    "daily": {
-        "title": "A trading day (IST)",
-        "nodes": [
-            {"id": "prep", "label": "09:00 Pool D prepare", "sub": "90-day context for 457 names", "col": 0, "row": 0},
-            {"id": "ticks", "label": "09:15-15:30 Pool D ticks", "sub": "Every 5 min: exits, entries, square-off 15:25", "col": 1, "row": 0},
-            {"id": "open", "label": "09:30 Fill at open", "sub": "Yesterday's queued entries/exits: Pool A, A1, B, C", "col": 1, "row": 1},
-            {"id": "eod_a", "label": "15:35 Pool A", "sub": "Stops, exits, new signals queued", "col": 2, "row": 0},
-            {"id": "eod_a1", "label": "15:40 Pool A1", "sub": "Exits only (wind-down)", "col": 2, "row": 1},
-            {"id": "eod_c", "label": "15:45 Portfolio C", "sub": "Anchor signals -> agent stack", "col": 3, "row": 0},
-            {"id": "eod_b", "label": "15:50 Portfolio B", "sub": "Watchlist -> agent stack", "col": 3, "row": 1},
-            {"id": "summary", "label": "16:05 Telegram", "sub": "The one message of the day", "col": 4, "row": 0},
-        ],
-        "edges": [["prep", "ticks"], ["ticks", "eod_a"], ["open", "eod_a"], ["eod_a", "eod_a1"], ["eod_a", "eod_c"],
-                  ["eod_a1", "eod_b"], ["eod_c", "summary"], ["eod_b", "summary"]],
     },
 }
+
 
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
@@ -201,7 +209,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
 
     books = []
     for pool, dirname in POOL_DIRS.items():
-        if pool in ("A", "A1"):
+        if pool == "A":
             for b in summary["books"][pool]:
                 book_dir = os.path.join(state_dir, dirname, b["key"])
                 rec = next((r for r in registry_records if r.strategy_key == b["key"]), None)
@@ -242,9 +250,56 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                 for r in registry_records]
 
     market_open = now.weekday() < 5 and dtime(9, 15) <= now.time() <= dtime(15, 30)
+    pools = {k: v for k, v in summary["pools"].items() if k != "A1"}
     return {
         "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(), "market_open": market_open,
         "prices_as_of": prices_as_of, "priced_symbols": len(prices),
-        "pools": summary["pools"], "overall": summary["overall"], "books": books, "pool_d": pool_d,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "flows": FLOWS,
+        "pools": pools, "overall": summary["overall"], "books": books, "pool_d": pool_d,
+        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
     }
+
+
+def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date) -> list:
+    """Every buy and sell that happened today across Pools A, B, C and D
+    as one time-sorted list. Swing books fill at the open (09:30) so
+    their entries/exits carry that clock time; Pool D carries its own
+    tick timestamps."""
+    today_iso = today.isoformat()
+    rows = []
+    for b in books:
+        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] == "A" else "")
+        pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
+        for symbol, p in (pf.get("positions") or {}).items():
+            if p.get("entry_date") == today_iso:
+                rows.append({"time": "09:30", "action": "BUY", "symbol": symbol.replace(".NS", ""),
+                             "qty": int(p["quantity"]), "price": round(float(p["entry_price"]), 2),
+                             "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "pnl": None, "note": "entry"})
+        for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
+            if t.get("exit_date") == today_iso:
+                rows.append({"time": "09:30", "action": "SELL", "symbol": str(t.get("symbol", "")).replace(".NS", ""),
+                             "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
+                             "pool": POOL_LABELS[b["pool"]], "book": b["display_name"],
+                             "pnl": round(float(t.get("pnl", 0) or 0), 2),
+                             "note": (t.get("exit_reason") or t.get("reason") or "exit").replace("_", " ")})
+    for symbol, p in (d_pf.get("positions") or {}).items():
+        ts = p.get("entry_timestamp", "")
+        if ts.startswith(today_iso):
+            rows.append({"time": ts[11:16], "action": "SELL" if p.get("direction") == "SELL" else "BUY",
+                         "symbol": symbol, "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
+                         "pool": "Pool D", "book": "Intraday", "pnl": None, "note": "entry (open)"})
+    for t in d_trades:
+        if t.get("exit_date") != today_iso:
+            continue
+        opened, closed = t.get("entry_timestamp", ""), t.get("exit_timestamp", "")
+        side_in = "SELL" if t.get("direction") == "SELL" else "BUY"
+        if opened.startswith(today_iso):
+            rows.append({"time": opened[11:16], "action": side_in, "symbol": t.get("symbol"), "qty": t.get("quantity"),
+                         "price": round(float(t.get("entry_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
+                         "pnl": None, "note": "entry"})
+        rows.append({"time": closed[11:16] if closed else "", "action": "BUY" if side_in == "SELL" else "SELL",
+                     "symbol": t.get("symbol"), "qty": t.get("quantity"),
+                     "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
+                     "pnl": round(float(t.get("pnl", 0) or 0), 2), "note": str(t.get("reason", "")).replace("_", " ")})
+    rows.sort(key=lambda r: (r["time"] or "99:99", r["symbol"] or ""))
+    return rows

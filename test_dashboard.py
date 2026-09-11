@@ -12,7 +12,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-from dashboard.state_view import AGENTS, FLOWS, SCHEDULE, build_dashboard_state
+from dashboard.state_view import AGENTS, DESKS, FLOWS, SCHEDULE, build_dashboard_state
 from dashboard.server import is_authorized
 
 
@@ -36,6 +36,10 @@ def _tree():
     _write(os.path.join(state, "paper_trading", "alpha", "trades.jsonl"),
            [{"symbol": "Y.NS", "pnl": -1000.0, "exit_date": "2026-09-09", "entry_price": 50, "exit_price": 45,
              "quantity": 200, "exit_reason": "stop_loss"}], jsonl=True)
+    _write(os.path.join(state, "paper_trading_legacy", "old_big", "portfolio.json"), {
+        "cash": 20000.0, "starting_capital": 1000000.0, "last_processed_date": "2026-09-10",
+        "positions": {"L.NS": {"entry_price": 200.0, "quantity": 100, "stop_loss": 184.0, "entry_date": "2026-09-10"}},
+    })
     _write(os.path.join(state, "portfolio_b", "portfolio.json"),
            {"cash": 100000.0, "starting_capital": 100000.0, "last_processed_date": "2026-09-10", "positions": {}})
     _write(os.path.join(state, "portfolio_c", "portfolio.json"),
@@ -48,7 +52,8 @@ def _tree():
     })
     _write(os.path.join(state, "pool_d", "trades.jsonl"),
            [{"symbol": "SBIN", "pnl": -500.0, "exit_date": "2026-09-10", "direction": "SELL", "entry_price": 1000,
-             "exit_price": 1005, "quantity": 100, "reason": "stop_loss"}], jsonl=True)
+             "exit_price": 1005, "quantity": 100, "reason": "stop_loss",
+             "entry_timestamp": "2026-09-10T09:40:00", "exit_timestamp": "2026-09-10T10:05:00"}], jsonl=True)
     os.makedirs(logs, exist_ok=True)
     with open(os.path.join(logs, "paper_trading.log"), "w", encoding="utf-8") as f:
         f.write("[alpha] processed\n")
@@ -69,9 +74,22 @@ class TestBuildDashboardState(unittest.TestCase):
         self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0},
                                        "2026-09-10T10:55", now=self.now)
 
-    def test_only_paper_trading_strategies_become_pool_a_books(self):
+    def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
+        self.assertEqual({b["pool"] for b in self.s["books"]}, {"A", "B", "C"})
+        self.assertNotIn("A1", self.s["pools"])
+        self.assertEqual(self.s["overall"]["positions"], 1)   # the legacy L.NS position is not counted
+
+    def test_activity_today_is_one_time_sorted_list_across_pools(self):
+        acts = self.s["activity_today"]
+        self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
+                         [("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT")])
+        self.assertEqual(acts[1]["pnl"], -500.0)
+        self.assertEqual(acts[1]["note"], "stop loss")
+        self.assertTrue(all(a["pool"] == "Pool D" for a in acts))   # the swing book's Y.NS exit was yesterday
+        self.assertEqual(len(self.s["desks"]), len(DESKS))
+        self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")
