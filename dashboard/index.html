@@ -181,7 +181,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="note">Steps light up as they happen today.</p>
   <h2>The office</h2>
   <div class="office" id="office"></div>
-  <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· round head with a blinking antenna = AI agent, square head = rule-based engine · tap anyone to see what they do</span></div>
+  <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· teal robots with a round head = AI agents, grey robots with a square head = rule-based engines · tap anyone to see what they do</span></div>
   <h2 id="flow-research-title"></h2>
   <div class="strip" id="flow-research"></div>
 </section>
@@ -404,8 +404,9 @@ function renderTape(s){
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
 // AI (reasoning) agents; square heads = rule-based / mechanical engines.
 function avatarSvg(a, size=52){
-  const v = a.avatar || {type:"robot", body:"#7A8B99", eye:"#5FB7C0", shape:"square"};
-  const round = v.shape === "round";
+  // Two colours only: AI agents in the accent, rule-based engines in grey; eyes always the same light tint.
+  const round = (a.avatar || {}).shape === "round";
+  const v = {body: round ? "var(--accent)" : "var(--muted)", eye: "var(--paper)"};
   const headRx = round ? 13 : 5, eyeShape = round
     ? `<circle cx="25.5" cy="24" r="3.4" fill="${v.eye}"/><circle cx="38.5" cy="24" r="3.4" fill="${v.eye}"/>`
     : `<rect x="22" y="21" width="7" height="6" rx="1.5" fill="${v.eye}"/><rect x="35" y="21" width="7" height="6" rx="1.5" fill="${v.eye}"/>`;
