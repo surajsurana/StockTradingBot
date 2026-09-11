@@ -257,12 +257,20 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     d_pf = _read_json(os.path.join(state_dir, "pool_d", "portfolio.json")) or {}
     d_trades = _read_jsonl(os.path.join(state_dir, "pool_d", "trades.jsonl"))
     d_state_path = os.path.join(state_dir, "pool_d", "portfolio.json")
+    d_open = []
+    for s, p in (d_pf.get("positions") or {}).items():
+        price = float(prices.get(s, p["entry_price"]))
+        sign = -1 if p.get("direction") == "SELL" else 1
+        d_open.append({"symbol": s, **{k: p.get(k) for k in ("direction", "entry_price", "stop_loss", "target",
+                                                               "quantity", "entry_timestamp")},
+                       "price": round(price, 2), "priced": s in prices,
+                       "unbooked": round(sign * (price - float(p["entry_price"])) * int(p["quantity"]), 2),
+                       "pct": round(sign * (price / float(p["entry_price"]) - 1) * 100, 2) if p["entry_price"] else 0.0})
     pool_d = {
         **summary["pool_d"],
         "starting_capital": d_pf.get("starting_capital"),
-        "open_positions": [{"symbol": s, **{k: p.get(k) for k in ("direction", "entry_price", "stop_loss", "target",
-                                                                    "quantity", "entry_timestamp")}}
-                           for s, p in (d_pf.get("positions") or {}).items()],
+        "unrealised": round(sum(p["unbooked"] for p in d_open), 2),
+        "open_positions": d_open,
         "todays_trades": [t for t in d_trades if t.get("exit_date") == today.isoformat()],
         "recent_trades": list(reversed(d_trades[-15:])),
         "symbols_with_context": len(d_pf.get("context_by_symbol") or {}),
@@ -288,6 +296,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         _with_capital(b)
     overall = dict(summary["overall"])
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"], 2)
+    overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),

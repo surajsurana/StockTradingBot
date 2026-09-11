@@ -74,7 +74,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.records = [_record("alpha", "Alpha", "SW-001"),
                         _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT")]
         self.now = datetime(2026, 9, 10, 11, 0)
-        self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0},
+        self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0, "LT": 3890.0},
                                        "2026-09-10T10:55", now=self.now)
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
@@ -134,6 +134,10 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_pool_d_live_view(self):
         d = self.s["pool_d"]
         self.assertEqual(d["open_positions"][0]["symbol"], "LT")
+        self.assertAlmostEqual(d["open_positions"][0]["unbooked"], (3890.0 - 3900.0) * 5)   # long, price down
+        self.assertTrue(d["open_positions"][0]["priced"])
+        self.assertAlmostEqual(d["unrealised"], -50.0)
+        self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0)   # X.NS gain + LT loss
         self.assertEqual(len(d["todays_trades"]), 2)
         self.assertAlmostEqual(d["realised_today"], -500.0)
         self.assertEqual(d["symbols_with_context"], 2)

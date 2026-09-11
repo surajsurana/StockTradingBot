@@ -83,17 +83,45 @@ class PriceCache:
         from reporting.pool_summary import _held_symbols
         return sorted(_held_symbols(self.state_dir))
 
+    def _pool_d_symbols(self) -> list:
+        import json
+        path = os.path.join(self.state_dir, "pool_d", "portfolio.json")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return sorted((json.load(f).get("positions") or {}).keys())
+
+    _kite_headers = None
+    _kite_headers_day = None
+
+    def _kite_ltp(self, symbols: list) -> dict:
+        """Real-time last traded prices for Pool D's bare symbols via Kite
+        (one login per day, cached; a 403 forces a re-login next time).
+        Falls back to {} so a Kite hiccup never blocks the swing prices."""
+        from config import settings
+        from data.fetch_kite_intraday import fetch_ltp, get_market_data_session
+        today = datetime.now().date()
+        try:
+            if self._kite_headers is None or self._kite_headers_day != today:
+                self._kite_headers = get_market_data_session(settings)
+                self._kite_headers_day = today
+            return fetch_ltp(symbols, self._kite_headers)
+        except Exception as e:
+            print(f"Kite LTP failed ({type(e).__name__}: {e}) -- re-login on next refresh", flush=True)
+            self._kite_headers = None
+            return {}
+
     def refresh_once(self) -> None:
         from data.fetch_historical import fetch_all
-        symbols = self._held_symbols()
-        if not symbols:
-            with self._lock:
-                self.prices, self.as_of = {}, datetime.now().isoformat(timespec="minutes")
-            return
         fresh = {}
-        for symbol, df in fetch_all(symbols, period="5d").items():
-            if df is not None and not df.empty:
-                fresh[symbol] = float(df["Close"].iloc[-1])
+        symbols = self._held_symbols()
+        if symbols:
+            for symbol, df in fetch_all(symbols, period="5d").items():
+                if df is not None and not df.empty:
+                    fresh[symbol] = float(df["Close"].iloc[-1])
+        pool_d = self._pool_d_symbols()
+        if pool_d:
+            fresh.update(self._kite_ltp(pool_d))
         with self._lock:
             self.prices = fresh
             self.as_of = datetime.now().isoformat(timespec="minutes")

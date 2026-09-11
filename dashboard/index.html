@@ -154,7 +154,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
   <h2>Pool D right now</h2>
   <div class="tiles" id="pooldtiles"></div>
-  <div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Open position</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Stop</th><th class="n">Target</th><th>Since</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
+  <div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Open position</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Now</th><th class="n">Unbooked</th><th class="n">%</th><th class="n">Stop</th><th class="n">Target</th><th>Since</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
 </section>
 
 <section id="tab-team" hidden>
@@ -237,7 +237,7 @@ function renderOverview(s){
     ["Cash", money(o.cash), "all books"],
     ["Unbooked P&L", `<span class="${cls(o.unrealised)}">${money(o.unrealised,true)}</span>`, "at latest price"],
     ["Booked P&L", `<span class="${cls(o.realised)}">${money(o.realised,true)}</span>`, `today ${money(o.realised_today,true)}`],
-    ["Pool D today", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open`],
+    ["Pool D today", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open · unbooked ${money(d.unrealised,true)}`],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
 
   const names = {A:"Pool A — swing strategies", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
@@ -246,7 +246,7 @@ function renderOverview(s){
     const p = s.pools[k]; if(!p) continue;
     rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
   }
-  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td><td class="n">—</td>${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
+  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td>${cell(d.unrealised)}${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
   rows += `<tr class="total"><td>Total</td><td class="n">${inr(o.capital)}</td><td class="n">${o.positions}</td><td class="n">${inr(o.deployed)}</td><td class="n">${inr(o.cash)}</td>${cell(o.unrealised)}${cell(o.realised)}${cell(o.realised_today)}<td></td></tr>`;
   document.getElementById("pools").innerHTML = rows;
 
@@ -287,7 +287,7 @@ function renderPositions(s){
       trades.push({...t, pool, kind:"Swing", book: b.display_name, reason: (t.reason||"").replace("_"," ")});
   }
   for(const p of s.pool_d.open_positions) if(match(p.symbol, "Pool D", "intraday"))
-    positions.push({symbol:p.symbol, pool:"Pool D", kind:"Intraday", book:`${p.direction==="SELL"?"short":"long"}`, entry_date:(p.entry_timestamp||"").slice(0,16).replace("T"," "), qty:p.quantity, entry:+p.entry_price, price:+p.entry_price, unbooked:0, pct:0, stop:+p.stop_loss, priced:false});
+    positions.push({symbol:p.symbol, pool:"Pool D", kind:"Intraday", book:`${p.direction==="SELL"?"short":"long"}`, entry_date:(p.entry_timestamp||"").slice(0,16).replace("T"," "), qty:p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced});
   for(const t of s.pool_d.recent_trades) if(t.exit_date===s.today && match(t.symbol, "Pool D", "intraday"))
     trades.push({symbol:t.symbol, pool:"Pool D", kind:"Intraday", book:t.direction==="SELL"?"short":"long", entry_date:(t.entry_timestamp||"").slice(11,16), exit_date:`${t.exit_date} ${(t.exit_timestamp||"").slice(11,16)}`.trim(), qty:t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl, reason:String(t.reason||"").replace("_"," ")});
 
@@ -329,12 +329,12 @@ function renderLive(s){
   const d = s.pool_d;
   document.getElementById("pooldtiles").innerHTML = [
     ["Cash", money(d.cash), `of ${money(d.starting_capital||100000)}`],
-    ["Open now", d.positions, s.market_open ? "live" : "flat overnight"],
+    ["Open now", d.positions, `unbooked ${money(d.unrealised,true)}`],
     ["Trades today", d.trades_today, `${d.trades_total} all time`],
     ["Today's P&L", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `all time ${money(d.realised,true)}`],
     ["Last check", d.last_tick ? d.last_tick.slice(11) : "—", d.updated_today ? "today" : "not today"],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
-  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="7" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
+  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${(+p.price).toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(+p.unbooked)}<td class="n ${cls(+p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(2)}%</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
 }
 
 const TAPE_COLS = [["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["note","Note",false]];

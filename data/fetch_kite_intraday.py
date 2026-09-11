@@ -177,6 +177,28 @@ def fetch_intraday_candles(instrument_token: int, interval: str, from_date: date
     return df
 
 
+LTP_URL = "https://api.kite.trade/quote/ltp"
+
+
+def fetch_ltp(symbols: list, headers: dict, batch_size: int = 200) -> dict:
+    """Last traded price per bare NSE symbol via Kite's quote/ltp endpoint
+    (real-time during market hours, last close otherwise). Added
+    2026-09-11 for the dashboard's Pool D unrealised P&L -- one request
+    per `batch_size` symbols, paced by the module rate limiter. Symbols
+    Kite doesn't return are simply absent from the result."""
+    prices = {}
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i + batch_size]
+        _rate_limiter.wait()
+        resp = requests.get(LTP_URL, headers=headers, params=[("i", f"NSE:{s}") for s in batch], timeout=30)
+        if resp.status_code != 200:
+            raise ValueError(f"Kite LTP API error: {resp.status_code} {resp.text[:200]}")
+        for key, row in (resp.json().get("data") or {}).items():
+            if row and row.get("last_price") is not None:
+                prices[key.split(":", 1)[1]] = float(row["last_price"])
+    return prices
+
+
 def _fetch_symbol(symbol: str, interval: str, from_date: date, to_date: date, headers: dict,
                   rate_limit_delay: float) -> Optional[pd.DataFrame]:
     token = get_instrument_token(symbol, headers)
