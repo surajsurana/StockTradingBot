@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockTradingBot Desk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--paper:#F6F5F1;--ink:#1E2430;--muted:#5C6270;--rule:#D8D6CF;--band:#EEECE5;--card:#FFFFFF;--accent:#1F6F78;--accent-ink:#FFFFFF;--gain:#1B7F4E;--loss:#B23A3A;--warn:#A8681C;--chip:#E3EEEF;--live:#1B7F4E;--focus:#1F6F78}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#15181E;--ink:#E6E4DD;--muted:#9AA0AB;--rule:#2C3039;--band:#1C2027;--card:#1A1E25;--accent:#5FB7C0;--accent-ink:#0F1418;--gain:#4CC383;--loss:#E0706A;--warn:#E0A85A;--chip:#22333A;--live:#4CC383;--focus:#5FB7C0}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
+.wrap{max-width:1240px;margin:0 auto;padding:22px clamp(16px,3vw,40px) 60px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 22px;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:16px}
+h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;margin:0}
+.status{color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
+.dot.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
+nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
+nav button{font:inherit;font-weight:500;padding:7px 14px;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:4px;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+nav button:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+section[hidden]{display:none}
+h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;margin:26px 0 8px}
+h3{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:18px 0 6px;font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
+.tile .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.tile .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:20px;font-variant-numeric:tabular-nums;margin-top:3px}
+.tile .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:720px}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
+td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+tr.book td{background:var(--band);font-weight:600}
+tr.book td .meta{font-weight:400;color:var(--muted);margin-left:8px}
+tr.clickable{cursor:pointer}
+.gain{color:var(--gain)}.loss{color:var(--loss)}.warn{color:var(--warn)}
+.chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--accent);margin-left:6px;vertical-align:middle}
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--rule);color:var(--muted)}
+.pill.ok{border-color:var(--gain);color:var(--gain)}.pill.due{border-color:var(--warn);color:var(--warn)}.pill.miss{border-color:var(--loss);color:var(--loss)}
+.tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
+.card .name{font-weight:600;font-size:15px}
+.card .mod{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;color:var(--muted);margin:2px 0 6px;word-break:break-all}
+.card p{margin:0;color:var(--ink)}
+.kinds{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px}
+.flow{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:8px;overflow-x:auto}
+.flow svg{display:block;min-width:900px;width:100%;height:auto}
+.node rect{fill:var(--band);stroke:var(--rule);stroke-width:1}
+.node.hot rect{stroke:var(--live);stroke-width:2;fill:color-mix(in srgb,var(--live) 12%,var(--card))}
+.node.gate rect{stroke:var(--accent);stroke-width:1.5}
+.node text{fill:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+.node .t{font-weight:600;font-size:12.5px}.node .s{font-size:10.5px;fill:var(--muted)}
+.edge{stroke:var(--muted);stroke-width:1.3;fill:none;marker-end:url(#arrow)}
+.timeline{position:relative;height:74px;background:var(--card);border:1px solid var(--rule);border-radius:6px;margin:8px 0 16px}
+.timeline .hourmark{position:absolute;top:0;bottom:0;border-left:1px dashed var(--rule)}
+.timeline .hourmark span{position:absolute;top:4px;left:4px;font-size:10px;color:var(--muted)}
+.timeline .job{position:absolute;top:30px;height:22px;padding:2px 6px;font-size:11px;border-radius:3px;background:var(--chip);color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.timeline .job.done{background:color-mix(in srgb,var(--gain) 18%,var(--card));color:var(--gain)}
+.timeline .now{position:absolute;top:0;bottom:0;border-left:2px solid var(--loss)}
+.timeline .now span{position:absolute;bottom:4px;left:4px;font-size:10px;color:var(--loss)}
+pre.log{margin:0;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;color:var(--muted);white-space:pre-wrap;word-break:break-word}
+.note{color:var(--muted);font-size:12.5px}
+.err{color:var(--loss);font-weight:500}
+@media (max-width:560px){h1{font-size:22px}.status{margin-left:0}}
+@media (prefers-reduced-motion: no-preference){.dot.on{animation:pulse 2s infinite}@keyframes pulse{50%{box-shadow:0 0 0 6px transparent}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>StockTradingBot Desk</h1>
+  <div class="status">
+    <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
+    <span id="asof">loading…</span>
+    <span id="prices"></span>
+    <span id="refresh" class="note"></span>
+  </div>
+</header>
+<nav role="tablist">
+  <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+  <button role="tab" aria-selected="false" data-tab="positions">Positions</button>
+  <button role="tab" aria-selected="false" data-tab="live">Live day</button>
+  <button role="tab" aria-selected="false" data-tab="team">Agents &amp; flow</button>
+  <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
+</nav>
+<p id="error" class="err" hidden></p>
+
+<section id="tab-overview">
+  <div class="tiles" id="tiles"></div>
+  <h2>Pools</h2>
+  <div class="tblwrap"><table><thead><tr><th>Pool</th><th class="n">Positions</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Updated today</th></tr></thead><tbody id="pools"></tbody></table></div>
+  <h2>Books</h2>
+  <div class="tblwrap"><table><thead><tr><th>Book</th><th class="n">Open</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Last run</th></tr></thead><tbody id="books"></tbody></table></div>
+  <p class="note" style="margin-top:10px">"All pools" counts A, B, C and D; the legacy A1 books are winding down and are shown but not counted. Unbooked P&amp;L uses the latest price the dashboard has (see the header); booked P&amp;L is the sum of each book's closed trades.</p>
+</section>
+
+<section id="tab-positions" hidden>
+  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol, strategy or pool…" autocomplete="off"><span id="count" class="note"></span></div>
+  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Book</th><th>Entered</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Price</th><th class="n">Unbooked</th><th class="n">%</th><th class="n">Stop</th></tr></thead><tbody id="positions"></tbody></table></div>
+  <h2>Recent closed trades</h2>
+  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Book</th><th>Held</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Exit</th><th class="n">P&amp;L</th><th>Reason</th></tr></thead><tbody id="trades"></tbody></table></div>
+</section>
+
+<section id="tab-live" hidden>
+  <h2>Today's schedule (IST)</h2>
+  <div class="timeline" id="timeline"></div>
+  <div class="tblwrap"><table><thead><tr><th>Job</th><th>When</th><th>Status</th><th>Last log write</th><th>Log tail</th></tr></thead><tbody id="schedule"></tbody></table></div>
+  <h2>Pool D — intraday, live</h2>
+  <div class="tiles" id="pooldtiles"></div>
+  <h3>Open right now</h3>
+  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Stop</th><th class="n">Target</th><th>Entered</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
+  <h3>Recent Pool D trades</h3>
+  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Exit</th><th class="n">P&amp;L</th><th>Reason</th><th>Date</th></tr></thead><tbody id="pooldtrades"></tbody></table></div>
+</section>
+
+<section id="tab-team" hidden>
+  <h2 id="flow-daily-title"></h2>
+  <p class="note">Boxes light up as each job leaves its mark in today's logs.</p>
+  <div class="flow" id="flow-daily"></div>
+  <h2 id="flow-research-title"></h2>
+  <p class="note">The gate is the Statistical Auditor: rules only, no model can talk it into a PASS.</p>
+  <div class="flow" id="flow-research"></div>
+  <h2>The agent team</h2>
+  <div class="cards" id="agents"></div>
+</section>
+
+<section id="tab-registry" hidden>
+  <h2>Strategy registry</h2>
+  <div class="tblwrap"><table><thead><tr><th>ID</th><th>Strategy</th><th>Verdict</th><th>Status</th><th>Experiment</th><th>Family</th></tr></thead><tbody id="registry"></tbody></table></div>
+</section>
+</div>
+
+<script>
+const REFRESH_MS = 60000;
+const inr = n => (n<0?"−":"") + Math.abs(Math.round(n)).toLocaleString("en-IN");
+const money = (n, signed) => `${n>0&&signed?"+":""}${n<0?"−":""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`;
+const cls = n => n>0?"gain":n<0?"loss":"";
+const cell = (n, signed=true) => `<td class="n ${cls(n)}">${money(n, signed)}</td>`;
+const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let STATE = null, FILTER = "";
+
+document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
+  document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
+  try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
+}));
+try { const t = localStorage.getItem("desk.tab"); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch(e){}
+
+async function load(){
+  try{
+    const r = await fetch("/api/state", {cache:"no-store"});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    STATE = await r.json();
+    document.getElementById("error").hidden = true;
+    render();
+  }catch(e){
+    const el = document.getElementById("error"); el.hidden = false; el.textContent = `Could not load state: ${e.message}`;
+  }
+}
+
+function render(){
+  const s = STATE;
+  document.getElementById("mkt").className = "dot" + (s.market_open ? " on" : "");
+  document.getElementById("mkt-label").textContent = s.market_open ? "market open" : "market closed";
+  document.getElementById("asof").textContent = `state as of ${s.generated_at.replace("T"," ")}`;
+  document.getElementById("prices").textContent = s.prices_as_of ? `prices ${s.prices_as_of.replace("T"," ")} (${s.priced_symbols} symbols)` : "prices loading…";
+  renderOverview(s); renderPositions(s); renderLive(s); renderTeam(s); renderRegistry(s);
+}
+
+function renderOverview(s){
+  const o = s.overall, d = s.pool_d;
+  document.getElementById("tiles").innerHTML = [
+    ["Open positions", o.positions, "A, B, C, D"],
+    ["Deployed", money(o.deployed), "at cost"],
+    ["Cash", money(o.cash), "incl. Pool D book"],
+    ["Unbooked P&L", `<span class="${cls(o.unrealised)}">${money(o.unrealised,true)}</span>`, "at latest price"],
+    ["Booked P&L", `<span class="${cls(o.realised)}">${money(o.realised,true)}</span>`, `today ${money(o.realised_today,true)}`],
+    ["Pool D today", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open`],
+  ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
+
+  const names = {A:"Pool A — swing research", A1:"Pool A1 — legacy (wind-down, not counted)", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
+  let rows = "";
+  for(const k of ["A","A1","B","C"]){
+    const p = s.pools[k];
+    const upd = p.books ? `${p.updated_today}/${p.books}` : "";
+    rows += `<tr><td>${names[k]}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised)}${cell(p.realised)}${cell(p.realised_today)}<td>${upd} ${p.not_updated.length?`<span class="pill due">${p.not_updated.length} pending</span>`:`<span class="pill ok">ok</span>`}</td></tr>`;
+  }
+  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td><td class="n">—</td>${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking</span>`:`<span class="pill">idle</span>`} ${d.last_tick?`<span class="note">${d.last_tick.replace("T"," ")}</span>`:""}</td></tr>`;
+  document.getElementById("pools").innerHTML = rows;
+
+  document.getElementById("books").innerHTML = s.books.map(b => `<tr class="clickable" data-book="${esc(b.display_name)}" title="Show positions"><td>${esc(b.display_name)}${b.sid?`<span class="chip">${b.sid}</span>`:""}<span class="meta">${b.pool}</span></td><td class="n">${b.positions}</td><td class="n">${inr(b.deployed)}</td><td class="n">${inr(b.cash)}</td>${cell(b.unrealised)}${cell(b.realised)}${cell(b.realised_today)}<td>${b.exists?(b.updated_today?`<span class="pill ok">today</span>`:`<span class="pill due">not yet today</span>`):`<span class="pill">no book yet</span>`}</td></tr>`).join("");
+  document.querySelectorAll("#books tr.clickable").forEach(tr => tr.addEventListener("click", () => {
+    document.getElementById("q").value = tr.dataset.book; FILTER = tr.dataset.book.toLowerCase();
+    document.querySelector('nav button[data-tab="positions"]').click(); renderPositions(STATE);
+  }));
+}
+
+function renderPositions(s){
+  const f = FILTER;
+  let rows = "", n = 0, trades = "";
+  for(const b of s.books){
+    const label = `${b.display_name}${b.sid?" "+b.sid:""}`;
+    const pos = b.positions_detail.filter(p => !f || p.symbol.toLowerCase().includes(f) || label.toLowerCase().includes(f) || b.pool.toLowerCase()===f || (p.strategy_name||"").toLowerCase().includes(f));
+    for(const p of pos){ n++;
+      rows += `<tr><td>${esc(p.symbol)}${p.strategy_name?`<span class="chip">${esc(p.strategy_name)}</span>`:""}</td><td>${esc(b.display_name)} <span class="note">${b.pool}</span></td><td>${p.entry_date||""}</td><td class="n">${p.qty}</td><td class="n">${p.entry.toFixed(2)}</td><td class="n">${p.price.toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked)}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${p.pct.toFixed(1)}%</td><td class="n">${p.stop.toFixed(2)}</td></tr>`;
+    }
+    for(const t of b.recent_trades){
+      if(f && !(t.symbol.toLowerCase().includes(f) || label.toLowerCase().includes(f) || b.pool.toLowerCase()===f)) continue;
+      trades += `<tr><td>${esc(t.symbol)}</td><td>${esc(b.display_name)} <span class="note">${b.pool}</span></td><td>${t.entry_date||"?"} → ${t.exit_date||"?"}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc(t.reason||"")}</td></tr>`;
+    }
+  }
+  document.getElementById("positions").innerHTML = rows || `<tr><td colspan="9" class="note">no positions match</td></tr>`;
+  document.getElementById("trades").innerHTML = trades || `<tr><td colspan="8" class="note">no closed trades</td></tr>`;
+  document.getElementById("count").textContent = `${n} position${n===1?"":"s"}`;
+}
+document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderPositions(STATE); });
+
+function renderLive(s){
+  const tl = document.getElementById("timeline"); tl.innerHTML = "";
+  const start = 8.5, end = 16.5, pct = h => ((h-start)/(end-start)*100).toFixed(2)+"%";
+  for(let h=9; h<=16; h++){ tl.insertAdjacentHTML("beforeend", `<div class="hourmark" style="left:${pct(h)}"><span>${String(h).padStart(2,"0")}:00</span></div>`); }
+  const todayLog = j => j.last_log_write && j.last_log_write.startsWith(s.today);
+  const spans = {prep:[9,9.2], ticks:[9.25,15.5], open:[9.5,9.75], eod_a:[15.58,15.75], eod_a1:[15.67,15.83], eod_c:[15.75,15.92], eod_b:[15.83,16.0], summary:[16.08,16.3]};
+  for(const j of s.schedule){
+    const [a,b] = spans[j.id] || [9,9.1];
+    tl.insertAdjacentHTML("beforeend", `<div class="job ${todayLog(j)?"done":""}" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)})" title="${esc(j.label)} ${esc(j.at)}">${esc(j.label)}</div>`);
+  }
+  const now = new Date(s.generated_at); const nh = now.getHours()+now.getMinutes()/60;
+  if(nh>start && nh<end) tl.insertAdjacentHTML("beforeend", `<div class="now" style="left:${pct(nh)}"><span>now</span></div>`);
+
+  const nowMin = now.getHours()*60+now.getMinutes();
+  document.getElementById("schedule").innerHTML = s.schedule.map(j => {
+    const done = todayLog(j);
+    const startMin = parseInt(j.at.slice(0,2))*60 + parseInt(j.at.slice(3,5));
+    const status = done ? `<span class="pill ok">ran today</span>` : (nowMin > startMin + 20 && now.getDay()>0 && now.getDay()<6 ? `<span class="pill miss">no log entry today</span>` : `<span class="pill">scheduled</span>`);
+    return `<tr><td>${esc(j.label)}</td><td>${esc(j.at)}</td><td>${status}</td><td>${j.last_log_write?j.last_log_write.replace("T"," "):"—"}</td><td><pre class="log">${esc(j.tail.slice(-3).join("\n"))}</pre></td></tr>`;
+  }).join("");
+
+  const d = s.pool_d;
+  document.getElementById("pooldtiles").innerHTML = [
+    ["Book", money(d.cash), `of ${money(d.starting_capital||100000)} starting`],
+    ["Open now", d.positions, `${d.symbols_with_context} symbols with context`],
+    ["Trades today", d.trades_today, `${d.trades_total} since start`],
+    ["Realised today", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `all-time ${money(d.realised,true)}`],
+    ["Last tick", d.last_tick ? d.last_tick.slice(11) : "—", d.updated_today ? "today" : "not today"],
+  ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
+  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td>${p.direction}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").replace("T"," ")}</td></tr>`).join("") : `<tr><td colspan="7" class="note">${s.market_open?"nothing open":"flat — Pool D holds nothing overnight"}</td></tr>`;
+  document.getElementById("pooldtrades").innerHTML = d.recent_trades.length ? d.recent_trades.map(t => `<tr><td>${esc(t.symbol)}</td><td>${t.direction}</td><td class="n">${t.quantity}</td><td class="n">${(+t.entry_price).toFixed(2)}</td><td class="n">${(+t.exit_price).toFixed(2)}</td>${cell(+t.pnl)}<td>${esc(t.reason)}</td><td>${t.exit_date||""}</td></tr>`).join("") : `<tr><td colspan="8" class="note">no trades yet</td></tr>`;
+}
+
+function drawFlow(containerId, flow, hotIds){
+  const W=220, H=64, GX=40, GY=36, PAD=16;
+  const cols = Math.max(...flow.nodes.map(n=>n.col))+1, rows = Math.max(...flow.nodes.map(n=>n.row))+1;
+  const width = PAD*2 + cols*W + (cols-1)*GX, height = PAD*2 + rows*H + (rows-1)*GY;
+  const pos = {}; for(const n of flow.nodes) pos[n.id] = {x: PAD + n.col*(W+GX), y: PAD + n.row*(H+GY)};
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(flow.title)}"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>`;
+  for(const [a,b] of flow.edges){
+    const A=pos[a], B=pos[b];
+    let x1,y1,x2,y2;
+    if(B.x > A.x){ x1=A.x+W; y1=A.y+H/2; x2=B.x; y2=B.y+H/2; }
+    else if(B.x < A.x){ x1=A.x; y1=A.y+H/2; x2=B.x+W; y2=B.y+H/2; }
+    else if(B.y > A.y){ x1=A.x+W/2; y1=A.y+H; x2=B.x+W/2; y2=B.y; }
+    else { x1=A.x+W/2; y1=A.y; x2=B.x+W/2; y2=B.y+H; }
+    const mx = (x1+x2)/2;
+    const d = (B.x!==A.x) ? `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}` : `M${x1},${y1} L${x2},${y2}`;
+    svg += `<path class="edge" d="${d}"/>`;
+  }
+  for(const n of flow.nodes){
+    const p = pos[n.id], hot = hotIds.has(n.id), gate = n.id==="audit";
+    svg += `<g class="node ${hot?"hot":""} ${gate?"gate":""}"><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="5"/><text class="t" x="${p.x+10}" y="${p.y+24}">${esc(n.label)}</text><text class="s" x="${p.x+10}" y="${p.y+44}">${esc(n.sub)}</text></g>`;
+  }
+  svg += `</svg>`;
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+function renderTeam(s){
+  const hot = new Set(s.schedule.filter(j => j.last_log_write && j.last_log_write.startsWith(s.today)).map(j => j.id));
+  document.getElementById("flow-daily-title").textContent = s.flows.daily.title;
+  document.getElementById("flow-research-title").textContent = s.flows.research.title;
+  drawFlow("flow-daily", s.flows.daily, hot);
+  drawFlow("flow-research", s.flows.research, new Set());
+  document.getElementById("agents").innerHTML = s.agents.map(a => `<div class="card"><div class="name">${esc(a.name)}</div><div class="mod">${esc(a.module)}</div><div class="kinds"><span class="pill">${esc(a.kind)}</span><span class="pill">${esc(a.program)}</span></div><p>${esc(a.role)}</p></div>`).join("");
+}
+
+function renderRegistry(s){
+  const order = {PAPER_TRADING:0, RESEARCH:1, ARCHIVED:2};
+  const rows = [...s.registry].sort((a,b) => (order[a.status.split(".").pop()]??9)-(order[b.status.split(".").pop()]??9) || a.sid.localeCompare(b.sid));
+  document.getElementById("registry").innerHTML = rows.map(r => { const st = r.status.split(".").pop(), v = r.verdict.split(".").pop();
+    return `<tr><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td><span class="pill ${v==="PASS"?"ok":v==="REJECT"?"miss":""}">${v}</span></td><td><span class="pill ${st==="PAPER_TRADING"?"ok":""}">${st.replace("_"," ")}</span></td><td>${esc(r.experiment||"")}</td><td class="note">${esc(r.family)}</td></tr>`; }).join("");
+}
+
+load();
+setInterval(load, REFRESH_MS);
+setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago · auto every 60s`; }, 1000);
+</script>
+</body>
+</html>
