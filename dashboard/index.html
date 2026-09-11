@@ -151,7 +151,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="timeline" id="timeline"></div>
   <div class="jobs" id="jobs"></div>
   <h2>Bought and sold today</h2>
-  <div class="tblwrap"><table><thead><tr><th>Time</th><th>Side</th><th>Symbol</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th><th>Pool</th><th>Type</th><th>Book</th><th class="n">P&amp;L</th><th>Note</th></tr></thead><tbody id="tape"></tbody></table></div>
+  <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
   <h2>Pool D right now</h2>
   <div class="tiles" id="pooldtiles"></div>
   <div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Open position</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Stop</th><th class="n">Target</th><th>Since</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
@@ -299,8 +299,7 @@ function renderLive(s){
     return `<span class="j">${esc(j.label)} ${st}</span>`;
   }).join("");
 
-  const tape = document.getElementById("tape");
-  tape.innerHTML = s.activity_today.length ? s.activity_today.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
+  renderTape(s);
 
   const d = s.pool_d;
   document.getElementById("pooldtiles").innerHTML = [
@@ -311,6 +310,20 @@ function renderLive(s){
     ["Last check", d.last_tick ? d.last_tick.slice(11) : "—", d.updated_today ? "today" : "not today"],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
   document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="7" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
+}
+
+const TAPE_COLS = [["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["note","Note",false]];
+let TAPE_SORT = {key:"time", dir:1};
+function renderTape(s){
+  document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => `<th class="${num?"n":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
+  document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
+  const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
+  const rows = [...s.activity_today].sort((a,b) => {
+    const k = TAPE_SORT.key, x = a[k], y = b[k];
+    if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||""); }
+    return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||"");
+  });
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
 }
 
 function renderTeam(s){
