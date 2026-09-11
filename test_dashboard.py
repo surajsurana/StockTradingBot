@@ -53,7 +53,10 @@ def _tree():
     _write(os.path.join(state, "pool_d", "trades.jsonl"),
            [{"symbol": "SBIN", "pnl": -500.0, "exit_date": "2026-09-10", "direction": "SELL", "entry_price": 1000,
              "exit_price": 1005, "quantity": 100, "reason": "stop_loss",
-             "entry_timestamp": "2026-09-10T09:40:00", "exit_timestamp": "2026-09-10T10:05:00"}], jsonl=True)
+             "entry_timestamp": "2026-09-10T09:40:00", "exit_timestamp": "2026-09-10T10:05:00"},
+            # a record written before fills were time-stamped: both legs must still appear
+            {"symbol": "OLDREC", "pnl": 40.0, "exit_date": "2026-09-10", "direction": "BUY", "entry_price": 10,
+             "exit_price": 10.4, "quantity": 100, "reason": "target"}], jsonl=True)
     os.makedirs(logs, exist_ok=True)
     with open(os.path.join(logs, "paper_trading.log"), "w", encoding="utf-8") as f:
         f.write("[alpha] processed\n")
@@ -84,10 +87,12 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_activity_today_is_one_time_sorted_list_across_pools(self):
         acts = self.s["activity_today"]
         self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
-                         [("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT")])
+                         [("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
+                          ("", "BUY", "OLDREC"), ("", "SELL", "OLDREC")])   # unstamped legs listed, sorted last
         self.assertEqual(acts[1]["pnl"], -500.0)
         self.assertEqual(acts[1]["note"], "stop loss")
         self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
+        self.assertEqual(acts[4]["pnl"], 40.0)
         self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts))
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
@@ -95,7 +100,7 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_capital_is_cash_plus_deployed_minus_realised(self):
         a = self.s["pools"]["A"]
         self.assertAlmostEqual(a["capital"], 40000 + 50000 - (-1000))       # 91,000 (a 9k wind-down would show here)
-        self.assertAlmostEqual(self.s["pool_d"]["capital"], 99500 + 3900 * 5 - (-500))
+        self.assertAlmostEqual(self.s["pool_d"]["capital"], 99500 + 3900 * 5 - (-500 + 40))
         self.assertAlmostEqual(self.s["overall"]["capital"],
                                91000 + 100000 + 100000 + self.s["pool_d"]["capital"])
         self.assertEqual(self.s["mode"], "paper")
@@ -129,7 +134,7 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_pool_d_live_view(self):
         d = self.s["pool_d"]
         self.assertEqual(d["open_positions"][0]["symbol"], "LT")
-        self.assertEqual(len(d["todays_trades"]), 1)
+        self.assertEqual(len(d["todays_trades"]), 2)
         self.assertAlmostEqual(d["realised_today"], -500.0)
         self.assertEqual(d["symbols_with_context"], 2)
         self.assertAlmostEqual(d["cash"], 99500.0)
