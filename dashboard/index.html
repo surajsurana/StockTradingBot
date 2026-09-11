@@ -42,6 +42,9 @@ tr.clickable{cursor:pointer}
 .pill.ok{border-color:var(--gain);color:var(--gain)}.pill.due{border-color:var(--warn);color:var(--warn)}.pill.miss{border-color:var(--loss);color:var(--loss)}
 .tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
 input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
+select{font:inherit;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink)}
+select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.tools label{color:var(--muted)}
 .note{color:var(--muted);font-size:12.5px}
 .err{color:var(--loss);font-weight:500}
 .livebadge{display:none;font-size:11px;font-weight:700;letter-spacing:.1em;padding:2px 8px;border-radius:10px;background:var(--loss);color:#fff}
@@ -149,7 +152,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-positions" hidden>
-  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol, strategy or pool…" autocomplete="off"><span id="count" class="note"></span></div>
+  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
+    <label for="pos-pool">Pool</label><select id="pos-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option></select>
+    <label for="pos-kind">Type</label><select id="pos-kind"><option value="">All</option><option>Swing</option><option>Intraday</option></select>
+    <span id="count" class="note"></span></div>
   <div class="tblwrap"><table><thead id="pos-head"></thead><tbody id="positions"></tbody></table></div>
   <h2>Recent closed trades</h2>
   <div class="tblwrap"><table><thead id="trades-head"></thead><tbody id="trades"></tbody></table></div>
@@ -160,6 +166,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="timeline" id="timeline"></div>
   <div class="jobs" id="jobs"></div>
   <h2>Bought and sold today</h2>
+  <div class="tools"><label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option></select>
+    <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option></select>
+    <span id="tape-count" class="note"></span></div>
   <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
   <h2>Pool D right now</h2>
   <div class="tiles" id="pooldtiles"></div>
@@ -310,9 +319,11 @@ const POS_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type"
 const TRD_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type",false],["book","Book",false],["exit_date","Closed",false],["qty","Qty",true],["entry","Entry",true],["exit","Exit",true],["pnl","P&L",true],["reason","Reason",false]];
 let POS_SORT = {key:"unbooked", dir:-1}, TRD_SORT = {key:"exit_date", dir:-1};
 
+const sel = id => document.getElementById(id).value;
 function renderPositions(s){
-  const f = FILTER;
+  const f = FILTER, poolF = sel("pos-pool"), kindF = sel("pos-kind");
   const match = (...fields) => !f || fields.some(v => String(v||"").toLowerCase().includes(f));
+  const keep = r => (!poolF || r.pool === poolF) && (!kindF || r.kind === kindF);
   let positions = [], trades = [];
   for(const b of s.books){
     const label = `${b.display_name}${b.sid?" "+b.sid:""}`, pool = `Pool ${b.pool}`;
@@ -330,12 +341,14 @@ function renderPositions(s){
   sortableHead("trades-head", TRD_COLS, TRD_SORT, () => renderPositions(STATE));
   const prow = p => { const k = `pos.${p.pool}.${p.book}.${p.symbol}`; return `<tr><td>${esc(p.symbol)}${p.chip?`<span class="chip">${esc(p.chip)}</span>`:""}</td><td>${esc(p.pool)}</td><td>${esc(p.kind)}</td><td>${esc(p.book)}</td><td>${esc(p.entry_date||"")}</td><td class="n">${p.qty}</td><td class="n">${(+p.entry).toFixed(2)}</td><td class="n">${lv(k+".px", +p.price, (+p.price).toFixed(2))}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked,true,k+".un")}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(1)}%</td><td class="n">${(+p.stop).toFixed(2)}</td></tr>`; };
   const trow = t => `<tr><td>${esc(t.symbol)}</td><td>${esc(t.pool)}</td><td>${esc(t.kind)}</td><td>${esc(t.book)}</td><td>${esc(t.exit_date||"?")}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc(t.reason||"")}</td></tr>`;
-  const sortedP = sortRows(positions, POS_COLS, POS_SORT, "symbol"), sortedT = sortRows(trades, TRD_COLS, TRD_SORT, "symbol");
+  const sortedP = sortRows(positions.filter(keep), POS_COLS, POS_SORT, "symbol"), sortedT = sortRows(trades.filter(keep), TRD_COLS, TRD_SORT, "symbol");
   document.getElementById("positions").innerHTML = sortedP.length ? sortedP.map(prow).join("") : `<tr><td colspan="11" class="note">no positions match</td></tr>`;
   document.getElementById("trades").innerHTML = sortedT.length ? sortedT.map(trow).join("") : `<tr><td colspan="10" class="note">no closed trades</td></tr>`;
   document.getElementById("count").textContent = `${sortedP.length} position${sortedP.length===1?"":"s"}`;
 }
 document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderPositions(STATE); });
+["pos-pool","pos-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderPositions(STATE); }));
+["tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
   const tl = document.getElementById("timeline"); tl.innerHTML = "";
@@ -378,11 +391,13 @@ function renderTape(s){
   document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => `<th class="${num?"n":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
-  const rows = [...s.activity_today].sort((a,b) => {
+  const poolF = sel("tape-pool"), kindF = sel("tape-kind");
+  const rows = s.activity_today.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).sort((a,b) => {
     const k = TAPE_SORT.key, x = a[k], y = b[k];
     if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||""); }
     return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||"");
   });
+  document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
   document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
 }
 
