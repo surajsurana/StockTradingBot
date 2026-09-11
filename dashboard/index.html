@@ -141,9 +141,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-positions" hidden>
   <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol, strategy or pool…" autocomplete="off"><span id="count" class="note"></span></div>
-  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Book</th><th>Entered</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Price</th><th class="n">Unbooked</th><th class="n">%</th><th class="n">Stop</th></tr></thead><tbody id="positions"></tbody></table></div>
+  <div class="tblwrap"><table><thead id="pos-head"></thead><tbody id="positions"></tbody></table></div>
   <h2>Recent closed trades</h2>
-  <div class="tblwrap"><table><thead><tr><th>Symbol</th><th>Book</th><th>Held</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Exit</th><th class="n">P&amp;L</th><th>Reason</th></tr></thead><tbody id="trades"></tbody></table></div>
+  <div class="tblwrap"><table><thead id="trades-head"></thead><tbody id="trades"></tbody></table></div>
 </section>
 
 <section id="tab-live" hidden>
@@ -257,23 +257,48 @@ function renderOverview(s){
   }));
 }
 
+// Generic sortable header: cols = [[key, label, numeric], ...]; state = {key, dir}; onChange re-renders.
+function sortableHead(headId, cols, state, onChange){
+  document.getElementById(headId).innerHTML = `<tr>${cols.map(([k,l,num]) => `<th class="${num?"n":""}"><button data-sort="${k}" class="${state.key===k?(state.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
+  document.querySelectorAll(`#${headId} button`).forEach(b => b.addEventListener("click", () => { state.dir = state.key===b.dataset.sort ? -state.dir : 1; state.key = b.dataset.sort; onChange(); }));
+}
+function sortRows(rows, cols, state, tieKey){
+  const numeric = new Set(cols.filter(c=>c[2]).map(c=>c[0]));
+  return [...rows].sort((a,b) => {
+    const k = state.key, x = a[k], y = b[k]; let r;
+    if(numeric.has(k)){ const nx = x==null||x===""?-Infinity:+x, ny = y==null||y===""?-Infinity:+y; r = nx-ny; }
+    else r = String(x??"").localeCompare(String(y??""));
+    return r*state.dir || String(a[tieKey]??"").localeCompare(String(b[tieKey]??""));
+  });
+}
+const POS_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type",false],["book","Book",false],["entry_date","Entered",false],["qty","Qty",true],["entry","Entry",true],["price","Price",true],["unbooked","Unbooked",true],["pct","%",true],["stop","Stop",true]];
+const TRD_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type",false],["book","Book",false],["exit_date","Closed",false],["qty","Qty",true],["entry","Entry",true],["exit","Exit",true],["pnl","P&L",true],["reason","Reason",false]];
+let POS_SORT = {key:"unbooked", dir:-1}, TRD_SORT = {key:"exit_date", dir:-1};
+
 function renderPositions(s){
   const f = FILTER;
-  let rows = "", n = 0, trades = "";
+  const match = (...fields) => !f || fields.some(v => String(v||"").toLowerCase().includes(f));
+  let positions = [], trades = [];
   for(const b of s.books){
-    const label = `${b.display_name}${b.sid?" "+b.sid:""}`;
-    const pos = b.positions_detail.filter(p => !f || p.symbol.toLowerCase().includes(f) || label.toLowerCase().includes(f) || ("pool "+b.pool.toLowerCase())===f || b.pool.toLowerCase()===f || (p.strategy_name||"").toLowerCase().includes(f));
-    for(const p of pos){ n++;
-      rows += `<tr><td>${esc(p.symbol)}${p.strategy_name?`<span class="chip">${esc(p.strategy_name)}</span>`:""}</td><td>${esc(b.display_name)} <span class="note">Pool ${b.pool}</span></td><td>${p.entry_date||""}</td><td class="n">${p.qty}</td><td class="n">${p.entry.toFixed(2)}</td><td class="n">${p.price.toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked)}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${p.pct.toFixed(1)}%</td><td class="n">${p.stop.toFixed(2)}</td></tr>`;
-    }
-    for(const t of b.recent_trades){
-      if(f && !(t.symbol.toLowerCase().includes(f) || label.toLowerCase().includes(f) || b.pool.toLowerCase()===f)) continue;
-      trades += `<tr><td>${esc(t.symbol)}</td><td>${esc(b.display_name)} <span class="note">Pool ${b.pool}</span></td><td>${t.entry_date||"?"} → ${t.exit_date||"?"}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc((t.reason||"").replace("_"," "))}</td></tr>`;
-    }
+    const label = `${b.display_name}${b.sid?" "+b.sid:""}`, pool = `Pool ${b.pool}`;
+    for(const p of b.positions_detail) if(match(p.symbol, label, pool, p.strategy_name, "swing"))
+      positions.push({...p, pool, kind:"Swing", book: b.display_name, chip: p.strategy_name});
+    for(const t of b.recent_trades) if(match(t.symbol, label, pool, "swing"))
+      trades.push({...t, pool, kind:"Swing", book: b.display_name, reason: (t.reason||"").replace("_"," ")});
   }
-  document.getElementById("positions").innerHTML = rows || `<tr><td colspan="9" class="note">no positions match</td></tr>`;
-  document.getElementById("trades").innerHTML = trades || `<tr><td colspan="8" class="note">no closed trades</td></tr>`;
-  document.getElementById("count").textContent = `${n} position${n===1?"":"s"}`;
+  for(const p of s.pool_d.open_positions) if(match(p.symbol, "Pool D", "intraday"))
+    positions.push({symbol:p.symbol, pool:"Pool D", kind:"Intraday", book:`${p.direction==="SELL"?"short":"long"}`, entry_date:(p.entry_timestamp||"").slice(0,16).replace("T"," "), qty:p.quantity, entry:+p.entry_price, price:+p.entry_price, unbooked:0, pct:0, stop:+p.stop_loss, priced:false});
+  for(const t of s.pool_d.recent_trades) if(t.exit_date===s.today && match(t.symbol, "Pool D", "intraday"))
+    trades.push({symbol:t.symbol, pool:"Pool D", kind:"Intraday", book:t.direction==="SELL"?"short":"long", entry_date:(t.entry_timestamp||"").slice(11,16), exit_date:`${t.exit_date} ${(t.exit_timestamp||"").slice(11,16)}`.trim(), qty:t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl, reason:String(t.reason||"").replace("_"," ")});
+
+  sortableHead("pos-head", POS_COLS, POS_SORT, () => renderPositions(STATE));
+  sortableHead("trades-head", TRD_COLS, TRD_SORT, () => renderPositions(STATE));
+  const prow = p => `<tr><td>${esc(p.symbol)}${p.chip?`<span class="chip">${esc(p.chip)}</span>`:""}</td><td>${esc(p.pool)}</td><td>${esc(p.kind)}</td><td>${esc(p.book)}</td><td>${esc(p.entry_date||"")}</td><td class="n">${p.qty}</td><td class="n">${(+p.entry).toFixed(2)}</td><td class="n">${(+p.price).toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked)}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(1)}%</td><td class="n">${(+p.stop).toFixed(2)}</td></tr>`;
+  const trow = t => `<tr><td>${esc(t.symbol)}</td><td>${esc(t.pool)}</td><td>${esc(t.kind)}</td><td>${esc(t.book)}</td><td>${esc(t.exit_date||"?")}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc(t.reason||"")}</td></tr>`;
+  const sortedP = sortRows(positions, POS_COLS, POS_SORT, "symbol"), sortedT = sortRows(trades, TRD_COLS, TRD_SORT, "symbol");
+  document.getElementById("positions").innerHTML = sortedP.length ? sortedP.map(prow).join("") : `<tr><td colspan="11" class="note">no positions match</td></tr>`;
+  document.getElementById("trades").innerHTML = sortedT.length ? sortedT.map(trow).join("") : `<tr><td colspan="10" class="note">no closed trades</td></tr>`;
+  document.getElementById("count").textContent = `${sortedP.length} position${sortedP.length===1?"":"s"}`;
 }
 document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderPositions(STATE); });
 
