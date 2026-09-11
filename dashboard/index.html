@@ -44,6 +44,12 @@ tr.clickable{cursor:pointer}
 input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
 .note{color:var(--muted);font-size:12.5px}
 .err{color:var(--loss);font-weight:500}
+.livebadge{display:none;font-size:11px;font-weight:700;letter-spacing:.1em;padding:2px 8px;border-radius:10px;background:var(--loss);color:#fff}
+.livebadge.on{display:inline-block}
+.lv{display:inline-block;border-radius:3px;padding:0 3px;margin:0 -3px;transition:background-color .9s ease}
+.lv.up{background:color-mix(in srgb,var(--gain) 28%,transparent)}
+.lv.down{background:color-mix(in srgb,var(--loss) 28%,transparent)}
+@media (prefers-reduced-motion: reduce){.lv{transition:none}}
 .modeswitch{display:inline-flex;border:1px solid var(--rule);border-radius:20px;overflow:hidden}
 .modeswitch button{all:unset;cursor:pointer;padding:4px 12px;font-size:12.5px;font-weight:600;color:var(--muted)}
 .modeswitch button.on{background:var(--accent);color:var(--accent-ink)}
@@ -115,6 +121,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <h1>StockTradingBot Desk</h1>
   <div class="status">
     <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
+    <span class="livebadge" id="livebadge">LIVE</span>
     <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
     <span id="asof">loading…</span>
     <span id="prices"></span>
@@ -181,11 +188,35 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
 
 <script>
-const REFRESH_MS = 60000;
+const REFRESH_OPEN_MS = 15000, REFRESH_CLOSED_MS = 60000;
 const inr = n => (n<0?"−":"") + Math.abs(Math.round(n)).toLocaleString("en-IN");
 const money = (n, signed) => `${n>0&&signed?"+":""}${n<0?"−":""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`;
 const cls = n => n>0?"gain":n<0?"loss":"";
-const cell = (n, signed=true) => `<td class="n ${cls(n)}">${money(n, signed)}</td>`;
+// Live numbers: each carries its value; after a render, cells whose value moved flash green/red
+// and tiles count from the old value to the new one. Real quotes only -- the page never invents movement.
+let LIVE_PREV = new Map();
+const lv = (key, value, html) => `<span class="lv" data-k="${esc(key)}" data-v="${value}">${html}</span>`;
+const cell = (n, signed=true, key=null) => `<td class="n ${cls(n)}">${key?lv(key, n, money(n, signed)):money(n, signed)}</td>`;
+function animateChanges(){
+  const next = new Map();
+  document.querySelectorAll(".lv[data-k]").forEach(el => {
+    const k = el.dataset.k, v = parseFloat(el.dataset.v);
+    next.set(k, v);
+    if(!LIVE_PREV.has(k)) return;
+    const prev = LIVE_PREV.get(k);
+    if(prev === v || Number.isNaN(v)) return;
+    el.classList.add(v > prev ? "up" : "down");
+    setTimeout(() => el.classList.remove("up", "down"), 1200);
+    if(el.dataset.tween === "money" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+      const signed = el.dataset.signed === "1", t0 = performance.now(), dur = 700;
+      const step = now => { const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+        el.textContent = money(prev + (v - prev) * e, signed); if(p < 1) requestAnimationFrame(step); };
+      requestAnimationFrame(step);
+    }
+  });
+  LIVE_PREV = next;
+}
+const tileMoney = (key, n, signed) => `<span class="lv ${cls(n)}" data-k="${key}" data-v="${n}" data-tween="money" data-signed="${signed?1:0}">${money(n, signed)}</span>`;
 const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper";
 try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
@@ -219,35 +250,37 @@ function render(){
   const s = STATE;
   document.getElementById("mkt").className = "dot" + (s.market_open ? " on" : "");
   document.getElementById("mkt-label").textContent = s.market_open ? "market open" : "market closed";
-  document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,16)}`;
-  document.getElementById("prices").textContent = s.prices_as_of ? `prices ${s.prices_as_of.slice(11)}` : "prices loading…";
+  document.getElementById("livebadge").className = "livebadge" + (s.market_open ? " on" : "");
+  document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,19)}`;
+  document.getElementById("prices").textContent = s.prices_as_of ? `quotes ${s.prices_as_of.slice(11,19)}` : "prices loading…";
   const note = document.getElementById("modenote");
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital;
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
   renderOverview(s); renderPositions(s); renderLive(s); renderTeam(s); renderRegistry(s);
+  animateChanges();
 }
 
 function renderOverview(s){
   const o = s.overall, d = s.pool_d;
   document.getElementById("tiles").innerHTML = [
-    ["Total capital", money(o.capital), "Pools A, B, C, D"],
+    ["Total capital", tileMoney("t.capital", o.capital, false), "Pools A, B, C, D"],
     ["Open positions", o.positions, "Pools A, B, C, D"],
-    ["Deployed", money(o.deployed), "at cost"],
-    ["Cash", money(o.cash), "all books"],
-    ["Unbooked P&L", `<span class="${cls(o.unrealised)}">${money(o.unrealised,true)}</span>`, "at latest price"],
-    ["Booked P&L", `<span class="${cls(o.realised)}">${money(o.realised,true)}</span>`, `today ${money(o.realised_today,true)}`],
-    ["Pool D today", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open · unbooked ${money(d.unrealised,true)}`],
+    ["Deployed", tileMoney("t.deployed", o.deployed, false), "at cost"],
+    ["Cash", tileMoney("t.cash", o.cash, false), "all books"],
+    ["Unbooked P&L", tileMoney("t.unreal", o.unrealised, true), "at latest quote"],
+    ["Booked P&L", tileMoney("t.real", o.realised, true), `today ${money(o.realised_today,true)}`],
+    ["Pool D today", tileMoney("t.dtoday", d.realised_today, true), `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open · unbooked ${lv("t.dunreal", d.unrealised, money(d.unrealised,true))}`],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
 
   const names = {A:"Pool A — swing strategies", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
   let rows = "";
   for(const k of ["A","B","C"]){
     const p = s.pools[k]; if(!p) continue;
-    rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
+    rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised,true,`p.${k}.unreal`)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
   }
-  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td>${cell(d.unrealised)}${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
-  rows += `<tr class="total"><td>Total</td><td class="n">${inr(o.capital)}</td><td class="n">${o.positions}</td><td class="n">${inr(o.deployed)}</td><td class="n">${inr(o.cash)}</td>${cell(o.unrealised)}${cell(o.realised)}${cell(o.realised_today)}<td></td></tr>`;
+  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td>${cell(d.unrealised,true,"p.D.unreal")}${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
+  rows += `<tr class="total"><td>Total</td><td class="n">${inr(o.capital)}</td><td class="n">${o.positions}</td><td class="n">${inr(o.deployed)}</td><td class="n">${inr(o.cash)}</td>${cell(o.unrealised,true,"p.all.unreal")}${cell(o.realised)}${cell(o.realised_today)}<td></td></tr>`;
   document.getElementById("pools").innerHTML = rows;
 
   document.getElementById("books").innerHTML = s.books.map(b => `<tr class="clickable" data-book="${esc(b.display_name)}" title="Show positions"><td>${esc(b.display_name)}${b.sid?`<span class="chip">${b.sid}</span>`:""}</td><td class="n">${b.positions}</td><td class="n">${inr(b.deployed)}</td><td class="n">${inr(b.cash)}</td>${cell(b.unrealised)}${cell(b.realised)}${cell(b.realised_today)}<td>${b.exists?(b.updated_today?`<span class="pill ok">today</span>`:`<span class="pill due">not yet today</span>`):`<span class="pill">starts soon</span>`}</td></tr>`).join("");
@@ -293,7 +326,7 @@ function renderPositions(s){
 
   sortableHead("pos-head", POS_COLS, POS_SORT, () => renderPositions(STATE));
   sortableHead("trades-head", TRD_COLS, TRD_SORT, () => renderPositions(STATE));
-  const prow = p => `<tr><td>${esc(p.symbol)}${p.chip?`<span class="chip">${esc(p.chip)}</span>`:""}</td><td>${esc(p.pool)}</td><td>${esc(p.kind)}</td><td>${esc(p.book)}</td><td>${esc(p.entry_date||"")}</td><td class="n">${p.qty}</td><td class="n">${(+p.entry).toFixed(2)}</td><td class="n">${(+p.price).toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked)}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(1)}%</td><td class="n">${(+p.stop).toFixed(2)}</td></tr>`;
+  const prow = p => { const k = `pos.${p.pool}.${p.book}.${p.symbol}`; return `<tr><td>${esc(p.symbol)}${p.chip?`<span class="chip">${esc(p.chip)}</span>`:""}</td><td>${esc(p.pool)}</td><td>${esc(p.kind)}</td><td>${esc(p.book)}</td><td>${esc(p.entry_date||"")}</td><td class="n">${p.qty}</td><td class="n">${(+p.entry).toFixed(2)}</td><td class="n">${lv(k+".px", +p.price, (+p.price).toFixed(2))}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked,true,k+".un")}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(1)}%</td><td class="n">${(+p.stop).toFixed(2)}</td></tr>`; };
   const trow = t => `<tr><td>${esc(t.symbol)}</td><td>${esc(t.pool)}</td><td>${esc(t.kind)}</td><td>${esc(t.book)}</td><td>${esc(t.exit_date||"?")}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc(t.reason||"")}</td></tr>`;
   const sortedP = sortRows(positions, POS_COLS, POS_SORT, "symbol"), sortedT = sortRows(trades, TRD_COLS, TRD_SORT, "symbol");
   document.getElementById("positions").innerHTML = sortedP.length ? sortedP.map(prow).join("") : `<tr><td colspan="11" class="note">no positions match</td></tr>`;
@@ -329,12 +362,12 @@ function renderLive(s){
   const d = s.pool_d;
   document.getElementById("pooldtiles").innerHTML = [
     ["Cash", money(d.cash), `of ${money(d.starting_capital||100000)}`],
-    ["Open now", d.positions, `unbooked ${money(d.unrealised,true)}`],
+    ["Open now", d.positions, `unbooked ${lv("dl.unreal", d.unrealised, money(d.unrealised,true))}`],
     ["Trades today", d.trades_today, `${d.trades_total} all time`],
-    ["Today's P&L", `<span class="${cls(d.realised_today)}">${money(d.realised_today,true)}</span>`, `all time ${money(d.realised,true)}`],
+    ["Today's P&L", tileMoney("dl.today", d.realised_today, true), `all time ${money(d.realised,true)}`],
     ["Last check", d.last_tick ? d.last_tick.slice(11) : "—", d.updated_today ? "today" : "not today"],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
-  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${(+p.price).toFixed(2)}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(+p.unbooked)}<td class="n ${cls(+p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(2)}%</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
+  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${lv(`d.${p.symbol}.px`, +p.price, (+p.price).toFixed(2))}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(+p.unbooked,true,`d.${p.symbol}.un`)}<td class="n ${cls(+p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(2)}%</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
 }
 
 const TAPE_COLS = [["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["note","Note",false]];
@@ -391,8 +424,8 @@ function renderRegistry(s){
 }
 
 load();
-setInterval(load, REFRESH_MS);
-setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago`; }, 1000);
+(function schedule(){ setTimeout(async () => { await load(); schedule(); }, STATE && STATE.market_open ? REFRESH_OPEN_MS : REFRESH_CLOSED_MS); })();
+setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago${STATE.market_open?" · live every 15s":""}`; }, 1000);
 </script>
 </body>
 </html>

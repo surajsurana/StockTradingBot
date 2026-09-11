@@ -12,10 +12,13 @@ open internet gets scanned, so the key keeps casual visitors out. Plain
 HTTP: do not reuse any real password as the key.
 
 PRICES: unrealised P&L needs a latest price per held symbol. A background
-thread refreshes them from yfinance every PRICE_REFRESH_SECONDS; the
-page shows what it has and says how old it is. The state itself (cash,
-positions, trades) is re-read from disk on every request, so it is always
-current to the last run/tick.
+thread does a full yfinance refresh every PRICE_REFRESH_SECONDS and, while
+the market is open, a Kite last-traded-price refresh for every held
+symbol every LIVE_SECONDS (added 2026-09-11 so the page genuinely moves
+with the tape -- real quotes, never simulated movement). The page shows
+what it has and says how old it is. The state itself (cash, positions,
+trades) is re-read from disk on every request, so it is always current
+to the last run/tick.
 
     python dashboard/server.py            # 0.0.0.0:8085
     python dashboard/server.py --port N
@@ -44,7 +47,8 @@ from dashboard.state_view import build_dashboard_state             # noqa: E402
 LOGS_DIR = os.path.join(REPO_DIR, "logs")
 INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 KEY_PATH = os.path.join(STATE_DIR, "dashboard_key.txt")
-PRICE_REFRESH_SECONDS = 300
+PRICE_REFRESH_SECONDS = 300   # full yfinance refresh
+LIVE_SECONDS = 20             # Kite quote refresh while the market is open (2 requests per pass)
 COOKIE_NAME = "dash_key"
 
 
@@ -112,6 +116,8 @@ class PriceCache:
             return {}
 
     def refresh_once(self) -> None:
+        """Full refresh: yfinance closes for every held swing symbol, then
+        Kite quotes on top for everything Kite knows (bare symbols)."""
         from data.fetch_historical import fetch_all
         fresh = {}
         symbols = self._held_symbols()
@@ -119,25 +125,53 @@ class PriceCache:
             for symbol, df in fetch_all(symbols, period="5d").items():
                 if df is not None and not df.empty:
                     fresh[symbol] = float(df["Close"].iloc[-1])
-        pool_d = self._pool_d_symbols()
-        if pool_d:
-            fresh.update(self._kite_ltp(pool_d))
         with self._lock:
             self.prices = fresh
-            self.as_of = datetime.now().isoformat(timespec="minutes")
+            self.as_of = datetime.now().isoformat(timespec="seconds")
+        self.refresh_live()
+
+    def refresh_live(self) -> None:
+        """Quote refresh: Kite last-traded prices for every held symbol
+        (swing books' 'X.NS' keys map to Kite's bare 'X') plus Pool D's
+        open names. During market hours this runs every LIVE_SECONDS, so
+        unbooked P&L moves with the tape; outside it, it just confirms
+        the close. Symbols Kite doesn't return keep their yfinance close."""
+        held = self._held_symbols() + self._pool_d_symbols()
+        if not held:
+            return
+        bare = sorted({s[:-3] if s.endswith(".NS") else s for s in held})
+        quotes = self._kite_ltp(bare)
+        if not quotes:
+            return
+        with self._lock:
+            for s in held:
+                b = s[:-3] if s.endswith(".NS") else s
+                if b in quotes:
+                    self.prices[s] = quotes[b]
+            self.as_of = datetime.now().isoformat(timespec="seconds")
 
     def snapshot(self) -> tuple:
         with self._lock:
             return dict(self.prices), self.as_of
 
+    @staticmethod
+    def _market_open(now=None) -> bool:
+        now = now or datetime.now()
+        return now.weekday() < 5 and (9, 15) <= (now.hour, now.minute) <= (15, 30)
+
     def start(self) -> None:
         def loop():
+            last_full = 0.0
             while True:
                 try:
-                    self.refresh_once()
-                except Exception as e:   # never let a yfinance hiccup kill the refresher
+                    if time.monotonic() - last_full > self.refresh_seconds:
+                        self.refresh_once()
+                        last_full = time.monotonic()
+                    elif self._market_open():
+                        self.refresh_live()
+                except Exception as e:   # never let a data hiccup kill the refresher
                     print(f"price refresh failed: {type(e).__name__}: {e}", flush=True)
-                time.sleep(self.refresh_seconds)
+                time.sleep(LIVE_SECONDS if self._market_open() else 60)
         threading.Thread(target=loop, daemon=True, name="price-refresh").start()
 
 
