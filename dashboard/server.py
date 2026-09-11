@@ -113,8 +113,31 @@ class PriceCache:
         threading.Thread(target=loop, daemon=True, name="price-refresh").start()
 
 
+class RoadmapCache:
+    """swing_research/research_roadmap.py's build_roadmap() re-scores 30+
+    candidates against the registry; cheap, but not per request."""
+
+    def __init__(self, ttl_seconds: int = 600):
+        self.ttl = ttl_seconds
+        self._value, self._at = None, 0.0
+        self._lock = threading.Lock()
+
+    def get(self):
+        with self._lock:
+            if self._value is None or time.monotonic() - self._at > self.ttl:
+                try:
+                    from swing_research.research_roadmap import build_roadmap
+                    self._value = build_roadmap()
+                except Exception as e:
+                    print(f"roadmap unavailable: {type(e).__name__}: {e}", flush=True)
+                    self._value = None
+                self._at = time.monotonic()
+            return self._value
+
+
 class DashboardHandler(BaseHTTPRequestHandler):
     price_cache: PriceCache = None
+    roadmap_cache: RoadmapCache = RoadmapCache()
     access_key: str = ""
 
     def log_message(self, fmt, *args):   # quieter than the default (one line per request is enough)
@@ -141,8 +164,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             extra["Set-Cookie"] = f"{COOKIE_NAME}={self.access_key}; Path=/; Max-Age=2592000; SameSite=Lax"
 
         if parsed.path == "/api/state":
+            # mode=live is a VIEW of deployment/state/live/ (the same layout
+            # as the paper folders) -- it exists so the page's Live/Paper
+            # switch has somewhere to point once real-money books exist.
+            # Nothing here places orders; with no live folder the view is
+            # simply empty.
+            mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
+            state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
             prices, as_of = self.price_cache.snapshot()
-            state = build_dashboard_state(STATE_DIR, LOGS_DIR, list_strategies(), prices, as_of)
+            registry = list_strategies()
+            state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
+                                          roadmap=self.roadmap_cache.get(), mode=mode)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

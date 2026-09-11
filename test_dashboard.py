@@ -87,9 +87,34 @@ class TestBuildDashboardState(unittest.TestCase):
                          [("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT")])
         self.assertEqual(acts[1]["pnl"], -500.0)
         self.assertEqual(acts[1]["note"], "stop loss")
-        self.assertTrue(all(a["pool"] == "Pool D" for a in acts))   # the swing book's Y.NS exit was yesterday
+        self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
+        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts))
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
+
+    def test_capital_is_cash_plus_deployed_minus_realised(self):
+        a = self.s["pools"]["A"]
+        self.assertAlmostEqual(a["capital"], 40000 + 50000 - (-1000))       # 91,000 (a 9k wind-down would show here)
+        self.assertAlmostEqual(self.s["pool_d"]["capital"], 99500 + 3900 * 5 - (-500))
+        self.assertAlmostEqual(self.s["overall"]["capital"],
+                               91000 + 100000 + 100000 + self.s["pool_d"]["capital"])
+        self.assertEqual(self.s["mode"], "paper")
+
+    def test_roadmap_view_drops_candidates_already_in_the_registry(self):
+        cand = lambda key, name: SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
+                                                 authors="A & B", typical_holding_period="1 month",
+                                                 direction="Long only", known_strengths="s", known_weaknesses="w")
+        scored = lambda key, name, score, feas="IMPLEMENTABLE", reasons=(): SimpleNamespace(
+            candidate=cand(key, name), total_score=score, axis_scores={"academic_evidence": 8.0},
+            feasibility_classification=feas, feasibility_reasons=list(reasons))
+        roadmap = {"researchable_now": [scored("alpha", "Already built", 9.0), scored("new_idea", "New idea", 7.5)],
+                   "deferred_pending_data": [scored("needs_data", "Needs data", 6.0, "NOT_CURRENTLY_IMPLEMENTABLE",
+                                                    ["Requires 'x'"])], "weights": {}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap)
+        self.assertEqual([(c["rank"], c["key"]) for c in s["roadmap"]["ready"]], [(1, "new_idea")])
+        self.assertEqual([c["key"] for c in s["roadmap"]["deferred"]], ["needs_data"])
+        self.assertEqual(s["roadmap"]["deferred"][0]["blockers"], ["Requires 'x'"])
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")

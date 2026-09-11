@@ -197,6 +197,13 @@ EXISTING_STRATEGY_TAGS = {
     "max_effect": {"behavioral_lottery"},
     "idiosyncratic_volatility": {"risk_based"},
     "turn_of_month": {"seasonality_calendar"},
+    # Promoted 2026-09-05..2026-09-10 (SW-014..SW-018) -- tags mirror the
+    # candidate entries they were built from, now retired from CANDIDATES.
+    "ma_pullback": {"trend_following"},
+    "volume_backed_breakout": {"trend_following", "volume_attention"},
+    "overnight_return_anomaly": {"microstructure_overnight"},
+    "high_volume_return_premium": {"volume_attention"},
+    "earnings_announcement_premium": {"earnings_drift", "seasonality_calendar"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -343,6 +350,13 @@ def score_candidate(candidate: CandidateProfile, portfolio_records: list,
 # genuinely-published strategies).
 # =====================================================================
 CANDIDATES = [
+    # NOTE (2026-09-11): Overnight Return Anomaly (SW-016, EXP-078 PASS) and
+    # High-Volume Return Premium (SW-017, EXP-080 PASS) were researched and
+    # promoted 2026-09-06/07 and are no longer candidates here; their tags
+    # moved to EXISTING_STRATEGY_TAGS above. Earnings Announcement Premium
+    # (SW-018, EXP-081 PASS) was sourced by a direct literature search on
+    # 2026-09-07 and was never a CANDIDATES entry -- its tags are registered
+    # above too, so future earnings/calendar candidates score against it.
     # NOTE: Betting Against Beta (Frazzini & Pedersen 2014) is no longer a
     # candidate here -- it was researched 2026-08-15 (SW-009) and REJECTed
     # (temporal robustness failure, EXP-024/EXP-025/EXP-026 -- see
@@ -994,32 +1008,6 @@ CANDIDATES = [
         academic_evidence_score=7, expected_robustness_score=6, operational_simplicity_score=6,
         research_value_score=5, data_availability_score=8, implementation_feasibility_score=6,
     ),
-    CandidateProfile(
-        key="high_volume_return_premium",
-        name="High-Volume Return Premium",
-        authors="Gervais, S., Kaniel, R. and Mingelgrin, D.H.",
-        publication="\"The High-Volume Return Premium\", The Journal of Finance, Vol. 56, No. 3",
-        year=2001,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-only (stocks with unusually high recent trading volume relative to their own history).",
-        factor_family="Volume-driven attention/visibility premium",
-        factor_tags={"volume_attention"},
-        mechanism="A stock experiencing unusually high trading volume gets a temporary visibility/"
-                  "attention boost that predicts short-term positive returns -- a distinct mechanism "
-                  "from both momentum (past RETURN) and liquidity (average volume LEVEL).",
-        typical_holding_period="Days to a few weeks",
-        expected_trade_frequency="Higher than the cross-sectional monthly-rebalance candidates -- "
-                                  "volume spikes are more frequent, idiosyncratic events",
-        data_requirements=["daily_ohlcv_history", "volume"],
-        known_strengths="Directly computable from data already fetched; short holding period offers a "
-                         "genuinely different operational cadence from every existing strategy except SW-008.",
-        known_weaknesses="Less overwhelming replication evidence than the classics (BAB, Amihud, "
-                          "momentum); effect size in the original paper is modest.",
-        academic_replication_quality="Cited and replicated, but a smaller, less foundational literature than the anomalies above it in this list.",
-        evidence_sufficiency_note="Marginal-but-sufficient; treat as a lower-conviction test than the top-ranked candidates.",
-        academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=7,
-        research_value_score=6, data_availability_score=10, implementation_feasibility_score=9,
-    ),
     # NOTE: MAX Effect (Lottery-Demand Anomaly) is no longer a candidate
     # here -- it was researched 2026-08-23 (SW-011) and received an
     # official Research Verdict PASS (base run EXP-042 AND the dedicated
@@ -1053,41 +1041,6 @@ CANDIDATES = [
         evidence_sufficiency_note="Sufficient, but lowest priority within the risk-based cluster.",
         academic_evidence_score=7, expected_robustness_score=6, operational_simplicity_score=6,
         research_value_score=5, data_availability_score=10, implementation_feasibility_score=8,
-    ),
-    CandidateProfile(
-        key="overnight_return_anomaly",
-        name="Overnight Return Anomaly",
-        authors="Lou, D., Polk, C. and Skouras, S. (see also Berkman, Koch, Tuttle and Zhang 2012)",
-        publication="\"A Tug of War: Overnight versus Intraday Expected Returns\", Journal of Financial Economics, Vol. 134, No. 1",
-        year=2019,
-        asset_class="Single-stock equities, cross-sectional",
-        direction="Long-only (decompose daily return into overnight [today's open vs. yesterday's "
-                   "close] and intraday [today's close vs. today's open] components; strategy holds "
-                   "specifically overnight, based on recent overnight-return persistence).",
-        factor_family="Market microstructure / attention-driven",
-        factor_tags={"microstructure_overnight"},
-        mechanism="Retail order flow concentrates at the open, institutional order flow concentrates "
-                   "intraday -- producing a persistent, exploitable split between overnight and "
-                   "intraday expected returns that a standard close-to-close return masks entirely.",
-        typical_holding_period="Overnight only (enter near close, exit near next open) -- a wholly "
-                                "different HOLDING MECHANIC from every existing strategy, which all "
-                                "hold across many days.",
-        expected_trade_frequency="High -- a new decision every trading day per qualifying symbol",
-        data_requirements=["daily_ohlcv_history"],
-        known_strengths="Needs literally ZERO new data -- Open and Close are already columns in every "
-                         "OHLCV pull this program already makes; a genuinely novel mechanism no "
-                         "strategy in this program has touched.",
-        known_weaknesses="A newer finding (2019) with less multi-decade replication than the classics; "
-                          "and unusually SENSITIVE to exactly the fill-timing assumption this platform's "
-                          "own Execution Realism Study already flagged as unmodeled (same-day-close "
-                          "fills, not realistic next-day-open fills) -- this strategy's entire edge "
-                          "lives inside that exact gap, so it should not be seriously evaluated before "
-                          "that framework recommendation is addressed.",
-        academic_replication_quality="Well-cited, growing literature, but younger and less battle-tested than the pre-2000 classics in this roadmap.",
-        evidence_sufficiency_note="Sufficient to research, but implementation should wait for (or explicitly "
-                                   "caveat around) the Execution Realism Study's realistic-fill recommendation.",
-        academic_evidence_score=8, expected_robustness_score=6, operational_simplicity_score=9,
-        research_value_score=8, data_availability_score=10, implementation_feasibility_score=8,
     ),
     CandidateProfile(
         key="industry_momentum",

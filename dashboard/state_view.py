@@ -198,8 +198,40 @@ def _log_tail(logs_dir: str, name: str, lines: int = 6) -> list:
     return [l for l in content if l.strip()][-lines:]
 
 
+def _with_capital(p: dict) -> dict:
+    """Capital = cash + deployed (at cost) - realised: what the book was
+    given, net of any capital wind-down withdrawals -- robust to a stale
+    starting_capital field (PEAD's still reads Rs.10,00,000)."""
+    p["capital"] = round(p["cash"] + p["deployed"] - p["realised"], 2)
+    return p
+
+
+def roadmap_view(roadmap: dict, registry_records: list) -> dict:
+    """The Head-of-Research roadmap (swing_research/research_roadmap.py)
+    reduced to what the Strategies tab shows: ranked candidates that
+    could be researched now, and the ones waiting on data. Candidates
+    whose key is already in the registry are dropped -- the roadmap's
+    own candidate list lags promotions."""
+    taken = {r.strategy_key for r in registry_records}
+
+    def row(s, rank=None):
+        c = s.candidate
+        return {"rank": rank, "key": c.key, "name": c.name, "family": c.factor_family, "year": c.year,
+                "authors": c.authors, "holding": c.typical_holding_period, "direction": c.direction,
+                "score": s.total_score, "axes": {k: round(v, 1) for k, v in s.axis_scores.items()},
+                "feasibility": s.feasibility_classification,
+                "blockers": list(s.feasibility_reasons)[:2], "strengths": c.known_strengths,
+                "weaknesses": c.known_weaknesses}
+
+    ready = [s for s in roadmap["researchable_now"] if s.candidate.key not in taken]
+    deferred = [s for s in roadmap["deferred_pending_data"] if s.candidate.key not in taken]
+    return {"ready": [row(s, i + 1) for i, s in enumerate(ready)], "deferred": [row(s) for s in deferred],
+            "weights": roadmap.get("weights", {})}
+
+
 def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list, prices: dict,
-                          prices_as_of: Optional[str], now: Optional[datetime] = None) -> dict:
+                          prices_as_of: Optional[str], now: Optional[datetime] = None,
+                          roadmap: Optional[dict] = None, mode: str = "paper") -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -250,13 +282,19 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                 for r in registry_records]
 
     market_open = now.weekday() < 5 and dtime(9, 15) <= now.time() <= dtime(15, 30)
-    pools = {k: v for k, v in summary["pools"].items() if k != "A1"}
+    pools = {k: _with_capital(dict(v)) for k, v in summary["pools"].items() if k != "A1"}
+    pool_d = _with_capital(pool_d)
+    for b in books:
+        _with_capital(b)
+    overall = dict(summary["overall"])
+    overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"], 2)
     return {
-        "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(), "market_open": market_open,
-        "prices_as_of": prices_as_of, "priced_symbols": len(prices),
-        "pools": pools, "overall": summary["overall"], "books": books, "pool_d": pool_d,
+        "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
+        "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
+        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d,
         "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
+        "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 
 
@@ -301,5 +339,8 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
                      "symbol": t.get("symbol"), "qty": t.get("quantity"),
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
                      "pnl": round(float(t.get("pnl", 0) or 0), 2), "note": str(t.get("reason", "")).replace("_", " ")})
+    for r in rows:
+        r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
+        r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
     rows.sort(key=lambda r: (r["time"] or "99:99", r["symbol"] or ""))
     return rows

@@ -44,6 +44,14 @@ tr.clickable{cursor:pointer}
 input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
 .note{color:var(--muted);font-size:12.5px}
 .err{color:var(--loss);font-weight:500}
+.modeswitch{display:inline-flex;border:1px solid var(--rule);border-radius:20px;overflow:hidden}
+.modeswitch button{all:unset;cursor:pointer;padding:4px 12px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.modeswitch button.on{background:var(--accent);color:var(--accent-ink)}
+.modeswitch button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+tr.total td{background:var(--band);font-weight:600;border-top:2px solid var(--rule)}
+.axes{display:inline-flex;gap:3px;vertical-align:middle}
+.axes i{display:inline-block;width:6px;border-radius:2px;background:var(--accent);opacity:.75}
+details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--accent);font-weight:500}
 /* live day */
 .timeline{position:relative;height:64px;background:var(--card);border:1px solid var(--rule);border-radius:6px;margin:8px 0 14px}
 .timeline .hourmark{position:absolute;top:0;bottom:0;border-left:1px dashed var(--rule)}
@@ -106,12 +114,14 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <header>
   <h1>StockTradingBot Desk</h1>
   <div class="status">
+    <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
     <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
     <span id="asof">loading…</span>
     <span id="prices"></span>
     <span id="refresh"></span>
   </div>
 </header>
+<p id="modenote" class="note" hidden></p>
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
   <button role="tab" aria-selected="false" data-tab="positions">Positions</button>
@@ -124,7 +134,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <section id="tab-overview">
   <div class="tiles" id="tiles"></div>
   <h2>Pools</h2>
-  <div class="tblwrap"><table><thead><tr><th>Pool</th><th class="n">Positions</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Status</th></tr></thead><tbody id="pools"></tbody></table></div>
+  <div class="tblwrap"><table><thead><tr><th>Pool</th><th class="n">Capital</th><th class="n">Positions</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Status</th></tr></thead><tbody id="pools"></tbody></table></div>
   <h2>Books</h2>
   <div class="tblwrap"><table><thead><tr><th>Book</th><th class="n">Open</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Run</th></tr></thead><tbody id="books"></tbody></table></div>
 </section>
@@ -141,7 +151,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="timeline" id="timeline"></div>
   <div class="jobs" id="jobs"></div>
   <h2>Bought and sold today</h2>
-  <div class="tape" id="tape"></div>
+  <div class="tblwrap"><table><thead><tr><th>Time</th><th>Side</th><th>Symbol</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th><th>Pool</th><th>Type</th><th>Book</th><th class="n">P&amp;L</th><th>Note</th></tr></thead><tbody id="tape"></tbody></table></div>
   <h2>Pool D right now</h2>
   <div class="tiles" id="pooldtiles"></div>
   <div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Open position</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Stop</th><th class="n">Target</th><th>Since</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
@@ -161,6 +171,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
   <div class="tblwrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
+  <h2>Next up for research</h2>
+  <p class="note">Published strategies not yet built, ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value).</p>
+  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th></tr></thead><tbody id="roadmap"></tbody></table></div>
+  <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
 </section>
 </div>
 
@@ -173,7 +187,14 @@ const money = (n, signed) => `${n>0&&signed?"+":""}${n<0?"−":""}₹${Math.abs(
 const cls = n => n>0?"gain":n<0?"loss":"";
 const cell = (n, signed=true) => `<td class="n ${cls(n)}">${money(n, signed)}</td>`;
 const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1};
+let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper";
+try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
+document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
+  MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
+  document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
+  load();
+}));
+document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
 
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
@@ -184,7 +205,7 @@ try { const t = localStorage.getItem("desk.tab"); if (t) document.querySelector(
 
 async function load(){
   try{
-    const r = await fetch("/api/state", {cache:"no-store"});
+    const r = await fetch(`/api/state?mode=${MODE}`, {cache:"no-store"});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     STATE = await r.json();
     document.getElementById("error").hidden = true;
@@ -200,12 +221,17 @@ function render(){
   document.getElementById("mkt-label").textContent = s.market_open ? "market open" : "market closed";
   document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,16)}`;
   document.getElementById("prices").textContent = s.prices_as_of ? `prices ${s.prices_as_of.slice(11)}` : "prices loading…";
+  const note = document.getElementById("modenote");
+  const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital;
+  note.hidden = !liveEmpty;
+  note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
   renderOverview(s); renderPositions(s); renderLive(s); renderTeam(s); renderRegistry(s);
 }
 
 function renderOverview(s){
   const o = s.overall, d = s.pool_d;
   document.getElementById("tiles").innerHTML = [
+    ["Total capital", money(o.capital), "Pools A, B, C, D"],
     ["Open positions", o.positions, "Pools A, B, C, D"],
     ["Deployed", money(o.deployed), "at cost"],
     ["Cash", money(o.cash), "all books"],
@@ -218,9 +244,10 @@ function renderOverview(s){
   let rows = "";
   for(const k of ["A","B","C"]){
     const p = s.pools[k]; if(!p) continue;
-    rows += `<tr><td>${names[k]}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
+    rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
   }
-  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td><td class="n">—</td>${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
+  rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td><td class="n">—</td>${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
+  rows += `<tr class="total"><td>Total</td><td class="n">${inr(o.capital)}</td><td class="n">${o.positions}</td><td class="n">${inr(o.deployed)}</td><td class="n">${inr(o.cash)}</td>${cell(o.unrealised)}${cell(o.realised)}${cell(o.realised_today)}<td></td></tr>`;
   document.getElementById("pools").innerHTML = rows;
 
   document.getElementById("books").innerHTML = s.books.map(b => `<tr class="clickable" data-book="${esc(b.display_name)}" title="Show positions"><td>${esc(b.display_name)}${b.sid?`<span class="chip">${b.sid}</span>`:""}</td><td class="n">${b.positions}</td><td class="n">${inr(b.deployed)}</td><td class="n">${inr(b.cash)}</td>${cell(b.unrealised)}${cell(b.realised)}${cell(b.realised_today)}<td>${b.exists?(b.updated_today?`<span class="pill ok">today</span>`:`<span class="pill due">not yet today</span>`):`<span class="pill">starts soon</span>`}</td></tr>`).join("");
@@ -273,7 +300,7 @@ function renderLive(s){
   }).join("");
 
   const tape = document.getElementById("tape");
-  tape.innerHTML = s.activity_today.length ? s.activity_today.map(a => `<div class="line"><span class="t">${esc(a.time||"—")}</span><span class="side ${a.action==="BUY"?"buy":"sell"}">${a.action}</span><span class="what"><b>${esc(a.symbol)}</b> × ${a.qty} @ ₹${(+a.price).toFixed(2)}${a.pnl!=null?` · <span class="${cls(a.pnl)}">${money(a.pnl,true)}</span>`:""}${a.note && a.note!=="entry"?` <span class="note">(${esc(a.note)})</span>`:""}</span><span class="pool">${esc(a.pool)}${a.book && a.book!=="Intraday"?` · ${esc(a.book)}`:""}</span></div>`).join("") : `<div class="empty">Nothing bought or sold yet today.</div>`;
+  tape.innerHTML = s.activity_today.length ? s.activity_today.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
 
   const d = s.pool_d;
   document.getElementById("pooldtiles").innerHTML = [
@@ -316,6 +343,13 @@ function renderRegistry(s){
   const norm = r => ({sid:r.sid, name:r.name, verdict:r.verdict.split(".").pop(), status:r.status.split(".").pop(), experiment:r.experiment||""});
   const rows = s.registry.map(norm).sort((a,b) => { const k=REG_SORT.key; const x=a[k]||"", y=b[k]||""; if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir; } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("registry").innerHTML = rows.map(r => `<tr><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td><span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace("_"," "))}</span></td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace("_"," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");
+
+  const rm = s.roadmap || {ready:[], deferred:[]};
+  const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };
+  const bars = ax => `<span class="axes" title="${Object.entries(ax).map(([k,v])=>`${k.replace(/_/g," ")}: ${v}`).join(" · ")}">${Object.values(ax).map(v=>`<i style="height:${Math.max(3, Math.round(v*1.4))}px"></i>`).join("")}</span>`;
+  document.getElementById("roadmap").innerHTML = rm.ready.length ? rm.ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td>${esc(short(c.holding))}</td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td></tr>`).join("") : `<tr><td colspan="7" class="note">roadmap not available</td></tr>`;
+  document.getElementById("deferred-summary").textContent = `Waiting on data we don't have (${rm.deferred.length})`;
+  document.getElementById("deferred").innerHTML = rm.deferred.map(c => `<tr><td>${esc(short(c.name))}</td><td>${esc(short(c.family))}</td><td class="note">${esc((c.blockers[0]||"").replace(/'/g,"").replace("Requires ","").replace(", confirmed unavailable on this platform.",""))}</td></tr>`).join("");
 }
 
 load();
