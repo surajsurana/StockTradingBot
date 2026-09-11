@@ -44,70 +44,70 @@ DESKS = [
 # names the schedule job whose presence in today's log means "worked today";
 # "market" means active while the market is open; None = works on request.
 AGENTS = [
-    {"id": "quant_researcher", "name": "Quant Researcher", "icon": "\U0001F4A1", "desk": "research_lab", "kind": "AI",
+    {"id": "quant_researcher", "avatar": {"type": "human", "gender": "f", "skin": "#F1C9A5", "hair": "#2B1B12", "shirt": "#3E7CB1"}, "name": "Quant Researcher", "icon": "\U0001F4A1", "desk": "research_lab", "kind": "AI",
      "job": "Proposes new intraday ideas", "status_from": None,
      "detail": "Writes a batch of fresh hypotheses -- each with a mechanism, rules and why it differs from "
                "everything already tried -- after reading the full history of what failed and why."},
-    {"id": "research_director", "name": "Research Director", "icon": "\U0001F9ED", "desk": "research_lab", "kind": "AI + rules",
+    {"id": "research_director", "avatar": {"type": "human", "gender": "m", "skin": "#C68642", "hair": "#1B1B1B", "shirt": "#5B4B8A"}, "name": "Research Director", "icon": "\U0001F9ED", "desk": "research_lab", "kind": "AI + rules",
      "job": "Picks what gets tested", "status_from": None,
      "detail": "Draws cross-cutting lessons from every past experiment, throws out ideas the lab has no data "
                "for, ranks the rest and runs the chosen one through the whole pipeline."},
-    {"id": "backtesting_engineer", "name": "Backtesting Engineer", "icon": "\u2699\ufe0f", "desk": "research_lab", "kind": "Mechanical",
+    {"id": "backtesting_engineer", "avatar": {"type": "robot", "body": "#7A8B99", "eye": "#5FB7C0"}, "name": "Backtesting Engineer", "icon": "\u2699\ufe0f", "desk": "research_lab", "kind": "Mechanical",
      "job": "Simulates trades bar by bar", "status_from": None,
      "detail": "Real Kite 5-minute candles, stops checked before targets, forced square-off at the close, "
                "no peeking ahead -- and, since EXP-011, net of real transaction costs."},
-    {"id": "statistical_auditor", "name": "Statistical Auditor", "icon": "\u2696\ufe0f", "desk": "research_lab", "kind": "Rules only",
+    {"id": "statistical_auditor", "avatar": {"type": "robot", "body": "#4E5D6C", "eye": "#E0A85A"}, "name": "Statistical Auditor", "icon": "\u2696\ufe0f", "desk": "research_lab", "kind": "Rules only",
      "job": "Says PASS or REJECT", "status_from": None,
      "detail": "The gate nobody can talk round: enough trades, enough positive walk-forward windows, and a "
                "positive result on the untouched out-of-sample slice -- or it is a REJECT."},
-    {"id": "performance_analyst", "name": "Performance Analyst", "icon": "\U0001F4DD", "desk": "research_lab", "kind": "AI",
+    {"id": "performance_analyst", "avatar": {"type": "human", "gender": "m", "skin": "#8D5524", "hair": "#0F0F0F", "shirt": "#2E8B57"}, "name": "Performance Analyst", "icon": "\U0001F4DD", "desk": "research_lab", "kind": "AI",
      "job": "Explains each verdict", "status_from": None,
      "detail": "After the verdict is decided, writes the plain-English story: which sectors, regimes and "
                "times of day carried or sank the result."},
-    {"id": "knowledge_base", "name": "Knowledge Base", "icon": "\U0001F5C4\ufe0f", "desk": "research_lab", "kind": "Memory",
+    {"id": "knowledge_base", "avatar": {"type": "robot", "body": "#9C8C6E", "eye": "#B23A3A"}, "name": "Knowledge Base", "icon": "\U0001F5C4\ufe0f", "desk": "research_lab", "kind": "Memory",
      "job": "Remembers every result", "status_from": None,
      "detail": "Every experiment's verdict and reason, plus standing rules like the 15-bps minimum-edge "
                "rule that all future ideas are checked against."},
-    {"id": "published_research_analyst", "name": "Literature Analyst", "icon": "\U0001F4D6", "desk": "swing_research", "kind": "Curated",
+    {"id": "published_research_analyst", "avatar": {"type": "human", "gender": "f", "skin": "#E0AC69", "hair": "#6B3A2A", "shirt": "#B85C38"}, "name": "Literature Analyst", "icon": "\U0001F4D6", "desk": "swing_research", "kind": "Curated",
      "job": "Documents the published rules", "status_from": None,
      "detail": "For each strategy taken from a paper: the citation, the exact rules, the variant chosen, and "
                "every simplification with its estimated impact."},
-    {"id": "swing_director", "name": "Swing Director", "icon": "\U0001F3AF", "desk": "swing_research", "kind": "Mechanical + AI",
+    {"id": "swing_director", "avatar": {"type": "human", "gender": "f", "skin": "#FFDBB4", "hair": "#C9A063", "shirt": "#1F6F78"}, "name": "Swing Director", "icon": "\U0001F3AF", "desk": "swing_research", "kind": "Mechanical + AI",
      "job": "Runs the multi-year backtests", "status_from": None,
      "detail": "Full-period run for the headline numbers, walk-forward windows for the Auditor, "
                "benchmarks, and an evidence-quality score that ignores the outcome."},
-    {"id": "evidence_quality", "name": "Evidence Scorer", "icon": "\U0001F4CF", "desk": "swing_research", "kind": "Rules only",
+    {"id": "evidence_quality", "avatar": {"type": "robot", "body": "#6C7A89", "eye": "#4CC383"}, "name": "Evidence Scorer", "icon": "\U0001F4CF", "desk": "swing_research", "kind": "Rules only",
      "job": "Rates how trustworthy a result is", "status_from": None,
      "detail": "0-100 from trade count, out-of-sample trade count, window count and data coverage -- "
                "calculated before anyone looks at whether the strategy made money."},
-    {"id": "deployment_manager", "name": "Registrar", "icon": "\U0001F4CB", "desk": "trading_desk", "kind": "Registry",
+    {"id": "deployment_manager", "avatar": {"type": "robot", "body": "#8E7C68", "eye": "#3E7CB1"}, "name": "Registrar", "icon": "\U0001F4CB", "desk": "trading_desk", "kind": "Registry",
      "job": "Keeps the strategy register", "status_from": None,
      "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
                "trades unless it is marked PAPER_TRADING here."},
-    {"id": "paper_trading_engine", "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
+    {"id": "paper_trading_engine", "avatar": {"type": "robot", "body": "#5A6E7F", "eye": "#F2C14E"}, "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
      "job": "Runs the Pool A books after the close", "status_from": "eod_a",
      "detail": "Checks stops and targets, asks each strategy for exits and entries, queues the entries for "
                "the next open, marks the book and writes the report."},
-    {"id": "pool_d_engine", "name": "Intraday Trader", "icon": "\u26A1", "desk": "trading_desk", "kind": "Mechanical",
+    {"id": "pool_d_engine", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#E0706A"}, "name": "Intraday Trader", "icon": "\u26A1", "desk": "trading_desk", "kind": "Mechanical",
      "job": "Trades Pool D every 5 minutes", "status_from": "market",
      "detail": "Fetches today's bars for the Nifty 500, catches stops even on a missed poll, takes new "
                "signals on one shared Rs.1,00,000 book, squares off by 15:25."},
-    {"id": "fundamental_agent", "name": "Fundamentals Analyst", "icon": "\U0001F4CA", "desk": "portfolio_team", "kind": "AI",
+    {"id": "fundamental_agent", "avatar": {"type": "human", "gender": "m", "skin": "#F1C27D", "hair": "#4A2C17", "shirt": "#7B4F9D"}, "name": "Fundamentals Analyst", "icon": "\U0001F4CA", "desk": "portfolio_team", "kind": "AI",
      "job": "Checks the company's health", "status_from": "eod_c",
      "detail": "Reads the fundamentals of each candidate and grades them."},
-    {"id": "news_agent", "name": "News Analyst", "icon": "\U0001F4F0", "desk": "portfolio_team", "kind": "AI",
+    {"id": "news_agent", "avatar": {"type": "human", "gender": "f", "skin": "#A0522D", "hair": "#1B1B1B", "shirt": "#D9822B"}, "name": "News Analyst", "icon": "\U0001F4F0", "desk": "portfolio_team", "kind": "AI",
      "job": "Scans the headlines", "status_from": "eod_c",
      "detail": "Looks for event risk and sentiment in recent news about the candidate."},
-    {"id": "research_analyst", "name": "Research Analyst", "icon": "\U0001F50E", "desk": "portfolio_team", "kind": "AI",
+    {"id": "research_analyst", "avatar": {"type": "human", "gender": "m", "skin": "#E8BEAC", "hair": "#8A8A8A", "shirt": "#3B6E8F"}, "name": "Research Analyst", "icon": "\U0001F50E", "desk": "portfolio_team", "kind": "AI",
      "job": "Forms the verdict", "status_from": "eod_c",
      "detail": "Weighs the signal, the fundamentals and the news and says whether the setup is worth taking."},
-    {"id": "portfolio_manager", "name": "Portfolio Manager", "icon": "\U0001F454", "desk": "portfolio_team", "kind": "AI",
+    {"id": "portfolio_manager", "avatar": {"type": "human", "gender": "f", "skin": "#C68642", "hair": "#2B1B12", "shirt": "#1E2430"}, "name": "Portfolio Manager", "icon": "\U0001F454", "desk": "portfolio_team", "kind": "AI",
      "job": "Decides what makes the book", "status_from": "eod_c",
      "detail": "Chooses among the approved candidates and sets their weights."},
-    {"id": "risk_manager_live", "name": "Risk Manager", "icon": "\U0001F6E1\ufe0f", "desk": "portfolio_team", "kind": "Rules",
+    {"id": "risk_manager_live", "avatar": {"type": "robot", "body": "#5E6B5E", "eye": "#B23A3A"}, "name": "Risk Manager", "icon": "\U0001F6E1\ufe0f", "desk": "portfolio_team", "kind": "Rules",
      "job": "Sizes and vetoes", "status_from": "eod_c",
      "detail": "Sizes every position against its stop and blocks anything that breaches the book's limits."},
-    {"id": "pool_summary", "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
+    {"id": "pool_summary", "avatar": {"type": "robot", "body": "#7D6B8A", "eye": "#5FB7C0"}, "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
      "job": "Sends the daily Telegram", "status_from": "summary",
      "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
                "message of the day at 16:05."},

@@ -95,7 +95,9 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .seats{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
 .agent{all:unset;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:10px 6px 8px;cursor:pointer;position:relative;transition:transform .12s}
 .agent:hover{transform:translateY(-2px)}
-.agent .av{font-size:30px;line-height:1;width:52px;height:52px;display:grid;place-items:center;border-radius:50%;background:var(--band)}
+.agent .av{width:52px;height:52px;display:grid;place-items:center}
+.agent .av svg{display:block}
+.legend .k{display:inline-flex;align-items:center;gap:6px}
 .agent .nm{font-weight:600;font-size:12.5px;margin-top:4px}
 .agent .jb{color:var(--muted);font-size:11.5px}
 .agent .st{position:absolute;top:8px;right:8px;width:9px;height:9px;border-radius:50%;background:var(--rule)}
@@ -170,7 +172,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="note">Steps light up as they happen today.</p>
   <h2>The office</h2>
   <div class="office" id="office"></div>
-  <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span> <span>· tap anyone to see what they do</span></div>
+  <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· people = AI analysts, robots = rule-based engines · tap anyone to see what they do</span></div>
   <h2 id="flow-research-title"></h2>
   <div class="strip" id="flow-research"></div>
 </section>
@@ -384,6 +386,33 @@ function renderTape(s){
   document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
 }
 
+// Avatars drawn inline so the team reads as people and robots, not glyphs.
+function avatarSvg(a, size=52){
+  const v = a.avatar || {type:"robot", body:"#7A8B99", eye:"#5FB7C0"};
+  if(v.type === "human"){
+    const hair = v.gender === "f"
+      ? `<path d="M14 30 Q14 12 32 12 Q50 12 50 30 L50 40 Q46 30 42 24 Q32 26 22 24 Q18 30 14 40 Z" fill="${v.hair}"/>`
+      : `<path d="M16 28 Q16 12 32 12 Q48 12 48 28 L46 26 Q40 18 24 20 Q19 22 18 28 Z" fill="${v.hair}"/>`;
+    return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${esc(a.name)}">
+      <circle cx="32" cy="32" r="31" fill="${v.shirt}" opacity=".15"/>
+      <path d="M10 62 Q10 44 32 44 Q54 44 54 62 Z" fill="${v.shirt}"/>
+      <circle cx="32" cy="27" r="13" fill="${v.skin}"/>
+      ${hair}
+      <circle cx="27" cy="28" r="1.6" fill="#1E2430"/><circle cx="37" cy="28" r="1.6" fill="#1E2430"/>
+      <path d="M27.5 33.5 Q32 37 36.5 33.5" stroke="#1E2430" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${esc(a.name)}">
+    <circle cx="32" cy="32" r="31" fill="${v.body}" opacity=".15"/>
+    <line x1="32" y1="8" x2="32" y2="14" stroke="${v.body}" stroke-width="2.5"/><circle cx="32" cy="7" r="2.6" fill="${v.eye}"/>
+    <rect x="17" y="14" width="30" height="24" rx="6" fill="${v.body}"/>
+    <rect x="22" y="21" width="7" height="6" rx="1.5" fill="${v.eye}"/><rect x="35" y="21" width="7" height="6" rx="1.5" fill="${v.eye}"/>
+    <rect x="26" y="31" width="12" height="2.5" rx="1" fill="#0F1418" opacity=".5"/>
+    <rect x="14" y="42" width="36" height="20" rx="7" fill="${v.body}"/>
+    <circle cx="32" cy="50" r="2.4" fill="${v.eye}"/>
+  </svg>`;
+}
+
 function renderTeam(s){
   const hot = new Set(s.schedule.filter(j => j.last_log_write && j.last_log_write.startsWith(s.today)).map(j => j.id));
   const strip = (id, flow, hotSet) => { document.getElementById(id).innerHTML = flow.steps.map(st => `<div class="step ${hotSet.has(st.id)?"hot":""}"><div class="ic">${st.icon}</div><div class="lb">${esc(st.label)}</div><div class="tx">${esc(st.text)}</div></div>`).join(""); };
@@ -394,12 +423,12 @@ function renderTeam(s){
 
   const statusOf = a => a.status_from==="market" ? (s.market_open ? "working" : "done") : (a.status_from && hot.has(a.status_from) ? "done" : "");
   document.getElementById("office").innerHTML = s.desks.map(d => {
-    const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${a.icon}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
+    const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
     return `<div class="desk"><div class="head"><span class="ic">${d.icon}</span><span class="nm">${esc(d.name)}</span></div><p class="blurb">${esc(d.blurb)}</p><div class="seats">${seats}</div></div>`;
   }).join("");
   document.querySelectorAll(".agent").forEach(btn => btn.addEventListener("click", () => {
     const a = s.agents.find(x => x.id===btn.dataset.agent); if(!a) return;
-    document.getElementById("who-av").textContent = a.icon; document.getElementById("who-name").textContent = a.name;
+    document.getElementById("who-av").innerHTML = avatarSvg(a, 72); document.getElementById("who-name").textContent = a.name;
     document.getElementById("who-job").textContent = a.job; document.getElementById("who-detail").textContent = a.detail;
     document.getElementById("who-kind").textContent = `${a.kind} · ${s.desks.find(d=>d.id===a.desk)?.name||""}`;
     document.getElementById("who").showModal();
