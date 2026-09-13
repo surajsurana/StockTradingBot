@@ -256,11 +256,22 @@ def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -
     return (latest_date, latest_equity) if latest_date is not None else None
 
 
+def _size(raw_quantity: float, fractional_quantities: bool) -> float:
+    """floor() to whole shares, or 6 decimals for a strategy that declares
+    fractional_quantities (crypto lane, 2026-09-13)."""
+    return round(raw_quantity, 6) if fractional_quantities else math.floor(raw_quantity)
+
+
+def _min_quantity(fractional_quantities: bool) -> float:
+    return 1e-6 if fractional_quantities else 1
+
+
 def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                             execution_config: ExecutionRealismConfig, target_date: date_type,
                             risk_pct_per_unit: float,
                             min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
-                            sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> tuple:
+                            sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
+                            fractional_quantities: bool = False) -> tuple:
     """
     Resolves any entries/exits queued on a PRIOR day (fill_timing=
     "next_day_open") against target_date's real Open. This is the EXACT
@@ -364,10 +375,10 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
         risk_per_share = open_price - stop_loss
         if risk_per_share <= 0:
             continue   # the overnight gap moved price through its own planned stop -- signal abandoned, not taken
-        quantity = math.floor(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share)
+        quantity = _size(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share, fractional_quantities)
         fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
         cost = fill_price * quantity
-        if quantity < 1 or cost > cash or cost < min_position_value_rupees:
+        if quantity < _min_quantity(fractional_quantities) or cost > cash or cost < min_position_value_rupees:
             continue
         cash -= cost + execution_config.brokerage_flat_rs
         positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
@@ -438,6 +449,7 @@ def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_o
     data = fetch_open_data_fn()
     new_entries, new_exits = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
+        fractional_quantities=getattr(strategy, "fractional_quantities", False),
     )
     _save_portfolio(strategy_key, portfolio)
 
@@ -579,9 +591,10 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # logic; if that morning call already resolved something for today,
     # it's simply no longer in pending_entries/pending_exits here (a
     # harmless no-op re-check, not a double-fill).
+    fractional = getattr(strategy, "fractional_quantities", False)
     new_entries, new_exits = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
-        min_position_value_rupees, sizing_capital_cap,
+        min_position_value_rupees, sizing_capital_cap, fractional_quantities=fractional,
     )
     cash = portfolio["cash"]
     positions = portfolio["positions"]
@@ -714,11 +727,11 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                                      "signal_date": target_date.isoformat(),
                                                      "signal_price": signal.entry_price})
                     else:
-                        quantity = math.floor(min(cash, sizing_capital_cap) * strategy.risk_pct_per_unit
-                                               / risk_per_share)
+                        quantity = _size(min(cash, sizing_capital_cap) * strategy.risk_pct_per_unit
+                                         / risk_per_share, fractional)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
                         cost = fill_price * quantity
-                        if quantity >= 1 and cost <= cash and cost >= min_position_value_rupees:
+                        if quantity >= _min_quantity(fractional) and cost <= cash and cost >= min_position_value_rupees:
                             cash -= cost + execution_config.brokerage_flat_rs
                             positions[symbol] = {
                                 "entry_price": fill_price, "entry_date": target_date.isoformat(),

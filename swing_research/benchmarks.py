@@ -32,7 +32,7 @@ NIFTY_500_TICKER = "^CRSLDX"
 NIFTY_50_FALLBACK_TICKER = "^NSEI"
 
 
-def simulate_buy_and_hold(data: dict, capital_per_symbol: float) -> dict:
+def simulate_buy_and_hold(data: dict, capital_per_symbol: float, fractional_quantities: bool = False) -> dict:
     """
     data: {symbol: DataFrame of daily OHLCV bars}. Each symbol gets an
     equal capital_per_symbol allocation, entered at its first available
@@ -59,7 +59,8 @@ def simulate_buy_and_hold(data: dict, capital_per_symbol: float) -> dict:
         entry_price = float(df.iloc[0]["Close"])
         if entry_price <= 0:
             continue
-        quantity = int(capital_per_symbol / entry_price)
+        quantity = (round(capital_per_symbol / entry_price, 6) if fractional_quantities
+                    else int(capital_per_symbol / entry_price))
         if quantity <= 0:
             continue
         positions[symbol] = (quantity, entry_price, df)

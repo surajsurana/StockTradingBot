@@ -188,7 +188,8 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
                                   skip_regime_breakdown: bool = False,
                                   extra_parameters: Optional[dict] = None,
                                   walk_forward_fn: Callable = None,
-                                  full_period_trade_adjuster: Optional[Callable[[list, dict], list]] = None) -> str:
+                                  full_period_trade_adjuster: Optional[Callable[[list, dict], list]] = None,
+                                  annualization_days: int = 252) -> str:
     """
     Full pipeline for one experiment run, for ANY swing_research.base.Strategy:
     walk-forward + audit on the strategy under test, then MA Crossover /
@@ -225,6 +226,10 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
     are then saved separately under a "diagnostic_zero_cost_baseline" key
     in the experiment's metrics, never used for the audit, purely for
     transparency (see execution_realism_framework_proposal.md).
+    annualization_days: bars per year for every compute_metrics() call in
+    this function -- 252 (NSE trading days, the default, unchanged for
+    every equity strategy) or 365 for the crypto lane
+    (swing_research/crypto_lane.py), where calendar days are bars.
     """
     from strategies.ma_crossover import MACrossoverStrategy
     from strategies.mean_reversion import MeanReversionStrategy
@@ -264,14 +269,14 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
     full_daily_equity = full_result["daily_equity"]
     if full_period_trade_adjuster is not None:
         diagnostic_zero_cost_baseline = compute_metrics(
-            full_trades, starting_capital, full_result["trading_calendar"], daily_equity=full_daily_equity,
+            full_trades, starting_capital, full_result["trading_calendar"], daily_equity=full_daily_equity, annualization_days=annualization_days,
         )
         from swing_research.execution_realism_engine import build_approximate_daily_equity
         full_trades = full_period_trade_adjuster(full_trades, data)
         full_daily_equity = build_approximate_daily_equity(full_trades, starting_capital, full_result["trading_calendar"])
 
     strategy_metrics = compute_metrics(full_trades, starting_capital,
-                                        full_result["trading_calendar"], daily_equity=full_daily_equity)
+                                        full_result["trading_calendar"], daily_equity=full_daily_equity, annualization_days=annualization_days)
     strategy_sector_breakdown = performance_analyst.compute_sector_breakdown(full_trades, sector_map)
     strategy_holding_breakdown = compute_holding_period_breakdown(full_trades)
 
@@ -317,13 +322,15 @@ def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrateg
         data, MeanReversionStrategy, starting_capital, regime_series=None,
     )
     ma_metrics = compute_metrics(ma_result["trades"], starting_capital, ma_result["trading_calendar"],
-                                  daily_equity=ma_result["daily_equity"])
+                                  daily_equity=ma_result["daily_equity"], annualization_days=annualization_days)
     mr_metrics = compute_metrics(mr_result["trades"], starting_capital, mr_result["trading_calendar"],
-                                  daily_equity=mr_result["daily_equity"])
+                                  daily_equity=mr_result["daily_equity"], annualization_days=annualization_days)
 
-    buy_hold_result = benchmarks.simulate_buy_and_hold(data, buy_hold_capital_per_symbol)
+    buy_hold_result = benchmarks.simulate_buy_and_hold(
+        data, buy_hold_capital_per_symbol, fractional_quantities=getattr(strategy, "fractional_quantities", False),
+    )
     buy_hold_metrics = compute_metrics(buy_hold_result["trades"], buy_hold_result["starting_capital"],
-                                        buy_hold_result["trading_calendar"], daily_equity=buy_hold_result["daily_equity"])
+                                        buy_hold_result["trading_calendar"], daily_equity=buy_hold_result["daily_equity"], annualization_days=annualization_days)
 
     if skip_regime_breakdown:
         # Same "avoid a real network call" convention as skip_regime_breakdown

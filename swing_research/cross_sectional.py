@@ -561,6 +561,36 @@ def compute_volume_shock_score(price_history: pd.DataFrame) -> pd.Series:
     return recent_avg / baseline_avg.replace(0, float("nan"))
 
 
+CRYPTO_MOMENTUM_LOOKBACK_DAYS = 21   # three weeks -- Liu, Tsyvinski & Wu (2022)'s strongest horizon
+
+
+def compute_crypto_momentum_score(price_history: pd.DataFrame,
+                                  lookback_days: int = CRYPTO_MOMENTUM_LOOKBACK_DAYS) -> pd.Series:
+    """Trailing `lookback_days` calendar-day return (crypto trades every
+    day, so calendar days ARE bars), as of each day's close -- Liu,
+    Tsyvinski & Wu's 3-week momentum. No shift: the signal is used at the
+    close it is computed on, and the entry fills at that same close."""
+    close = price_history["Close"]
+    return close / close.shift(lookback_days) - 1
+
+
+def compute_crypto_momentum_percentile_ranks(data: dict, lookback_days: int = CRYPTO_MOMENTUM_LOOKBACK_DAYS) -> dict:
+    """{symbol: Series of crypto_momentum_percentile (0-100)} -- each
+    coin's cross-sectional rank by trailing 3-week return among the coins
+    with a valid score that day. Same .rank(axis=1, pct=True) construction
+    as every other signal in this module."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_crypto_momentum_score(df.sort_index(), lookback_days)
+    if not scores:
+        return {}
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 def compute_volume_shock_percentile_ranks(data: dict) -> dict:
     """
     data: {symbol: DataFrame of daily OHLCV bars}.

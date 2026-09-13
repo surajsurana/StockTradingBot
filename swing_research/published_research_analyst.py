@@ -1127,3 +1127,54 @@ EARNINGS_ANNOUNCEMENT_PREMIUM = PublishedStrategy(
         "not the sign of the effect."
     ),
 )
+
+
+CRYPTO_XS_MOMENTUM = PublishedStrategy(
+    name="Crypto Cross-Sectional Momentum",
+    source_citation=(
+        "Liu, Y., Tsyvinski, A. and Wu, X. (2022), \"Common Risk Factors in Cryptocurrency,\" The "
+        "Journal of Finance 77(2), 1133-1177; Liu, Y. and Tsyvinski, A. (2021), \"Risks and Returns of "
+        "Cryptocurrency,\" Review of Financial Studies 34(6), 2689-2727."
+    ),
+    mechanism=(
+        "Coins have no cash-flow anchor, so nothing pulls a price back quickly once attention and "
+        "momentum traders move it: past one-to-four-week returns predict the next week's cross-section "
+        "of coin returns. LTW's three-factor model (market, size, momentum) explains the coin "
+        "cross-section; the three-week-formation momentum factor is their strongest. Investor "
+        "attention (Google searches, Twitter) is the documented driver."
+    ),
+    rules=(
+        "Weekly: rank coins on their trailing three-week return; long the top quintile, short the "
+        "bottom quintile; hold one week; rebalance weekly. Universe filtered to coins with market cap "
+        "above US$1m and price above US$1 (LTW), 2014-2020 sample: long-short 3-week momentum "
+        "quintile spread ~3.3%/week with t-statistics above 3 (their Table 4); the long leg alone "
+        "carries most of it because coins are hard to short."
+    ),
+    variant_chosen=(
+        "Three-week formation (LTW's strongest horizon), weekly Monday-UTC rebalance, top quintile = "
+        "cross-sectional percentile >= 80 among the 40 largest USDT spot pairs on Binance, hold seven "
+        "calendar days. A coin that re-qualifies on rebalance day is re-entered the same day (exits are "
+        "processed before entries), which is a weekly rebalance in effect."
+    ),
+    scope_reductions=(
+        "LONG ONLY (no spot shorting on Indian exchanges). Universe of 40 large coins, not LTW's "
+        "1,800+, so quintiles hold ~8 coins. 20% protective stop and 2.5% risk-per-unit sizing (12.5% "
+        "of the book per coin) are NOT in the source. Book in USDT (1,000 USDT), fractional "
+        "quantities. Costs (0.30%/side + 10 bps spread) and India's 31.2% per-profitable-trade VDA "
+        "tax with no loss set-off are applied BEFORE the audit -- the verdict is post-tax, and the "
+        "pre-tax result is recorded alongside. Sample here is the last ~5 years of Binance history, "
+        "entirely after LTW's 2014-2020 sample."
+    ),
+    distinctiveness=(
+        "First non-equity, first seven-day-week, first tax-judged strategy in this program; the crypto "
+        "lane (Pool F) exists to answer whether ANY documented crypto anomaly survives Indian tax -- "
+        "this is its cleanest, most-cited candidate."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. 40-coin universe vs 1,800: MODERATE -- the "
+        "large-cap cross-section is where LTW's effect is weakest. Monday rebalance: MINOR. Quintile "
+        "at the 80th percentile: MINOR. 20% stop: MODERATE, one-directional. Equal-risk sizing: MINOR. "
+        "USDT book / USD-INR conversion: NEGLIGIBLE for the verdict. Costs and 31.2% no-offset tax: "
+        "MAJOR and one-directional -- the experiment's whole question."
+    ),
+)

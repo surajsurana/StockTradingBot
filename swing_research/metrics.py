@@ -79,7 +79,11 @@ def compute_metrics(trades: list, starting_capital: float, trading_calendar: lis
 
         years = (dates[-1] - dates[0]).days / 365.25 if len(dates) > 1 else 0
         if years > 0 and values[0] > 0:
-            cagr = ((values[-1] / values[0]) ** (1 / years) - 1) * 100
+            # A post-processed curve (costs/tax taken out of trades the engine
+            # sized on raw equity -- execution-realism and crypto lanes) can end
+            # at or below zero; a fractional power of a negative number is
+            # complex, so report the book as wiped out instead (added 2026-09-13).
+            cagr = ((values[-1] / values[0]) ** (1 / years) - 1) * 100 if values[-1] > 0 else -100.0
 
         daily_rets = _daily_returns(daily_equity)
         if daily_rets:

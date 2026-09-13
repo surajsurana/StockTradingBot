@@ -114,6 +114,9 @@ class Strategy:
 
     name = "base"
     max_units = 1              # strategies that don't pyramid leave this at 1
+    fractional_quantities = False   # True only for the crypto lane (2026-09-13): coins trade in
+                                    # fractions, so the engines size to 6 decimals instead of
+                                    # whole shares. Every equity strategy leaves this False.
     risk_pct_per_unit = 0.01   # fraction of CURRENT (realized) equity risked -- entry-to-stop
                                 # distance -- per unit. See backtesting_engine.py's sizing
                                 # formula docstring for why this is mathematically equivalent

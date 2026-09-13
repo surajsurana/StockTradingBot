@@ -88,6 +88,15 @@ def _hit_stop(direction: str, bar_low: float, bar_high: float, stop_loss: float)
     return bar_low <= stop_loss if _is_long(direction) else bar_high >= stop_loss
 
 
+def size_quantity(raw_quantity: float, strategy) -> float:
+    """Whole shares (int) for every equity strategy; 6-decimal fractions
+    when the strategy declares fractional_quantities (crypto lane,
+    2026-09-13). Added so the crypto lane needs no parallel engine."""
+    if getattr(strategy, "fractional_quantities", False):
+        return round(float(raw_quantity), 6)
+    return int(raw_quantity)
+
+
 def _trade_pnl(direction: str, entry_price: float, exit_price: float, quantity: int) -> float:
     if _is_long(direction):
         return (exit_price - entry_price) * quantity
@@ -227,7 +236,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
                 continue
-            quantity = int((equity * strategy.risk_pct_per_unit) / risk_per_share)
+            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share, strategy)
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
@@ -277,7 +286,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
                 continue
-            quantity = int((equity * strategy.risk_pct_per_unit) / risk_per_share)
+            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share, strategy)
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
