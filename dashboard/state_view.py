@@ -29,18 +29,18 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "F": 
 # draw them and highlight what ran today without hand-maintained HTML.
 # ----------------------------------------------------------------------------
 DESKS = [
-    {"id": "research_lab", "name": "Intraday Research Lab", "icon": "\U0001F52C",
+    {"id": "research_lab", "name": "Intraday Research Lab (feeds Pool D)", "icon": "\U0001F52C",
      "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data."},
-    {"id": "swing_research", "name": "Swing Research", "icon": "\U0001F4DA",
+    {"id": "swing_research", "name": "Swing Research (feeds Pool A)", "icon": "\U0001F4DA",
      "blurb": "Takes strategies from the academic literature and proves them on years of NSE data."},
-    {"id": "trading_desk", "name": "Trading Desk", "icon": "\U0001F4C8",
+    {"id": "trading_desk", "name": "Trading Desk (Pools A and D)", "icon": "\U0001F4C8",
      "blurb": "Runs every approved strategy as a paper book, day after day."},
-    {"id": "portfolio_team", "name": "Portfolio B & C Team", "icon": "\U0001F9E0",
+    {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
     {"id": "crypto_desk", "name": "Crypto Desk (Pool F)", "icon": "\u20BF",
      "blurb": "Tests published crypto rules on Binance history, judged only after fees and India's 31.2% tax, "
               "and runs the survivors as a 1,000 USDT paper book."},
-    {"id": "reporting", "name": "Reporting", "icon": "\U0001F4E8",
+    {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
      "blurb": "Keeps the books and sends the one message a day."},
 ]
 
@@ -49,7 +49,7 @@ DESKS = [
 # "market" means active while the market is open; None = works on request.
 AGENTS = [
     {"id": "quant_researcher", "avatar": {"type": "robot", "body": "#3E7CB1", "eye": "#F2C14E", "shape": "round"}, "name": "Quant Researcher", "icon": "\U0001F4A1", "desk": "research_lab", "kind": "AI",
-     "job": "Proposes new intraday ideas", "status_from": None,
+     "job": "Proposes new intraday ideas for Pool D", "status_from": None,
      "detail": "Writes a batch of fresh hypotheses -- each with a mechanism, rules and why it differs from "
                "everything already tried -- after reading the full history of what failed and why."},
     {"id": "research_director", "avatar": {"type": "robot", "body": "#5B4B8A", "eye": "#4CC383", "shape": "round"}, "name": "Research Director", "icon": "\U0001F9ED", "desk": "research_lab", "kind": "AI + rules",
@@ -61,7 +61,7 @@ AGENTS = [
      "detail": "Real Kite 5-minute candles, stops checked before targets, forced square-off at the close, "
                "no peeking ahead -- and, since EXP-011, net of real transaction costs."},
     {"id": "statistical_auditor", "avatar": {"type": "robot", "body": "#4E5D6C", "eye": "#E0A85A", "shape": "square"}, "name": "Statistical Auditor", "icon": "\u2696\ufe0f", "desk": "research_lab", "kind": "Rules only",
-     "job": "Says PASS or REJECT", "status_from": None,
+     "job": "Says PASS or REJECT (Pools A, D and F)", "status_from": None,
      "detail": "The gate nobody can talk round: enough trades, enough positive walk-forward windows, and a "
                "positive result on the untouched out-of-sample slice -- or it is a REJECT."},
     {"id": "performance_analyst", "avatar": {"type": "robot", "body": "#2E8B57", "eye": "#F2C14E", "shape": "round"}, "name": "Performance Analyst", "icon": "\U0001F4DD", "desk": "research_lab", "kind": "AI",
@@ -73,11 +73,11 @@ AGENTS = [
      "detail": "Every experiment's verdict and reason, plus standing rules like the 15-bps minimum-edge "
                "rule that all future ideas are checked against."},
     {"id": "published_research_analyst", "avatar": {"type": "robot", "body": "#B85C38", "eye": "#5FB7C0", "shape": "round"}, "name": "Literature Analyst", "icon": "\U0001F4D6", "desk": "swing_research", "kind": "Curated",
-     "job": "Documents the published rules", "status_from": None,
+     "job": "Documents the published rules (Pools A and F)", "status_from": None,
      "detail": "For each strategy taken from a paper: the citation, the exact rules, the variant chosen, and "
                "every simplification with its estimated impact."},
     {"id": "swing_director", "avatar": {"type": "robot", "body": "#1F6F78", "eye": "#F2C14E", "shape": "round"}, "name": "Swing Director", "icon": "\U0001F3AF", "desk": "swing_research", "kind": "Mechanical + AI",
-     "job": "Runs the multi-year backtests", "status_from": None,
+     "job": "Runs the multi-year backtests for Pool A", "status_from": None,
      "detail": "Full-period run for the headline numbers, walk-forward windows for the Auditor, "
                "benchmarks, and an evidence-quality score that ignores the outcome."},
     {"id": "evidence_quality", "avatar": {"type": "robot", "body": "#6C7A89", "eye": "#4CC383", "shape": "square"}, "name": "Evidence Scorer", "icon": "\U0001F4CF", "desk": "swing_research", "kind": "Rules only",
@@ -85,7 +85,7 @@ AGENTS = [
      "detail": "0-100 from trade count, out-of-sample trade count, window count and data coverage -- "
                "calculated before anyone looks at whether the strategy made money."},
     {"id": "deployment_manager", "avatar": {"type": "robot", "body": "#8E7C68", "eye": "#3E7CB1", "shape": "square"}, "name": "Registrar", "icon": "\U0001F4CB", "desk": "trading_desk", "kind": "Registry",
-     "job": "Keeps the strategy register", "status_from": None,
+     "job": "Keeps the register for Pools A and F", "status_from": None,
      "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
                "trades unless it is marked PAPER_TRADING here."},
     {"id": "paper_trading_engine", "avatar": {"type": "robot", "body": "#5A6E7F", "eye": "#F2C14E", "shape": "square"}, "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
@@ -97,7 +97,7 @@ AGENTS = [
      "detail": "Fetches today's bars for the Nifty 500, catches stops even on a missed poll, takes new "
                "signals on one shared Rs.1,00,000 book, squares off by 15:25."},
     {"id": "fundamental_agent", "avatar": {"type": "robot", "body": "#7B4F9D", "eye": "#4CC383", "shape": "round"}, "name": "Fundamentals Analyst", "icon": "\U0001F4CA", "desk": "portfolio_team", "kind": "AI",
-     "job": "Checks the company's health", "status_from": "eod_c",
+     "job": "Checks the company's health (Pools B and C)", "status_from": "eod_c",
      "detail": "Reads the fundamentals of each candidate and grades them."},
     {"id": "news_agent", "avatar": {"type": "robot", "body": "#D9822B", "eye": "#1E2430", "shape": "round"}, "name": "News Analyst", "icon": "\U0001F4F0", "desk": "portfolio_team", "kind": "AI",
      "job": "Scans the headlines", "status_from": "eod_c",
@@ -106,7 +106,7 @@ AGENTS = [
      "job": "Forms the verdict", "status_from": "eod_c",
      "detail": "Weighs the signal, the fundamentals and the news and says whether the setup is worth taking."},
     {"id": "portfolio_manager", "avatar": {"type": "robot", "body": "#1E2430", "eye": "#5FB7C0", "shape": "round"}, "name": "Portfolio Manager", "icon": "\U0001F454", "desk": "portfolio_team", "kind": "AI",
-     "job": "Decides what makes the book", "status_from": "eod_c",
+     "job": "Decides what makes the Pool B and C books", "status_from": "eod_c",
      "detail": "Chooses among the approved candidates and sets their weights."},
     {"id": "risk_manager_live", "avatar": {"type": "robot", "body": "#5E6B5E", "eye": "#B23A3A", "shape": "square"}, "name": "Risk Manager", "icon": "\U0001F6E1\ufe0f", "desk": "portfolio_team", "kind": "Rules",
      "job": "Sizes and vetoes", "status_from": "eod_c",
