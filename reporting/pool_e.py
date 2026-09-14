@@ -1,9 +1,9 @@
 """
-Pool F (crypto paper books, 2026-09-13) for the daily Telegram summary and
+Pool E (crypto paper books, 2026-09-13) for the daily Telegram summary and
 the dashboard -- every figure BOTH pre-tax and post-tax, per explicit
 direction ("the details must show pre and post tax profits both").
 
-The books live under deployment/state/pool_f/<strategy_key>/ in the
+The books live under deployment/state/pool_e/<strategy_key>/ in the
 paper-trading engine's own layout (portfolio.json + trades.jsonl), kept in
 USDT with fractional quantities. The engine books RAW price P&L into cash
 (no fees, no tax) -- this module derives the rest from the trade records
@@ -29,9 +29,9 @@ from typing import Optional
 
 from swing_research.crypto_costs import INDIA_VDA_TAX_RATE, INDIA_VDA_TDS_RATE, CryptoCostModel
 
-POOL_F_DIRNAME = "pool_f"
-POOL_F_STARTING_CAPITAL_USDT = 1_000.0
-POOL_F_NAMES = {"crypto_trend_timing": "Crypto Trend Timing (Faber 10-month SMA)",
+POOL_E_DIRNAME = "pool_e"
+POOL_E_STARTING_CAPITAL_USDT = 1_000.0
+POOL_E_NAMES = {"crypto_trend_timing": "Crypto Trend Timing (Faber 10-month SMA)",
                 "crypto_tsmom": "Crypto Time-Series Momentum 12m (MOP 2012)"}
 
 
@@ -84,9 +84,9 @@ def _book(book_dir: str, key: str, today: date, prices: dict, model: CryptoCostM
     deployed = round(sum(float(p["entry_price"]) * float(p["quantity"]) for p in positions.values()), 2)
     cash = round(float(pf.get("cash", 0) or 0), 2)
     return {
-        "key": key, "display_name": POOL_F_NAMES.get(key, key), "exists": bool(pf),
+        "key": key, "display_name": POOL_E_NAMES.get(key, key), "exists": bool(pf),
         "positions": len(positions), "deployed": deployed, "cash": cash,
-        "starting_capital": float(pf.get("starting_capital", POOL_F_STARTING_CAPITAL_USDT) or 0),
+        "starting_capital": float(pf.get("starting_capital", POOL_E_STARTING_CAPITAL_USDT) or 0),
         "capital": round(cash + deployed - booked["raw"], 2),        # what the book was given (raw, like every pool)
         "cash_after_tax": round(cash - booked["fees"] - booked["tax"], 2),
         "unbooked": unbooked, "booked": booked, "booked_today": booked_today,
@@ -101,12 +101,12 @@ def _inr(usdt: dict, rate: float) -> dict:
     return {k: round(v * rate, 2) for k, v in usdt.items()}
 
 
-def build_pool_f(state_dir: str, crypto_prices: Optional[dict], usdinr: float, today: Optional[date] = None,
+def build_pool_e(state_dir: str, crypto_prices: Optional[dict], usdinr: float, today: Optional[date] = None,
                  model: CryptoCostModel = CryptoCostModel(), tax_rate: float = INDIA_VDA_TAX_RATE) -> dict:
     today = today or date.today()
     prices = crypto_prices or {}
     books = [_book(d, os.path.basename(d.rstrip("/\\")), today, prices, model, tax_rate)
-             for d in sorted(glob.glob(os.path.join(state_dir, POOL_F_DIRNAME, "*/")))]
+             for d in sorted(glob.glob(os.path.join(state_dir, POOL_E_DIRNAME, "*/")))]
     books = [b for b in books if b["exists"]]
     totals = {
         "positions": sum(b["positions"] for b in books),
@@ -135,15 +135,15 @@ def usdt(amount: float, signed: bool = False) -> str:
     return f"{sign}{abs(amount):,.2f} USDT"
 
 
-def format_pool_f_block(f: dict) -> list:
+def format_pool_e_block(f: dict) -> list:
     """Telegram lines (legacy Markdown -- no underscores)."""
     from reporting.pool_summary import inr
     u, r, rate = f["usdt"], f["inr"], f["usdinr"]
     if not f["exists"]:
-        return ["*Pool F (crypto)* -- no book yet", ""]
+        return ["*Pool E (crypto)* -- no book yet", ""]
     ub, bk, td = u["unbooked"], u["booked"], u["booked_today"]
     return [
-        f"*Pool F (crypto, USDT; Rs. at {rate:.1f}/USD)* -- {u['positions']} positions, {u['trades_total']} trades",
+        f"*Pool E (crypto, USDT; Rs. at {rate:.1f}/USD)* -- {u['positions']} positions, {u['trades_total']} trades",
         f"Deployed {usdt(u['deployed'])} ({inr(r['deployed'])}) | Cash {usdt(u['cash'])} ({inr(r['cash'])})",
         f"Unbooked pre-tax {usdt(ub['pre_tax'], True)} / post-tax {usdt(ub['post_tax'], True)} "
         f"({inr(r['unbooked']['post_tax'], True)})",

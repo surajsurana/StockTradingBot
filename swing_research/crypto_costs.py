@@ -1,5 +1,5 @@
 """
-Costs and Indian tax for the crypto lane (Pool F, 2026-09-13) -- applied
+Costs and Indian tax for the crypto lane (Pool E, 2026-09-13) -- applied
 to a list of swing_research.backtesting_engine.Trade as post-processes,
 so the Statistical Auditor judges what an Indian resident would actually
 keep, and reports carry both pre-tax and post-tax figures.

@@ -1,6 +1,6 @@
 """
 Crypto Cross-Sectional Momentum -- the first crypto strategy in this
-program (Pool F lane, 2026-09-13), and the first judged NET of Indian
+program (Pool E lane, 2026-09-13), and the first judged NET of Indian
 crypto tax.
 
 Source: Liu, Y., Tsyvinski, A. and Wu, X. (2022), "Common Risk Factors in

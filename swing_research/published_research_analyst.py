@@ -1167,7 +1167,7 @@ CRYPTO_XS_MOMENTUM = PublishedStrategy(
     ),
     distinctiveness=(
         "First non-equity, first seven-day-week, first tax-judged strategy in this program; the crypto "
-        "lane (Pool F) exists to answer whether ANY documented crypto anomaly survives Indian tax -- "
+        "lane (Pool E) exists to answer whether ANY documented crypto anomaly survives Indian tax -- "
         "this is its cleanest, most-cited candidate."
     ),
     assumptions_impact=(
@@ -1299,7 +1299,7 @@ CRYPTO_TSMOM = PublishedStrategy(
         "12-month lookback read on the last UTC calendar day of each month, five majors (BTC, ETH, BNB, "
         "XRP, SOL) in equal 20% sleeves, signal computed on full history and supplied to every "
         "walk-forward window as warm-up. Same coins, same sleeves and same stop as the Faber rule in "
-        "Pool F, so the two are directly comparable."
+        "Pool E, so the two are directly comparable."
     ),
     scope_reductions=(
         "LONG ONLY (negative signal = cash). NO volatility scaling: this engine sizes from the stop "
@@ -1308,7 +1308,7 @@ CRYPTO_TSMOM = PublishedStrategy(
     ),
     distinctiveness=(
         "A second trend rule on the same coins as SW-020 (Faber): deliberately a ROBUSTNESS test of "
-        "whether the Pool F PASS depends on the moving-average form, not a diversifier. The 12-month "
+        "whether the Pool E PASS depends on the moving-average form, not a diversifier. The 12-month "
         "sign rule is the most-cited time-series momentum specification in the literature."
     ),
     assumptions_impact=(

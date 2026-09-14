@@ -1,6 +1,6 @@
 """
 Crypto Trend Timing (Faber's 10-month moving-average rule) -- the second
-crypto-lane candidate (Pool F, 2026-09-13), chosen to satisfy the rules
+crypto-lane candidate (Pool E, 2026-09-13), chosen to satisfy the rules
 recorded after EXP-082: a TIME-SERIES rule on the majors with turnover
 measured in trades per year, not per week, judged post-tax.
 

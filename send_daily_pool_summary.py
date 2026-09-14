@@ -31,12 +31,12 @@ def _latest_prices(symbols: list) -> dict:
 
 
 def _crypto_prices() -> dict:
-    """Binance last prices for every coin a Pool F book holds; {} on any failure."""
+    """Binance last prices for every coin a Pool E book holds; {} on any failure."""
     import glob
     import json
     import os
     held = set()
-    for path in glob.glob(os.path.join(STATE_DIR, "pool_f", "*", "portfolio.json")):
+    for path in glob.glob(os.path.join(STATE_DIR, "pool_e", "*", "portfolio.json")):
         with open(path, encoding="utf-8") as f:
             held |= set((json.load(f).get("positions") or {}).keys())
     if not held:
@@ -44,7 +44,7 @@ def _crypto_prices() -> dict:
     try:
         return fetch_crypto_last_prices(sorted(held))
     except Exception as e:
-        print(f"WARNING: crypto prices unavailable ({e}); Pool F unbooked shown at entry prices")
+        print(f"WARNING: crypto prices unavailable ({e}); Pool E unbooked shown at entry prices")
         return {}
 
 

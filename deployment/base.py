@@ -76,9 +76,9 @@ CRYPTO_STRATEGY_FAMILY_PREFIX = "crypto"
 
 
 def is_crypto_record(record) -> bool:
-    """Pool F (crypto lane, 2026-09-13) strategies are registered with a
+    """Pool E (crypto lane, 2026-09-13) strategies are registered with a
     strategy_family starting "crypto" -- they live under
-    deployment/state/pool_f/, not Pool A's paper_trading/, so every
+    deployment/state/pool_e/, not Pool A's paper_trading/, so every
     Pool A book listing (Telegram summary, dashboard) skips them."""
     return str(getattr(record, "strategy_family", "") or "").lower().startswith(CRYPTO_STRATEGY_FAMILY_PREFIX)
 

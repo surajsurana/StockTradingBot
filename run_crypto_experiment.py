@@ -1,5 +1,5 @@
 """
-CLI for the crypto research lane (Pool F) -- sibling to
+CLI for the crypto research lane (Pool E) -- sibling to
 run_swing_experiment.py, but fetching Binance daily candles for the
 crypto universe instead of Nifty 500 data, and judging every strategy
 NET of Indian crypto tax (see swing_research/crypto_lane.py).

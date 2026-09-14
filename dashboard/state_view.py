@@ -22,7 +22,7 @@ from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_su
 # dashboard, per explicit direction 2026-09-11 -- it stays in the daily
 # Telegram summary only.
 POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c"}
-POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "F": "Pool F"}
+POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "F": "Pool E"}
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -37,7 +37,7 @@ DESKS = [
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
-    {"id": "crypto_desk", "name": "Crypto Desk (Pool F)", "icon": "\u20BF",
+    {"id": "crypto_desk", "name": "Crypto Desk (Pool E)", "icon": "\u20BF",
      "blurb": "Tests published crypto rules on Binance history, judged only after fees and India's 31.2% tax, "
               "and runs the survivors as a 1,000 USDT paper book."},
     {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
@@ -61,7 +61,7 @@ AGENTS = [
      "detail": "Real Kite 5-minute candles, stops checked before targets, forced square-off at the close, "
                "no peeking ahead -- and, since EXP-011, net of real transaction costs."},
     {"id": "statistical_auditor", "avatar": {"type": "robot", "body": "#4E5D6C", "eye": "#E0A85A", "shape": "square"}, "name": "Statistical Auditor", "icon": "\u2696\ufe0f", "desk": "research_lab", "kind": "Rules only",
-     "job": "Says PASS or REJECT (Pools A, D and F)", "status_from": None,
+     "job": "Says PASS or REJECT (Pools A, D and E)", "status_from": None,
      "detail": "The gate nobody can talk round: enough trades, enough positive walk-forward windows, and a "
                "positive result on the untouched out-of-sample slice -- or it is a REJECT."},
     {"id": "performance_analyst", "avatar": {"type": "robot", "body": "#2E8B57", "eye": "#F2C14E", "shape": "round"}, "name": "Performance Analyst", "icon": "\U0001F4DD", "desk": "research_lab", "kind": "AI",
@@ -73,7 +73,7 @@ AGENTS = [
      "detail": "Every experiment's verdict and reason, plus standing rules like the 15-bps minimum-edge "
                "rule that all future ideas are checked against."},
     {"id": "published_research_analyst", "avatar": {"type": "robot", "body": "#B85C38", "eye": "#5FB7C0", "shape": "round"}, "name": "Literature Analyst", "icon": "\U0001F4D6", "desk": "swing_research", "kind": "Curated",
-     "job": "Documents the published rules (Pools A and F)", "status_from": None,
+     "job": "Documents the published rules (Pools A and E)", "status_from": None,
      "detail": "For each strategy taken from a paper: the citation, the exact rules, the variant chosen, and "
                "every simplification with its estimated impact."},
     {"id": "swing_director", "avatar": {"type": "robot", "body": "#1F6F78", "eye": "#F2C14E", "shape": "round"}, "name": "Swing Director", "icon": "\U0001F3AF", "desk": "swing_research", "kind": "Mechanical + AI",
@@ -85,7 +85,7 @@ AGENTS = [
      "detail": "0-100 from trade count, out-of-sample trade count, window count and data coverage -- "
                "calculated before anyone looks at whether the strategy made money."},
     {"id": "deployment_manager", "avatar": {"type": "robot", "body": "#8E7C68", "eye": "#3E7CB1", "shape": "square"}, "name": "Registrar", "icon": "\U0001F4CB", "desk": "trading_desk", "kind": "Registry",
-     "job": "Keeps the register for Pools A and F", "status_from": None,
+     "job": "Keeps the register for Pools A and E", "status_from": None,
      "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
                "trades unless it is marked PAPER_TRADING here."},
     {"id": "paper_trading_engine", "avatar": {"type": "robot", "body": "#5A6E7F", "eye": "#F2C14E", "shape": "square"}, "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
@@ -112,7 +112,7 @@ AGENTS = [
      "job": "Sizes and vetoes", "status_from": "eod_c",
      "detail": "Sizes every position against its stop and blocks anything that breaches the book's limits."},
     {"id": "crypto_data", "avatar": {"type": "robot", "body": "#6E6E6E", "eye": "#F2C14E", "shape": "square"}, "name": "Crypto Data Feed", "icon": "\U0001F4E1", "desk": "crypto_desk", "kind": "Mechanical",
-     "job": "Pulls Binance daily candles", "status_from": "pool_f",
+     "job": "Pulls Binance daily candles", "status_from": "pool_e",
      "detail": "Public Binance history for the five majors (BTC, ETH, BNB, XRP, SOL) back to 2017, seven days a "
                "week, plus the live USD/INR rate so every figure can be shown in rupees."},
     {"id": "crypto_tax", "avatar": {"type": "robot", "body": "#4E5D6C", "eye": "#E0A85A", "shape": "square"}, "name": "Tax Accountant", "icon": "\U0001F9FE", "desk": "crypto_desk", "kind": "Rules only",
@@ -121,7 +121,7 @@ AGENTS = [
                "losers and fees not deductible; 1% TDS on sales shown as withheld and refundable. The Auditor "
                "only ever sees the post-tax trades; pre-tax is recorded alongside."},
     {"id": "crypto_trader", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#4CC383", "shape": "square"}, "name": "Crypto Trader", "icon": "\u20BF", "desk": "crypto_desk", "kind": "Mechanical",
-     "job": "Runs Pool F after the 00:00 UTC close", "status_from": "pool_f",
+     "job": "Runs Pool E after the 00:00 UTC close", "status_from": "pool_e",
      "detail": "Same paper engine as Pool A on a 1,000 USDT book: month-end decisions from the strategy, 20% "
                "stops checked daily, fractional coins, fills at the close it just saw (crypto never closes)."},
     {"id": "pool_summary", "avatar": {"type": "robot", "body": "#7D6B8A", "eye": "#5FB7C0", "shape": "square"}, "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
@@ -135,7 +135,7 @@ FLOWS = {
     "daily": {
         "title": "A trading day",
         "steps": [
-            {"id": "pool_f", "icon": "\u20BF", "label": "05:45", "text": "Crypto Trader marks Pool F after the UTC close (every day)"},
+            {"id": "pool_e", "icon": "\u20BF", "label": "05:45", "text": "Crypto Trader marks Pool E after the UTC close (every day)"},
             {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
             {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
@@ -151,8 +151,8 @@ FLOWS = {
             {"id": "rules", "icon": "\U0001F4D6", "label": "Rules", "text": "Written down exactly, every simplification disclosed"},
             {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
             {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only (crypto: after fees and tax)"},
-            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book (crypto: 1,000 USDT in Pool F)"},
-            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A or Pool F, watched every day"},
+            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book (crypto: 1,000 USDT in Pool E)"},
+            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A or Pool E, watched every day"},
         ],
     },
 }
@@ -160,7 +160,7 @@ FLOWS = {
 
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
-    {"id": "pool_f", "label": "Pool F crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_f.log"},
+    {"id": "pool_e", "label": "Pool E crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_e.log"},
     {"id": "prep", "label": "Pool D prepare", "at": "09:00", "log": "pool_d.log"},
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
     {"id": "open", "label": "Fill-at-open passes (A, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
@@ -324,28 +324,28 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     pool_d = _with_capital(pool_d)
     for b in books:
         _with_capital(b)
-    pool_f = summary["pool_f"]
+    pool_e = summary["pool_e"]
     for r in registry_records:
         if is_crypto_record(r):
-            for b in pool_f["books"]:
+            for b in pool_e["books"]:
                 if b["key"] == r.strategy_key:
                     b["sid"] = getattr(r, "strategy_id", "")
     overall = dict(summary["overall"])
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
-                               + pool_f["inr"]["capital"], 2)
+                               + pool_e["inr"]["capital"], 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
-        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_f": pool_f,
-        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today, pool_f),
+        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e,
+        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today, pool_e),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 
 
 def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
-                    pool_f: Optional[dict] = None) -> list:
+                    pool_e: Optional[dict] = None) -> list:
     """Every buy and sell that happened today across Pools A, B, C and D
     as one time-sorted list. Swing books fill at the open (09:30) so
     their entries/exits carry that clock time; Pool D carries its own
@@ -392,20 +392,20 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
         r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
-    # Pool F: the UTC daily close is 05:30 IST; prices in USDT, amounts in rupees.
-    rate = float((pool_f or {}).get("usdinr") or 0)
-    for b in (pool_f or {}).get("books", []):
+    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts in rupees.
+    rate = float((pool_e or {}).get("usdinr") or 0)
+    for b in (pool_e or {}).get("books", []):
         for p in b["open_positions"]:
             if p.get("entry_date") == today_iso:
                 rows.append({"time": "05:30", "action": "BUY", "symbol": p["symbol"], "qty": p["quantity"],
-                             "price": round(p["entry_price"], 2), "pool": "Pool F", "book": b["display_name"],
+                             "price": round(p["entry_price"], 2), "pool": "Pool E", "book": b["display_name"],
                              "pnl": None, "note": "entry (USDT)", "kind": "Crypto",
                              "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
         for t in b["recent_trades"]:
             if t.get("exit_date") == today_iso:
                 qty = float(t.get("quantity", 0) or 0)
                 rows.append({"time": "05:30", "action": "SELL", "symbol": t.get("symbol"), "qty": qty,
-                             "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool F",
+                             "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
                              "book": b["display_name"], "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
                              "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
                              "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})

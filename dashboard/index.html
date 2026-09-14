@@ -156,16 +156,16 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="tiles" id="tiles"></div>
   <h2>Pools</h2>
   <div class="tblwrap"><table><thead><tr><th>Pool</th><th class="n">Capital</th><th class="n">Positions</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Status</th></tr></thead><tbody id="pools"></tbody></table></div>
-  <h2>Pool F — crypto, pre-tax and post-tax</h2>
-  <p class="note" id="poolf-note"></p>
-  <div class="tblwrap"><table><thead><tr><th>USDT</th><th class="n">Raw</th><th class="n">Fees</th><th class="n">Tax 31.2%</th><th class="n">Pre-tax</th><th class="n">Post-tax</th><th class="n">Post-tax ₹</th><th class="n">TDS held</th></tr></thead><tbody id="poolf"></tbody></table></div>
+  <h2>Pool E — crypto, pre-tax and post-tax</h2>
+  <p class="note" id="poole-note"></p>
+  <div class="tblwrap"><table><thead><tr><th>USDT</th><th class="n">Raw</th><th class="n">Fees</th><th class="n">Tax 31.2%</th><th class="n">Pre-tax</th><th class="n">Post-tax</th><th class="n">Post-tax ₹</th><th class="n">TDS held</th></tr></thead><tbody id="poole"></tbody></table></div>
   <h2>Books</h2>
   <div class="tblwrap"><table><thead><tr><th>Book</th><th class="n">Open</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Run</th></tr></thead><tbody id="books"></tbody></table></div>
 </section>
 
 <section id="tab-positions" hidden>
   <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
-    <label for="pos-pool">Pool</label><select id="pos-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool F</option></select>
+    <label for="pos-pool">Pool</label><select id="pos-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
     <label for="pos-kind">Type</label><select id="pos-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
     <span id="count" class="note"></span></div>
   <div class="tblwrap"><table><thead id="pos-head"></thead><tbody id="positions"></tbody></table></div>
@@ -178,7 +178,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="timeline" id="timeline"></div>
   <div class="jobs" id="jobs"></div>
   <h2>Bought and sold today</h2>
-  <div class="tools"><label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool F</option></select>
+  <div class="tools"><label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
     <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
     <span id="tape-count" class="note"></span></div>
   <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
@@ -279,7 +279,7 @@ function render(){
   document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,19)}`;
   document.getElementById("prices").textContent = s.prices_as_of ? `quotes ${s.prices_as_of.slice(11,19)}` : "prices loading…";
   const note = document.getElementById("modenote");
-  const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_f.exists;
+  const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
   renderOverview(s); renderPositions(s); renderLive(s); renderTeam(s); renderRegistry(s);
@@ -287,16 +287,16 @@ function render(){
 }
 
 function renderOverview(s){
-  const o = s.overall, d = s.pool_d, f = s.pool_f;
+  const o = s.overall, d = s.pool_d, f = s.pool_e;
   document.getElementById("tiles").innerHTML = [
-    ["Total capital", tileMoney("t.capital", o.capital, false), "Pools A, B, C, D, F (F post-tax, at ₹/USD)"],
-    ["Open positions", o.positions, "Pools A, B, C, D, F"],
+    ["Total capital", tileMoney("t.capital", o.capital, false), "Pools A, B, C, D, E (E post-tax, at ₹/USD)"],
+    ["Open positions", o.positions, "Pools A, B, C, D, E"],
     ["Deployed", tileMoney("t.deployed", o.deployed, false), "at cost"],
     ["Cash", tileMoney("t.cash", o.cash, false), "all books"],
     ["Unbooked P&L", tileMoney("t.unreal", o.unrealised, true), "at latest quote"],
     ["Booked P&L", tileMoney("t.real", o.realised, true), `today ${money(o.realised_today,true)}`],
     ["Pool D today", tileMoney("t.dtoday", d.realised_today, true), `${d.trades_today} trade${d.trades_today===1?"":"s"} · ${d.positions} open · unbooked ${lv("t.dunreal", d.unrealised, money(d.unrealised,true))}`],
-    ["Pool F post-tax", f.exists ? tileMoney("t.fpost", f.inr.booked.post_tax + f.inr.unbooked.post_tax, true) : "—", f.exists ? `pre-tax ${lv("t.fpre", f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, money(f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, true))} · ${f.usdt.positions} open · ₹${(+f.usdinr).toFixed(1)}/USD` : "no crypto book yet"],
+    ["Pool E post-tax", f.exists ? tileMoney("t.fpost", f.inr.booked.post_tax + f.inr.unbooked.post_tax, true) : "—", f.exists ? `pre-tax ${lv("t.fpre", f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, money(f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, true))} · ${f.usdt.positions} open · ₹${(+f.usdinr).toFixed(1)}/USD` : "no crypto book yet"],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
 
   const names = {A:"Pool A — swing strategies", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
@@ -308,16 +308,16 @@ function renderOverview(s){
   rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td>${cell(d.unrealised,true,"p.D.unreal")}${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
   if(f.exists){
     const u = f.usdt, r = f.inr;
-    rows += `<tr><td>Pool F — crypto (${usd(u.capital)} book; ₹ post-tax)</td><td class="n">${inr(r.capital)}</td><td class="n">${u.positions}</td><td class="n">${inr(r.deployed)}</td><td class="n">${inr(r.cash)}</td>${cell(r.unbooked.post_tax,true,"p.F.unreal")}${cell(r.booked.post_tax)}${cell(r.booked_today.post_tax)}<td>${f.updated_today?`<span class="pill ok">up to date</span>`:`<span class="pill due">not yet today</span>`}</td></tr>`;
+    rows += `<tr><td>Pool E — crypto (${usd(u.capital)} book; ₹ post-tax)</td><td class="n">${inr(r.capital)}</td><td class="n">${u.positions}</td><td class="n">${inr(r.deployed)}</td><td class="n">${inr(r.cash)}</td>${cell(r.unbooked.post_tax,true,"p.F.unreal")}${cell(r.booked.post_tax)}${cell(r.booked_today.post_tax)}<td>${f.updated_today?`<span class="pill ok">up to date</span>`:`<span class="pill due">not yet today</span>`}</td></tr>`;
   }
   rows += `<tr class="total"><td>Total</td><td class="n">${inr(o.capital)}</td><td class="n">${o.positions}</td><td class="n">${inr(o.deployed)}</td><td class="n">${inr(o.cash)}</td>${cell(o.unrealised,true,"p.all.unreal")}${cell(o.realised)}${cell(o.realised_today)}<td></td></tr>`;
   document.getElementById("pools").innerHTML = rows;
 
-  document.getElementById("poolf-note").textContent = f.exists
+  document.getElementById("poole-note").textContent = f.exists
     ? `Book kept in USDT (started at ${usd(f.books.length ? f.books[0].starting_capital : 1000)}); fees 0.30%/side + 10 bps spread; tax 31.2% on each profitable trade with no set-off for losers; TDS 1% of sales is withheld and refundable. Rupees at ₹${(+f.usdinr).toFixed(2)}/USD. Cash after fees and tax: ${usd(f.usdt.cash_after_tax)}.`
     : "No crypto book yet.";
   const frow = (label, l, li, key) => `<tr><td>${label}</td><td class="n ${cls(l.raw)}">${usd(l.raw,true)}</td><td class="n">${usd(l.fees)}</td><td class="n">${usd(l.tax)}</td><td class="n ${cls(l.pre_tax)}">${usd(l.pre_tax,true)}</td><td class="n ${cls(l.post_tax)}">${lv(key, l.post_tax, usd(l.post_tax,true))}</td>${cell(li.post_tax,true,key+".inr")}<td class="n">${usd(l.tds)}</td></tr>`;
-  document.getElementById("poolf").innerHTML = f.exists ? [
+  document.getElementById("poole").innerHTML = f.exists ? [
     frow("Unbooked (open positions)", f.usdt.unbooked, f.inr.unbooked, "f.unb"),
     frow("Booked (closed trades)", f.usdt.booked, f.inr.booked, "f.bk"),
     frow("Booked today", f.usdt.booked_today, f.inr.booked_today, "f.bkt"),
@@ -365,12 +365,12 @@ function renderPositions(s){
     positions.push({symbol:p.symbol, pool:"Pool D", kind:"Intraday", book:`${p.direction==="SELL"?"short":"long"}`, entry_date:(p.entry_timestamp||"").slice(0,16).replace("T"," "), qty:p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced});
   for(const t of s.pool_d.recent_trades) if(t.exit_date===s.today && match(t.symbol, "Pool D", "intraday"))
     trades.push({symbol:t.symbol, pool:"Pool D", kind:"Intraday", book:t.direction==="SELL"?"short":"long", entry_date:(t.entry_timestamp||"").slice(11,16), exit_date:`${t.exit_date} ${(t.exit_timestamp||"").slice(11,16)}`.trim(), qty:t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl, reason:String(t.reason||"").replace("_"," ")});
-  const rate = +s.pool_f.usdinr || 0;
-  for(const b of s.pool_f.books){
-    for(const p of b.open_positions) if(match(p.symbol, b.display_name, "Pool F", "crypto"))
-      positions.push({symbol:p.symbol, pool:"Pool F", kind:"Crypto", book:b.display_name, chip:"USDT", entry_date:p.entry_date||"", qty:+p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked_post_tax*rate, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced, usdt:true});
-    for(const t of b.recent_trades) if(match(t.symbol, b.display_name, "Pool F", "crypto"))
-      trades.push({symbol:t.symbol, pool:"Pool F", kind:"Crypto", book:b.display_name, exit_date:t.exit_date, qty:+t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl*rate, reason:`${String(t.exit_reason||"").replace("_"," ")} (raw ₹; tax in Pool F table)`});
+  const rate = +s.pool_e.usdinr || 0;
+  for(const b of s.pool_e.books){
+    for(const p of b.open_positions) if(match(p.symbol, b.display_name, "Pool E", "crypto"))
+      positions.push({symbol:p.symbol, pool:"Pool E", kind:"Crypto", book:b.display_name, chip:"USDT", entry_date:p.entry_date||"", qty:+p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked_post_tax*rate, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced, usdt:true});
+    for(const t of b.recent_trades) if(match(t.symbol, b.display_name, "Pool E", "crypto"))
+      trades.push({symbol:t.symbol, pool:"Pool E", kind:"Crypto", book:b.display_name, exit_date:t.exit_date, qty:+t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl*rate, reason:`${String(t.exit_reason||"").replace("_"," ")} (raw ₹; tax in Pool E table)`});
   }
 
   sortableHead("pos-head", POS_COLS, POS_SORT, () => renderPositions(STATE));
@@ -392,7 +392,7 @@ function renderLive(s){
   for(let h=9; h<=16; h++){ tl.insertAdjacentHTML("beforeend", `<div class="hourmark" style="left:${pct(h)}"><span>${String(h).padStart(2,"0")}:00</span></div>`); }
   const todayLog = j => j.last_log_write && j.last_log_write.startsWith(s.today);
   const spans = {prep:[9,9.2], ticks:[9.25,15.5], open:[9.5,9.75], eod_a:[15.58,15.75], eod_a1:[15.67,15.83], eod_c:[15.75,15.92], eod_b:[15.83,16.0], summary:[16.08,16.3]};
-  const short = {pool_f:"Pool F crypto", prep:"Pool D prep", ticks:"Pool D ticking", open:"Fills at open", eod_a:"Pool A", eod_a1:"A1", eod_c:"Pool C", eod_b:"Pool B", summary:"Telegram"};
+  const short = {pool_e:"Pool E crypto", prep:"Pool D prep", ticks:"Pool D ticking", open:"Fills at open", eod_a:"Pool A", eod_a1:"A1", eod_c:"Pool C", eod_b:"Pool B", summary:"Telegram"};
   for(const j of s.schedule){
     if(j.id==="eod_a1") continue;
     const [a,b] = spans[j.id] || [9,9.1];
@@ -475,12 +475,12 @@ function renderTeam(s){
   const live = s.registry.filter(r => st(r)==="PAPER_TRADING").length;
   const liveA = s.registry.filter(r => st(r)==="PAPER_TRADING" && !/crypto/i.test(r.family||"")).length;
   const research = s.registry.filter(r => st(r)==="RESEARCH").length, archived = s.registry.filter(r => st(r)==="ARCHIVED").length;
-  const item = (v, label, i, lead="") => `<span class="k" style="animation-delay:${i*60}ms">${lead}<b>${lv("team."+label, v, v)}</b>${label}</span>`;
+  const item = (v, label, i, lead="", title="") => `<span class="k" style="animation-delay:${i*60}ms" title="${esc(title)}">${lead}<b>${lv("team."+label, v, v)}</b>${label}</span>`;
   document.getElementById("teamtiles").innerHTML = [
     item(ai, "AI agents in the team", 0),
     item(rules, "rule engines and tools", 1),
     item(s.desks.length, "desks", 2),
-    item(live + (s.pool_d.strategies_live||0), `strategies live (${liveA} Pool A · ${s.pool_d.strategies_live||0} Pool D · ${live - liveA} Pool F; B and C are AI books on A's signals)`, 3),
+    item(live + (s.pool_d.strategies_live||0), "strategies live", 3, "", `${liveA} in Pool A, ${s.pool_d.strategies_live||0} in Pool D, ${live - liveA} in Pool E. Pools B and C are AI books on Pool A's signals.`),
     item(working, "working now", 4, `<span class="pulse ${working?"":"off"}"></span>`),
     item(done, "done for today", 5),
     item(s.agents.length - working - done, "on call", 6),

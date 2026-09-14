@@ -57,7 +57,7 @@ def _tree():
             # a record written before fills were time-stamped: both legs must still appear
             {"symbol": "OLDREC", "pnl": 40.0, "exit_date": "2026-09-10", "direction": "BUY", "entry_price": 10,
              "exit_price": 10.4, "quantity": 100, "reason": "target"}], jsonl=True)
-    _write(os.path.join(state, "pool_f", "crypto_trend_timing", "portfolio.json"), {
+    _write(os.path.join(state, "pool_e", "crypto_trend_timing", "portfolio.json"), {
         "cash": 800.0, "starting_capital": 1000.0, "last_processed_date": "2026-09-10",
         "positions": {"BTC": {"entry_price": 80000.0, "quantity": 0.0025, "stop_loss": 64000.0,
                               "entry_date": "2026-09-10"}},
@@ -85,9 +85,9 @@ class TestBuildDashboardState(unittest.TestCase):
         self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0, "LT": 3890.0},
                                        "2026-09-10T10:55", now=self.now, crypto_prices={"BTC": 84000.0}, usdinr=100.0)
 
-    def test_pool_f_is_its_own_pool_not_a_pool_a_book(self):
+    def test_pool_e_is_its_own_pool_not_a_pool_a_book(self):
         self.assertNotIn("crypto_trend_timing", [b["key"] for b in self.s["books"]])
-        f = self.s["pool_f"]
+        f = self.s["pool_e"]
         self.assertTrue(f["exists"])
         self.assertEqual(f["books"][0]["sid"], "SW-020")
         self.assertAlmostEqual(f["usdt"]["unbooked"]["raw"], 10.0)
@@ -96,18 +96,18 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(self.s["overall"]["capital"],
                                91000 + 100000 + 100000 + self.s["pool_d"]["capital"] + 100000.0)   # + F: 1,000 USDT x 100
         self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0 + 524.0)
-        buys = [r for r in self.s["activity_today"] if r["pool"] == "Pool F"]
+        buys = [r for r in self.s["activity_today"] if r["pool"] == "Pool E"]
         self.assertEqual(len(buys), 1)
         self.assertEqual((buys[0]["kind"], buys[0]["time"], buys[0]["symbol"]), ("Crypto", "05:30", "BTC"))
         self.assertAlmostEqual(buys[0]["amount"], 20000.0)
-        self.assertIn("pool_f", [j["id"] for j in self.s["schedule"]])
+        self.assertIn("pool_e", [j["id"] for j in self.s["schedule"]])
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
         self.assertEqual({b["pool"] for b in self.s["books"]}, {"A", "B", "C"})
         self.assertNotIn("A1", self.s["pools"])
-        self.assertEqual(self.s["overall"]["positions"], 2)   # X.NS + Pool F's BTC; the legacy L.NS position is not counted
+        self.assertEqual(self.s["overall"]["positions"], 2)   # X.NS + Pool E's BTC; the legacy L.NS position is not counted
 
     def test_activity_today_is_one_time_sorted_list_across_pools(self):
         acts = self.s["activity_today"]
@@ -119,7 +119,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(acts[3]["amount"], 3900.0 * 5)
         self.assertEqual(acts[5]["pnl"], 40.0)
         self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:]))
-        self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool F", "Crypto"))
+        self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool E", "Crypto"))
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 

@@ -1,5 +1,5 @@
 """
-The crypto research lane (Pool F, 2026-09-13): the SAME pipeline as every
+The crypto research lane (Pool E, 2026-09-13): the SAME pipeline as every
 swing strategy -- simulate_portfolio, walk-forward windows, the frozen
 Statistical Auditor, evidence quality, Performance Analyst narrative,
 experiment record -- with three differences, all here and nowhere else:

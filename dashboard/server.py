@@ -97,21 +97,21 @@ class PriceCache:
         with open(path, encoding="utf-8") as f:
             return sorted((json.load(f).get("positions") or {}).keys())
 
-    def _pool_f_symbols(self) -> list:
+    def _pool_e_symbols(self) -> list:
         import glob
         import json
         held = set()
-        for path in glob.glob(os.path.join(self.state_dir, "pool_f", "*", "portfolio.json")):
+        for path in glob.glob(os.path.join(self.state_dir, "pool_e", "*", "portfolio.json")):
             with open(path, encoding="utf-8") as f:
                 held |= set((json.load(f).get("positions") or {}).keys())
         return sorted(held)
 
     def refresh_crypto(self, with_rate: bool = False) -> None:
-        """Binance last prices for Pool F's open coins (one cheap call; the
+        """Binance last prices for Pool E's open coins (one cheap call; the
         coins trade 24x7 so this runs on every loop pass) and, on the full
         refresh, the USD/INR rate."""
         from data.fetch_crypto import fetch_crypto_last_prices, fetch_usdinr_rate
-        symbols = self._pool_f_symbols()
+        symbols = self._pool_e_symbols()
         quotes = fetch_crypto_last_prices(symbols) if symbols else {}
         rate = fetch_usdinr_rate() if (with_rate or self.usdinr is None) else None
         with self._lock:

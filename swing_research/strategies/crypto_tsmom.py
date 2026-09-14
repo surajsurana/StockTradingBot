@@ -1,6 +1,6 @@
 """
 Crypto Time-Series Momentum (12-month) -- the third crypto-lane candidate
-(Pool F, 2026-09-14), chosen under the rules recorded after EXP-082 (a
+(Pool E, 2026-09-14), chosen under the rules recorded after EXP-082 (a
 time-series rule on the majors, monthly turnover, judged post-tax).
 
 Source: Moskowitz, T.J., Ooi, Y.H. and Pedersen, L.H. (2012), "Time
@@ -26,7 +26,7 @@ momentum, applied to each asset against its own past.
 ===================== IMPLEMENTATION ASSUMPTIONS =====================
 
 1. ASSETS = BTC, ETH, BNB, XRP, SOL, equal 20% sleeves -- the same five
-   Pool F already times with Faber's rule, so the two results are
+   Pool E already times with Faber's rule, so the two results are
    directly comparable. Estimated impact: MODERATE, DIRECTIONALLY UNKNOWN.
 2. LONG ONLY: a negative signal means cash, never short. Identical to
    the crypto-lane convention; MOP's short leg is dropped.
@@ -44,7 +44,7 @@ momentum, applied to each asset against its own past.
    and handed to each walk-forward window as an extra column (warm-up,
    as for crypto_trend_timing). Estimated impact: NEGLIGIBLE.
 5. PROTECTIVE STOP 20% below entry, NOT IN THE SOURCE -- same crypto-
-   scaled stop as the other Pool F rules, re-entered at the next month-
+   scaled stop as the other Pool E rules, re-entered at the next month-
    end if the signal is still positive. Estimated impact: MODERATE,
    one-directional.
 6. SIZING: risk_pct_per_unit = 0.04 against the 20% stop = 20% sleeve.

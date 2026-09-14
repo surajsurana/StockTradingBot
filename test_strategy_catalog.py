@@ -119,7 +119,7 @@ class TestLiveRegistryStrategiesHaveCatalogWiring(unittest.TestCase):
         missing = []
         for record in list_strategies():
             if record.strategy_key in _EXCLUDED_FROM_CATALOG_SAFEGUARD or is_crypto_record(record):
-                continue   # crypto strategies (Pool F) are wired in run_pool_f.py, not the Pool A catalog
+                continue   # crypto strategies (Pool E) are wired in run_pool_e.py, not the Pool A catalog
             if record.deployment_status in active_statuses and record.strategy_key not in catalog_keys:
                 missing.append((record.strategy_key, record.deployment_status.value))
 

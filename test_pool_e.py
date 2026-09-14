@@ -1,9 +1,9 @@
 """
-Unit tests for Pool F reporting (reporting/pool_f.py), its place in the
-daily summary totals, and run_pool_f.py's seeding/guard -- hand-calculated
+Unit tests for Pool E reporting (reporting/pool_e.py), its place in the
+daily summary totals, and run_pool_e.py's seeding/guard -- hand-calculated
 fees and India VDA tax on a synthetic state tree. Run with:
 
-    python test_pool_f.py
+    python test_pool_e.py
 """
 
 import json
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from datetime import date
 
-from reporting.pool_f import build_pool_f, format_pool_f_block, usdt
+from reporting.pool_e import build_pool_e, format_pool_e_block, usdt
 from reporting.pool_summary import build_pool_summary, format_pool_summary
 
 TODAY = date(2026, 9, 13)
@@ -30,12 +30,12 @@ def _write(path, payload, jsonl=False):
 
 def _tree():
     root = tempfile.mkdtemp()
-    _write(os.path.join(root, "pool_f", "crypto_trend_timing", "portfolio.json"), {
+    _write(os.path.join(root, "pool_e", "crypto_trend_timing", "portfolio.json"), {
         "cash": 800.0, "starting_capital": 1000.0, "last_processed_date": "2026-09-13",
         "positions": {"BTC": {"entry_price": 80000.0, "quantity": 0.0025, "stop_loss": 64000.0,
                               "entry_date": "2026-09-13"}},
     })
-    _write(os.path.join(root, "pool_f", "crypto_trend_timing", "trades.jsonl"), [
+    _write(os.path.join(root, "pool_e", "crypto_trend_timing", "trades.jsonl"), [
         {"symbol": "ETH", "entry_date": "2026-07-31", "exit_date": "2026-09-13", "entry_price": 3000.0,
          "exit_price": 3300.0, "quantity": 0.1, "pnl": 30.0, "exit_reason": "signal_exit"},
         {"symbol": "SOL", "entry_date": "2026-07-31", "exit_date": "2026-08-20", "entry_price": 150.0,
@@ -44,9 +44,9 @@ def _tree():
     return root
 
 
-class TestBuildPoolF(unittest.TestCase):
+class TestBuildPoolE(unittest.TestCase):
     def setUp(self):
-        self.f = build_pool_f(_tree(), {"BTC": 84000.0}, usdinr=100.0, today=TODAY)
+        self.f = build_pool_e(_tree(), {"BTC": 84000.0}, usdinr=100.0, today=TODAY)
 
     def test_open_position_unbooked_pre_and_post_tax(self):
         u = self.f["usdt"]["unbooked"]
@@ -82,19 +82,19 @@ class TestBuildPoolF(unittest.TestCase):
         self.assertEqual(self.f["books"][0]["display_name"], "Crypto Trend Timing (Faber 10-month SMA)")
 
     def test_missing_price_falls_back_to_entry(self):
-        f = build_pool_f(_tree(), {}, usdinr=100.0, today=TODAY)
+        f = build_pool_e(_tree(), {}, usdinr=100.0, today=TODAY)
         self.assertAlmostEqual(f["usdt"]["unbooked"]["raw"], 0.0)
         self.assertFalse(f["books"][0]["open_positions"][0]["priced"])
 
     def test_no_book(self):
-        f = build_pool_f(tempfile.mkdtemp(), {}, usdinr=95.0, today=TODAY)
+        f = build_pool_e(tempfile.mkdtemp(), {}, usdinr=95.0, today=TODAY)
         self.assertFalse(f["exists"])
         self.assertEqual(f["usdt"]["booked"]["post_tax"], 0.0)
-        self.assertEqual(format_pool_f_block(f), ["*Pool F (crypto)* -- no book yet", ""])
+        self.assertEqual(format_pool_e_block(f), ["*Pool E (crypto)* -- no book yet", ""])
 
 
-class TestPoolFInSummary(unittest.TestCase):
-    def test_summary_totals_take_pool_f_post_tax_in_rupees(self):
+class TestPoolEInSummary(unittest.TestCase):
+    def test_summary_totals_take_pool_e_post_tax_in_rupees(self):
         root = _tree()
         s = build_pool_summary(root, {}, lambda symbols: {}, today=TODAY, crypto_prices={"BTC": 84000.0}, usdinr=100.0)
         o = s["overall"]
@@ -105,11 +105,11 @@ class TestPoolFInSummary(unittest.TestCase):
         self.assertAlmostEqual(o["realised_today"], (30 - 2.52 - 9.36) * 100)
         self.assertEqual(o["positions"], 1)
         text = format_pool_summary(s)
-        for needle in ("*Pool F (crypto, USDT; Rs. at 100.0/USD)* -- 1 positions, 2 trades",
+        for needle in ("*Pool E (crypto, USDT; Rs. at 100.0/USD)* -- 1 positions, 2 trades",
                        "Deployed 200.00 USDT (Rs.20,000)", "Unbooked pre-tax +8.36 USDT / post-tax +5.24 USDT (+Rs.524)",
                        "Booked raw 0.00 USDT | fees 3.60 USDT | tax 9.36 USDT",
                        "Booked pre-tax -3.60 USDT / post-tax -12.96 USDT (-Rs.1,296; today post-tax +18.12 USDT)",
-                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, F post-tax -- A1 not counted)*"):
+                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, E post-tax -- A1 not counted)*"):
             self.assertIn(needle, text)
         self.assertNotIn("_", text)
 
@@ -119,15 +119,15 @@ class TestPoolFInSummary(unittest.TestCase):
         self.assertEqual(usdt(5.24, True), "+5.24 USDT")
 
 
-class TestRunPoolF(unittest.TestCase):
+class TestRunPoolE(unittest.TestCase):
     def test_seed_and_last_completed_utc_day(self):
         import datetime
-        import run_pool_f
+        import run_pool_e
         tmp = tempfile.mkdtemp()
-        original = run_pool_f.POOL_F_STATE_DIR
-        run_pool_f.POOL_F_STATE_DIR = tmp
+        original = run_pool_e.POOL_E_STATE_DIR
+        run_pool_e.POOL_E_STATE_DIR = tmp
         try:
-            run_pool_f._seed_if_missing("crypto_trend_timing")
+            run_pool_e._seed_if_missing("crypto_trend_timing")
             with open(os.path.join(tmp, "crypto_trend_timing", "portfolio.json")) as f:
                 pf = json.load(f)
             self.assertEqual(pf["cash"], 1000.0)
@@ -135,13 +135,13 @@ class TestRunPoolF(unittest.TestCase):
             pf["cash"] = 5.0
             with open(os.path.join(tmp, "crypto_trend_timing", "portfolio.json"), "w") as f:
                 json.dump(pf, f)
-            run_pool_f._seed_if_missing("crypto_trend_timing")     # never re-seeds an existing book
+            run_pool_e._seed_if_missing("crypto_trend_timing")     # never re-seeds an existing book
             with open(os.path.join(tmp, "crypto_trend_timing", "portfolio.json")) as f:
                 self.assertEqual(json.load(f)["cash"], 5.0)
         finally:
-            run_pool_f.POOL_F_STATE_DIR = original
+            run_pool_e.POOL_E_STATE_DIR = original
         now = datetime.datetime(2026, 9, 14, 0, 15, tzinfo=datetime.timezone.utc)   # 05:45 IST on the 14th
-        self.assertEqual(run_pool_f.last_completed_utc_day(now), datetime.date(2026, 9, 13))
+        self.assertEqual(run_pool_e.last_completed_utc_day(now), datetime.date(2026, 9, 13))
 
 
 if __name__ == "__main__":

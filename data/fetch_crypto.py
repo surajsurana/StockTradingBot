@@ -1,7 +1,7 @@
 """
-Crypto daily candles for the Pool F lane (added 2026-09-13) -- Binance's
+Crypto daily candles for the Pool E lane (added 2026-09-13) -- Binance's
 public klines endpoint, no account or API key needed, deep history
-(BTCUSDT from 2017). Prices are in USDT; the Pool F book is kept in USDT
+(BTCUSDT from 2017). Prices are in USDT; the Pool E book is kept in USDT
 and shown in rupees at the USD/INR rate from yfinance (USDT trades at a
 small premium to USD in India -- disclosed, not modelled).
 

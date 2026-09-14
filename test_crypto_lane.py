@@ -1,5 +1,5 @@
 """
-Unit tests for the crypto lane (Pool F, 2026-09-13): Binance kline parsing,
+Unit tests for the crypto lane (Pool E, 2026-09-13): Binance kline parsing,
 the cost + India VDA tax model, the 3-week cross-sectional momentum ranks,
 the strategy's Monday-only entries and 7-day exits, fractional sizing in
 the backtest / benchmark / paper engines, and the post-tax walk-forward
