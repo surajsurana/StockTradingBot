@@ -304,7 +304,7 @@ function renderOverview(s){
   document.getElementById("pools").innerHTML = rows;
 
   document.getElementById("poolf-note").textContent = f.exists
-    ? `Book kept in USDT (started at ${usd(f.usdt.books.length ? f.books[0].starting_capital : 1000)}); fees 0.30%/side + 10 bps spread; tax 31.2% on each profitable trade with no set-off for losers; TDS 1% of sales is withheld and refundable. Rupees at ₹${(+f.usdinr).toFixed(2)}/USD. Cash after fees and tax: ${usd(f.usdt.cash_after_tax)}.`
+    ? `Book kept in USDT (started at ${usd(f.books.length ? f.books[0].starting_capital : 1000)}); fees 0.30%/side + 10 bps spread; tax 31.2% on each profitable trade with no set-off for losers; TDS 1% of sales is withheld and refundable. Rupees at ₹${(+f.usdinr).toFixed(2)}/USD. Cash after fees and tax: ${usd(f.usdt.cash_after_tax)}.`
     : "No crypto book yet.";
   const frow = (label, l, li, key) => `<tr><td>${label}</td><td class="n ${cls(l.raw)}">${usd(l.raw,true)}</td><td class="n">${usd(l.fees)}</td><td class="n">${usd(l.tax)}</td><td class="n ${cls(l.pre_tax)}">${usd(l.pre_tax,true)}</td><td class="n ${cls(l.post_tax)}">${lv(key, l.post_tax, usd(l.post_tax,true))}</td>${cell(li.post_tax,true,key+".inr")}<td class="n">${usd(l.tds)}</td></tr>`;
   document.getElementById("poolf").innerHTML = f.exists ? [
