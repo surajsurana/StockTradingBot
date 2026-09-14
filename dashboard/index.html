@@ -27,9 +27,10 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .tile .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .tile .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:20px;font-variant-numeric:tabular-nums;margin-top:3px}
 .tile .sub{color:var(--muted);font-size:12px;margin-top:2px}
-.teamline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;padding:8px 12px;margin-bottom:14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;font-size:12.5px;color:var(--muted)}
+.teamline{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin-bottom:14px;font-size:12.5px;color:var(--muted)}
 .teamline b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums;margin-right:4px}
-.teamline .k{display:inline-flex;align-items:baseline;gap:2px;animation:rise .4s ease both}
+.teamline .k{display:inline-flex;align-items:baseline;gap:2px;padding:7px 12px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;animation:rise .4s ease both;transition:transform .15s ease,box-shadow .15s ease}
+.teamline .k:hover{transform:translateY(-1px);box-shadow:0 3px 10px color-mix(in srgb,var(--ink) 10%,transparent)}
 .teamline .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--live);margin-right:6px;vertical-align:middle;animation:pulse 1.6s ease-in-out infinite}
 .teamline .pulse.off{background:var(--muted);animation:none}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
