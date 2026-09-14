@@ -462,7 +462,12 @@ function renderTeam(s){
   const statusOf = a => a.status_from==="market" ? (s.market_open ? "working" : "done") : (a.status_from && hot.has(a.status_from) ? "done" : "");
   const ai = s.agents.filter(a => /AI/.test(a.kind)).length, rules = s.agents.length - ai;
   const working = s.agents.filter(a => statusOf(a)==="working").length, done = s.agents.filter(a => statusOf(a)==="done").length;
+  const st = r => String(r.status||"").split(".").pop();
+  const live = s.registry.filter(r => st(r)==="PAPER_TRADING").length;
+  const liveA = s.registry.filter(r => st(r)==="PAPER_TRADING" && !/crypto/i.test(r.family||"")).length;
+  const research = s.registry.filter(r => st(r)==="RESEARCH").length, archived = s.registry.filter(r => st(r)==="ARCHIVED").length;
   document.getElementById("teamtiles").innerHTML = [
+    ["Strategies live", live, `${liveA} in Pool A · ${live - liveA} in Pool F · ${research} in research · ${archived} archived`],
     ["Team", s.agents.length, `${ai} AI agents · ${rules} rule engines`],
     ["Desks", s.desks.length, s.desks.map(d => d.name.replace(/ \(.*\)/, "")).join(" · ")],
     ["Working now", working, s.market_open ? "market open" : "market closed"],
