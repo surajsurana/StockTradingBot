@@ -1224,3 +1224,96 @@ CRYPTO_TREND_TIMING = PublishedStrategy(
         "-- the question the experiment answers."
     ),
 )
+
+
+DOWNSIDE_BETA = PublishedStrategy(
+    name="Downside Beta",
+    source_citation=(
+        "Ang, A., Chen, J. and Xing, Y. (2006), \"Downside Risk,\" The Review of Financial Studies "
+        "19(4), 1191-1239."
+    ),
+    mechanism=(
+        "Investors who are averse to losses in bad states (disappointment aversion) demand a premium for "
+        "stocks whose co-movement with the market is strongest when the market falls. Downside beta -- "
+        "the market beta estimated only on days the market's return is below its mean -- captures that "
+        "exposure; the highest-downside-beta stocks earn roughly 6% per year more than the lowest, and "
+        "the premium survives controls for regular beta, size, book-to-market, momentum, coskewness and "
+        "liquidity. A risk premium, not a mispricing, so it is not expected to be arbitraged away."
+    ),
+    rules=(
+        "Each month: estimate downside beta from the past 12 months of daily returns, "
+        "cov(r_i, r_m | r_m < mu_m) / var(r_m | r_m < mu_m); sort stocks into quintiles; hold the "
+        "portfolios one month, equal-weighted; re-form monthly. US 1963-2001: top-minus-bottom "
+        "downside-beta quintile spread about 6% per year, robust across sub-periods."
+    ),
+    variant_chosen=(
+        "The paper's own one-year daily-return estimator with the downside condition and the mean taken "
+        "within each rolling 252-day window; Nifty 50 as the market; top quintile = cross-sectional "
+        "percentile >= 80; state-transition entry (the first day a stock enters the top quintile), "
+        "21-trading-day single-vintage hold -- this program's standard translation of monthly "
+        "portfolio formation (max_effect, high_volume_return_premium)."
+    ),
+    scope_reductions=(
+        "LONG ONLY, the high-downside-beta quintile; the paper's spread also shorts the low quintile. "
+        "At most 10 positions ranked by percentile, 8% protective stop and 1% risk-per-unit sizing, "
+        "none of which are in the source. Daily returns not converted to excess returns. One year of "
+        "extra history fetched as warm-up; the walk-forward judgement starts a year after the data "
+        "start so no window is blind. The roadmap profile's direction text (long LOW downside beta) "
+        "contradicted the source and was corrected before implementation."
+    ),
+    distinctiveness=(
+        "Risk-based family, like Betting Against Beta (SW-009, REJECT) and Idiosyncratic Volatility "
+        "(SW-012, INCONCLUSIVE), but on the OPPOSITE side: those bought the calm stocks; this buys the "
+        "stocks that fall hardest with the market, on the premium side of the risk-return trade-off. "
+        "First conditional (down-market-only) estimator in the program."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN. Quintile at the 80th percentile: NEGLIGIBLE. Within-window "
+        "mean as the downside threshold and no risk-free subtraction: NEGLIGIBLE. Transition-day entry "
+        "with a 21-day vintage instead of month-end formation: MINOR, directionally unknown. 8% stop: "
+        "MODERATE, one-directional -- these are the gappiest stocks by construction. 10-position cap "
+        "vs an equal-weighted quintile of ~90 names: MODERATE, changes dispersion not sign."
+    ),
+)
+
+
+CRYPTO_TSMOM = PublishedStrategy(
+    name="Crypto Time-Series Momentum (12-month)",
+    source_citation=(
+        "Moskowitz, T.J., Ooi, Y.H. and Pedersen, L.H. (2012), \"Time Series Momentum,\" Journal of "
+        "Financial Economics 104(2), 228-250; Liu, Y. and Tsyvinski, A. (2021), \"Risks and Returns of "
+        "Cryptocurrency,\" Review of Financial Studies 34(6)."
+    ),
+    mechanism=(
+        "An asset's own past 12-month return predicts its next month: initial under-reaction to news and "
+        "delayed over-reaction by trend chasers keep a move going. MOP find it in 58 futures across "
+        "equities, bonds, currencies and commodities 1965-2009, with the strongest results in extreme "
+        "markets; Liu & Tsyvinski find Bitcoin's own past returns predict its future returns."
+    ),
+    rules=(
+        "Each month-end, for every asset: long if the trailing 12-month excess return is positive, short "
+        "if negative; scale each position to 40% annualised ex-ante volatility; hold one month; rebalance "
+        "monthly. Diversified across assets the strategy earned a Sharpe ratio above 1 in MOP's sample."
+    ),
+    variant_chosen=(
+        "12-month lookback read on the last UTC calendar day of each month, five majors (BTC, ETH, BNB, "
+        "XRP, SOL) in equal 20% sleeves, signal computed on full history and supplied to every "
+        "walk-forward window as warm-up. Same coins, same sleeves and same stop as the Faber rule in "
+        "Pool F, so the two are directly comparable."
+    ),
+    scope_reductions=(
+        "LONG ONLY (negative signal = cash). NO volatility scaling: this engine sizes from the stop "
+        "distance, so MOP's 40%/sigma scaling is replaced by equal sleeves. 20% protective stop, not in "
+        "the source. Costs and India's 31.2% no-offset tax applied before the audit; pre-tax recorded."
+    ),
+    distinctiveness=(
+        "A second trend rule on the same coins as SW-020 (Faber): deliberately a ROBUSTNESS test of "
+        "whether the Pool F PASS depends on the moving-average form, not a diversifier. The 12-month "
+        "sign rule is the most-cited time-series momentum specification in the literature."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN. No vol scaling: MODERATE. 365-calendar-day lookback and no "
+        "risk-free subtraction: NEGLIGIBLE. 20% stop: MODERATE, one-directional. Costs and tax: MAJOR, "
+        "one-directional, the lane's standing question."
+    ),
+)

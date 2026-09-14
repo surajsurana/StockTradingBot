@@ -314,6 +314,15 @@ RESEARCH_EXPERIMENT_SPECS = [
         ).run_high_volume_return_premium_experiment,
     ),
     ResearchExperimentSpec(
+        strategy_key="downside_beta",
+        variant_description=("Downside Beta (Ang-Chen-Xing 2006: 252-day daily-return beta on market-down days, "
+                             "top-quintile percentile, 21-trading-day single-vintage hold; walk-forward judged "
+                             "from one year after the data start)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_downside_beta_experiment"]
+        ).run_downside_beta_experiment,
+    ),
+    ResearchExperimentSpec(
         strategy_key="earnings_announcement_premium",
         variant_description=("Earnings Announcement Premium (Frazzini-Lamont: buy expected announcers at the prior "
                              "month-end close, hold to month-end; ranked by 4-year volume concentration ratio, "

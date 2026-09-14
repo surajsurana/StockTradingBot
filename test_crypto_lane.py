@@ -304,5 +304,43 @@ class TestTrendTimingRules(unittest.TestCase):
         self.assertTrue(strategy.fractional_quantities)
 
 
+class TestTimeSeriesMomentumRules(unittest.TestCase):
+    def test_signal_is_365_day_return_and_read_at_month_end_only(self):
+        from swing_research.strategies.crypto_tsmom import CryptoTimeSeriesMomentumStrategy, compute_tsmom_signal
+        n = 400
+        closes = [100.0 + i * 0.5 for i in range(n)]           # rising: 365-day return positive
+        df = compute_tsmom_signal(_daily(closes, start=date(2025, 1, 1)))
+        self.assertTrue(df["tsmom_return"].iloc[:365].isna().all())
+        self.assertAlmostEqual(df["tsmom_return"].iloc[365], (100 + 365 * 0.5) / 100 - 1)
+        s = CryptoTimeSeriesMomentumStrategy()
+        pre = s.precompute(df)
+        rows = list(pre.itertuples())
+        month_ends = [r for r in rows if r.is_month_end and not pd.isna(r.tsmom_return)]
+        self.assertTrue(month_ends)
+        self.assertIsNotNone(s.entry_signal_at(month_ends[0]))
+        self.assertTrue(all(s.entry_signal_at(r) is None for r in rows if not r.is_month_end))
+
+    def test_negative_return_exits_and_never_enters(self):
+        from swing_research.base import OpenPosition, PositionUnit
+        from swing_research.strategies.crypto_tsmom import CryptoTimeSeriesMomentumStrategy
+        n = 400
+        closes = [200.0 - i * 0.2 for i in range(n)]           # falling
+        s = CryptoTimeSeriesMomentumStrategy()
+        pre = s.precompute(_daily(closes, start=date(2025, 1, 1)))
+        rows = [r for r in pre.itertuples() if r.is_month_end and not pd.isna(r.tsmom_return)]
+        pos = OpenPosition(symbol="X", direction="BUY",
+                           units=[PositionUnit(entry_price=150.0, entry_date=date(2025, 6, 30), quantity=1.0)])
+        self.assertIsNone(s.entry_signal_at(rows[0]))
+        self.assertEqual(s.exit_signal_at(rows[0], pos), float(rows[0].Close))
+
+    def test_warm_up_column_is_kept(self):
+        from swing_research.strategies.crypto_tsmom import compute_tsmom_signal
+        full = _daily([100.0 + i for i in range(400)], start=date(2025, 1, 1))
+        warm = compute_tsmom_signal(full)[["tsmom_return"]]
+        window = full.iloc[-30:].join(warm.iloc[-30:])
+        self.assertFalse(compute_tsmom_signal(window)["tsmom_return"].isna().all())
+        self.assertTrue(compute_tsmom_signal(full.iloc[-30:])["tsmom_return"].isna().all())
+
+
 if __name__ == "__main__":
     unittest.main()

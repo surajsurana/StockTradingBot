@@ -183,6 +183,15 @@ class CandidateProfile:
 # registered in deployment/state/strategy_registry.json, so future
 # roadmap runs stay diversification-aware of it.
 # =====================================================================
+# Candidates ruled out by direction (not by data): still scored, never
+# offered as "next up". Reason shown on the dashboard's deferred list.
+DEFERRED_BY_DIRECTION = {
+    "long_term_reversal": "Ruled out 2026-09-06 per direction: a 3-5 year formation and holding period does "
+                          "not fit this program's days-to-months cadence.",
+    "sehgal_long_term_contrarian_india": "Ruled out 2026-09-06 per direction (same multi-year holding "
+                                         "period as Long-Term Reversal).",
+}
+
 EXISTING_STRATEGY_TAGS = {
     "turtle_system2": {"trend_following"},
     "minervini_trend_template_filter": {"trend_following", "momentum_cross_sectional"},
@@ -204,6 +213,7 @@ EXISTING_STRATEGY_TAGS = {
     "overnight_return_anomaly": {"microstructure_overnight"},
     "high_volume_return_premium": {"volume_attention"},
     "earnings_announcement_premium": {"earnings_drift", "seasonality_calendar"},
+    "downside_beta": {"risk_based"},   # researched 2026-09-14
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -1022,7 +1032,8 @@ CANDIDATES = [
         publication="\"Downside Risk\", The Review of Financial Studies, Vol. 19, No. 4",
         year=2006,
         asset_class="Single-stock equities, cross-sectional",
-        direction="Long-only bottom-decile (lowest downside beta).",
+        direction="Long-only TOP quintile (highest downside beta) -- the side the paper's premium "
+                  "accrues to; an earlier version of this profile said 'lowest', corrected 2026-09-14.",
         factor_family="Risk-based (downside-conditional)",
         factor_tags={"risk_based"},
         mechanism="Stocks whose beta to the market is higher specifically during MARKET DOWNTURNS "
@@ -1473,13 +1484,17 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
     portfolio = load_portfolio(registry_path)
     scored = [score_candidate(c, portfolio, weights) for c in CANDIDATES]
     researchable_now = sorted(
-        (s for s in scored if s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"),
+        (s for s in scored if s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"
+         and s.candidate.key not in DEFERRED_BY_DIRECTION),
         key=lambda s: -s.total_score,
     )
     deferred_pending_data = [s for s in scored if s.feasibility_classification == "NOT_CURRENTLY_IMPLEMENTABLE"]
+    deferred_by_direction = [s for s in scored if s.candidate.key in DEFERRED_BY_DIRECTION
+                             and s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"]
     return {
         "portfolio": portfolio, "researchable_now": researchable_now,
-        "deferred_pending_data": deferred_pending_data, "all_scored": scored, "weights": weights,
+        "deferred_pending_data": deferred_pending_data, "deferred_by_direction": deferred_by_direction,
+        "all_scored": scored, "weights": weights,
     }
 
 

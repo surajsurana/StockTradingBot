@@ -618,3 +618,69 @@ def compute_volume_shock_percentile_ranks(data: dict) -> dict:
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+# Ang, Chen & Xing (2006) downside beta: beta of the stock to the market
+# on the days the market's return is BELOW its own mean over the window,
+# daily returns over the past year (the paper's own estimator).
+DOWNSIDE_BETA_LOOKBACK_DAYS = 252
+DOWNSIDE_BETA_MIN_DOWN_DAYS = 60   # a 252-day window has ~110-130 down days; fewer than 60 means data gaps
+
+
+def compute_downside_beta_score(price_history: pd.DataFrame, market_close: pd.Series,
+                                lookback_days: int = DOWNSIDE_BETA_LOOKBACK_DAYS) -> pd.Series:
+    """beta_minus_t = cov(r_i, r_m | r_m < mean(r_m)) / var(r_m | r_m < mean(r_m))
+    over the `lookback_days` daily log returns ending at day t, the
+    condition and the means taken WITHIN each window (exact, via sliding
+    windows). NaN until a full window of valid returns exists, or when a
+    window has fewer than DOWNSIDE_BETA_MIN_DOWN_DAYS market-down days.
+    market_close is aligned to the stock's own dates and forward-filled,
+    as compute_shrunk_beta_score() does."""
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    stock_close = price_history["Close"]
+    aligned_market = market_close.reindex(stock_close.index).ffill()
+    r_i = (np.log(stock_close) - np.log(stock_close.shift(1))).to_numpy(dtype=float)
+    r_m = (np.log(aligned_market) - np.log(aligned_market.shift(1))).to_numpy(dtype=float)
+    n = len(r_i)
+    out = np.full(n, np.nan)
+    if n <= lookback_days:
+        return pd.Series(out, index=stock_close.index)
+
+    Ri = sliding_window_view(r_i[1:], lookback_days)     # window k ends at index k + lookback_days
+    Rm = sliding_window_view(r_m[1:], lookback_days)
+    valid = np.isfinite(Ri) & np.isfinite(Rm)
+    full = valid.all(axis=1)
+    Ri0, Rm0 = np.where(valid, Ri, 0.0), np.where(valid, Rm, 0.0)
+    mu_m = Rm0.sum(axis=1) / np.maximum(valid.sum(axis=1), 1)
+    down = valid & (Rm0 < mu_m[:, None])
+    cnt = down.sum(axis=1)
+    safe_cnt = np.maximum(cnt, 1)
+    mean_i = (Ri0 * down).sum(axis=1) / safe_cnt
+    mean_m = (Rm0 * down).sum(axis=1) / safe_cnt
+    dev_i = (Ri0 - mean_i[:, None]) * down
+    dev_m = (Rm0 - mean_m[:, None]) * down
+    cov = (dev_i * dev_m).sum(axis=1) / safe_cnt
+    var = (dev_m * dev_m).sum(axis=1) / safe_cnt
+    beta = np.where((var > 0) & full & (cnt >= DOWNSIDE_BETA_MIN_DOWN_DAYS), cov / np.where(var > 0, var, 1.0), np.nan)
+    out[lookback_days:] = beta
+    return pd.Series(out, index=stock_close.index)
+
+
+def compute_downside_beta_percentile_ranks(data: dict, market_close: pd.Series,
+                                           lookback_days: int = DOWNSIDE_BETA_LOOKBACK_DAYS) -> dict:
+    """{symbol: Series of downside_beta_percentile (0-100)}: each stock's
+    cross-sectional rank by downside beta among the stocks with a valid
+    estimate that day. HIGH percentile = HIGH downside beta = the side
+    Ang, Chen & Xing find the premium on. Same .rank(axis=1, pct=True)
+    construction as every other signal here."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_downside_beta_score(df.sort_index(), market_close, lookback_days)
+    if not scores:
+        return {}
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

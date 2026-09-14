@@ -160,7 +160,8 @@ class TestScoringAndRoadmap(unittest.TestCase):
 
     def test_every_candidate_is_accounted_for_exactly_once(self):
         roadmap = build_roadmap(registry_path=self.registry_path)
-        total = len(roadmap["researchable_now"]) + len(roadmap["deferred_pending_data"])
+        total = (len(roadmap["researchable_now"]) + len(roadmap["deferred_pending_data"])
+                 + len(roadmap["deferred_by_direction"]))
         self.assertEqual(total, len(CANDIDATES))
 
     def test_render_roadmap_markdown_contains_key_sections(self):

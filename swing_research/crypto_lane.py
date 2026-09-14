@@ -209,3 +209,22 @@ def run_crypto_trend_timing_experiment(data: dict, start_date: date, end_date: d
                           "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_sma_warm_up_from_full_history": True},
         **kwargs,
     )
+
+
+def run_crypto_tsmom_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Moskowitz-Ooi-Pedersen 12-month time-series momentum on the majors (2026-09-14)."""
+    from swing_research.strategies.crypto_tsmom import (
+        CryptoTimeSeriesMomentumStrategy, STOP_LOSS_PCT, TSMOM_LOOKBACK_DAYS, compute_tsmom_signal,
+    )
+    from swing_research.published_research_analyst import CRYPTO_TSMOM
+
+    extra_columns = {symbol: compute_tsmom_signal(df)[["tsmom_return"]] for symbol, df in data.items()}
+    return run_crypto_experiment_generic(
+        CryptoTimeSeriesMomentumStrategy(), CRYPTO_TSMOM, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_tsmom_lookback_calendar_days": TSMOM_LOOKBACK_DAYS,
+                          "crypto_rebalance": "last UTC calendar day of each month",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_volatility_scaling": False,
+                          "crypto_signal_warm_up_from_full_history": True},
+        **kwargs,
+    )

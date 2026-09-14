@@ -1100,3 +1100,59 @@ def run_earnings_announcement_premium_experiment(data: dict, start_date: date, e
             "eap_long_only": True,
         },
     )
+
+
+def run_downside_beta_experiment(data: dict, start_date: date, end_date: date,
+                                 starting_capital: float = 1_000_000,
+                                 n_walk_forward_windows: int = 3,
+                                 narrative_api_key: str = "",
+                                 narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                 experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                 knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                 skip_regime_breakdown: bool = False,
+                                 market_close=None, warm_up_days: int = 365) -> str:
+    """
+    Ang, Chen & Xing (2006) downside beta (2026-09-14). The percentile is
+    computed ONCE on the full data (Nifty 50 as the market, fetched here
+    unless market_close is passed) and windowed by date like every other
+    cross-sectional signal. NEW: the walk-forward judgement starts
+    `warm_up_days` after the data start, because the estimator needs a
+    full year of returns -- without this the first window is blind (the
+    cold start EXP-083 documented). The full-period comparison run still
+    uses all the data (it simply has no signals in the warm-up year).
+    """
+    from datetime import timedelta
+    from swing_research.strategies.downside_beta import (
+        DownsideBetaStrategy, DOWNSIDE_BETA_PERCENTILE_THRESHOLD, HOLDING_PERIOD_DAYS, STOP_LOSS_PCT,
+    )
+    from swing_research.published_research_analyst import DOWNSIDE_BETA
+    from swing_research.cross_sectional import DOWNSIDE_BETA_LOOKBACK_DAYS, compute_downside_beta_percentile_ranks
+
+    if market_close is None:
+        from data.fetch_historical import fetch_nifty
+        market_close = fetch_nifty(period="max")["Close"]
+    percentiles = compute_downside_beta_percentile_ranks(data, market_close)
+    extra_columns = {symbol: series.rename("downside_beta_percentile") for symbol, series in percentiles.items()}
+
+    judged_start = start_date + timedelta(days=warm_up_days)
+    if judged_start >= end_date:
+        judged_start = start_date
+    strategy = DownsideBetaStrategy()
+    return run_generic_swing_experiment(
+        strategy, DOWNSIDE_BETA, data, judged_start, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "downside_beta_lookback_days": DOWNSIDE_BETA_LOOKBACK_DAYS,
+            "downside_beta_percentile_threshold": DOWNSIDE_BETA_PERCENTILE_THRESHOLD,
+            "downside_beta_side": "TOP quintile (highest downside beta) -- the paper's premium side",
+            "downside_beta_market": "Nifty 50 (^NSEI), aligned and forward-filled per stock",
+            "downside_beta_holding_period_trading_days": HOLDING_PERIOD_DAYS,
+            "downside_beta_stop_loss_pct": STOP_LOSS_PCT, "downside_beta_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "downside_beta_single_vintage": True,
+            "data_start_with_warm_up": start_date.isoformat(), "walk_forward_judged_from": judged_start.isoformat(),
+            "warm_up_days": warm_up_days,
+        },
+    )
