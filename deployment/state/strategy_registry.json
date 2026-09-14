@@ -427,8 +427,15 @@
     "strategy_family": "crypto research published strategy",
     "research_verdict": "PASS",
     "research_verdict_source": "EXP-085 (post-tax; weaker twin of SW-020, not promoted)",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789362820.2705371,
+        "reason": "Pool F second book, 1,000 USDT, per direction 2026-09-14 (duplicates SW-020's exposure; disclosed)"
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",

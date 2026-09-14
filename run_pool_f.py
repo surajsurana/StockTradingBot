@@ -40,15 +40,22 @@ from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from reporting.pool_f import POOL_F_STARTING_CAPITAL_USDT
 from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy, compute_month_end_sma
+from swing_research.strategies.crypto_tsmom import CryptoTimeSeriesMomentumStrategy, compute_tsmom_signal
 
 POOL_F_STATE_DIR = os.path.join(STATE_DIR, "pool_f")
-HISTORY_YEARS = 1.5   # 10 month-ends for the SMA plus margin
+HISTORY_YEARS = 1.5   # 10 month-ends for the SMA / 365 days for TSMOM, plus margin
 
 # strategy_key -> (strategy factory, symbols, extra-columns fn)
 POOL_F_STRATEGIES = {
     "crypto_trend_timing": (
         CryptoTrendTimingStrategy, CRYPTO_MAJORS,
         lambda data: {s: compute_month_end_sma(df)[["sma_month_end"]] for s, df in data.items()},
+    ),
+    # SW-021, promoted 2026-09-14 per direction (EXP-085 PASS post-tax; a weaker twin of SW-020,
+    # so this book mostly duplicates its exposure -- disclosed when promoted).
+    "crypto_tsmom": (
+        CryptoTimeSeriesMomentumStrategy, CRYPTO_MAJORS,
+        lambda data: {s: compute_tsmom_signal(df)[["tsmom_return"]] for s, df in data.items()},
     ),
 }
 
