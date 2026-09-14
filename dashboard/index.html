@@ -27,6 +27,18 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .tile .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .tile .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:20px;font-variant-numeric:tabular-nums;margin-top:3px}
 .tile .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.tiles.compact{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px}
+.tiles.compact .tile{display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;padding:8px 12px;border-left:3px solid var(--accent);border-radius:4px;animation:rise .45s ease both;transition:transform .2s ease,box-shadow .2s ease}
+.tiles.compact .tile:hover{transform:translateY(-2px);box-shadow:0 4px 14px color-mix(in srgb,var(--ink) 12%,transparent)}
+.tiles.compact .ic{grid-row:1/3;font-size:18px;line-height:1;opacity:.85}
+.tiles.compact .ic.pulse{width:12px;height:12px;border-radius:50%;background:var(--live);animation:pulse 1.6s ease-in-out infinite}
+.tiles.compact .ic.pulse.off{background:var(--muted);animation:none}
+.tiles.compact .lbl{font-size:10px;letter-spacing:.06em}
+.tiles.compact .val{font-size:16px;margin-top:0;line-height:1.2}
+.tiles.compact .sub{font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+@media (prefers-reduced-motion:reduce){.tiles.compact .tile,.tiles.compact .ic.pulse{animation:none;transition:none}}
 .tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:6px}
 table{border-collapse:collapse;width:100%;min-width:640px}
 th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
@@ -179,7 +191,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-team" hidden>
-  <div class="tiles" id="teamtiles"></div>
+  <div class="tiles compact" id="teamtiles"></div>
   <h2 id="flow-daily-title"></h2>
   <div class="strip" id="flow-daily"></div>
   <p class="note">Steps light up as they happen today.</p>
@@ -467,12 +479,12 @@ function renderTeam(s){
   const liveA = s.registry.filter(r => st(r)==="PAPER_TRADING" && !/crypto/i.test(r.family||"")).length;
   const research = s.registry.filter(r => st(r)==="RESEARCH").length, archived = s.registry.filter(r => st(r)==="ARCHIVED").length;
   document.getElementById("teamtiles").innerHTML = [
-    ["Strategies live", live, `${liveA} in Pool A · ${live - liveA} in Pool F · ${research} in research · ${archived} archived`],
-    ["Team", s.agents.length, `${ai} AI agents · ${rules} rule engines`],
-    ["Desks", s.desks.length, s.desks.map(d => d.name.replace(/ \(.*\)/, "")).join(" · ")],
-    ["Working now", working, s.market_open ? "market open" : "market closed"],
-    ["Done for today", done, `${s.agents.length - working - done} on call`],
-  ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></div>`).join("");
+    ["📈", "Strategies live", live, `${liveA} Pool A · ${live - liveA} Pool F · ${research} in research · ${archived} archived`],
+    ["🤖", "Team", s.agents.length, `${ai} AI agents · ${rules} rule engines`],
+    ["🏢", "Desks", s.desks.length, s.desks.map(d => d.name.replace(/ \(.*\)/, "")).join(" · ")],
+    [`<span class="ic pulse ${working?"":"off"}"></span>`, "Working now", working, s.market_open ? "market open" : "market closed"],
+    ["✅", "Done for today", done, `${s.agents.length - working - done} on call`],
+  ].map(([ic,l,v,sub],i)=>`<div class="tile" style="animation-delay:${i*70}ms">${ic.startsWith("<")?ic:`<div class="ic">${ic}</div>`}<div class="lbl">${l}</div><div class="val">${lv("team."+l, v, v)}</div><div class="sub" title="${esc(sub)}">${esc(sub)}</div></div>`).join("");
   document.getElementById("office").innerHTML = s.desks.map(d => {
     const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
     return `<div class="desk"><div class="head"><span class="ic">${d.icon}</span><span class="nm">${esc(d.name)}</span></div><p class="blurb">${esc(d.blurb)}</p><div class="seats">${seats}</div></div>`;
