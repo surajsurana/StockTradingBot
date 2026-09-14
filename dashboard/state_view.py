@@ -37,6 +37,9 @@ DESKS = [
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio B & C Team", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
+    {"id": "crypto_desk", "name": "Crypto Desk (Pool F)", "icon": "\u20BF",
+     "blurb": "Tests published crypto rules on Binance history, judged only after fees and India's 31.2% tax, "
+              "and runs the survivors as a 1,000 USDT paper book."},
     {"id": "reporting", "name": "Reporting", "icon": "\U0001F4E8",
      "blurb": "Keeps the books and sends the one message a day."},
 ]
@@ -108,6 +111,19 @@ AGENTS = [
     {"id": "risk_manager_live", "avatar": {"type": "robot", "body": "#5E6B5E", "eye": "#B23A3A", "shape": "square"}, "name": "Risk Manager", "icon": "\U0001F6E1\ufe0f", "desk": "portfolio_team", "kind": "Rules",
      "job": "Sizes and vetoes", "status_from": "eod_c",
      "detail": "Sizes every position against its stop and blocks anything that breaches the book's limits."},
+    {"id": "crypto_data", "avatar": {"type": "robot", "body": "#6E6E6E", "eye": "#F2C14E", "shape": "square"}, "name": "Crypto Data Feed", "icon": "\U0001F4E1", "desk": "crypto_desk", "kind": "Mechanical",
+     "job": "Pulls Binance daily candles", "status_from": "pool_f",
+     "detail": "Public Binance history for the five majors (BTC, ETH, BNB, XRP, SOL) back to 2017, seven days a "
+               "week, plus the live USD/INR rate so every figure can be shown in rupees."},
+    {"id": "crypto_tax", "avatar": {"type": "robot", "body": "#4E5D6C", "eye": "#E0A85A", "shape": "square"}, "name": "Tax Accountant", "icon": "\U0001F9FE", "desk": "crypto_desk", "kind": "Rules only",
+     "job": "Takes fees and 31.2% tax off every trade", "status_from": None,
+     "detail": "0.30% a side plus spread, then India's VDA tax: 31.2% of each profitable trade with no set-off for "
+               "losers and fees not deductible; 1% TDS on sales shown as withheld and refundable. The Auditor "
+               "only ever sees the post-tax trades; pre-tax is recorded alongside."},
+    {"id": "crypto_trader", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#4CC383", "shape": "square"}, "name": "Crypto Trader", "icon": "\u20BF", "desk": "crypto_desk", "kind": "Mechanical",
+     "job": "Runs Pool F after the 00:00 UTC close", "status_from": "pool_f",
+     "detail": "Same paper engine as Pool A on a 1,000 USDT book: month-end decisions from the strategy, 20% "
+               "stops checked daily, fractional coins, fills at the close it just saw (crypto never closes)."},
     {"id": "pool_summary", "avatar": {"type": "robot", "body": "#7D6B8A", "eye": "#5FB7C0", "shape": "square"}, "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
      "job": "Sends the daily Telegram", "status_from": "summary",
      "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
@@ -119,6 +135,7 @@ FLOWS = {
     "daily": {
         "title": "A trading day",
         "steps": [
+            {"id": "pool_f", "icon": "\u20BF", "label": "05:45", "text": "Crypto Trader marks Pool F after the UTC close (every day)"},
             {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
             {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
@@ -133,9 +150,9 @@ FLOWS = {
             {"id": "idea", "icon": "\U0001F4A1", "label": "Idea", "text": "From a published paper, or the Quant Researcher"},
             {"id": "rules", "icon": "\U0001F4D6", "label": "Rules", "text": "Written down exactly, every simplification disclosed"},
             {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
-            {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only"},
-            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book"},
-            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A, watched every day"},
+            {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only (crypto: after fees and tax)"},
+            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book (crypto: 1,000 USDT in Pool F)"},
+            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A or Pool F, watched every day"},
         ],
     },
 }
@@ -225,9 +242,16 @@ def roadmap_view(roadmap: dict, registry_records: list) -> dict:
                 "blockers": list(s.feasibility_reasons)[:2], "strengths": c.known_strengths,
                 "weaknesses": c.known_weaknesses}
 
+    from swing_research.research_roadmap import DEFERRED_BY_DIRECTION
     ready = [s for s in roadmap["researchable_now"] if s.candidate.key not in taken]
     deferred = [s for s in roadmap["deferred_pending_data"] if s.candidate.key not in taken]
-    return {"ready": [row(s, i + 1) for i, s in enumerate(ready)], "deferred": [row(s) for s in deferred],
+    by_direction = [s for s in roadmap.get("deferred_by_direction", []) if s.candidate.key not in taken]
+    rows = [row(s) for s in deferred]
+    for s in by_direction:
+        r = row(s)
+        r["blockers"] = [DEFERRED_BY_DIRECTION[s.candidate.key]]
+        rows.append(r)
+    return {"ready": [row(s, i + 1) for i, s in enumerate(ready)], "deferred": rows,
             "weights": roadmap.get("weights", {})}
 
 
