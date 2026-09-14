@@ -323,6 +323,15 @@ RESEARCH_EXPERIMENT_SPECS = [
         ).run_downside_beta_experiment,
     ),
     ResearchExperimentSpec(
+        strategy_key="nifty_low_volatility_30",
+        variant_description=("Realized Low Volatility (Nifty100 Low Vol 30 methodology: 1-year daily log-return "
+                             "std, bottom-decile percentile, 126-trading-day single-vintage hold; walk-forward "
+                             "judged from one year after the data start)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_realized_low_volatility_experiment"]
+        ).run_realized_low_volatility_experiment,
+    ),
+    ResearchExperimentSpec(
         strategy_key="earnings_announcement_premium",
         variant_description=("Earnings Announcement Premium (Frazzini-Lamont: buy expected announcers at the prior "
                              "month-end close, hold to month-end; ranked by 4-year volume concentration ratio, "

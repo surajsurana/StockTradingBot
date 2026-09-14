@@ -1361,3 +1361,47 @@ CRYPTO_VOL_MANAGED = PublishedStrategy(
         "stop: MODERATE, one-directional. Monthly taxable rebalancing: MAJOR -- the question itself."
     ),
 )
+
+
+REALIZED_LOW_VOLATILITY = PublishedStrategy(
+    name="Realized Low Volatility (Nifty100 Low Volatility 30 methodology)",
+    source_citation=(
+        "NSE Indices Limited, Nifty100 Low Volatility 30 Index Methodology (launched 2016, base 2005); "
+        "Ang, A., Hodrick, R.J., Xing, Y. and Zhang, X. (2006), \"The Cross-Section of Volatility and "
+        "Expected Returns,\" Journal of Finance 61(1); Baker, M., Bradley, B. and Wurgler, J. (2011), "
+        "\"Benchmarks as Limits to Arbitrage,\" Financial Analysts Journal 67(1)."
+    ),
+    mechanism=(
+        "Low-volatility stocks earn returns comparable to or above high-volatility stocks with far less "
+        "risk: benchmark-constrained institutions overpay for volatile names and cannot lever the calm "
+        "ones, and lottery-seeking retail demand crowds into high-volatility stocks. NSE's index applies "
+        "it mechanically: the 30 least volatile Nifty 100 stocks, inverse-volatility weighted."
+    ),
+    rules=(
+        "From the Nifty 100, volatility = standard deviation of daily log returns over one year; select "
+        "the 30 lowest; weight by inverse volatility; reconstitute semi-annually (weights rebalanced "
+        "quarterly). Live since 2016; the index's own factsheets show lower drawdown than the Nifty 100 "
+        "with comparable long-run return."
+    ),
+    variant_chosen=(
+        "Bottom decile of this program's Nifty 500 universe by 1-year realized volatility (percentile <= "
+        "10), ranked lowest-first for the 10 slots; entry on the first day a stock enters the decile; "
+        "hold 126 trading days (one reconstitution period); percentile computed on full history with a "
+        "one-year warm-up so no walk-forward window starts blind."
+    ),
+    scope_reductions=(
+        "Nifty 500 in place of Nifty 100 (no point-in-time Nifty 100 membership held). No inverse-"
+        "volatility weighting (equal risk sizing). At most 10 positions, 8% stop, 1% risk-per-unit -- "
+        "program conventions, not in the methodology. Quarterly weight rebalance not reproduced."
+    ),
+    distinctiveness=(
+        "Total (not residual) volatility and a six-month hold: distinct construction from Idiosyncratic "
+        "Volatility (SW-012, INCONCLUSIVE, one-month hold). Same risk-based family as Betting Against "
+        "Beta (SW-009, REJECT) -- a close cousin, disclosed as such."
+    ),
+    assumptions_impact=(
+        "Nifty 500 universe: MODERATE, directionally unknown. Decile at 10th percentile: MINOR. Equal "
+        "sizing vs inverse-vol: MINOR. 126-day single-vintage hold: MINOR. 8% stop: MODERATE, "
+        "one-directional but least likely to bind on the calmest names. Warm-up: none on the rules."
+    ),
+)

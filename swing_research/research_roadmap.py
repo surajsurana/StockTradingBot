@@ -214,6 +214,7 @@ EXISTING_STRATEGY_TAGS = {
     "high_volume_return_premium": {"volume_attention"},
     "earnings_announcement_premium": {"earnings_drift", "seasonality_calendar"},
     "downside_beta": {"risk_based"},   # researched 2026-09-14
+    "nifty_low_volatility_30": {"risk_based"},   # researched 2026-09-14
 }
 
 # How much a given (research_verdict, deployment_status) combination

@@ -684,3 +684,34 @@ def compute_downside_beta_percentile_ranks(data: dict, market_close: pd.Series,
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+# Nifty100 Low Volatility 30 methodology: standard deviation of daily
+# log returns over the last one year, lowest = selected.
+REALIZED_VOL_LOOKBACK_DAYS = 252
+
+
+def compute_realized_volatility_score(price_history: pd.DataFrame,
+                                      lookback_days: int = REALIZED_VOL_LOOKBACK_DAYS) -> pd.Series:
+    """Rolling 1-year standard deviation of daily log returns, as of each
+    day's close (no lookahead). NaN until a full window exists."""
+    close = price_history["Close"]
+    r = np.log(close) - np.log(close.shift(1))
+    return r.rolling(lookback_days).std()
+
+
+def compute_realized_volatility_percentile_ranks(data: dict,
+                                                 lookback_days: int = REALIZED_VOL_LOOKBACK_DAYS) -> dict:
+    """{symbol: Series of realized_vol_percentile (0-100)} -- LOW percentile
+    = LOW volatility, the selected side (entry condition <= 10). Same
+    .rank(axis=1, pct=True) construction as every other signal here."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_realized_volatility_score(df.sort_index(), lookback_days)
+    if not scores:
+        return {}
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

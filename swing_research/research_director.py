@@ -1156,3 +1156,49 @@ def run_downside_beta_experiment(data: dict, start_date: date, end_date: date,
             "warm_up_days": warm_up_days,
         },
     )
+
+
+def run_realized_low_volatility_experiment(data: dict, start_date: date, end_date: date,
+                                           starting_capital: float = 1_000_000,
+                                           n_walk_forward_windows: int = 3,
+                                           narrative_api_key: str = "",
+                                           narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                           experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                           knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                           skip_regime_breakdown: bool = False,
+                                           warm_up_days: int = 365) -> str:
+    """Nifty100 Low Volatility 30 methodology as a strategy (2026-09-14):
+    percentile computed once on full history; the walk-forward judgement
+    starts warm_up_days after the data start (the downside_beta
+    convention) because the estimator needs a full year of returns."""
+    from datetime import timedelta
+    from swing_research.strategies.realized_low_volatility import (
+        RealizedLowVolatilityStrategy, HOLDING_PERIOD_DAYS, LOW_VOL_PERCENTILE_THRESHOLD, STOP_LOSS_PCT,
+    )
+    from swing_research.published_research_analyst import REALIZED_LOW_VOLATILITY
+    from swing_research.cross_sectional import (
+        REALIZED_VOL_LOOKBACK_DAYS, compute_realized_volatility_percentile_ranks,
+    )
+
+    percentiles = compute_realized_volatility_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("realized_vol_percentile") for symbol, series in percentiles.items()}
+    judged_start = start_date + timedelta(days=warm_up_days)
+    if judged_start >= end_date:
+        judged_start = start_date
+    strategy = RealizedLowVolatilityStrategy()
+    return run_generic_swing_experiment(
+        strategy, REALIZED_LOW_VOLATILITY, data, judged_start, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "low_vol_lookback_days": REALIZED_VOL_LOOKBACK_DAYS,
+            "low_vol_percentile_threshold": LOW_VOL_PERCENTILE_THRESHOLD,
+            "low_vol_side": "BOTTOM decile (lowest realized volatility)",
+            "low_vol_holding_period_trading_days": HOLDING_PERIOD_DAYS, "low_vol_stop_loss_pct": STOP_LOSS_PCT,
+            "low_vol_risk_pct_per_unit": strategy.risk_pct_per_unit, "low_vol_inverse_vol_weighting": False,
+            "data_start_with_warm_up": start_date.isoformat(), "walk_forward_judged_from": judged_start.isoformat(),
+            "warm_up_days": warm_up_days,
+        },
+    )
