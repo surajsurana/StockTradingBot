@@ -133,6 +133,15 @@ class TestEntry(_IsolatedStateTestCase):
         self.assertEqual(state["positions"]["SYM"]["quantity"], 50)    # not the 200 the risk formula wants
         self.assertAlmostEqual(state["cash"], 0.0)
 
+    def test_quantity_is_capped_at_a_quarter_of_the_book_per_name(self):
+        # 1% risk against a Rs.0.50 stop wants 2,000 shares x Rs.100 = the whole book; the cap allows 250
+        state = _base_state()
+        bars = _bars([(9, 15, 100, 101, 99, 100)])
+        process_tick(state, {"SYM": bars}, {"SYM": {}}, now=datetime.datetime(2026, 9, 7, 9, 20),
+                     strategy=_FixedEntryStrategy(entry_price=100.0, stop_loss=99.5, target=110.0))
+        self.assertEqual(state["positions"]["SYM"]["quantity"], 250)
+        self.assertAlmostEqual(state["cash"], CAPITAL - 250 * 100.0)
+
     def test_no_entry_when_no_cash_is_free(self):
         state = _base_state(cash=50.0)
         bars = _bars([(9, 15, 100, 101, 99, 100)])

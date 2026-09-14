@@ -3,7 +3,8 @@ The single Telegram message of the day -- see reporting/pool_summary.py.
 Cron, after every pool's end-of-day run has finished (Pool B's 15:50 is
 the last):
 
-    5 16 * * 1-5  cd .../StockTradingBot && venv/bin/python send_daily_pool_summary.py
+    5 16 * * *  cd .../StockTradingBot && venv/bin/python send_daily_pool_summary.py
+(daily since 2026-09-14 -- Saturdays and Sundays send the crypto-only Pool E message)
 
     python send_daily_pool_summary.py            # build + send
     python send_daily_pool_summary.py --print    # build + print only, no Telegram
@@ -16,7 +17,7 @@ from data.fetch_historical import fetch_all
 from deployment.base import DeploymentStatus, is_crypto_record
 from deployment.deployment_manager import list_strategies
 from deployment.settings import STATE_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from reporting.pool_summary import build_pool_summary, format_pool_summary
+from reporting.pool_summary import build_pool_summary, format_pool_summary, format_weekend_summary
 from reporting.telegram_notifier import send_telegram_message
 
 
@@ -57,7 +58,9 @@ def main():
               if r.deployment_status == DeploymentStatus.PAPER_TRADING and not is_crypto_record(r)}
     summary = build_pool_summary(STATE_DIR, active, _latest_prices,
                                  crypto_prices=_crypto_prices(), usdinr=fetch_usdinr_rate())
-    text = format_pool_summary(summary)
+    # Weekends (cron runs every day since 2026-09-14): only Pool E trades, so send the crypto-only message.
+    from datetime import date
+    text = format_weekend_summary(summary) if date.today().weekday() >= 5 else format_pool_summary(summary)
     if args.print:
         print(text)
         return

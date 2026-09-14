@@ -11,7 +11,8 @@ Book mechanics:
 - Sizing: risk_per_share from the signal's own stop, quantity =
   (starting_capital x RISK_PER_TRADE_PCT) / risk_per_share -- the same
   formula as the research engine, but on the shared book's capital --
-  then CAPPED by the cash actually free (a Rs.1,00,000 book cannot
+  then CAPPED by the cash actually free and, since 2026-09-14, by
+  MAX_POSITION_PCT_OF_CAPITAL of the book per name (a Rs.1,00,000 book cannot
   hold ten Rs.20,000 positions at once; the backtest's per-symbol books
   never had this constraint, which is the one behavioural difference
   and it is disclosed here).
@@ -36,6 +37,9 @@ from research_lab.strategies.vwap_extension_exhaustion_fade import VwapExtension
 from pool_d.state import append_trade
 
 RISK_PER_TRADE_PCT = 0.01
+MAX_POSITION_PCT_OF_CAPITAL = 0.25   # added 2026-09-14: no single name may take more than a quarter of the
+                                     # book (a 1% risk against a very tight stop used to size one trade to
+                                     # the whole Rs.1,00,000 -- the ETERNAL case, 2026-09-10)
 RISK_PARAMS = RiskParameters()   # defaults: max_trades_per_day=3, daily_loss_limit_pct=0.02 -- matches EXP-008
 FORCE_SQUARE_OFF_HOUR = 15.42    # 15:25 -- a few minutes' buffer before the real 15:30 close,
                                   # same spirit as run_daily.py's own "buffer for the data provider" caveats
@@ -141,7 +145,8 @@ def process_tick(state: dict, todays_bars_by_symbol: dict, context_by_symbol: di
             continue
         quantity = int((capital * RISK_PER_TRADE_PCT) / risk_per_share)
         affordable = int(state["cash"] // signal.entry_price) if signal.entry_price > 0 else 0
-        quantity = min(quantity, affordable)
+        position_cap = int((capital * MAX_POSITION_PCT_OF_CAPITAL) // signal.entry_price) if signal.entry_price > 0 else 0
+        quantity = min(quantity, affordable, position_cap)
         if quantity <= 0:
             continue
 

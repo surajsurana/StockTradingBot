@@ -113,6 +113,17 @@ class TestPoolEInSummary(unittest.TestCase):
             self.assertIn(needle, text)
         self.assertNotIn("_", text)
 
+    def test_weekend_message_is_pool_e_only(self):
+        from reporting.pool_summary import format_weekend_summary
+        s = build_pool_summary(_tree(), {}, lambda symbols: {}, today=date(2026, 9, 13),   # a Sunday
+                               crypto_prices={"BTC": 84000.0}, usdinr=100.0)
+        text = format_weekend_summary(s)
+        self.assertIn("*Paper Trading -- Sun 13 Sep 2026 (weekend: crypto only)*", text)
+        self.assertIn("*Pool E (crypto, USDT; Rs. at 100.0/USD)*", text)
+        self.assertIn("full summary on Monday", text)
+        self.assertNotIn("*Pool A*", text)
+        self.assertNotIn("_", text)
+
     def test_usdt_formatter(self):
         self.assertEqual(usdt(1234.5), "1,234.50 USDT")
         self.assertEqual(usdt(-3.6, True), "-3.60 USDT")

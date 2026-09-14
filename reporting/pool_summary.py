@@ -228,3 +228,16 @@ def format_pool_summary(summary: dict) -> str:
     if missing:
         lines += ["", "Not updated today: " + ", ".join(m.replace("_", " ") for m in missing)]
     return "\n".join(lines)
+
+
+def format_weekend_summary(summary: dict) -> str:
+    """Saturday/Sunday message (added 2026-09-14): only Pool E trades at the
+    weekend, so the message carries just the crypto block -- the equity
+    pools' books are unchanged since Friday and get their full summary
+    on Monday. Same Markdown rules as format_pool_summary()."""
+    from reporting.pool_e import format_pool_e_block
+    day = date.fromisoformat(summary["as_of"]).strftime("%a %d %b %Y")
+    lines = [f"*Paper Trading -- {day} (weekend: crypto only)*", ""]
+    lines += format_pool_e_block(summary.get("pool_e") or {"exists": False})
+    lines += ["Equity pools (A, B, C, D) are closed at the weekend -- full summary on Monday."]
+    return "\n".join(lines)
