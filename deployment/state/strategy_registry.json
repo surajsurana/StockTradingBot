@@ -420,5 +420,19 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-020",
     "primary_experiment_id": "EXP-084"
+  },
+  "crypto_tsmom": {
+    "strategy_key": "crypto_tsmom",
+    "display_name": "Crypto Time-Series Momentum 12m (MOP 2012, crypto lane)",
+    "strategy_family": "crypto research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-085 (post-tax; weaker twin of SW-020, not promoted)",
+    "deployment_status": "RESEARCH",
+    "deployment_status_history": [],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-021",
+    "primary_experiment_id": "EXP-085"
   }
 }
