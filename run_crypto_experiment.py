@@ -4,7 +4,7 @@ run_swing_experiment.py, but fetching Binance daily candles for the
 crypto universe instead of Nifty 500 data, and judging every strategy
 NET of Indian crypto tax (see swing_research/crypto_lane.py).
 
-    python run_crypto_experiment.py --strategy=crypto_xs_momentum [--years=5] [--limit=N] [--windows=3]
+    python run_crypto_experiment.py --strategy=crypto_trend_timing [--years=8] [--symbols=BTC,ETH] [--windows=3]
 """
 
 import argparse
@@ -16,26 +16,34 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from config import settings
-from data.fetch_crypto import CRYPTO_UNIVERSE, fetch_all_crypto_daily, fetch_usdinr_rate
+from data.fetch_crypto import CRYPTO_MAJORS, CRYPTO_UNIVERSE, fetch_all_crypto_daily, fetch_usdinr_rate
 
+def _lane():
+    return __import__("swing_research.crypto_lane", fromlist=["x"])
+
+
+# strategy -> (runner, default symbols, default years of history)
 RUNNERS = {
-    "crypto_xs_momentum": lambda: __import__(
-        "swing_research.crypto_lane", fromlist=["run_crypto_xs_momentum_experiment"]
-    ).run_crypto_xs_momentum_experiment,
+    "crypto_xs_momentum": (lambda: _lane().run_crypto_xs_momentum_experiment, CRYPTO_UNIVERSE, 5),
+    "crypto_trend_timing": (lambda: _lane().run_crypto_trend_timing_experiment, CRYPTO_MAJORS, 9),
 }
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", choices=list(RUNNERS), default="crypto_xs_momentum")
-    parser.add_argument("--years", type=float, default=5)
-    parser.add_argument("--limit", type=int, default=0, help="0 = the full crypto universe")
+    parser.add_argument("--years", type=float, default=0, help="0 = the strategy's default history length")
+    parser.add_argument("--limit", type=int, default=0, help="0 = the strategy's full default universe")
+    parser.add_argument("--symbols", default="", help="comma-separated override, e.g. BTC,ETH")
     parser.add_argument("--windows", type=int, default=3)
     args = parser.parse_args()
 
-    symbols = CRYPTO_UNIVERSE[:args.limit] if args.limit else CRYPTO_UNIVERSE
-    print(f"Fetching {args.years}y of daily candles for {len(symbols)} coin(s) from Binance...")
-    data = fetch_all_crypto_daily(symbols, years=args.years)
+    runner_fn, default_symbols, default_years = RUNNERS[args.strategy]
+    years = args.years or default_years
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()] or default_symbols
+    symbols = symbols[:args.limit] if args.limit else symbols
+    print(f"Fetching {years}y of daily candles for {len(symbols)} coin(s) from Binance...")
+    data = fetch_all_crypto_daily(symbols, years=years)
     if not data:
         print("No data fetched -- aborting.")
         sys.exit(1)
@@ -43,7 +51,7 @@ def main():
     end_date = max(df.index.date.max() for df in data.values())
     print(f"Data for {len(data)} coin(s); backtest period {start_date} to {end_date} (book in USDT)")
 
-    exp_id = RUNNERS[args.strategy]()(data=data, start_date=start_date, end_date=end_date,
+    exp_id = runner_fn()(data=data, start_date=start_date, end_date=end_date,
                                        n_walk_forward_windows=args.windows,
                                        narrative_api_key=settings.ANTHROPIC_API_KEY)
 

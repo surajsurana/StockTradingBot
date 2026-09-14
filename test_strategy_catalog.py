@@ -26,7 +26,7 @@ import unittest
 from swing_research.base import Strategy
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS, RESEARCH_EXPERIMENT_SPECS
 
-from deployment.base import DeploymentStatus
+from deployment.base import DeploymentStatus, is_crypto_record
 from deployment.deployment_manager import list_strategies
 
 # PEAD is deliberately absent from PAPER_TRADING_STRATEGY_SPECS (event-
@@ -118,8 +118,8 @@ class TestLiveRegistryStrategiesHaveCatalogWiring(unittest.TestCase):
 
         missing = []
         for record in list_strategies():
-            if record.strategy_key in _EXCLUDED_FROM_CATALOG_SAFEGUARD:
-                continue
+            if record.strategy_key in _EXCLUDED_FROM_CATALOG_SAFEGUARD or is_crypto_record(record):
+                continue   # crypto strategies (Pool F) are wired in run_pool_f.py, not the Pool A catalog
             if record.deployment_status in active_statuses and record.strategy_key not in catalog_keys:
                 missing.append((record.strategy_key, record.deployment_status.value))
 

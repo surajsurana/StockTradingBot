@@ -11,8 +11,9 @@ the last):
 
 import argparse
 
+from data.fetch_crypto import fetch_crypto_last_prices, fetch_usdinr_rate
 from data.fetch_historical import fetch_all
-from deployment.base import DeploymentStatus
+from deployment.base import DeploymentStatus, is_crypto_record
 from deployment.deployment_manager import list_strategies
 from deployment.settings import STATE_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from reporting.pool_summary import build_pool_summary, format_pool_summary
@@ -29,14 +30,33 @@ def _latest_prices(symbols: list) -> dict:
     return prices
 
 
+def _crypto_prices() -> dict:
+    """Binance last prices for every coin a Pool F book holds; {} on any failure."""
+    import glob
+    import json
+    import os
+    held = set()
+    for path in glob.glob(os.path.join(STATE_DIR, "pool_f", "*", "portfolio.json")):
+        with open(path, encoding="utf-8") as f:
+            held |= set((json.load(f).get("positions") or {}).keys())
+    if not held:
+        return {}
+    try:
+        return fetch_crypto_last_prices(sorted(held))
+    except Exception as e:
+        print(f"WARNING: crypto prices unavailable ({e}); Pool F unbooked shown at entry prices")
+        return {}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--print", action="store_true", help="Print the message instead of sending it")
     args = parser.parse_args()
 
     active = {r.strategy_key: r.display_name for r in list_strategies()
-              if r.deployment_status == DeploymentStatus.PAPER_TRADING}
-    summary = build_pool_summary(STATE_DIR, active, _latest_prices)
+              if r.deployment_status == DeploymentStatus.PAPER_TRADING and not is_crypto_record(r)}
+    summary = build_pool_summary(STATE_DIR, active, _latest_prices,
+                                 crypto_prices=_crypto_prices(), usdinr=fetch_usdinr_rate())
     text = format_pool_summary(summary)
     if args.print:
         print(text)

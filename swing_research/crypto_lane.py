@@ -128,25 +128,19 @@ def _augment_experiment_with_pre_tax(exp_id: str, experiments_dir: str, data: di
         json.dump(metrics, f, indent=2, default=str)
 
 
-def run_crypto_xs_momentum_experiment(data: dict, start_date: date, end_date: date,
-                                      starting_capital: float = CRYPTO_STARTING_CAPITAL_USDT,
-                                      n_walk_forward_windows: int = 3, narrative_api_key: str = "",
-                                      narrative_call_fn: Optional[Callable[[str], str]] = None,
-                                      experiments_dir: str = SWING_EXPERIMENTS_DIR,
-                                      knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
-                                      skip_regime_breakdown: bool = True,
-                                      cost_model: CryptoCostModel = CryptoCostModel(),
-                                      tax_rate: float = INDIA_VDA_TAX_RATE) -> str:
-    from swing_research.strategies.crypto_xs_momentum import (
-        CryptoCrossSectionalMomentumStrategy, HOLDING_DAYS, STOP_LOSS_PCT, TOP_QUINTILE_PERCENTILE,
-    )
-    from swing_research.published_research_analyst import CRYPTO_XS_MOMENTUM
-    from swing_research.cross_sectional import CRYPTO_MOMENTUM_LOOKBACK_DAYS, compute_crypto_momentum_percentile_ranks
-
-    ranks = compute_crypto_momentum_percentile_ranks(data)
-    extra_columns = {symbol: series.rename("crypto_momentum_percentile") for symbol, series in ranks.items()}
-    strategy = CryptoCrossSectionalMomentumStrategy()
-
+def run_crypto_experiment_generic(strategy: Strategy, published, data: dict, start_date: date, end_date: date,
+                                  starting_capital: float = CRYPTO_STARTING_CAPITAL_USDT,
+                                  n_walk_forward_windows: int = 3, extra_columns_by_symbol: Optional[dict] = None,
+                                  extra_parameters: Optional[dict] = None, narrative_api_key: str = "",
+                                  narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                  experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                  knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                  skip_regime_breakdown: bool = True,
+                                  cost_model: CryptoCostModel = CryptoCostModel(),
+                                  tax_rate: float = INDIA_VDA_TAX_RATE) -> str:
+    """One crypto experiment for ANY Strategy: the generic swing pipeline
+    with the post-tax walk-forward, the post-tax full-period adjuster,
+    365-day annualisation, and the pre-tax/tax-ledger/BTC augmentation."""
     holder = {}
 
     def walk_forward_fn(*args, **kwargs):
@@ -159,23 +153,59 @@ def run_crypto_xs_momentum_experiment(data: dict, start_date: date, end_date: da
         return apply_india_tax(trades, cost_model, tax_rate)
 
     exp_id = run_generic_swing_experiment(
-        strategy, CRYPTO_XS_MOMENTUM, data, start_date, end_date, starting_capital, n_walk_forward_windows,
-        extra_columns_by_symbol=extra_columns, narrative_api_key=narrative_api_key,
+        strategy, published, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        extra_columns_by_symbol=extra_columns_by_symbol, narrative_api_key=narrative_api_key,
         narrative_call_fn=narrative_call_fn, experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
         skip_regime_breakdown=skip_regime_breakdown, annualization_days=CRYPTO_ANNUALIZATION_DAYS,
-        walk_forward_fn=walk_forward_fn,
-        full_period_trade_adjuster=full_period_trade_adjuster,
+        walk_forward_fn=walk_forward_fn, full_period_trade_adjuster=full_period_trade_adjuster,
         extra_parameters={
             "universe_version": "crypto-usdt-2026-09-13", "universe_symbol_count": len(data),
-            "book_currency": "USDT", "crypto_momentum_lookback_days": CRYPTO_MOMENTUM_LOOKBACK_DAYS,
-            "crypto_top_quintile_percentile": TOP_QUINTILE_PERCENTILE, "crypto_holding_days": HOLDING_DAYS,
-            "crypto_rebalance_weekday": "Monday (UTC)", "crypto_stop_loss_pct": STOP_LOSS_PCT,
+            "universe_symbols": sorted(data), "book_currency": "USDT",
             "crypto_risk_pct_per_unit": strategy.risk_pct_per_unit, "crypto_long_only": True,
             "crypto_cost_model": cost_model.describe(),
             "india_vda_tax_rate_per_profitable_trade": tax_rate, "india_vda_loss_offset": False,
             "india_vda_fees_deductible": False, "india_vda_tds_rate_on_sales": 0.01,
             "verdict_basis": "POST-TAX trades (fees + spread + 31.2% per profitable trade)",
+            **(extra_parameters or {}),
         },
     )
     _augment_experiment_with_pre_tax(exp_id, experiments_dir, data, starting_capital, cost_model, tax_rate, holder)
     return exp_id
+
+
+def run_crypto_xs_momentum_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    from swing_research.strategies.crypto_xs_momentum import (
+        CryptoCrossSectionalMomentumStrategy, HOLDING_DAYS, STOP_LOSS_PCT, TOP_QUINTILE_PERCENTILE,
+    )
+    from swing_research.published_research_analyst import CRYPTO_XS_MOMENTUM
+    from swing_research.cross_sectional import CRYPTO_MOMENTUM_LOOKBACK_DAYS, compute_crypto_momentum_percentile_ranks
+
+    ranks = compute_crypto_momentum_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("crypto_momentum_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoCrossSectionalMomentumStrategy(), CRYPTO_XS_MOMENTUM, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_momentum_lookback_days": CRYPTO_MOMENTUM_LOOKBACK_DAYS,
+                          "crypto_top_quintile_percentile": TOP_QUINTILE_PERCENTILE, "crypto_holding_days": HOLDING_DAYS,
+                          "crypto_rebalance_weekday": "Monday (UTC)", "crypto_stop_loss_pct": STOP_LOSS_PCT},
+        **kwargs,
+    )
+
+
+def run_crypto_trend_timing_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Faber's 10-month SMA rule on the majors (EXP-083 candidate, 2026-09-13)."""
+    from swing_research.strategies.crypto_trend_timing import (
+        CryptoTrendTimingStrategy, SMA_MONTHS, STOP_LOSS_PCT, compute_month_end_sma,
+    )
+    from swing_research.published_research_analyst import CRYPTO_TREND_TIMING
+
+    # Warm-up: the 10-month SMA from FULL history, windowed by date later,
+    # so no walk-forward window starts ten months blind (post-EXP-083).
+    extra_columns = {symbol: compute_month_end_sma(df)[["sma_month_end"]] for symbol, df in data.items()}
+    return run_crypto_experiment_generic(
+        CryptoTrendTimingStrategy(), CRYPTO_TREND_TIMING, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_sma_months": SMA_MONTHS, "crypto_rebalance": "last UTC calendar day of each month",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_sma_warm_up_from_full_history": True},
+        **kwargs,
+    )

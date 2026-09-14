@@ -230,5 +230,79 @@ class TestWalkForwardCrypto(unittest.TestCase):
             self.assertEqual(post["total_trades"], pre["total_trades"])
 
 
+class TestTrendTimingRules(unittest.TestCase):
+    """Faber's 10-month SMA rule: month-end-only decisions, SMA of month-end
+    closes, entry above / exit below, 20% stop, 20% sleeve sizing."""
+
+    def _year(self, monthly_closes, start=date(2025, 1, 1)):
+        # daily data whose month-end closes are exactly monthly_closes (flat within the month)
+        closes, d = [], start
+        i = 0
+        while i < len(monthly_closes):
+            closes.append(monthly_closes[i])
+            nxt = d + timedelta(days=1)
+            if nxt.month != d.month:
+                i += 1
+            d = nxt
+        return _daily(closes, start=start)
+
+    def test_sma_is_of_month_end_closes_and_flags_month_ends(self):
+        from swing_research.strategies.crypto_trend_timing import compute_month_end_sma
+        df = compute_month_end_sma(self._year([float(m) for m in range(1, 13)]))
+        me = df[df["is_month_end"]]
+        self.assertEqual(len(me), 12)
+        self.assertEqual([d.day for d in me.index[:3]], [31, 28, 31])
+        self.assertTrue(np.isnan(me["sma_month_end"].iloc[8]))          # only 9 month-ends so far
+        self.assertAlmostEqual(me["sma_month_end"].iloc[9], 5.5)         # mean of 1..10
+        self.assertAlmostEqual(me["sma_month_end"].iloc[11], 7.5)        # mean of 3..12
+        self.assertTrue(df.loc[~df["is_month_end"], "sma_month_end"].isna().all())
+
+    def test_trailing_partial_month_is_not_a_month_end_and_warm_up_column_is_kept(self):
+        from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy, compute_month_end_sma
+        full = self._year([float(m) for m in range(1, 13)])
+        self.assertFalse(compute_month_end_sma(full.iloc[:-5])["is_month_end"].iloc[-1])   # 26 Dec: not flagged
+        warm = compute_month_end_sma(full)[["sma_month_end"]]
+        window = full.loc["2025-11-01":].join(warm.loc["2025-11-01":])    # a window with only 2 month-ends
+        pre = CryptoTrendTimingStrategy().precompute(window)
+        me = pre[pre["is_month_end"]]
+        self.assertAlmostEqual(me["sma_month_end"].iloc[0], 6.5)          # mean of 2..11 from full history
+        self.assertAlmostEqual(me["sma_month_end"].iloc[1], 7.5)
+        cold = CryptoTrendTimingStrategy().precompute(full.loc["2025-11-01":])
+        self.assertTrue(cold.loc[cold["is_month_end"], "sma_month_end"].isna().all())   # without warm-up: blind
+
+    def test_entry_above_sma_exit_below_only_at_month_end(self):
+        from swing_research.base import OpenPosition, PositionUnit
+        from swing_research.strategies.crypto_trend_timing import STOP_LOSS_PCT, CryptoTrendTimingStrategy
+        strategy = CryptoTrendTimingStrategy()
+        closes = [100.0] * 10 + [120.0, 80.0]     # Nov above the SMA (~102), Dec below (~100)
+        df = strategy.precompute(self._year(closes))
+        rows = list(df.itertuples())
+        month_end_rows = [r for r in rows if r.is_month_end]
+        nov, dec = month_end_rows[10], month_end_rows[11]
+        sig = strategy.entry_signal_at(nov)
+        self.assertIsNotNone(sig)
+        self.assertAlmostEqual(sig.stop_loss, 120.0 * (1 - STOP_LOSS_PCT))
+        self.assertIsNone(strategy.entry_signal_at(dec))
+        pos = OpenPosition(symbol="X", direction="BUY",
+                           units=[PositionUnit(entry_price=120.0, entry_date=nov.Index.date(), quantity=0.1)])
+        self.assertIsNone(strategy.exit_signal_at(nov, pos))
+        self.assertEqual(strategy.exit_signal_at(dec, pos), 80.0)
+        for r in rows:
+            if not r.is_month_end:
+                self.assertIsNone(strategy.entry_signal_at(r))
+                self.assertIsNone(strategy.exit_signal_at(r, pos))
+
+    def test_sizing_is_a_twenty_percent_sleeve(self):
+        from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy
+        strategy = CryptoTrendTimingStrategy()
+        closes = [100.0] * 10 + [120.0] * 3
+        data = {"BTC": self._year(closes)}
+        result = simulate_portfolio(data, strategy, 1_000.0, sector_map={})
+        self.assertEqual(len(result["trades"]), 1)
+        t = result["trades"][0]
+        self.assertAlmostEqual(t.entry_price * t.quantity, 200.0, places=2)   # 4% risk / 20% stop = 20% of book
+        self.assertTrue(strategy.fractional_quantities)
+
+
 if __name__ == "__main__":
     unittest.main()

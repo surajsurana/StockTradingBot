@@ -2,7 +2,8 @@
 The one Telegram message of the day (added 2026-09-10, per explicit
 direction): capital deployed, cash, unrealised and realised P&L for every
 paper-trading pool -- A (active Rs.1,00,000 swing books), A1 (the legacy
-Rs.10,00,000 books winding down), B, C and D -- read straight from each
+Rs.10,00,000 books winding down), B, C, D and F (crypto, USDT, shown pre-
+and post-tax via reporting/pool_f.py) -- read straight from each
 pool's own state files under deployment/state/. Replaces the per-strategy
 fill alerts, the per-pool daily messages and Pool A's own end-of-day
 summary (all gated off by deployment.settings.TELEGRAM_SINGLE_DAILY_SUMMARY).
@@ -100,13 +101,20 @@ def _pool_totals(books: list) -> dict:
 
 
 def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[list], dict],
-                       today: Optional[date] = None) -> dict:
+                       today: Optional[date] = None, crypto_prices: Optional[dict] = None,
+                       usdinr: Optional[float] = None) -> dict:
     """
     active_pool_a: {strategy_key: display_name} of the registry's
     PAPER_TRADING strategies (the caller reads the registry; this stays
     filesystem-only). price_fn(symbols) -> {symbol: latest price}.
+    crypto_prices: {"BTC": last USDT price, ...} for Pool F's open coins;
+    usdinr: the rupee rate Pool F is converted at (None -> the fetcher's
+    default), so the caller decides whether to hit the network.
     """
+    from data.fetch_crypto import DEFAULT_USDINR
+    from reporting.pool_f import build_pool_f
     today = today or date.today()
+    pool_f = build_pool_f(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
     prices = price_fn(sorted(_held_symbols(state_dir))) if callable(price_fn) else {}
 
     pool_a = [_book(os.path.join(state_dir, POOL_A_DIRNAME, key), key, name, today, prices)
@@ -141,15 +149,20 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     # "All pools" deliberately EXCLUDES A1 (per explicit direction, 2026-09-10:
     # the legacy books are winding down and are not part of the live picture).
     counted = [pools["A"], pools["B"], pools["C"]]
+    # Pool F enters the totals in rupees, POST-TAX (fees and India's VDA tax
+    # taken out), at the usdinr rate -- the only figure an Indian resident
+    # would actually keep. Its own block shows the pre-tax side too.
+    f = pool_f["inr"]
     overall = {
-        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"], 2),
-        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"], 2),
-        "unrealised": round(sum(p["unrealised"] for p in counted), 2),
-        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"], 2),
-        "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"], 2),
-        "positions": sum(p["positions"] for p in counted),
+        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"] + f["deployed"], 2),
+        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"] + f["cash"], 2),
+        "unrealised": round(sum(p["unrealised"] for p in counted) + f["unbooked"]["post_tax"], 2),
+        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"] + f["booked"]["post_tax"], 2),
+        "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"]
+                                + f["booked_today"]["post_tax"], 2),
+        "positions": sum(p["positions"] for p in counted) + pool_f["usdt"]["positions"],
     }
-    return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "overall": overall,
+    return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "pool_f": pool_f, "overall": overall,
             "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c}}
 
 
@@ -199,7 +212,11 @@ def format_pool_summary(summary: dict) -> str:
         f"Deployed {inr(d['deployed'])} | Cash {inr(d['cash'])}",
         f"Realised {inr(d['realised'], signed=True)} (today {inr(d['realised_today'], signed=True)})",
         "",
-        f"*All pools (A, B, C, D -- A1 not counted)* -- {o['positions']} positions",
+    ]
+    from reporting.pool_f import format_pool_f_block
+    lines += format_pool_f_block(summary.get("pool_f") or {"exists": False})
+    lines += [
+        f"*All pools (A, B, C, D, F post-tax -- A1 not counted)* -- {o['positions']} positions",
         f"Deployed {inr(o['deployed'])} | Cash {inr(o['cash'])}",
         f"Unrealised {inr(o['unrealised'], signed=True)} | Realised {inr(o['realised'], signed=True)} "
         f"(today {inr(o['realised_today'], signed=True)})",
@@ -207,6 +224,7 @@ def format_pool_summary(summary: dict) -> str:
     missing = a["not_updated"] + a1["not_updated"] + pools["B"]["not_updated"] + pools["C"]["not_updated"]
     if not d["updated_today"]:
         missing.append("Pool D")
+    missing += (summary.get("pool_f") or {}).get("not_updated", [])
     if missing:
         lines += ["", "Not updated today: " + ", ".join(m.replace("_", " ") for m in missing)]
     return "\n".join(lines)

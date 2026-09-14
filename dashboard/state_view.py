@@ -15,13 +15,14 @@ import os
 from datetime import date, datetime, time as dtime
 from typing import Callable, Optional
 
+from deployment.base import is_crypto_record
 from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_summary  # noqa: F401
 
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
 # dashboard, per explicit direction 2026-09-11 -- it stays in the daily
 # Telegram summary only.
 POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c"}
-POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D"}
+POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "F": "Pool F"}
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -142,6 +143,7 @@ FLOWS = {
 
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
+    {"id": "pool_f", "label": "Pool F crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_f.log"},
     {"id": "prep", "label": "Pool D prepare", "at": "09:00", "log": "pool_d.log"},
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
     {"id": "open", "label": "Fill-at-open passes (A, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
@@ -231,13 +233,15 @@ def roadmap_view(roadmap: dict, registry_records: list) -> dict:
 
 def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list, prices: dict,
                           prices_as_of: Optional[str], now: Optional[datetime] = None,
-                          roadmap: Optional[dict] = None, mode: str = "paper") -> dict:
+                          roadmap: Optional[dict] = None, mode: str = "paper",
+                          crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
-              if str(getattr(r.deployment_status, "value", r.deployment_status)).endswith("PAPER_TRADING")}
+              if str(getattr(r.deployment_status, "value", r.deployment_status)).endswith("PAPER_TRADING")
+              and not is_crypto_record(r)}
     summary = build_pool_summary(state_dir, active, lambda symbols: {s: prices[s] for s in symbols if s in prices},
-                                 today=today)
+                                 today=today, crypto_prices=crypto_prices, usdinr=usdinr)
 
     books = []
     for pool, dirname in POOL_DIRS.items():
@@ -294,20 +298,28 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     pool_d = _with_capital(pool_d)
     for b in books:
         _with_capital(b)
+    pool_f = summary["pool_f"]
+    for r in registry_records:
+        if is_crypto_record(r):
+            for b in pool_f["books"]:
+                if b["key"] == r.strategy_key:
+                    b["sid"] = getattr(r, "strategy_id", "")
     overall = dict(summary["overall"])
-    overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"], 2)
+    overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
+                               + pool_f["inr"]["capital"], 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
-        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d,
-        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today),
+        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_f": pool_f,
+        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today, pool_f),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 
 
-def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date) -> list:
+def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
+                    pool_f: Optional[dict] = None) -> list:
     """Every buy and sell that happened today across Pools A, B, C and D
     as one time-sorted list. Swing books fill at the open (09:30) so
     their entries/exits carry that clock time; Pool D carries its own
@@ -354,5 +366,22 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
         r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
+    # Pool F: the UTC daily close is 05:30 IST; prices in USDT, amounts in rupees.
+    rate = float((pool_f or {}).get("usdinr") or 0)
+    for b in (pool_f or {}).get("books", []):
+        for p in b["open_positions"]:
+            if p.get("entry_date") == today_iso:
+                rows.append({"time": "05:30", "action": "BUY", "symbol": p["symbol"], "qty": p["quantity"],
+                             "price": round(p["entry_price"], 2), "pool": "Pool F", "book": b["display_name"],
+                             "pnl": None, "note": "entry (USDT)", "kind": "Crypto",
+                             "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
+        for t in b["recent_trades"]:
+            if t.get("exit_date") == today_iso:
+                qty = float(t.get("quantity", 0) or 0)
+                rows.append({"time": "05:30", "action": "SELL", "symbol": t.get("symbol"), "qty": qty,
+                             "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool F",
+                             "book": b["display_name"], "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
+                             "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
+                             "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
     rows.sort(key=lambda r: (r["time"] or "99:99", r["symbol"] or ""))
     return rows

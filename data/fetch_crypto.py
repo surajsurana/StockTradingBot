@@ -28,6 +28,9 @@ DEFAULT_USDINR = 95.0
 # Large, liquid USDT spot pairs -- no stablecoins, no leveraged tokens.
 # Order is by rough market-cap rank on 2026-09-13; symbols Binance does
 # not list (or delists later) are skipped at fetch time, not an error.
+# The five largest coins -- the "asset classes" a time-series rule times.
+CRYPTO_MAJORS = ["BTC", "ETH", "BNB", "XRP", "SOL"]
+
 CRYPTO_UNIVERSE = [
     "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK",
     "LTC", "BCH", "TRX", "ATOM", "UNI", "XLM", "ETC", "NEAR", "APT", "ARB",

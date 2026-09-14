@@ -57,43 +57,69 @@ def _tree():
             # a record written before fills were time-stamped: both legs must still appear
             {"symbol": "OLDREC", "pnl": 40.0, "exit_date": "2026-09-10", "direction": "BUY", "entry_price": 10,
              "exit_price": 10.4, "quantity": 100, "reason": "target"}], jsonl=True)
+    _write(os.path.join(state, "pool_f", "crypto_trend_timing", "portfolio.json"), {
+        "cash": 800.0, "starting_capital": 1000.0, "last_processed_date": "2026-09-10",
+        "positions": {"BTC": {"entry_price": 80000.0, "quantity": 0.0025, "stop_loss": 64000.0,
+                              "entry_date": "2026-09-10"}},
+    })
     os.makedirs(logs, exist_ok=True)
     with open(os.path.join(logs, "paper_trading.log"), "w", encoding="utf-8") as f:
         f.write("[alpha] processed\n")
     return state, logs
 
 
-def _record(key, name, sid, status="DeploymentStatus.PAPER_TRADING", verdict="ResearchVerdict.PASS"):
+def _record(key, name, sid, status="DeploymentStatus.PAPER_TRADING", verdict="ResearchVerdict.PASS",
+            family="swing"):
     return SimpleNamespace(strategy_key=key, display_name=name, strategy_id=sid, deployment_status=status,
-                           research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family="swing")
+                           research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family=family)
 
 
 class TestBuildDashboardState(unittest.TestCase):
     def setUp(self):
         self.state_dir, self.logs_dir = _tree()
         self.records = [_record("alpha", "Alpha", "SW-001"),
-                        _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT")]
+                        _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT"),
+                        _record("crypto_trend_timing", "Crypto Trend Timing", "SW-020",
+                                family="crypto research published strategy")]
         self.now = datetime(2026, 9, 10, 11, 0)
         self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0, "LT": 3890.0},
-                                       "2026-09-10T10:55", now=self.now)
+                                       "2026-09-10T10:55", now=self.now, crypto_prices={"BTC": 84000.0}, usdinr=100.0)
+
+    def test_pool_f_is_its_own_pool_not_a_pool_a_book(self):
+        self.assertNotIn("crypto_trend_timing", [b["key"] for b in self.s["books"]])
+        f = self.s["pool_f"]
+        self.assertTrue(f["exists"])
+        self.assertEqual(f["books"][0]["sid"], "SW-020")
+        self.assertAlmostEqual(f["usdt"]["unbooked"]["raw"], 10.0)
+        self.assertAlmostEqual(f["usdt"]["unbooked"]["post_tax"], 5.24)
+        self.assertAlmostEqual(f["inr"]["unbooked"]["post_tax"], 524.0)
+        self.assertAlmostEqual(self.s["overall"]["capital"],
+                               91000 + 100000 + 100000 + self.s["pool_d"]["capital"] + 100000.0)   # + F: 1,000 USDT x 100
+        self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0 + 524.0)
+        buys = [r for r in self.s["activity_today"] if r["pool"] == "Pool F"]
+        self.assertEqual(len(buys), 1)
+        self.assertEqual((buys[0]["kind"], buys[0]["time"], buys[0]["symbol"]), ("Crypto", "05:30", "BTC"))
+        self.assertAlmostEqual(buys[0]["amount"], 20000.0)
+        self.assertIn("pool_f", [j["id"] for j in self.s["schedule"]])
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
         self.assertEqual({b["pool"] for b in self.s["books"]}, {"A", "B", "C"})
         self.assertNotIn("A1", self.s["pools"])
-        self.assertEqual(self.s["overall"]["positions"], 1)   # the legacy L.NS position is not counted
+        self.assertEqual(self.s["overall"]["positions"], 2)   # X.NS + Pool F's BTC; the legacy L.NS position is not counted
 
     def test_activity_today_is_one_time_sorted_list_across_pools(self):
         acts = self.s["activity_today"]
         self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
-                         [("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
+                         [("05:30", "BUY", "BTC"), ("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
                           ("", "BUY", "OLDREC"), ("", "SELL", "OLDREC")])   # unstamped legs listed, sorted last
-        self.assertEqual(acts[1]["pnl"], -500.0)
-        self.assertEqual(acts[1]["note"], "stop loss")
-        self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
-        self.assertEqual(acts[4]["pnl"], 40.0)
-        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts))
+        self.assertEqual(acts[2]["pnl"], -500.0)
+        self.assertEqual(acts[2]["note"], "stop loss")
+        self.assertAlmostEqual(acts[3]["amount"], 3900.0 * 5)
+        self.assertEqual(acts[5]["pnl"], 40.0)
+        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:]))
+        self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool F", "Crypto"))
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 
@@ -102,7 +128,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(a["capital"], 40000 + 50000 - (-1000))       # 91,000 (a 9k wind-down would show here)
         self.assertAlmostEqual(self.s["pool_d"]["capital"], 99500 + 3900 * 5 - (-500 + 40))
         self.assertAlmostEqual(self.s["overall"]["capital"],
-                               91000 + 100000 + 100000 + self.s["pool_d"]["capital"])
+                               91000 + 100000 + 100000 + self.s["pool_d"]["capital"] + 100000.0)
         self.assertEqual(self.s["mode"], "paper")
 
     def test_roadmap_view_drops_candidates_already_in_the_registry(self):
@@ -137,7 +163,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(d["open_positions"][0]["unbooked"], (3890.0 - 3900.0) * 5)   # long, price down
         self.assertTrue(d["open_positions"][0]["priced"])
         self.assertAlmostEqual(d["unrealised"], -50.0)
-        self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0)   # X.NS gain + LT loss
+        self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0 + 524.0)   # X.NS gain + LT loss + BTC post-tax
         self.assertEqual(len(d["todays_trades"]), 2)
         self.assertAlmostEqual(d["realised_today"], -500.0)
         self.assertEqual(d["symbols_with_context"], 2)
@@ -148,7 +174,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(sched["eod_a"]["last_log_write"].startswith(datetime.now().date().isoformat()))
         self.assertIsNone(sched["summary"]["last_log_write"])
         self.assertEqual(sched["eod_a"]["tail"], ["[alpha] processed"])
-        self.assertEqual([r["sid"] for r in self.s["registry"]], ["SW-001", "SW-000"])
+        self.assertEqual([r["sid"] for r in self.s["registry"]], ["SW-001", "SW-000", "SW-020"])
         self.assertEqual(self.s["agents"], AGENTS)
         self.assertEqual(self.s["flows"], FLOWS)
         self.assertEqual(len(SCHEDULE), len(self.s["schedule"]))

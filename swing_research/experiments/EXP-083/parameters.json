@@ -1,0 +1,33 @@
+{
+  "data_period": "2017-09-13 to 2026-09-12",
+  "starting_capital": 1000.0,
+  "universe_version": "crypto-usdt-2026-09-13",
+  "universe_symbol_count": 5,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Five majors as asset classes: MODERATE, directionally unknown. 20% stop: MODERATE, one-directional -- it can eject a coin Faber would have held through a mid-month dip. Equal sleeves: MINOR. UTC month-end: NEGLIGIBLE. Costs and 31.2% no-offset tax: MAJOR, one-directional -- the question the experiment answers.",
+  "universe_symbols": [
+    "BNB",
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP"
+  ],
+  "book_currency": "USDT",
+  "crypto_risk_pct_per_unit": 0.04,
+  "crypto_long_only": true,
+  "crypto_cost_model": {
+    "fee_pct_per_side": 0.3,
+    "spread_bps_per_side_assumption": 10.0
+  },
+  "india_vda_tax_rate_per_profitable_trade": 0.312,
+  "india_vda_loss_offset": false,
+  "india_vda_fees_deductible": false,
+  "india_vda_tds_rate_on_sales": 0.01,
+  "verdict_basis": "POST-TAX trades (fees + spread + 31.2% per profitable trade)",
+  "crypto_sma_months": 10,
+  "crypto_rebalance": "last UTC calendar day of each month",
+  "crypto_stop_loss_pct": 0.2
+}

@@ -399,5 +399,26 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-019",
     "primary_experiment_id": "EXP-082"
+  },
+  "crypto_trend_timing": {
+    "strategy_key": "crypto_trend_timing",
+    "display_name": "Crypto Trend Timing (Faber 10-month SMA, Pool F)",
+    "strategy_family": "crypto research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-084 (EXP-083 REJECT: same rules, windowed SMA cold start)",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789321803.5816612,
+        "reason": "Pool F crypto paper book, 1,000 USDT, per direction 2026-09-13; verdict post-tax"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-020",
+    "primary_experiment_id": "EXP-084"
   }
 }

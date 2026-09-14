@@ -81,6 +81,8 @@ class PriceCache:
         self.refresh_seconds = refresh_seconds
         self.prices = {}
         self.as_of = None
+        self.crypto_prices = {}
+        self.usdinr = None
         self._lock = threading.Lock()
 
     def _held_symbols(self) -> list:
@@ -94,6 +96,29 @@ class PriceCache:
             return []
         with open(path, encoding="utf-8") as f:
             return sorted((json.load(f).get("positions") or {}).keys())
+
+    def _pool_f_symbols(self) -> list:
+        import glob
+        import json
+        held = set()
+        for path in glob.glob(os.path.join(self.state_dir, "pool_f", "*", "portfolio.json")):
+            with open(path, encoding="utf-8") as f:
+                held |= set((json.load(f).get("positions") or {}).keys())
+        return sorted(held)
+
+    def refresh_crypto(self, with_rate: bool = False) -> None:
+        """Binance last prices for Pool F's open coins (one cheap call; the
+        coins trade 24x7 so this runs on every loop pass) and, on the full
+        refresh, the USD/INR rate."""
+        from data.fetch_crypto import fetch_crypto_last_prices, fetch_usdinr_rate
+        symbols = self._pool_f_symbols()
+        quotes = fetch_crypto_last_prices(symbols) if symbols else {}
+        rate = fetch_usdinr_rate() if (with_rate or self.usdinr is None) else None
+        with self._lock:
+            if symbols:
+                self.crypto_prices = quotes
+            if rate:
+                self.usdinr = rate
 
     _kite_headers = None
     _kite_headers_day = None
@@ -129,6 +154,10 @@ class PriceCache:
             self.prices = fresh
             self.as_of = datetime.now().isoformat(timespec="seconds")
         self.refresh_live()
+        try:
+            self.refresh_crypto(with_rate=True)
+        except Exception as e:
+            print(f"crypto price refresh failed: {type(e).__name__}: {e}", flush=True)
 
     def refresh_live(self) -> None:
         """Quote refresh: Kite last-traded prices for every held symbol
@@ -154,6 +183,10 @@ class PriceCache:
         with self._lock:
             return dict(self.prices), self.as_of
 
+    def crypto_snapshot(self) -> tuple:
+        with self._lock:
+            return dict(self.crypto_prices), self.usdinr
+
     @staticmethod
     def _market_open(now=None) -> bool:
         now = now or datetime.now()
@@ -167,8 +200,10 @@ class PriceCache:
                     if time.monotonic() - last_full > self.refresh_seconds:
                         self.refresh_once()
                         last_full = time.monotonic()
-                    elif self._market_open():
-                        self.refresh_live()
+                    else:
+                        if self._market_open():
+                            self.refresh_live()
+                        self.refresh_crypto()
                 except Exception as e:   # never let a data hiccup kill the refresher
                     print(f"price refresh failed: {type(e).__name__}: {e}", flush=True)
                 time.sleep(LIVE_SECONDS if self._market_open() else 60)
@@ -234,9 +269,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
             state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
             prices, as_of = self.price_cache.snapshot()
+            crypto_prices, usdinr = self.price_cache.crypto_snapshot()
             registry = list_strategies()
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
-                                          roadmap=self.roadmap_cache.get(), mode=mode)
+                                          roadmap=self.roadmap_cache.get(), mode=mode,
+                                          crypto_prices=crypto_prices, usdinr=usdinr)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

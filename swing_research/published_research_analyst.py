@@ -1178,3 +1178,49 @@ CRYPTO_XS_MOMENTUM = PublishedStrategy(
         "MAJOR and one-directional -- the experiment's whole question."
     ),
 )
+
+
+CRYPTO_TREND_TIMING = PublishedStrategy(
+    name="Crypto Trend Timing (Faber 10-month SMA)",
+    source_citation=(
+        "Faber, M.T. (2007), \"A Quantitative Approach to Tactical Asset Allocation,\" The Journal of "
+        "Wealth Management 9(4), 69-79 (2013 update, SSRN 962461); Hurst, B., Ooi, Y.H. and Pedersen, L.H. "
+        "(2017), \"A Century of Evidence on Trend-Following Investing,\" Journal of Portfolio Management 44(1)."
+    ),
+    mechanism=(
+        "Prices trend because information is absorbed slowly and investors herd; a long moving-average "
+        "filter stays with the trend and steps aside for the deepest drawdowns. Faber's rule -- hold an "
+        "asset when its month-end price is above its 10-month SMA, otherwise cash -- matched buy-and-hold "
+        "returns across five asset classes over 1973-2012 with roughly half the drawdown, trading 3-4 "
+        "times a year per asset. Crypto's trends and 70-80% drawdowns are the textbook case for it."
+    ),
+    rules=(
+        "At each month-end, for each asset: buy (or stay long) if the month-end price is above the "
+        "10-month simple moving average of month-end prices; otherwise sell to cash. Equal allocation "
+        "across assets; all decisions on month-end prices only; no stop, no target. US stocks 1901-2012: "
+        "timing 10.2%/yr vs buy-and-hold 9.3%, max drawdown -50% vs -84%."
+    ),
+    variant_chosen=(
+        "The five largest coins (BTC, ETH, BNB, XRP, SOL) as the timed assets, 20% sleeves, month-end = "
+        "last UTC calendar day, SMA of the last 10 month-end closes including the current one, exactly as "
+        "Faber computes it. A coin joins the universe when its Binance history allows a 10-month SMA."
+    ),
+    scope_reductions=(
+        "20% protective stop (not in the source) because this engine sizes from the entry-to-stop "
+        "distance; 4% risk-per-unit against it reproduces the 20% sleeve. Book in USDT with fractional "
+        "quantities. Costs (0.30%/side + 10 bps spread) and India's 31.2% per-profitable-trade VDA tax "
+        "with no loss set-off are applied before the audit; pre-tax recorded alongside. Sample: Binance "
+        "history from 2018 (SOL from 2020), which includes the 2018, 2022 and 2025-26 bear phases."
+    ),
+    distinctiveness=(
+        "First TIME-SERIES rule in the crypto lane, chosen because EXP-082's record set turnover as the "
+        "binding constraint: this trades ~3-4 times a year per coin instead of ~50. Nothing in the equity "
+        "pools times an asset against its own long moving average."
+    ),
+    assumptions_impact=(
+        "Five majors as asset classes: MODERATE, directionally unknown. 20% stop: MODERATE, "
+        "one-directional -- it can eject a coin Faber would have held through a mid-month dip. Equal "
+        "sleeves: MINOR. UTC month-end: NEGLIGIBLE. Costs and 31.2% no-offset tax: MAJOR, one-directional "
+        "-- the question the experiment answers."
+    ),
+)
