@@ -480,7 +480,7 @@ function renderTeam(s){
     item(ai, "AI agents in the team", 0),
     item(rules, "rule engines and tools", 1),
     item(s.desks.length, "desks", 2),
-    item(live, `strategies live (${liveA} Pool A, ${live - liveA} Pool F)`, 3),
+    item(live + (s.pool_d.strategies_live||0), `strategies live (${liveA} Pool A · ${s.pool_d.strategies_live||0} Pool D · ${live - liveA} Pool F; B and C are AI books on A's signals)`, 3),
     item(working, "working now", 4, `<span class="pulse ${working?"":"off"}"></span>`),
     item(done, "done for today", 5),
     item(s.agents.length - working - done, "on call", 6),

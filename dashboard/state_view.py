@@ -302,6 +302,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "todays_trades": [t for t in d_trades if t.get("exit_date") == today.isoformat()],
         "recent_trades": list(reversed(d_trades[-15:])),
         "symbols_with_context": len(d_pf.get("context_by_symbol") or {}),
+        "strategy": "VWAP Extension Exhaustion Fade (framework test; research verdict REJECT, EXP-008)",
+        "strategies_live": 1,
         "last_tick": (datetime.fromtimestamp(os.path.getmtime(d_state_path)).isoformat(timespec="minutes")
                       if os.path.exists(d_state_path) else None),
     }
