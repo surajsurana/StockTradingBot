@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-09-14T13:23:22.889693",
+  "strategy_name": "nifty_low_volatility_30",
+  "strategy_variant": "Realized Low Volatility (Nifty100 Low Vol 30 methodology: 1-year daily log-return std, bottom-decile percentile, 126-trading-day single-vintage hold; walk-forward judged from one year after the data start)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 5,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "d28f2384d9d1c1974aab87357d3d911630b1e708",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/cross_sectional.py",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_director.py",
+      " M swing_research/research_roadmap.py",
+      " M swing_research/strategy_catalog.py",
+      " M test_strategy_catalog.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? deployment/state/daily_details.json",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/strategies/realized_low_volatility.py",
+      "?? test_kite_connection.py",
+      "?? test_realized_low_volatility.py"
+    ]
+  }
+}

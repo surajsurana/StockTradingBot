@@ -1,0 +1,21 @@
+{
+  "data_period": "2022-09-14 to 2026-09-11",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Nifty 500 universe: MODERATE, directionally unknown. Decile at 10th percentile: MINOR. Equal sizing vs inverse-vol: MINOR. 126-day single-vintage hold: MINOR. 8% stop: MODERATE, one-directional but least likely to bind on the calmest names. Warm-up: none on the rules.",
+  "low_vol_lookback_days": 252,
+  "low_vol_percentile_threshold": 10.0,
+  "low_vol_side": "BOTTOM decile (lowest realized volatility)",
+  "low_vol_holding_period_trading_days": 126,
+  "low_vol_stop_loss_pct": 0.08,
+  "low_vol_risk_pct_per_unit": 0.01,
+  "low_vol_inverse_vol_weighting": false,
+  "data_start_with_warm_up": "2021-09-14",
+  "walk_forward_judged_from": "2022-09-14",
+  "warm_up_days": 365
+}

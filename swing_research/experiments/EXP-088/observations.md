@@ -1,0 +1,9 @@
+# Why the Verdict Is REJECT
+
+The overall backtest looks attractive on paper — positive expectancy (₹628/trade), Sharpe 1.07, Sortino 2.18, 64% CAGR in 2024 — but the Auditor is correctly discounting all of this because the **out-of-sample expectancy is -209.72**, meaning the edge evaporates (and reverses) on data the strategy wasn't tuned against. This is the classic signature of a strategy that fit in-sample noise rather than a durable low-vol premium.
+
+The mechanism itself explains the fragility: this is a low-volatility equity selection strategy, and its entire in-sample profit is concentrated in one violent bull run — 2024 alone contributed +64% while 2025 (-4.8%) and 2026 (-17.8%) gave much of it back. The P&L-by-regime split (₹62,620 bullish vs ₹812 bearish) confirms the strategy isn't capturing a genuine low-vol "win by losing less" effect; it's really a leveraged beta trade that only works when markets are already rising. Sector concentration reinforces this: Healthcare, IT, Power and Consumer Durables did the heavy lifting, while FMCG, Chemicals and Consumer Services — traditionally the defensive/low-vol sectors — were net losers, which is inconsistent with a properly functioning low-vol factor.
+
+Given the disclosed Nifty 500 substitution and 8% stop (both flagged as MODERATE), the in-sample edge may partly reflect universe/stop artifacts rather than the Nifty100 Low Vol methodology itself.
+
+**Follow-ups:** (1) Re-test with true point-in-time Nifty 100 membership and inverse-vol weighting to see if regime-dependence persists. (2) Explicitly decompose returns into beta vs. residual low-vol alpha to check if this is just a disguised bull-market beta bet.
