@@ -1,0 +1,22 @@
+{
+  "data_period": "2024-09-13 to 2026-09-11",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN. Quintile at the 80th percentile: NEGLIGIBLE. Within-window mean as the downside threshold and no risk-free subtraction: NEGLIGIBLE. Transition-day entry with a 21-day vintage instead of month-end formation: MINOR, directionally unknown. 8% stop: MODERATE, one-directional -- these are the gappiest stocks by construction. 10-position cap vs an equal-weighted quintile of ~90 names: MODERATE, changes dispersion not sign.",
+  "downside_beta_lookback_days": 252,
+  "downside_beta_percentile_threshold": 80.0,
+  "downside_beta_side": "TOP quintile (highest downside beta) -- the paper's premium side",
+  "downside_beta_market": "Nifty 50 (^NSEI), aligned and forward-filled per stock",
+  "downside_beta_holding_period_trading_days": 21,
+  "downside_beta_stop_loss_pct": 0.08,
+  "downside_beta_risk_pct_per_unit": 0.01,
+  "downside_beta_single_vintage": true,
+  "data_start_with_warm_up": "2023-09-14",
+  "walk_forward_judged_from": "2024-09-13",
+  "warm_up_days": 365
+}
