@@ -179,6 +179,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-team" hidden>
+  <div class="tiles" id="teamtiles"></div>
   <h2 id="flow-daily-title"></h2>
   <div class="strip" id="flow-daily"></div>
   <p class="note">Steps light up as they happen today.</p>
@@ -459,6 +460,14 @@ function renderTeam(s){
   strip("flow-research", s.flows.research, new Set());
 
   const statusOf = a => a.status_from==="market" ? (s.market_open ? "working" : "done") : (a.status_from && hot.has(a.status_from) ? "done" : "");
+  const ai = s.agents.filter(a => /AI/.test(a.kind)).length, rules = s.agents.length - ai;
+  const working = s.agents.filter(a => statusOf(a)==="working").length, done = s.agents.filter(a => statusOf(a)==="done").length;
+  document.getElementById("teamtiles").innerHTML = [
+    ["Team", s.agents.length, `${ai} AI agents · ${rules} rule engines`],
+    ["Desks", s.desks.length, s.desks.map(d => d.name.replace(/ \(.*\)/, "")).join(" · ")],
+    ["Working now", working, s.market_open ? "market open" : "market closed"],
+    ["Done for today", done, `${s.agents.length - working - done} on call`],
+  ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${esc(sub)}</div></div>`).join("");
   document.getElementById("office").innerHTML = s.desks.map(d => {
     const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
     return `<div class="desk"><div class="head"><span class="ic">${d.icon}</span><span class="nm">${esc(d.name)}</span></div><p class="blurb">${esc(d.blurb)}</p><div class="seats">${seats}</div></div>`;
