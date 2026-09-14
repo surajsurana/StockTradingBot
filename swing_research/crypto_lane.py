@@ -228,3 +228,24 @@ def run_crypto_tsmom_experiment(data: dict, start_date: date, end_date: date, **
                           "crypto_signal_warm_up_from_full_history": True},
         **kwargs,
     )
+
+
+def run_crypto_vol_managed_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Moreira & Muir (2017) volatility-managed exposure on the majors (2026-09-14)."""
+    from swing_research.strategies.crypto_vol_managed import (
+        CryptoVolManagedStrategy, MIN_WEIGHT, REBALANCE_BAND, STOP_LOSS_PCT, TARGET_VOL, VOL_LOOKBACK_DAYS,
+        compute_vol_weight,
+    )
+    from swing_research.published_research_analyst import CRYPTO_VOL_MANAGED
+
+    extra_columns = {symbol: compute_vol_weight(df)[["vol_weight"]] for symbol, df in data.items()}
+    return run_crypto_experiment_generic(
+        CryptoVolManagedStrategy(), CRYPTO_VOL_MANAGED, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_target_vol_annual": TARGET_VOL, "crypto_vol_lookback_days": VOL_LOOKBACK_DAYS,
+                          "crypto_min_weight": MIN_WEIGHT, "crypto_rebalance_band": REBALANCE_BAND,
+                          "crypto_rebalance": "last UTC calendar day of each month (exit + re-enter at the new weight)",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_leverage": False,
+                          "crypto_signal_warm_up_from_full_history": True},
+        **kwargs,
+    )

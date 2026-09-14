@@ -1317,3 +1317,47 @@ CRYPTO_TSMOM = PublishedStrategy(
         "one-directional, the lane's standing question."
     ),
 )
+
+
+CRYPTO_VOL_MANAGED = PublishedStrategy(
+    name="Crypto Volatility-Managed Exposure",
+    source_citation=(
+        "Moreira, A. and Muir, T. (2017), \"Volatility-Managed Portfolios,\" The Journal of Finance 72(4), "
+        "1611-1644."
+    ),
+    mechanism=(
+        "Volatility is highly persistent from one month to the next while expected returns are not, so the "
+        "risk-return trade-off is worst right after a volatile month. Scaling exposure by the inverse of "
+        "last month's realized variance -- less after volatile months, more after calm ones -- raised the "
+        "Sharpe ratio of the US market and most factor portfolios in MM's 1926-2015 sample, with the gain "
+        "coming mainly from sidestepping the worst drawdowns. Crypto volatility clusters even more strongly."
+    ),
+    rules=(
+        "Weight on the asset each month = c / (previous month's realized daily-return variance), c a scale "
+        "constant set so the managed and unmanaged series have equal long-run volatility; rebalance monthly; "
+        "long only by construction. Market portfolio 1926-2015: alpha ~4.9% per year, Sharpe up from 0.41 to 0.55."
+    ),
+    variant_chosen=(
+        "Cash-constrained, no leverage: weight = min(1, (60% / sigma)^2), sigma = trailing 30-day realized "
+        "volatility annualised; five majors in 20% sleeves each scaled by its own weight; month-end "
+        "rebalance implemented as exit-and-re-enter at the new weight, skipped when the weight moved by "
+        "10% or less; weight computed on full history as warm-up."
+    ),
+    scope_reductions=(
+        "No leverage (MM's weights exceed 1 in calm months); 60% target instead of MM's variance-matching "
+        "constant, a disclosed choice with a one-directional effect on scale but not on the month ranking. "
+        "20% protective stop, not in the source. Monthly exit/re-entry books a taxable gain in every "
+        "profitable month -- the paper's own turnover, at the lane's limit. Costs and India's 31.2% "
+        "no-offset tax before the audit; pre-tax recorded."
+    ),
+    distinctiveness=(
+        "First always-long, size-only rule in the crypto lane -- a volatility-timing mechanism, not trend. "
+        "Answers a different question from SW-020/SW-021: does sizing by recent volatility survive the tax "
+        "when the position itself never goes to cash on a signal?"
+    ),
+    assumptions_impact=(
+        "No leverage: MODERATE, one-directional (lower return, lower drawdown). 60% target: MODERATE on "
+        "scale, NEGLIGIBLE on ranking. 30-day realized vol: NEGLIGIBLE. 10% rebalance band: MINOR. 20% "
+        "stop: MODERATE, one-directional. Monthly taxable rebalancing: MAJOR -- the question itself."
+    ),
+)

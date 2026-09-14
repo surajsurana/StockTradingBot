@@ -236,7 +236,8 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
                 continue
-            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share, strategy)
+            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share
+                                     * getattr(signal, "size_multiplier", 1.0), strategy)
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
@@ -286,7 +287,8 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             risk_per_share = _risk_per_share(signal.entry_price, signal.stop_loss, signal.direction)
             if risk_per_share <= 0:
                 continue
-            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share, strategy)
+            quantity = size_quantity((equity * strategy.risk_pct_per_unit) / risk_per_share
+                                     * getattr(signal, "size_multiplier", 1.0), strategy)
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
@@ -296,7 +298,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             open_positions[symbol] = OpenPosition(
                 symbol=symbol, direction=signal.direction,
                 units=[PositionUnit(entry_price=signal.entry_price, entry_date=today, quantity=quantity)],
-                stop_loss=signal.stop_loss,
+                stop_loss=signal.stop_loss, size_multiplier=getattr(signal, "size_multiplier", 1.0),
             )
 
         daily_equity[today] = equity  # realized equity only -- see module docstring

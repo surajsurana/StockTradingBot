@@ -375,7 +375,8 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
         risk_per_share = open_price - stop_loss
         if risk_per_share <= 0:
             continue   # the overnight gap moved price through its own planned stop -- signal abandoned, not taken
-        quantity = _size(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share, fractional_quantities)
+        quantity = _size(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share
+                         * float(pending.get("size_multiplier", 1.0)), fractional_quantities)
         fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
         cost = fill_price * quantity
         if quantity < _min_quantity(fractional_quantities) or cost > cash or cost < min_position_value_rupees:
@@ -383,6 +384,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
         cash -= cost + execution_config.brokerage_flat_rs
         positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
                               "quantity": quantity, "stop_loss": stop_loss,
+                              "size_multiplier": float(pending.get("size_multiplier", 1.0)),
                               **({"target_price": pending["target_price"]}
                                  if pending.get("target_price") is not None else {})}
         new_entries.append({"symbol": symbol, "entry_price": fill_price, "quantity": quantity,
@@ -621,7 +623,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
                 symbol=symbol, direction="BUY",
                 units=[PositionUnit(entry_price=pos_state["entry_price"], entry_date=entry_date,
                                      quantity=pos_state["quantity"])],
-                stop_loss=pos_state["stop_loss"],
+                stop_loss=pos_state["stop_loss"], size_multiplier=float(pos_state.get("size_multiplier", 1.0)),
             )
             exit_price = None
             exit_reason = None
@@ -721,6 +723,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                                     "signal_date": target_date.isoformat(),
                                                     "signal_price": signal.entry_price,
                                                     "confidence": signal.confidence,
+                                                    "size_multiplier": getattr(signal, "size_multiplier", 1.0),
                                                     **({"target_price": signal.target_price}
                                                        if signal.target_price is not None else {})}
                         new_pending_entries.append({"symbol": symbol, "stop_loss": signal.stop_loss,
@@ -728,7 +731,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                                      "signal_price": signal.entry_price})
                     else:
                         quantity = _size(min(cash, sizing_capital_cap) * strategy.risk_pct_per_unit
-                                         / risk_per_share, fractional)
+                                         / risk_per_share * getattr(signal, "size_multiplier", 1.0), fractional)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
                         cost = fill_price * quantity
                         if quantity >= _min_quantity(fractional) and cost <= cash and cost >= min_position_value_rupees:
@@ -736,6 +739,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
                             positions[symbol] = {
                                 "entry_price": fill_price, "entry_date": target_date.isoformat(),
                                 "quantity": quantity, "stop_loss": signal.stop_loss,
+                                "size_multiplier": getattr(signal, "size_multiplier", 1.0),
                                 **({"target_price": signal.target_price}
                                    if signal.target_price is not None else {}),
                             }

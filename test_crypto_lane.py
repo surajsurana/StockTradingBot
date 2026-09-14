@@ -342,5 +342,91 @@ class TestTimeSeriesMomentumRules(unittest.TestCase):
         self.assertTrue(compute_tsmom_signal(full.iloc[-30:])["tsmom_return"].isna().all())
 
 
+class TestSizeMultiplier(unittest.TestCase):
+    """Signal.size_multiplier scales the risk-sized quantity in both engines; default 1.0 changes nothing."""
+
+    def test_backtest_engine_scales_quantity(self):
+        from swing_research.base import Signal
+        n = 60   # simulate_portfolio() skips symbols with fewer than min_bars_required bars
+
+        class _Half(Strategy):
+            fractional_quantities = True
+            risk_pct_per_unit = 0.04
+
+            def precompute(self, df):
+                df = df.copy(); df["date"] = df.index.date; return df
+
+            def entry_signal_at(self, row):
+                if row.date != date(2026, 1, 5):
+                    return None
+                return Signal(symbol="", direction="BUY", entry_price=100.0, stop_loss=80.0, size_multiplier=0.5)
+
+            def exit_signal_at(self, row, pos):
+                return None
+
+        data = {"X": _daily([100.0] * n, start=date(2026, 1, 1))}
+        result = simulate_portfolio(data, _Half(), 1_000.0, sector_map={})
+        t = result["trades"][0]
+        self.assertAlmostEqual(t.quantity * t.entry_price, 100.0)     # 20% sleeve x 0.5
+
+    def test_paper_engine_scales_quantity_and_remembers_it(self):
+        from deployment import paper_trading_engine as pte
+        from swing_research.strategies.crypto_vol_managed import CryptoVolManagedStrategy, compute_vol_weight
+        tmp = tempfile.mkdtemp()
+        original = pte.PAPER_TRADING_STATE_DIR
+        pte.PAPER_TRADING_STATE_DIR = tmp
+        try:
+            start = date(2026, 1, 1)
+            rng = np.random.default_rng(2)
+            closes = list(100.0 * np.exp(np.cumsum(rng.normal(0, 0.02, 31))))   # ~38% annualised vol -> weight 1
+            data = {"BTC": _daily(closes, start=start)}
+            os.makedirs(os.path.join(tmp, "b"))
+            with open(os.path.join(tmp, "b", "portfolio.json"), "w") as f:
+                json.dump({"cash": 1_000.0, "starting_capital": 1_000.0, "positions": {},
+                           "last_processed_date": None, "pending_entries": {}, "pending_exits": {}}, f)
+            extra = lambda d: {s: compute_vol_weight(df)[["vol_weight"]] for s, df in d.items()}
+            result = pte.run_daily("b", CryptoVolManagedStrategy(), lambda: data, compute_extra_columns_fn=extra,
+                                   as_of_date=date(2026, 1, 31), force=True, min_position_value_rupees=1,
+                                   sizing_capital_cap=1_000.0)
+            self.assertEqual(len(result["new_entries"]), 1)
+            pf = json.load(open(os.path.join(tmp, "b", "portfolio.json")))
+            w = pf["positions"]["BTC"]["size_multiplier"]
+            self.assertTrue(0 < w <= 1.0)
+            self.assertAlmostEqual(pf["positions"]["BTC"]["quantity"] * pf["positions"]["BTC"]["entry_price"], 200.0 * w, places=1)
+        finally:
+            pte.PAPER_TRADING_STATE_DIR = original
+
+
+class TestVolManagedRules(unittest.TestCase):
+    def test_weight_formula_and_cap(self):
+        from swing_research.strategies.crypto_vol_managed import compute_vol_weight
+        rng = np.random.default_rng(5)
+        calm = _daily(list(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 60)))), start=date(2026, 1, 1))
+        wild = _daily(list(100 * np.exp(np.cumsum(rng.normal(0, 0.06, 60)))), start=date(2026, 1, 1))
+        self.assertEqual(compute_vol_weight(calm)["vol_weight"].iloc[-1], 1.0)          # ~19% vol < 60% target
+        w = compute_vol_weight(wild)["vol_weight"].iloc[-1]
+        self.assertTrue(0 < w < 0.5)                                                     # ~115% vol -> ~0.27
+
+    def test_rebalance_band_and_min_weight(self):
+        from swing_research.base import OpenPosition, PositionUnit
+        from swing_research.strategies.crypto_vol_managed import CryptoVolManagedStrategy
+        s = CryptoVolManagedStrategy()
+        df = _daily([100.0] * 31, start=date(2026, 1, 1))
+        df["vol_weight"] = 0.5
+        pre = s.precompute(df)
+        me = [r for r in pre.itertuples() if r.is_month_end][0]
+        pos = OpenPosition(symbol="X", direction="BUY", units=[PositionUnit(100.0, date(2025, 12, 31), 1.0)],
+                           size_multiplier=0.48)
+        self.assertIsNone(s.exit_signal_at(me, pos))                 # within 10% of the entry weight: hold
+        pos.size_multiplier = 0.9
+        self.assertEqual(s.exit_signal_at(me, pos), 100.0)           # moved: rebalance
+        sig = s.entry_signal_at(me)
+        self.assertAlmostEqual(sig.size_multiplier, 0.5)
+        df["vol_weight"] = 0.05
+        low = [r for r in s.precompute(df).itertuples() if r.is_month_end][0]
+        self.assertIsNone(s.entry_signal_at(low))
+        self.assertEqual(s.exit_signal_at(low, pos), 100.0)
+
+
 if __name__ == "__main__":
     unittest.main()

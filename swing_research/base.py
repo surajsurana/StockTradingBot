@@ -58,6 +58,10 @@ class Signal:
     strategy_name: str = ""
     reason: str = ""
     target_price: Optional[float] = None
+    # Added 2026-09-14 for the crypto lane's volatility-managed rule: the
+    # engines multiply the risk-sized quantity by this. 1.0 = unchanged
+    # for every existing strategy.
+    size_multiplier: float = 1.0
     # Added 2026-09-06, per explicit direction ("we must not play with
     # strategy rules") -- an OPTIONAL fixed profit target, checked by the
     # ENGINE (deployment/paper_trading_engine.py) the same mechanical way
@@ -91,6 +95,7 @@ class OpenPosition:
     direction: str
     units: list = field(default_factory=list)   # list[PositionUnit], oldest first
     stop_loss: float = 0.0                        # current whole-position stop
+    size_multiplier: float = 1.0                  # the entry Signal's size_multiplier (2026-09-14)
 
     @property
     def total_quantity(self) -> int:
