@@ -332,6 +332,20 @@ RESEARCH_EXPERIMENT_SPECS = [
         ).run_realized_low_volatility_experiment,
     ),
     ResearchExperimentSpec(
+        strategy_key="ma_pullback",
+        variant_description="Moving Average Pullback (ported prototype: 20/50-day MA uptrend, 1.5% pullback band, green reaction candle, pattern stop, 20-day-high target at >= 1.8x reward:risk)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_ma_pullback_experiment"]
+        ).run_ma_pullback_experiment,
+    ),
+    ResearchExperimentSpec(
+        strategy_key="volume_backed_breakout",
+        variant_description="Volume-Backed Breakout (ported prototype: close above prior 20-day high on >= 1.5x average volume, ATR stop, 2x reward:risk target)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_volume_backed_breakout_experiment"]
+        ).run_volume_backed_breakout_experiment,
+    ),
+    ResearchExperimentSpec(
         strategy_key="earnings_announcement_premium",
         variant_description=("Earnings Announcement Premium (Frazzini-Lamont: buy expected announcers at the prior "
                              "month-end close, hold to month-end; ranked by 4-year volume concentration ratio, "

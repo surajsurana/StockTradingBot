@@ -26,7 +26,7 @@ import unittest
 from swing_research.base import Strategy
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS, RESEARCH_EXPERIMENT_SPECS
 
-from deployment.base import DeploymentStatus, is_crypto_record
+from deployment.base import DeploymentStatus, is_pool_a_record
 from deployment.deployment_manager import list_strategies
 
 # PEAD is deliberately absent from PAPER_TRADING_STRATEGY_SPECS (event-
@@ -86,7 +86,7 @@ class TestResearchExperimentCatalogStructure(unittest.TestCase):
         "turtle_system2", "minervini_trend_template_filter", "52_week_high_momentum",
         "cross_sectional_momentum", "short_term_reversal", "betting_against_beta", "amihud_illiquidity",
         "max_effect", "idiosyncratic_volatility", "turn_of_month", "overnight_return_anomaly",
-        "high_volume_return_premium", "earnings_announcement_premium", "downside_beta", "nifty_low_volatility_30",
+        "high_volume_return_premium", "earnings_announcement_premium", "downside_beta", "nifty_low_volatility_30", "ma_pullback", "volume_backed_breakout",
     }
 
     def test_no_duplicate_keys(self):
@@ -118,8 +118,8 @@ class TestLiveRegistryStrategiesHaveCatalogWiring(unittest.TestCase):
 
         missing = []
         for record in list_strategies():
-            if record.strategy_key in _EXCLUDED_FROM_CATALOG_SAFEGUARD or is_crypto_record(record):
-                continue   # crypto strategies (Pool E) are wired in run_pool_e.py, not the Pool A catalog
+            if record.strategy_key in _EXCLUDED_FROM_CATALOG_SAFEGUARD or not is_pool_a_record(record):
+                continue   # crypto (Pool E), the AI books (B, C) and the intraday rule (D) are not Pool A catalog strategies
             if record.deployment_status in active_statuses and record.strategy_key not in catalog_keys:
                 missing.append((record.strategy_key, record.deployment_status.value))
 

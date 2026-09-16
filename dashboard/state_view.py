@@ -15,7 +15,7 @@ import os
 from datetime import date, datetime, time as dtime
 from typing import Callable, Optional
 
-from deployment.base import is_crypto_record
+from deployment.base import is_crypto_record, is_pool_a_record
 from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_summary  # noqa: F401
 
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
@@ -257,8 +257,12 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
         crypto = is_crypto_record(r)
+        fixed_pool = {"portfolio_b": "Pool B", "portfolio_c": "Pool C", "pool_d_vwap_fade": "Pool D"}.get(r.strategy_key)
         kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("Crypto" if crypto else "Swing", ""))
-        pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
+        if fixed_pool:
+            pool = fixed_pool if status == "PAPER_TRADING" else "-"
+        else:
+            pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
         if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
             pool = "Pool A, F"
         exp = getattr(r, "primary_experiment_id", "") or ""
@@ -266,15 +270,20 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief,
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp)})
-    rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
-                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
-                 "how": STRATEGY_HOW["portfolio_b"], "research": {}})
-    rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
-                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
-                 "how": STRATEGY_HOW["portfolio_c"], "research": {}})
-    rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
-                 "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
-                 "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
+    keys = {r["key"] for r in rows}
+    # Before 2026-09-16 these three were not registry entries; keep the synthetic rows only if they are still missing.
+    if "portfolio_b" not in keys:
+        rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
+                     "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
+                     "how": STRATEGY_HOW["portfolio_b"], "research": {}})
+    if "portfolio_c" not in keys:
+        rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
+                     "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
+                     "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+    if "pool_d_vwap_fade" not in keys:
+        rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
+                     "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
+                     "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 
@@ -385,7 +394,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
               if str(getattr(r.deployment_status, "value", r.deployment_status)).endswith("PAPER_TRADING")
-              and not is_crypto_record(r)}
+              and is_pool_a_record(r)}
     summary = build_pool_summary(state_dir, active, lambda symbols: {s: prices[s] for s in symbols if s in prices},
                                  today=today, crypto_prices=crypto_prices, usdinr=usdinr)
 

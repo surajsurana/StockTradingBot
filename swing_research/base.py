@@ -96,6 +96,7 @@ class OpenPosition:
     units: list = field(default_factory=list)   # list[PositionUnit], oldest first
     stop_loss: float = 0.0                        # current whole-position stop
     size_multiplier: float = 1.0                  # the entry Signal's size_multiplier (2026-09-14)
+    target_price: Optional[float] = None          # the entry Signal's fixed target, checked by the engine (2026-09-16)
 
     @property
     def total_quantity(self) -> int:

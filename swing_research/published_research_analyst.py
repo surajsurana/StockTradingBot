@@ -1405,3 +1405,60 @@ REALIZED_LOW_VOLATILITY = PublishedStrategy(
         "one-directional but least likely to bind on the calmest names. Warm-up: none on the rules."
     ),
 )
+
+
+MA_PULLBACK = PublishedStrategy(
+    name="Moving Average Pullback",
+    source_citation=(
+        "This program's own prototype (strategies/pullback_continuation.py, July 2026), ported unchanged into "
+        "swing_research/strategies/ma_pullback.py on 2026-09-06. Not from a published paper; the pattern is the "
+        "common practitioner 'buy the pullback to a rising moving average in an uptrend' setup."
+    ),
+    mechanism=(
+        "In an established uptrend (20-day average above 50-day), a dip to the 20-day average that closes back "
+        "above it on a green candle is read as buyers defending the trend; the trade targets the recent swing "
+        "high. A trend-continuation pattern, not an anomaly with an academic literature."
+    ),
+    rules=(
+        "Uptrend: 20-day MA above 50-day MA. Pullback: today's Low within 1.5% of the 20-day MA from above, "
+        "no close below it. Reaction: close above both the 20-day MA and today's Open. Entry on the day all "
+        "three first hold. Stop: the tighter of (Low minus an ATR buffer) or (20-day MA less 3%), bounded to "
+        "1.5%-10% risk. Target: the highest High of the last 20 days including today, taken only if it gives "
+        "at least 1.8x reward-to-risk."
+    ),
+    variant_chosen="The ported rules exactly as they run in Pool A (SW-014), including the fixed target.",
+    scope_reductions=(
+        "Long only. 1% risk per unit against the pattern's own stop, at most 10 positions, ranked by entry order "
+        "(no natural cross-sectional ranking measure). The informal 5-year, 26-symbol prototype backtest "
+        "(242 trades, 37.6% win rate, net +Rs.5,830) was never a walk-forward test; this is its first."
+    ),
+    distinctiveness="Pattern-based trend continuation with a fixed target -- no other Pool A strategy uses a price target.",
+    assumptions_impact="Long-only: DIRECTIONALLY UNKNOWN. Entry-order ranking for the 10 slots: MINOR. Everything else is the prototype's own rule.",
+)
+
+VOLUME_BACKED_BREAKOUT = PublishedStrategy(
+    name="Volume-Backed Breakout",
+    source_citation=(
+        "This program's own prototype (strategies/volume_backed_breakout.py, 2026-09-05), ported unchanged into "
+        "swing_research/strategies/volume_backed_breakout_pool_a.py on 2026-09-06. Not from a published paper; "
+        "the pattern is the common practitioner 'new high on heavy volume' breakout."
+    ),
+    mechanism=(
+        "A close above the prior 20-day high on at least 1.5x normal volume is read as institutional buying "
+        "starting a move; the trade rides it to a fixed 2x reward-to-risk target. Trend initiation, not an "
+        "anomaly with an academic literature."
+    ),
+    rules=(
+        "Breakout: Close above the highest High of the prior 20 days (excluding today). Volume: today's Volume "
+        "at least 1.5x the prior 20-day average. Entry on the day both hold. Stop: the tighter of (prior 20-day "
+        "high minus an ATR buffer) or (1.5 ATR below entry). Target: entry plus 2x the stop distance."
+    ),
+    variant_chosen="The ported rules exactly as they run in Pool A (SW-015), including the fixed target.",
+    scope_reductions=(
+        "Long only. 1% risk per unit against the pattern's own stop, at most 10 positions, ranked by entry order. "
+        "The informal 5-year, 26-symbol prototype backtest (415 trades, 37.1% win rate, net +Rs.11,507) was "
+        "never a walk-forward test; this is its first."
+    ),
+    distinctiveness="A volume-confirmed breakout with a fixed 2:1 target -- Turtle System 2 (SW-001) is the only other breakout rule, with no volume filter and no target.",
+    assumptions_impact="Long-only: DIRECTIONALLY UNKNOWN. Entry-order ranking for the 10 slots: MINOR. Everything else is the prototype's own rule.",
+)

@@ -211,6 +211,15 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             if _hit_stop(pos.direction, float(row.Low), float(row.High), pos.stop_loss):
                 close_position(symbol, pos.stop_loss, today, "stop_loss")
                 continue
+            # Fixed price target (2026-09-16): the same mechanical check the paper
+            # engine has had since 2026-09-06, so a strategy with a documented
+            # target (ma_pullback, volume_backed_breakout) backtests as it trades.
+            # Stop first, then target -- the conservative order on a day that
+            # touches both. No-op for every strategy that never sets one.
+            target = getattr(pos, "target_price", None)
+            if target is not None and (float(row.High) >= target if pos.direction == "BUY" else float(row.Low) <= target):
+                close_position(symbol, float(target), today, "target")
+                continue
 
             signal_exit_price = strategy.exit_signal_at(row, pos)
             if signal_exit_price is not None:
@@ -299,6 +308,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                 symbol=symbol, direction=signal.direction,
                 units=[PositionUnit(entry_price=signal.entry_price, entry_date=today, quantity=quantity)],
                 stop_loss=signal.stop_loss, size_multiplier=getattr(signal, "size_multiplier", 1.0),
+                target_price=getattr(signal, "target_price", None),
             )
 
         daily_equity[today] = equity  # realized equity only -- see module docstring

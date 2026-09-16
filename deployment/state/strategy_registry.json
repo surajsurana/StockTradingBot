@@ -483,5 +483,68 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-024",
     "primary_experiment_id": "EXP-088"
+  },
+  "portfolio_b": {
+    "strategy_key": "portfolio_b",
+    "display_name": "Portfolio B (AI watchlist book)",
+    "strategy_family": "portfolio book (AI team, Pool B)",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789573723.5580873,
+        "reason": "registered for a permanent ID on 2026-09-16; book already running"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-025",
+    "primary_experiment_id": ""
+  },
+  "portfolio_c": {
+    "strategy_key": "portfolio_c",
+    "display_name": "Portfolio C (AI overlay on Pool A)",
+    "strategy_family": "portfolio book (AI team, Pool C)",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789573723.5791159,
+        "reason": "registered for a permanent ID on 2026-09-16; book already running"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-026",
+    "primary_experiment_id": ""
+  },
+  "pool_d_vwap_fade": {
+    "strategy_key": "pool_d_vwap_fade",
+    "display_name": "VWAP Extension Exhaustion Fade (Pool D intraday)",
+    "strategy_family": "intraday research strategy (Pool D)",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-008 (kept running as the intraday framework test)",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789573723.6163554,
+        "reason": "registered for a permanent ID on 2026-09-16; book already running"
+      }
+    ],
+    "notes": "",
+    "timeframe": "5 Minute",
+    "execution_frequency": "Intraday",
+    "strategy_id": "SW-027",
+    "primary_experiment_id": "EXP-008"
   }
 }

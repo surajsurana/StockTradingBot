@@ -14,7 +14,7 @@ import argparse
 
 from data.fetch_crypto import fetch_crypto_last_prices, fetch_usdinr_rate
 from data.fetch_historical import fetch_all
-from deployment.base import DeploymentStatus, is_crypto_record
+from deployment.base import DeploymentStatus, is_pool_a_record
 from deployment.deployment_manager import list_strategies
 from deployment.settings import STATE_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 from reporting.pool_summary import build_pool_summary, format_pool_summary, format_weekend_summary
@@ -55,7 +55,7 @@ def main():
     args = parser.parse_args()
 
     active = {r.strategy_key: r.display_name for r in list_strategies()
-              if r.deployment_status == DeploymentStatus.PAPER_TRADING and not is_crypto_record(r)}
+              if r.deployment_status == DeploymentStatus.PAPER_TRADING and is_pool_a_record(r)}
     summary = build_pool_summary(STATE_DIR, active, _latest_prices,
                                  crypto_prices=_crypto_prices(), usdinr=fetch_usdinr_rate())
     # Weekends (cron runs every day since 2026-09-14): only Pool E trades, so send the crypto-only message.

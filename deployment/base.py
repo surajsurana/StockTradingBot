@@ -83,6 +83,18 @@ def is_crypto_record(record) -> bool:
     return str(getattr(record, "strategy_family", "") or "").lower().startswith(CRYPTO_STRATEGY_FAMILY_PREFIX)
 
 
+POOL_A_STRATEGY_FAMILY_PREFIX = "swing_research"
+
+
+def is_pool_a_record(record) -> bool:
+    """A registry record that gets a Pool A book when PAPER_TRADING: the
+    swing_research families only. Crypto strategies (Pool E), the AI
+    portfolio books (Pools B and C) and the intraday rule (Pool D) are
+    registered too -- for a permanent ID and a verdict -- but their state
+    lives elsewhere (2026-09-16)."""
+    return str(getattr(record, "strategy_family", "") or "").lower().startswith(POOL_A_STRATEGY_FAMILY_PREFIX)
+
+
 def is_valid_transition(from_status: DeploymentStatus, to_status: DeploymentStatus) -> bool:
     if from_status == to_status:
         return True

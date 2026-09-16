@@ -33,7 +33,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import deployment.paper_trading_engine as pte
 from data.fetch_historical import fetch_all
-from deployment.base import DeploymentStatus, is_crypto_record
+from deployment.base import DeploymentStatus, is_pool_a_record
 from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
@@ -53,7 +53,7 @@ def pool_f_strategy_keys() -> list:
     keys = []
     for spec in PAPER_TRADING_STRATEGY_SPECS:
         record = get_strategy(spec.strategy_key)
-        if record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING and not is_crypto_record(record):
+        if record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING and is_pool_a_record(record):
             keys.append(spec.strategy_key)
     return keys
 

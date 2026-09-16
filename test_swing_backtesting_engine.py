@@ -466,3 +466,45 @@ class TestSimulatePortfolioSingleUnit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+class TestFixedTarget(unittest.TestCase):
+    """The research engine honours Signal.target_price (2026-09-16): exit at the
+    target the day the High reaches it, stop first on a day that touches both."""
+
+    def _data(self, rows):
+        import pandas as pd
+        from datetime import date, timedelta
+        idx = pd.to_datetime([date(2026, 1, 5) + timedelta(days=i) for i in range(len(rows))])
+        return {"X": pd.DataFrame([{"Open": o, "High": h, "Low": lo, "Close": c, "Volume": 1000} for o, h, lo, c in rows], index=idx)}
+
+    def _strategy(self):
+        from swing_research.base import Signal, Strategy
+        from datetime import date
+
+        class _T(Strategy):
+            def precompute(self, df):
+                df = df.copy(); df["date"] = df.index.date; return df
+
+            def entry_signal_at(self, row):
+                if row.date != date(2026, 1, 5):
+                    return None
+                return Signal(symbol="", direction="BUY", entry_price=100.0, stop_loss=95.0, target_price=110.0)
+
+            def exit_signal_at(self, row, pos):
+                return None
+        return _T()
+
+    def test_exits_at_target_when_high_reaches_it(self):
+        from swing_research.backtesting_engine import simulate_portfolio
+        rows = [(100, 101, 99, 100)] * 59 + [(104, 112, 103, 108)]
+        result = simulate_portfolio(self._data(rows), self._strategy(), 100_000.0, sector_map={}, min_bars_required=1)
+        t = result["trades"][0]
+        self.assertEqual((t.exit_reason, t.exit_price), ("target", 110.0))
+
+    def test_stop_wins_on_a_day_that_touches_both(self):
+        from swing_research.backtesting_engine import simulate_portfolio
+        rows = [(100, 101, 99, 100)] * 59 + [(100, 112, 94, 96)]
+        result = simulate_portfolio(self._data(rows), self._strategy(), 100_000.0, sector_map={}, min_bars_required=1)
+        self.assertEqual(result["trades"][0].exit_reason, "stop_loss")

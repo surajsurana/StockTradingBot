@@ -69,7 +69,7 @@ def _tree():
 
 
 def _record(key, name, sid, status="DeploymentStatus.PAPER_TRADING", verdict="ResearchVerdict.PASS",
-            family="swing"):
+            family="swing_research published strategy"):
     return SimpleNamespace(strategy_key=key, display_name=name, strategy_id=sid, deployment_status=status,
                            research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family=family)
 
@@ -110,6 +110,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["crypto_trend_timing"]["pool"], "Pool E")
         self.assertEqual(rows["old"]["pool"], "-")
         self.assertEqual((rows["portfolio_b"]["type"], rows["portfolio_c"]["pool"], rows["pool_d_vwap_fade"]["verdict"]), ("AI", "Pool C", "REJECT"))
+        self.assertTrue(all(str(rows[k]["sid"]) for k in ("portfolio_b", "portfolio_c", "pool_d_vwap_fade")))
         self.assertTrue(rows["crypto_trend_timing"]["brief"])
         self.assertTrue(rows["crypto_trend_timing"]["how"]["entry"])
         from dashboard.state_view import STRATEGY_HOW

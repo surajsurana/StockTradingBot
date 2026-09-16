@@ -1202,3 +1202,46 @@ def run_realized_low_volatility_experiment(data: dict, start_date: date, end_dat
             "warm_up_days": warm_up_days,
         },
     )
+
+
+def run_ma_pullback_experiment(data: dict, start_date: date, end_date: date, starting_capital: float = 1_000_000,
+                               n_walk_forward_windows: int = 3, narrative_api_key: str = "",
+                               narrative_call_fn: Optional[Callable[[str], str]] = None,
+                               experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                               knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                               skip_regime_breakdown: bool = False) -> str:
+    """First walk-forward evaluation of the ported MA Pullback (SW-014), 2026-09-16 --
+    the research engine's new fixed-target check makes the backtest match the paper book."""
+    from swing_research.strategies.ma_pullback import MaPullbackStrategy
+    from swing_research.published_research_analyst import MA_PULLBACK
+    strategy = MaPullbackStrategy()
+    return run_generic_swing_experiment(
+        strategy, MA_PULLBACK, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={"ma_pullback_fast_ma": 20, "ma_pullback_slow_ma": 50, "ma_pullback_band_pct": 0.015,
+                          "ma_pullback_target_lookback_days": 20, "ma_pullback_min_reward_risk": 1.8,
+                          "ma_pullback_risk_pct_per_unit": strategy.risk_pct_per_unit, "fixed_target_checked_by_engine": True},
+    )
+
+
+def run_volume_backed_breakout_experiment(data: dict, start_date: date, end_date: date, starting_capital: float = 1_000_000,
+                                          n_walk_forward_windows: int = 3, narrative_api_key: str = "",
+                                          narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                          experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                          knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                          skip_regime_breakdown: bool = False) -> str:
+    """First walk-forward evaluation of the ported Volume-Backed Breakout (SW-015), 2026-09-16."""
+    from swing_research.strategies.volume_backed_breakout_pool_a import VolumeBackedBreakoutPoolAStrategy
+    from swing_research.published_research_analyst import VOLUME_BACKED_BREAKOUT
+    strategy = VolumeBackedBreakoutPoolAStrategy()
+    return run_generic_swing_experiment(
+        strategy, VOLUME_BACKED_BREAKOUT, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={"vbb_breakout_lookback_days": 20, "vbb_volume_multiple": 1.5, "vbb_stop_atr_multiple": 1.5,
+                          "vbb_reward_risk_multiple": 2.0, "vbb_risk_pct_per_unit": strategy.risk_pct_per_unit,
+                          "fixed_target_checked_by_engine": True},
+    )
