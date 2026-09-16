@@ -112,12 +112,14 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_activity_today_is_one_time_sorted_list_across_pools(self):
         acts = self.s["activity_today"]
         self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
-                         [("05:30", "BUY", "BTC"), ("09:40", "SELL", "SBIN"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
-                          ("", "BUY", "OLDREC"), ("", "SELL", "OLDREC")])   # unstamped legs listed, sorted last
-        self.assertEqual(acts[2]["pnl"], -500.0)
-        self.assertEqual(acts[2]["note"], "stop loss")
-        self.assertAlmostEqual(acts[3]["amount"], 3900.0 * 5)
-        self.assertEqual(acts[5]["pnl"], 40.0)
+                         [("05:30", "BUY", "BTC"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
+                          ("", "SELL", "OLDREC")])   # one row per closed intraday trade; unstamped exit sorted last
+        self.assertEqual(acts[1]["pnl"], -500.0)
+        self.assertEqual(acts[1]["note"], "stop loss")
+        self.assertEqual((acts[1]["status"], acts[1]["held_days"]), ("Closed", 0))
+        self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
+        self.assertEqual(acts[2]["status"], "Open")
+        self.assertEqual(acts[3]["pnl"], 40.0)
         self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:]))
         self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool E", "Crypto"))
         self.assertEqual(len(self.s["desks"]), len(DESKS))

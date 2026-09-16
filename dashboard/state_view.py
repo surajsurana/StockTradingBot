@@ -395,14 +395,8 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
             continue
         opened, closed = t.get("entry_timestamp", ""), t.get("exit_timestamp", "")
         side_in = "SELL" if t.get("direction") == "SELL" else "BUY"
-        # Pool D never holds overnight, so a trade closed today was also
-        # opened today -- list the entry even if the record predates the
-        # entry_timestamp field (blank time rather than a hidden fill).
-        rows.append({"time": opened[11:16] if opened.startswith(today_iso) else "", "action": side_in,
-                     "symbol": t.get("symbol"), "qty": t.get("quantity"),
-                     "price": round(float(t.get("entry_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
-                     "status": "Closed", "pnl": None, "note": "entry leg; closed later today",
-                     "bought_on": today_iso, "held_days": 0})
+        # One row per closed intraday trade: the exit, carrying the P&L (the
+        # entry leg is implied -- Pool D never holds overnight).
         rows.append({"time": closed[11:16] if closed else "", "action": "BUY" if side_in == "SELL" else "SELL",
                      "symbol": t.get("symbol"), "qty": t.get("quantity"),
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
