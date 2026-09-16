@@ -337,6 +337,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
+        "quotes": {k: round(float(v), 2) for k, v in prices.items()},
         "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e,
         "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today, pool_e, d_open),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
@@ -378,6 +379,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
         for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
             if t.get("exit_date") == today_iso:
                 rows.append({"time": "09:30", "action": "SELL", "symbol": str(t.get("symbol", "")).replace(".NS", ""),
+                             "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] == "A" else None,
                              "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
                              "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
                              "fill_today": True, "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), today_iso),
@@ -429,6 +431,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
             if t.get("exit_date") == today_iso:
                 qty = float(t.get("quantity", 0) or 0)
                 rows.append({"time": "05:30", "action": "SELL", "symbol": t.get("symbol"), "qty": qty,
+                             "symbol_key": t.get("symbol"), "book_key": b["key"],
                              "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
                              "book": b["display_name"], "status": "Closed", "fill_today": True,
                              "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), today_iso),

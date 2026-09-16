@@ -138,3 +138,59 @@ def apply_manual_exit(state_dir: str, pool: str, book_key: Optional[str], symbol
         "remaining": pos["quantity"] if symbol in positions else 0,
     })
     return {**trade, "pool": pool, "book": book_key, "remaining": pos["quantity"] if symbol in positions else 0}
+
+
+DEFAULT_STOP_PCT = {"A": 0.08, "B": 0.08, "C": 0.08, "E": 0.20}   # each pool's own protective-stop convention
+
+
+def apply_manual_entry(state_dir: str, pool: str, book_key: Optional[str], symbol: str, quantity: float,
+                       price: float, today: Optional[date] = None, now: Optional[datetime] = None,
+                       price_mode: str = "manual") -> dict:
+    """Opens (or adds to) a position by hand in Pools A, B, C or E, at
+    `price`, paying from the book's cash. The position gets the pool's
+    standard protective stop below the fill and is then managed by that
+    pool's engine like any other (stops daily, the strategy's own exit
+    rule). Pool D is refused: it is intraday and squares off by 15:25."""
+    today = today or date.today()
+    now = now or datetime.now()
+    if pool == "D":
+        raise ManualExitError("Pool D is intraday-only -- manual buys are not supported there")
+    if price is None or float(price) <= 0:
+        raise ManualExitError("price must be a positive number")
+    price = float(price)
+    book_dir = _book_dir(state_dir, pool, book_key)
+    pf_path = os.path.join(book_dir, "portfolio.json")
+    pf = _read_json(pf_path)
+    fractional = pool == "E"
+    qty = float(quantity) if fractional else int(quantity)
+    if qty <= 0:
+        raise ManualExitError("quantity must be positive")
+    cost = price * qty
+    cash = float(pf.get("cash", 0))
+    if cost > cash + 1e-9:
+        raise ManualExitError(f"not enough cash: {cost:,.2f} needed, {cash:,.2f} available")
+    positions = pf.setdefault("positions", {})
+    stop = round(price * (1 - DEFAULT_STOP_PCT[pool]), 4 if fractional else 2)
+    if symbol in positions:   # add to an existing position: average the entry, keep the tighter stop
+        pos = positions[symbol]
+        old_qty, old_price = float(pos["quantity"]), float(pos["entry_price"])
+        new_qty = old_qty + qty
+        pos["entry_price"] = round((old_price * old_qty + price * qty) / new_qty, 4 if fractional else 2)
+        pos["quantity"] = round(new_qty, 6) if fractional else int(new_qty)
+        pos["stop_loss"] = max(float(pos.get("stop_loss", 0) or 0), stop)
+    else:
+        pos = {"entry_price": price, "entry_date": today.isoformat(), "quantity": qty, "stop_loss": stop,
+               "manual": True}
+        if pool in ("B", "C"):
+            pos.update({"direction": "BUY", "target": None, "strategy_name": "manual", "confidence": 1.0})
+        positions[symbol] = pos
+    pf["cash"] = cash - cost
+    (pf.get("pending_entries") or {}).pop(symbol, None)
+    _write_json(pf_path, pf)
+    _append_jsonl(os.path.join(state_dir, AUDIT_FILENAME), {
+        "at": now.isoformat(timespec="seconds"), "action": "buy", "pool": pool, "book": book_key, "symbol": symbol,
+        "quantity": qty, "price": price, "price_mode": price_mode, "cost": round(cost, 2),
+    })
+    return {"symbol": symbol, "pool": pool, "book": book_key, "quantity": qty, "entry_price": price, "cost": round(cost, 2),
+            "stop_loss": positions[symbol]["stop_loss"], "position_quantity": positions[symbol]["quantity"],
+            "cash_left": round(pf["cash"], 2)}

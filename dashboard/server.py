@@ -257,10 +257,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not is_authorized(parse_qs(parsed.query), self.headers.get("Cookie", ""), self.access_key):
             self._send(HTTPStatus.FORBIDDEN, b'{"error": "forbidden"}', "application/json")
             return
-        if parsed.path != "/api/manual_exit":
+        if parsed.path not in ("/api/manual_exit", "/api/manual_entry"):
             self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
             return
-        from dashboard.manual_exit import ManualExitError, apply_manual_exit
+        from dashboard.manual_exit import ManualExitError, apply_manual_entry, apply_manual_exit
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
@@ -275,7 +275,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ManualExitError(f"no live quote for {symbol} right now -- enter a price manually")
             else:
                 price = float(body.get("price", 0))
-            trade = apply_manual_exit(STATE_DIR, pool, book, symbol, quantity, price, price_mode=mode)
+            if parsed.path == "/api/manual_entry":
+                trade = apply_manual_entry(STATE_DIR, pool, book, symbol, quantity, price, price_mode=mode)
+            else:
+                trade = apply_manual_exit(STATE_DIR, pool, book, symbol, quantity, price, price_mode=mode)
             self._send(HTTPStatus.OK, json.dumps({"ok": True, "trade": trade}).encode("utf-8"), "application/json")
         except ManualExitError as e:
             self._send(HTTPStatus.CONFLICT, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")

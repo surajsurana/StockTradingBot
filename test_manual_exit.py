@@ -122,5 +122,43 @@ class TestManualExit(unittest.TestCase):
             apply_manual_exit(self.root, "Z", None, "X.NS", 5, 100.0, TODAY, NOW)
 
 
+class TestManualEntry(unittest.TestCase):
+    def setUp(self):
+        self.root = _tree()
+
+    def test_pool_a_buy_new_and_add(self):
+        from dashboard.manual_exit import apply_manual_entry
+        t = apply_manual_entry(self.root, "A", "alpha", "Z.NS", 4, 200.0, TODAY, NOW, price_mode="market")
+        pf = json.load(open(os.path.join(self.root, "paper_trading", "alpha", "portfolio.json")))
+        self.assertEqual(pf["positions"]["Z.NS"]["quantity"], 4)
+        self.assertAlmostEqual(pf["positions"]["Z.NS"]["stop_loss"], 184.0)          # 8% below the fill
+        self.assertEqual(pf["positions"]["Z.NS"]["entry_date"], "2026-09-16")
+        self.assertAlmostEqual(pf["cash"], 1000.0 - 800.0)
+        self.assertEqual((t["cost"], t["cash_left"]), (800.0, 200.0))
+        apply_manual_entry(self.root, "A", "alpha", "X.NS", 1, 120.0, TODAY, NOW)    # adds to the existing 50 @ 100
+        pf = json.load(open(os.path.join(self.root, "paper_trading", "alpha", "portfolio.json")))
+        self.assertEqual(pf["positions"]["X.NS"]["quantity"], 51)
+        self.assertAlmostEqual(pf["positions"]["X.NS"]["entry_price"], round(5120 / 51, 2))
+        self.assertAlmostEqual(pf["positions"]["X.NS"]["stop_loss"], 110.4)          # the tighter of old 92 and new 110.4
+        self.assertAlmostEqual(pf["cash"], 80.0)
+        audit = _rows(os.path.join(self.root, AUDIT_FILENAME))
+        self.assertEqual([a["action"] for a in audit], ["buy", "buy"])
+
+    def test_pool_b_buy_has_the_engine_fields(self):
+        from dashboard.manual_exit import apply_manual_entry
+        apply_manual_entry(self.root, "B", None, "W.NS", 2, 100.0, TODAY, NOW)
+        pos = json.load(open(os.path.join(self.root, "portfolio_b", "portfolio.json")))["positions"]["W.NS"]
+        self.assertEqual((pos["direction"], pos["strategy_name"], pos["target"]), ("BUY", "manual", None))
+
+    def test_refusals(self):
+        from dashboard.manual_exit import apply_manual_entry
+        with self.assertRaises(ManualExitError):
+            apply_manual_entry(self.root, "A", "alpha", "Z.NS", 100, 200.0, TODAY, NOW)   # not enough cash
+        with self.assertRaises(ManualExitError):
+            apply_manual_entry(self.root, "D", None, "SBIN", 1, 1000.0, TODAY, NOW)       # intraday pool
+        with self.assertRaises(ManualExitError):
+            apply_manual_entry(self.root, "A", "alpha", "Z.NS", 0, 200.0, TODAY, NOW)
+
+
 if __name__ == "__main__":
     unittest.main()
