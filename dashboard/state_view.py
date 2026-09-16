@@ -362,7 +362,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
                 rows.append({"time": "09:30", "action": "BUY", "symbol": bare,
                              "qty": int(p["quantity"]), "price": round(float(p["entry_price"]), 2),
                              "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Open",
-                             "pnl": unbooked_by_symbol.get(bare), "note": "entry",
+                             "pnl": unbooked_by_symbol.get(bare), "note": "",
                              "cost": float(p["entry_price"]) * int(p["quantity"])})
         for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
             if t.get("exit_date") == today_iso:
@@ -379,7 +379,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
             rows.append({"time": ts[11:16], "action": "SELL" if p.get("direction") == "SELL" else "BUY",
                          "symbol": symbol, "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
                          "pool": "Pool D", "book": "Intraday", "status": "Open",
-                         "pnl": d_unbooked.get(symbol), "note": "entry (open)",
+                         "pnl": d_unbooked.get(symbol), "note": "",
                          "cost": float(p["entry_price"]) * float(p.get("quantity", 0) or 0)})
     for t in d_trades:
         if t.get("exit_date") != today_iso:
@@ -392,7 +392,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
         rows.append({"time": opened[11:16] if opened.startswith(today_iso) else "", "action": side_in,
                      "symbol": t.get("symbol"), "qty": t.get("quantity"),
                      "price": round(float(t.get("entry_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
-                     "status": "Closed", "pnl": None, "note": "entry of a trade closed later today"})
+                     "status": "Closed", "pnl": None, "note": "entry leg; closed later today"})
         rows.append({"time": closed[11:16] if closed else "", "action": "BUY" if side_in == "SELL" else "SELL",
                      "symbol": t.get("symbol"), "qty": t.get("quantity"),
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
@@ -411,7 +411,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
                              "price": round(p["entry_price"], 2), "pool": "Pool E", "book": b["display_name"],
                              "status": "Open", "pnl": round(p["unbooked_post_tax"] * rate, 2),
                              "cost": p["entry_price"] * p["quantity"] * rate,
-                             "note": "entry (USDT; P&L post-tax in Rs.)", "kind": "Crypto",
+                             "note": "price in USDT; P&L post-tax in Rs.", "kind": "Crypto",
                              "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
         for t in b["recent_trades"]:
             if t.get("exit_date") == today_iso:
