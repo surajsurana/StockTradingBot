@@ -113,15 +113,20 @@ class TestBuildDashboardState(unittest.TestCase):
         acts = self.s["activity_today"]
         self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
                          [("05:30", "BUY", "BTC"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
-                          ("", "SELL", "OLDREC")])   # one row per closed intraday trade; unstamped exit sorted last
+                          ("", "SELL", "OLDREC"), ("", "BUY", "X")])   # X.NS: open since 1 Sep, listed with no fill time
         self.assertEqual(acts[1]["pnl"], -500.0)
         self.assertEqual(acts[1]["note"], "stop loss")
         self.assertEqual((acts[1]["status"], acts[1]["held_days"]), ("Closed", 0))
         self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
         self.assertEqual(acts[2]["status"], "Open")
         self.assertEqual(acts[3]["pnl"], 40.0)
-        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:]))
+        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:4]))
         self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool E", "Crypto"))
+        x = acts[4]
+        self.assertEqual((x["pool"], x["status"], x["bought_on"], x["held_days"], x["fill_today"]),
+                         ("Pool A", "Open", "2026-09-01", 9, False))
+        self.assertAlmostEqual(x["pnl"], (104.0 - 100.0) * 500)   # current P&L at the latest quote
+        self.assertAlmostEqual(x["pct"], 4.0)
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 

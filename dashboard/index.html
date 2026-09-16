@@ -152,7 +152,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="modenote" class="note" hidden></p>
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
-  <button role="tab" aria-selected="false" data-tab="positions">Positions</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="team">The team</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
@@ -170,23 +169,16 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="tblwrap"><table><thead><tr><th>Book</th><th class="n">Open</th><th class="n">Deployed</th><th class="n">Cash</th><th class="n">Unbooked</th><th class="n">Booked</th><th class="n">Today</th><th>Run</th></tr></thead><tbody id="books"></tbody></table></div>
 </section>
 
-<section id="tab-positions" hidden>
-  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
-    <label for="pos-pool">Pool</label><select id="pos-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
-    <label for="pos-kind">Type</label><select id="pos-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
-    <span id="count" class="note"></span></div>
-  <div class="tblwrap"><table><thead id="pos-head"></thead><tbody id="positions"></tbody></table></div>
-  <h2>Recent closed trades</h2>
-  <div class="tblwrap"><table><thead id="trades-head"></thead><tbody id="trades"></tbody></table></div>
-</section>
 
 <section id="tab-live" hidden>
   <div class="teamline" id="livecards"></div>
-  <h2>Bought and sold today</h2>
-  <div class="tools"><label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
+  <h2>Positions and today's trades</h2>
+  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
+    <label for="tape-status">Status</label><select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>
+    <label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
     <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
     <span id="tape-count" class="note"></span>
-    <span class="note" style="margin-left:auto"><i class="sw" style="background:color-mix(in srgb,var(--accent) 35%,var(--card))"></i> opened today &nbsp; <i class="sw" style="background:color-mix(in srgb,var(--warn) 40%,var(--card))"></i> closed today</span></div>
+    <span class="note" style="margin-left:auto"><i class="sw" style="background:color-mix(in srgb,var(--accent) 35%,var(--card))"></i> open &nbsp; <i class="sw" style="background:color-mix(in srgb,var(--warn) 40%,var(--card))"></i> closed</span></div>
   <div class="tblwrap" id="tape-wrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
 </section>
 
@@ -285,7 +277,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
-  renderOverview(s); renderPositions(s); renderLive(s); renderTeam(s); renderRegistry(s);
+  renderOverview(s); renderLive(s); renderTeam(s); renderRegistry(s);
   animateChanges();
 }
 
@@ -329,7 +321,7 @@ function renderOverview(s){
   document.getElementById("books").innerHTML = s.books.map(b => `<tr class="clickable" data-book="${esc(b.display_name)}" title="Show positions"><td>${esc(b.display_name)}${b.sid?`<span class="chip">${b.sid}</span>`:""}</td><td class="n">${b.positions}</td><td class="n">${inr(b.deployed)}</td><td class="n">${inr(b.cash)}</td>${cell(b.unrealised)}${cell(b.realised)}${cell(b.realised_today)}<td>${b.exists?(b.updated_today?`<span class="pill ok">today</span>`:`<span class="pill due">not yet today</span>`):`<span class="pill">starts soon</span>`}</td></tr>`).join("");
   document.querySelectorAll("#books tr.clickable").forEach(tr => tr.addEventListener("click", () => {
     document.getElementById("q").value = tr.dataset.book; FILTER = tr.dataset.book.toLowerCase();
-    document.querySelector('nav button[data-tab="positions"]').click(); renderPositions(STATE);
+    document.querySelector('nav button[data-tab="live"]').click(); renderTape(STATE);
   }));
 }
 
@@ -347,95 +339,48 @@ function sortRows(rows, cols, state, tieKey){
     return r*state.dir || String(a[tieKey]??"").localeCompare(String(b[tieKey]??""));
   });
 }
-const POS_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type",false],["book","Book",false],["entry_date","Entered",false],["qty","Qty",true],["entry","Entry",true],["price","Price",true],["unbooked","Unbooked",true],["pct","%",true],["stop","Stop",true]];
-const TRD_COLS = [["symbol","Symbol",false],["pool","Pool",false],["kind","Type",false],["book","Book",false],["exit_date","Closed",false],["qty","Qty",true],["entry","Entry",true],["exit","Exit",true],["pnl","P&L",true],["reason","Reason",false]];
-let POS_SORT = {key:"unbooked", dir:-1}, TRD_SORT = {key:"exit_date", dir:-1};
-
 const sel = id => document.getElementById(id).value;
-function renderPositions(s){
-  const f = FILTER, poolF = sel("pos-pool"), kindF = sel("pos-kind");
-  const match = (...fields) => !f || fields.some(v => String(v||"").toLowerCase().includes(f));
-  const keep = r => (!poolF || r.pool === poolF) && (!kindF || r.kind === kindF);
-  let positions = [], trades = [];
-  for(const b of s.books){
-    const label = `${b.display_name}${b.sid?" "+b.sid:""}`, pool = `Pool ${b.pool}`;
-    for(const p of b.positions_detail) if(match(p.symbol, label, pool, p.strategy_name, "swing"))
-      positions.push({...p, pool, kind:"Swing", book: b.display_name, chip: p.strategy_name});
-    for(const t of b.recent_trades) if(match(t.symbol, label, pool, "swing"))
-      trades.push({...t, pool, kind:"Swing", book: b.display_name, reason: (t.reason||"").replace("_"," ")});
-  }
-  for(const p of s.pool_d.open_positions) if(match(p.symbol, "Pool D", "intraday"))
-    positions.push({symbol:p.symbol, pool:"Pool D", kind:"Intraday", book:`${p.direction==="SELL"?"short":"long"}`, entry_date:(p.entry_timestamp||"").slice(0,16).replace("T"," "), qty:p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced});
-  for(const t of s.pool_d.recent_trades) if(t.exit_date===s.today && match(t.symbol, "Pool D", "intraday"))
-    trades.push({symbol:t.symbol, pool:"Pool D", kind:"Intraday", book:t.direction==="SELL"?"short":"long", entry_date:(t.entry_timestamp||"").slice(11,16), exit_date:`${t.exit_date} ${(t.exit_timestamp||"").slice(11,16)}`.trim(), qty:t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl, reason:String(t.reason||"").replace("_"," ")});
-  const rate = +s.pool_e.usdinr || 0;
-  for(const b of s.pool_e.books){
-    for(const p of b.open_positions) if(match(p.symbol, b.display_name, "Pool E", "crypto"))
-      positions.push({symbol:p.symbol, pool:"Pool E", kind:"Crypto", book:b.display_name, chip:"USDT", entry_date:p.entry_date||"", qty:+p.quantity, entry:+p.entry_price, price:+p.price, unbooked:+p.unbooked_post_tax*rate, pct:+p.pct, stop:+p.stop_loss, priced:!!p.priced, usdt:true});
-    for(const t of b.recent_trades) if(match(t.symbol, b.display_name, "Pool E", "crypto"))
-      trades.push({symbol:t.symbol, pool:"Pool E", kind:"Crypto", book:b.display_name, exit_date:t.exit_date, qty:+t.quantity, entry:+t.entry_price, exit:+t.exit_price, pnl:+t.pnl*rate, reason:`${String(t.exit_reason||"").replace("_"," ")} (raw ₹; tax in Pool E table)`});
-  }
-
-  sortableHead("pos-head", POS_COLS, POS_SORT, () => renderPositions(STATE));
-  sortableHead("trades-head", TRD_COLS, TRD_SORT, () => renderPositions(STATE));
-  const prow = p => { const k = `pos.${p.pool}.${p.book}.${p.symbol}`; return `<tr><td>${esc(p.symbol)}${p.chip?`<span class="chip">${esc(p.chip)}</span>`:""}</td><td>${esc(p.pool)}</td><td>${esc(p.kind)}</td><td>${esc(p.book)}</td><td>${esc(p.entry_date||"")}</td><td class="n">${p.usdt?(+p.qty).toFixed(6):p.qty}</td><td class="n">${(+p.entry).toFixed(2)}</td><td class="n">${lv(k+".px", +p.price, (+p.price).toFixed(2))}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(p.unbooked,true,k+".un")}<td class="n ${cls(p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(1)}%</td><td class="n">${(+p.stop).toFixed(2)}</td></tr>`; };
-  const trow = t => `<tr><td>${esc(t.symbol)}</td><td>${esc(t.pool)}</td><td>${esc(t.kind)}</td><td>${esc(t.book)}</td><td>${esc(t.exit_date||"?")}</td><td class="n">${t.qty??""}</td><td class="n">${t.entry!=null?(+t.entry).toFixed(2):""}</td><td class="n">${t.exit!=null?(+t.exit).toFixed(2):""}</td>${cell(t.pnl)}<td>${esc(t.reason||"")}</td></tr>`;
-  const sortedP = sortRows(positions.filter(keep), POS_COLS, POS_SORT, "symbol"), sortedT = sortRows(trades.filter(keep), TRD_COLS, TRD_SORT, "symbol");
-  document.getElementById("positions").innerHTML = sortedP.length ? sortedP.map(prow).join("") : `<tr><td colspan="11" class="note">no positions match</td></tr>`;
-  document.getElementById("trades").innerHTML = sortedT.length ? sortedT.map(trow).join("") : `<tr><td colspan="10" class="note">no closed trades</td></tr>`;
-  document.getElementById("count").textContent = `${sortedP.length} position${sortedP.length===1?"":"s"}`;
-}
-document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderPositions(STATE); });
-["pos-pool","pos-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderPositions(STATE); }));
-["tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
+document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
+["tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
   renderTape(s);
 
 }
 
-const TAPE_COLS = [["status","Status",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["bought_on","Bought on",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["note","Note",false],["held_days","Held (days)",true]];
+const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["note","Note",false],["held_days","Held (days)",true]];
 let TAPE_SORT = {key:"time", dir:1};
 function renderTape(s){
   document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => `<th class="${num?"n":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
-  const poolF = sel("tape-pool"), kindF = sel("tape-kind");
-  const rows = s.activity_today.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
+  const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
+  const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
+  const rows = s.activity_today.filter(a => hit(a) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
     const k = TAPE_SORT.key, x = a[k], y = b[k];
     if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||""); }
     return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||"");
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
-  renderLiveCards(s, rows, poolF, kindF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${esc(a.bought_on||"—")}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td class="trunc" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="note trunc" title="${esc(a.note||"")}">${a.note && a.note!=="entry"?esc(a.note):""}</td><td class="n">${a.held_days!=null?a.held_days:"—"}</td></tr>`).join("") : `<tr><td colspan="15" class="note">Nothing bought or sold yet today.</td></tr>`;
+  renderLiveCards(s, rows, poolF, kindF, statusF);
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td class="trunc" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="note trunc" title="${esc(a.note||"")}">${a.note && a.note!=="entry"?esc(a.note):""}</td><td class="n">${a.held_days!=null?a.held_days:"—"}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No open positions and nothing closed today.</td></tr>`;
 }
 
 // The cards above the Live day tab: today's numbers for whatever the pool/type filters select.
-function renderLiveCards(s, rows, poolF, kindF){
-  const bought = rows.filter(r => r.action === "BUY"), sold = rows.filter(r => r.action === "SELL");
+function renderLiveCards(s, rows, poolF, kindF, statusF){
+  const openRows = rows.filter(r => r.status === "Open"), closedRows = rows.filter(r => r.status === "Closed" && r.pnl != null);
+  const bought = rows.filter(r => r.fill_today && r.action === "BUY"), sold = rows.filter(r => r.fill_today && r.action === "SELL");
   const sum = (xs, k) => xs.reduce((a, r) => a + (+r[k] || 0), 0);
-  const closedLegs = rows.filter(r => r.status === "Closed" && r.pnl != null);
-  const booked = sum(closedLegs, "pnl"), boughtAmt = sum(bought, "amount"), soldAmt = sum(sold, "amount");
-  // unbooked P&L and open positions for the selected pools (type: Swing = A,B,C; Intraday = D; Crypto = E)
-  const poolsOf = {Swing: ["A","B","C"], Intraday: ["D"], Crypto: ["E"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E"];
-  if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
-  let unbooked = 0, open = 0;
-  for(const k of keys){
-    if(k === "D"){ unbooked += +s.pool_d.unrealised || 0; open += +s.pool_d.positions || 0; }
-    else if(k === "E"){ if(s.pool_e.exists){ unbooked += +s.pool_e.inr.unbooked.post_tax || 0; open += +s.pool_e.usdt.positions || 0; } }
-    else if(s.pools[k]){ unbooked += +s.pools[k].unrealised || 0; open += +s.pools[k].positions || 0; }
-  }
-  const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
+  const booked = sum(closedRows, "pnl"), current = sum(openRows, "pnl"), boughtAmt = sum(bought, "amount"), soldAmt = sum(sold, "amount");
+  const scope = poolF || kindF || FILTER || statusF ? [statusF, poolF, kindF, FILTER].filter(Boolean).join(" · ") : "all pools";
   const card = (v, label, i, title) => `<span class="k" style="animation-delay:${i*60}ms" title="${esc(title||"")}"><b>${v}</b>${label}</span>`;
   document.getElementById("livecards").innerHTML = [
-    card(lv("live.booked", booked, money(booked, true)), "profit booked today", 0, `from the ${closedLegs.length} positions closed today · ${scope}`),
-    card(lv("live.unbooked", unbooked, money(unbooked, true)), "current P&L", 1, `${open} open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
-    card(lv("live.bought", boughtAmt, money(boughtAmt)), `bought (${bought.length})`, 2, scope),
-    card(lv("live.sold", soldAmt, money(soldAmt)), `sold (${sold.length})`, 3, scope),
-    card(rows.length, "buys and sells today", 4, `every buy or sell order placed today · ${scope}`),
+    card(lv("live.current", current, money(current, true)), "current P&L", 0, `on the ${openRows.length} open positions shown · ${scope}`),
+    card(openRows.length, "open positions", 1, scope),
+    card(lv("live.booked", booked, money(booked, true)), "profit booked today", 2, `from the ${closedRows.length} positions closed today · ${scope}`),
+    card(lv("live.bought", boughtAmt, money(boughtAmt)), `bought today (${bought.length})`, 3, scope),
+    card(lv("live.sold", soldAmt, money(soldAmt)), `sold today (${sold.length})`, 4, scope),
   ].join("");
 }
 
