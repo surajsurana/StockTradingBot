@@ -34,6 +34,14 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .teamline .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--live);margin-right:6px;vertical-align:middle;animation:pulse 1.6s ease-in-out infinite}
 .teamline .pulse.off{background:var(--muted);animation:none}
 .teamline.big .k{padding:10px 16px;font-size:13.5px;gap:4px}.teamline.big b{font-size:19px}
+.cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.cards .grp{flex:1 1 260px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 14px;animation:rise .4s ease both}
+.cards .gt{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.cards .gi{display:flex;flex-wrap:wrap;gap:6px 22px}
+.cards .gi span{display:flex;flex-direction:column;gap:1px;font-size:12px;color:var(--muted)}.cards .gi i{font-style:normal}
+.cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}
+@media (prefers-reduced-motion:reduce){.cards .grp{animation:none}}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
 @media (prefers-reduced-motion:reduce){.teamline .k,.teamline .pulse{animation:none}}
@@ -184,9 +192,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 
 <section id="tab-live" hidden>
-  <div class="teamline big" id="livecards"></div>
+  <div class="cards" id="livecards"></div>
   <h2>Positions and today's trades</h2>
   <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
+    <label for="tape-from">From</label><input id="tape-from" type="date"><label for="tape-to">To</label><input id="tape-to" type="date">
     <label for="tape-book">Strategy</label><select id="tape-book"><option value="">All</option></select>
     <label for="tape-status">Status</label><select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>
     <label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
@@ -362,15 +371,15 @@ function sortRows(rows, cols, state, tieKey){
 }
 const sel = id => document.getElementById(id).value;
 document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
-["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
+["tape-from","tape-to","tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
   renderTape(s);
 
 }
 
-const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
-let TAPE_SORT = {key:"time", dir:1};
+const TAPE_COLS = [["status","Status",false],["date","Date",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
+let TAPE_SORT = {key:"date", dir:-1};
 function renderTape(s){
   document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}${k==="symbol"||k==="book"?" l":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
@@ -378,19 +387,22 @@ function renderTape(s){
   const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
   // the Strategy list only offers the books that belong to the selected pool / type
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
-  const bookNames = [...new Set(s.activity_today.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
+  const fromF = sel("tape-from"), toF = sel("tape-to");
+  const inRange = a => (!fromF || (a.date || "") >= fromF) && (!toF || (a.date || "") <= toF);
+  const bookNames = [...new Set(s.ledger.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.activity_today.filter(a => hit(a) && (!bookF || a.book === bookF) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
+  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
     const k = TAPE_SORT.key, x = a[k], y = b[k];
-    if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||""); }
-    return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||"");
+    const tie = (b.date||"").localeCompare(a.date||"") || (b.time||"").localeCompare(a.time||"") || (a.symbol||"").localeCompare(b.symbol||"");
+    if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || tie; }
+    return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || tie;
   });
-  document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
+  document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
   renderLiveCards(s, rows, poolF, kindF, statusF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No open positions and nothing closed today.</td></tr>`;
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.date||"—")}</td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="16" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 
@@ -413,16 +425,29 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
     capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
   }
   const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
-  const card = (v, label, i, title) => `<span class="k" style="animation-delay:${i*60}ms" title="${esc(title||"")}"><b>${v}</b>${label}</span>`;
+  const poolLetters = new Set(keys.map(k => "Pool " + k));
+  const openMove = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && a.pnl_today != null).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  const openRows = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool));
+  const inProfit = openRows.filter(a => (+a.pnl || 0) > 0).length, inLoss = openRows.filter(a => (+a.pnl || 0) < 0).length;
+  const val = (key, n, signed) => lv(key, n, `<b class="${signed ? cls(n) : ""}">${money(n, signed)}</b>`);
+  const item = (html, label, title) => `<span title="${esc(title||"")}">${html}<i>${label}</i></span>`;
+  const grp = (title, items, i) => `<div class="grp" style="animation-delay:${i*70}ms"><div class="gt">${title}</div><div class="gi">${items.join("")}</div></div>`;
   document.getElementById("livecards").innerHTML = [
-    card(lv("live.capital", capital, money(capital)), "total capital", 6, `what the selected books were given · ${scope}`),
-    card(lv("live.total", booked + unbooked, money(booked + unbooked, true)), "total P&L", 0, `booked ${money(booked, true)} + current ${money(unbooked, true)} · ${scope}`),
-    card(lv("live.current", unbooked, money(unbooked, true)), "current P&L", 1, `on ${open} open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
-    card(lv("live.today", today, money(today, true)), "today's P&L", 2, `booked today · ${scope}`),
-    card(lv("live.deployed", deployed, money(deployed)), "capital deployed", 3, `at cost · ${scope}`),
-    card(lv("live.cash", cash, money(cash)), "cash available", 4, scope),
-    card(open, "open positions", 5, scope),
-    card(strategies, "active strategies", 7, `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""}`),
+    grp("Capital", [
+      item(val("live.capital", capital, false), "total capital", `what the selected books were given · ${scope}`),
+      item(val("live.deployed", deployed, false), "deployed", `at cost · ${scope}`),
+      item(val("live.cash", cash, false), "cash available", scope),
+    ], 0),
+    grp("P&L", [
+      item(val("live.total", booked + unbooked, true), "total", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
+      item(val("live.today", today + openMove, true), "today", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
+    ], 1),
+    grp("Positions and strategies", [
+      item(`<b>${open}</b>`, "open positions", scope),
+      item(`<b class="gain">${inProfit}</b>`, "in profit", scope),
+      item(`<b class="loss">${inLoss}</b>`, "in loss", scope),
+      item(`<b>${strategies}</b>`, "active strategies", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""}`),
+    ], 2),
   ].join("");
 }
 

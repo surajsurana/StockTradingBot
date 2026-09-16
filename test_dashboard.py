@@ -83,7 +83,8 @@ class TestBuildDashboardState(unittest.TestCase):
                                 family="crypto research published strategy")]
         self.now = datetime(2026, 9, 10, 11, 0)
         self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0, "LT": 3890.0},
-                                       "2026-09-10T10:55", now=self.now, crypto_prices={"BTC": 84000.0}, usdinr=100.0)
+                                       "2026-09-10T10:55", now=self.now, crypto_prices={"BTC": 84000.0}, usdinr=100.0,
+                                       prev_close={"X.NS": 101.0}, crypto_prev_close={"BTC": 82000.0})
 
     def test_pool_e_is_its_own_pool_not_a_pool_a_book(self):
         self.assertNotIn("crypto_trend_timing", [b["key"] for b in self.s["books"]])
@@ -96,7 +97,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(self.s["overall"]["capital"],
                                91000 + 100000 + 100000 + self.s["pool_d"]["capital"] + 100000.0)   # + F: 1,000 USDT x 100
         self.assertAlmostEqual(self.s["overall"]["unrealised"], 2000.0 - 50.0 + 524.0)
-        buys = [r for r in self.s["activity_today"] if r["pool"] == "Pool E"]
+        buys = [r for r in self.s["ledger"] if r["pool"] == "Pool E"]
         self.assertEqual(len(buys), 1)
         self.assertEqual((buys[0]["kind"], buys[0]["time"], buys[0]["symbol"]), ("Crypto", "05:30", "BTC"))
         self.assertAlmostEqual(buys[0]["amount"], 20000.0)
@@ -109,24 +110,25 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertNotIn("A1", self.s["pools"])
         self.assertEqual(self.s["overall"]["positions"], 2)   # X.NS + Pool E's BTC; the legacy L.NS position is not counted
 
-    def test_activity_today_is_one_time_sorted_list_across_pools(self):
-        acts = self.s["activity_today"]
-        self.assertEqual([(a["time"], a["action"], a["symbol"]) for a in acts],
-                         [("05:30", "BUY", "BTC"), ("10:05", "BUY", "SBIN"), ("10:35", "BUY", "LT"),
-                          ("", "SELL", "OLDREC"), ("", "BUY", "X")])   # X.NS: open since 1 Sep, listed with no fill time
-        self.assertEqual(acts[1]["pnl"], -500.0)
-        self.assertEqual(acts[1]["note"], "stop loss")
-        self.assertEqual((acts[1]["status"], acts[1]["held_days"]), ("Closed", 0))
-        self.assertAlmostEqual(acts[2]["amount"], 3900.0 * 5)
-        self.assertEqual(acts[2]["status"], "Open")
-        self.assertEqual(acts[3]["pnl"], 40.0)
-        self.assertTrue(all(a["pool"] == "Pool D" and a["kind"] == "Intraday" for a in acts[1:4]))
-        self.assertEqual((acts[0]["pool"], acts[0]["kind"]), ("Pool E", "Crypto"))
-        x = acts[4]
+    def test_ledger_has_every_position_and_every_trade_newest_first(self):
+        acts = self.s["ledger"]
+        self.assertEqual([(a["date"], a["time"], a["action"], a["symbol"]) for a in acts],
+                         [("2026-09-10", "10:35", "BUY", "LT"), ("2026-09-10", "10:05", "BUY", "SBIN"),
+                          ("2026-09-10", "05:30", "BUY", "BTC"), ("2026-09-10", "", "SELL", "OLDREC"),
+                          ("2026-09-09", "09:30", "SELL", "Y"),      # alpha's closed trade from the 9th: history, not just today
+                          ("2026-09-01", "", "BUY", "X")])
+        sbin = acts[1]
+        self.assertEqual((sbin["pnl"], sbin["note"], sbin["status"], sbin["held_days"], sbin["fill_today"]), (-500.0, "stop loss", "Closed", 0, True))
+        self.assertAlmostEqual(acts[0]["amount"], 3900.0 * 5)
+        self.assertEqual((acts[0]["status"], acts[0]["pnl_today"]), ("Open", -50.0))   # intraday: today's move = its P&L
+        y = acts[4]
+        self.assertEqual((y["pool"], y["status"], y["fill_today"], y["held_days"], y["pnl"]), ("Pool A", "Closed", False, None, -1000.0))
+        x = acts[5]
         self.assertEqual((x["pool"], x["status"], x["bought_on"], x["held_days"], x["fill_today"]),
                          ("Pool A", "Open", "2026-09-01", 9, False))
         self.assertAlmostEqual(x["pnl"], (104.0 - 100.0) * 500)   # current P&L at the latest quote
         self.assertAlmostEqual(x["pct"], 4.0)
+        self.assertAlmostEqual(x["pnl_today"], (104.0 - 101.0) * 500)   # vs yesterday's close of 101
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 

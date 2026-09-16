@@ -83,6 +83,8 @@ class PriceCache:
         self.as_of = None
         self.crypto_prices = {}
         self.usdinr = None
+        self.prev_close = {}          # symbol -> last close BEFORE today (for "today's move" on open positions)
+        self.crypto_prev_close = {}   # coin -> last completed UTC daily close
         self._lock = threading.Lock()
 
     def _held_symbols(self) -> list:
@@ -114,11 +116,24 @@ class PriceCache:
         symbols = self._pool_e_symbols()
         quotes = fetch_crypto_last_prices(symbols) if symbols else {}
         rate = fetch_usdinr_rate() if (with_rate or self.usdinr is None) else None
+        prev = {}
+        if with_rate and symbols:   # once per full refresh: the last completed UTC daily close per held coin
+            from datetime import date as _date, timedelta
+            from data.fetch_crypto import fetch_binance_daily
+            for sym in symbols:
+                try:
+                    df = fetch_binance_daily(sym, start=_date.today() - timedelta(days=4))
+                    if not df.empty:
+                        prev[sym] = float(df["Close"].iloc[-1])
+                except Exception:
+                    pass
         with self._lock:
             if symbols:
                 self.crypto_prices = quotes
             if rate:
                 self.usdinr = rate
+            if prev:
+                self.crypto_prev_close = prev
 
     _kite_headers = None
     _kite_headers_day = None
@@ -144,14 +159,19 @@ class PriceCache:
         """Full refresh: yfinance closes for every held swing symbol, then
         Kite quotes on top for everything Kite knows (bare symbols)."""
         from data.fetch_historical import fetch_all
-        fresh = {}
+        fresh, prev = {}, {}
         symbols = self._held_symbols()
+        today = datetime.now().date()
         if symbols:
             for symbol, df in fetch_all(symbols, period="5d").items():
                 if df is not None and not df.empty:
                     fresh[symbol] = float(df["Close"].iloc[-1])
+                    before_today = df[df.index.date < today]
+                    if not before_today.empty:
+                        prev[symbol] = float(before_today["Close"].iloc[-1])
         with self._lock:
             self.prices = fresh
+            self.prev_close = prev
             self.as_of = datetime.now().isoformat(timespec="seconds")
         self.refresh_live()
         try:
@@ -186,6 +206,10 @@ class PriceCache:
     def crypto_snapshot(self) -> tuple:
         with self._lock:
             return dict(self.crypto_prices), self.usdinr
+
+    def prev_close_snapshot(self) -> tuple:
+        with self._lock:
+            return dict(self.prev_close), dict(self.crypto_prev_close)
 
     @staticmethod
     def _market_open(now=None) -> bool:
@@ -306,10 +330,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
             prices, as_of = self.price_cache.snapshot()
             crypto_prices, usdinr = self.price_cache.crypto_snapshot()
+            prev_close, crypto_prev_close = self.price_cache.prev_close_snapshot()
             registry = list_strategies()
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
                                           roadmap=self.roadmap_cache.get(), mode=mode,
-                                          crypto_prices=crypto_prices, usdinr=usdinr)
+                                          crypto_prices=crypto_prices, usdinr=usdinr,
+                                          prev_close=prev_close, crypto_prev_close=crypto_prev_close)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

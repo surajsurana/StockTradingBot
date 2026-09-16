@@ -258,7 +258,8 @@ def roadmap_view(roadmap: dict, registry_records: list) -> dict:
 def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list, prices: dict,
                           prices_as_of: Optional[str], now: Optional[datetime] = None,
                           roadmap: Optional[dict] = None, mode: str = "paper",
-                          crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None) -> dict:
+                          crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
+                          prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -339,7 +340,9 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},
         "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e,
-        "activity_today": _activity_today(state_dir, books, d_pf, d_trades, today, pool_e, d_open),
+        "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
+                          prev_close=prev_close, crypto_prev_close=crypto_prev_close,
+                          prices=prices, crypto_prices=crypto_prices),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
@@ -352,96 +355,120 @@ def _days_between(start_iso, end_iso) -> Optional[int]:
         return None
 
 
-def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
-                    pool_e: Optional[dict] = None, d_open: Optional[list] = None) -> list:
+def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
+            pool_e: Optional[dict] = None, d_open: Optional[list] = None,
+            prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
+            prices: Optional[dict] = None, crypto_prices: Optional[dict] = None) -> list:
     """One list for the Live day tab: EVERY open position (whenever it was
-    bought, with its current P&L) plus every trade closed today, across
-    Pools A, B, C, D and E. fill_today marks the rows that were actually
-    bought or sold today. Swing books fill at the open (09:30) so
-    their entries/exits carry that clock time; Pool D carries its own
-    tick timestamps."""
+    bought, with its current P&L) plus EVERY closed trade on record, across
+    Pools A, B, C, D and E. Each row carries `date` (the exit date for a
+    closed trade, the entry date for an open one) so the page can filter
+    by date range; fill_today marks rows bought or sold today.
+
+    pnl_today on an open row = (latest price - reference) x quantity,
+    where the reference is yesterday's close for a position held from
+    before today and the entry price for one bought today -- the day's
+    move on that position. Summed with the pool's booked-today figure it
+    gives "today's P&L including open positions" without any baseline
+    capture at the open. Missing prices contribute 0."""
     today_iso = today.isoformat()
+    prev_close, crypto_prev_close = prev_close or {}, crypto_prev_close or {}
+    prices, crypto_prices = prices or {}, crypto_prices or {}
     rows = []
+
+    def day_move(symbol_key: str, entry_price: float, qty: float, entered_today: bool, price: Optional[float],
+                 prev: Optional[float]) -> Optional[float]:
+        if price is None:
+            return None
+        ref = entry_price if entered_today else prev
+        return round((float(price) - float(ref)) * qty, 2) if ref else None
+
     for b in books:
         book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] == "A" else "")
         pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
         unbooked_by_symbol = {d["symbol"]: d["unbooked"] for d in b.get("positions_detail", [])}
-        for symbol, p in (pf.get("positions") or {}).items():   # EVERY open position, whenever it was bought
+        for symbol, p in (pf.get("positions") or {}).items():
             bare = symbol.replace(".NS", "")
             entered_today = p.get("entry_date") == today_iso
-            rows.append({"time": "09:30" if entered_today else "", "action": "BUY", "symbol": bare,
-                         "symbol_key": symbol, "book_key": b["key"] if b["pool"] == "A" else None,
-                         "qty": int(p["quantity"]), "price": round(float(p["entry_price"]), 2),
+            qty, entry = int(p["quantity"]), float(p["entry_price"])
+            rows.append({"date": p.get("entry_date"), "time": "09:30" if entered_today else "", "action": "BUY",
+                         "symbol": bare, "symbol_key": symbol, "book_key": b["key"] if b["pool"] == "A" else None,
+                         "qty": qty, "price": round(entry, 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Open",
                          "pnl": unbooked_by_symbol.get(bare), "note": "", "fill_today": entered_today,
+                         "pnl_today": day_move(symbol, entry, qty, entered_today, prices.get(symbol), prev_close.get(symbol)),
                          "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
-                         "cost": float(p["entry_price"]) * int(p["quantity"])})
+                         "cost": entry * qty})
         for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
-            if t.get("exit_date") == today_iso:
-                rows.append({"time": "09:30", "action": "SELL", "symbol": str(t.get("symbol", "")).replace(".NS", ""),
-                             "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] == "A" else None,
-                             "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
-                             "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
-                             "fill_today": True, "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), today_iso),
-                             "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
-                             "pnl": round(float(t.get("pnl", 0) or 0), 2),
-                             "note": (t.get("exit_reason") or t.get("reason") or "exit").replace("_", " ")})
+            rows.append({"date": t.get("exit_date"), "time": "09:30", "action": "SELL",
+                         "symbol": str(t.get("symbol", "")).replace(".NS", ""),
+                         "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] == "A" else None,
+                         "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
+                         "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
+                         "fill_today": t.get("exit_date") == today_iso, "bought_on": t.get("entry_date"),
+                         "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
+                         "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
+                         "pnl": round(float(t.get("pnl", 0) or 0), 2),
+                         "note": (t.get("exit_reason") or t.get("reason") or "exit").replace("_", " ")})
     d_unbooked = {o["symbol"]: o["unbooked"] for o in (d_open or [])}
     for symbol, p in (d_pf.get("positions") or {}).items():
         ts = p.get("entry_timestamp", "")
-        if ts.startswith(today_iso):
-            rows.append({"time": ts[11:16], "action": "SHORT" if p.get("direction") == "SELL" else "BUY",
-                         "direction": p.get("direction", "BUY"),
-                         "symbol": symbol, "symbol_key": symbol, "book_key": None,
-                         "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
-                         "pool": "Pool D", "book": "Intraday", "status": "Open", "fill_today": True,
-                         "pnl": d_unbooked.get(symbol), "note": "", "bought_on": today_iso, "held_days": 0,
-                         "cost": float(p["entry_price"]) * float(p.get("quantity", 0) or 0)})
+        rows.append({"date": ts[:10] or today_iso, "time": ts[11:16],
+                     "action": "SHORT" if p.get("direction") == "SELL" else "BUY",
+                     "direction": p.get("direction", "BUY"),
+                     "symbol": symbol, "symbol_key": symbol, "book_key": None,
+                     "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
+                     "pool": "Pool D", "book": "Intraday", "status": "Open", "fill_today": ts.startswith(today_iso),
+                     "pnl": d_unbooked.get(symbol), "pnl_today": d_unbooked.get(symbol), "note": "",
+                     "bought_on": ts[:10] or today_iso, "held_days": 0,
+                     "cost": float(p["entry_price"]) * float(p.get("quantity", 0) or 0)})
     for t in d_trades:
-        if t.get("exit_date") != today_iso:
-            continue
         opened, closed = t.get("entry_timestamp", ""), t.get("exit_timestamp", "")
         side_in = "SELL" if t.get("direction") == "SELL" else "BUY"
-        # One row per closed intraday trade: the exit, carrying the P&L (the
-        # entry leg is implied -- Pool D never holds overnight).
-        rows.append({"time": closed[11:16] if closed else "", "action": "BUY" if side_in == "SELL" else "SELL",
+        exit_date = t.get("exit_date") or closed[:10]
+        # One row per closed intraday trade: the exit, carrying the P&L (the entry leg is implied).
+        rows.append({"date": exit_date, "time": closed[11:16] if closed else "",
+                     "action": "BUY" if side_in == "SELL" else "SELL",
                      "symbol": t.get("symbol"), "qty": t.get("quantity"),
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
-                     "status": "Closed", "fill_today": True, "pnl": round(float(t.get("pnl", 0) or 0), 2),
-                     "bought_on": today_iso, "held_days": 0,
+                     "status": "Closed", "fill_today": exit_date == today_iso, "pnl": round(float(t.get("pnl", 0) or 0), 2),
+                     "bought_on": opened[:10] or exit_date, "held_days": 0,
                      "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
                      "note": str(t.get("reason", "")).replace("_", " ")})
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
         r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
-    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts in rupees.
+    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts and P&L in rupees (post-tax on open rows).
     rate = float((pool_e or {}).get("usdinr") or 0)
     for b in (pool_e or {}).get("books", []):
-        for p in b["open_positions"]:   # every open coin, whenever it was bought
+        for p in b["open_positions"]:
             entered_today = p.get("entry_date") == today_iso
-            rows.append({"time": "05:30" if entered_today else "", "action": "BUY", "symbol": p["symbol"],
-                         "symbol_key": p["symbol"], "book_key": b["key"],
+            move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
+                            crypto_prices.get(p["symbol"]), crypto_prev_close.get(p["symbol"]))
+            rows.append({"date": p.get("entry_date"), "time": "05:30" if entered_today else "", "action": "BUY",
+                         "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": b["key"],
                          "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool E",
                          "book": b["display_name"], "status": "Open", "fill_today": entered_today,
                          "pnl": round(p["unbooked_post_tax"] * rate, 2),
+                         "pnl_today": round(move * rate, 2) if move is not None else None,
                          "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
                          "cost": p["entry_price"] * p["quantity"] * rate,
                          "note": "price in USDT; P&L post-tax in Rs.", "kind": "Crypto",
                          "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
-        for t in b["recent_trades"]:
-            if t.get("exit_date") == today_iso:
-                qty = float(t.get("quantity", 0) or 0)
-                rows.append({"time": "05:30", "action": "SELL", "symbol": t.get("symbol"), "qty": qty,
-                             "symbol_key": t.get("symbol"), "book_key": b["key"],
-                             "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
-                             "book": b["display_name"], "status": "Closed", "fill_today": True,
-                             "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), today_iso),
-                             "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
-                             "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
-                             "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
-                             "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
+        for t in _read_jsonl(os.path.join(state_dir, "pool_e", b["key"], "trades.jsonl")):
+            qty = float(t.get("quantity", 0) or 0)
+            rows.append({"date": t.get("exit_date"), "time": "05:30", "action": "SELL", "symbol": t.get("symbol"),
+                         "qty": qty, "symbol_key": t.get("symbol"), "book_key": b["key"],
+                         "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
+                         "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
+                         "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
+                         "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
+                         "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
+                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
+                         "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
     for r in rows:
         cost = float(r.pop("cost", 0) or 0)
         r["pct"] = round(float(r["pnl"]) / cost * 100, 2) if r.get("pnl") is not None and cost > 0 else None
-    rows.sort(key=lambda r: (r["time"] or "99:99", r["symbol"] or ""))
+        r.setdefault("pnl_today", None)
+    rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["symbol"] or ""), reverse=True)   # newest first; unstamped last within a day
     return rows
