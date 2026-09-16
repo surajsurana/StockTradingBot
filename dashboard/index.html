@@ -174,6 +174,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-live" hidden>
+  <div class="teamline" id="livecards"></div>
   <h2>Today</h2>
   <div class="timeline" id="timeline"></div>
   <div class="jobs" id="jobs"></div>
@@ -434,7 +435,34 @@ function renderTape(s){
     return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||"");
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
+  renderLiveCards(s, rows, poolF, kindF);
   document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
+}
+
+// The cards above the Live day tab: today's numbers for whatever the pool/type filters select.
+function renderLiveCards(s, rows, poolF, kindF){
+  const bought = rows.filter(r => r.action === "BUY"), sold = rows.filter(r => r.action === "SELL");
+  const sum = (xs, k) => xs.reduce((a, r) => a + (+r[k] || 0), 0);
+  const booked = sum(sold, "pnl"), boughtAmt = sum(bought, "amount"), soldAmt = sum(sold, "amount");
+  // unbooked P&L and open positions for the selected pools (type: Swing = A,B,C; Intraday = D; Crypto = E)
+  const poolsOf = {Swing: ["A","B","C"], Intraday: ["D"], Crypto: ["E"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E"];
+  if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
+  let unbooked = 0, open = 0;
+  for(const k of keys){
+    if(k === "D"){ unbooked += +s.pool_d.unrealised || 0; open += +s.pool_d.positions || 0; }
+    else if(k === "E"){ if(s.pool_e.exists){ unbooked += +s.pool_e.inr.unbooked.post_tax || 0; open += +s.pool_e.usdt.positions || 0; } }
+    else if(s.pools[k]){ unbooked += +s.pools[k].unrealised || 0; open += +s.pools[k].positions || 0; }
+  }
+  const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
+  const card = (v, label, i, title) => `<span class="k" style="animation-delay:${i*60}ms" title="${esc(title||"")}"><b>${v}</b>${label}</span>`;
+  document.getElementById("livecards").innerHTML = [
+    card(lv("live.booked", booked, money(booked, true)), "booked today", 0, `${sold.length} sells · ${scope}`),
+    card(lv("live.unbooked", unbooked, money(unbooked, true)), "unbooked now", 1, `${open} open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
+    card(lv("live.bought", boughtAmt, money(boughtAmt)), `bought (${bought.length})`, 2, scope),
+    card(lv("live.sold", soldAmt, money(soldAmt)), `sold (${sold.length})`, 3, scope),
+    card(rows.length, "fills today", 4, scope),
+  ].join("");
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
