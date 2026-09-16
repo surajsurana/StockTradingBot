@@ -379,6 +379,14 @@ def apply_capital_winddown(strategy_key: str, risk_pct_per_unit: float,
 
     withdrawal = compute_winddown_withdrawal(cash, reserved, withdrawal_floor, daily_fraction,
                                                immediate_if_fully_idle=fully_idle)
+    if current_equity is not None:
+        # FIX 2026-09-16: the reduced floor exists to reach the excess that
+        # sits in POSITIONS, but the amount taken can never exceed the
+        # book's real excess over target (equity - target). Without this
+        # cap, a Rs.1,00,000 book whose equity was Rs.1,00,251 had
+        # Rs.48,088 of cash withdrawn (overnight_return_anomaly, 2026-09-08)
+        # -- six Pool A books were drained the same way and restored.
+        withdrawal = round(min(withdrawal, max(0.0, current_equity - target_active_capital)), 2)
     if withdrawal <= 0:
         reason = None if cash <= withdrawal_floor else "no idle cash after reservation"
         return {"withdrawn": 0.0, "reserved": reserved, "idle_cash": idle_cash,

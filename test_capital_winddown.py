@@ -482,6 +482,18 @@ class TestReducedFloorWhileEquityAboveTarget(unittest.TestCase):
                                 msg="must converge to the reduced floor (10%% of the 100,000 target by default), "
                                     "not below it")
 
+    def test_withdrawal_never_exceeds_the_books_real_excess_over_target(self):
+        """FIX 2026-09-16: a Rs.1,00,000 book whose equity is Rs.1,00,251
+        has only Rs.251 of excess -- the reduced floor must not let the
+        wind-down take Rs.40,000+ of its cash (which is exactly what
+        happened to six Pool A books on 7-9 September)."""
+        _seed_elevated_starting_cash(self.strategy_key, cash=63_431.0)
+        result = apply_capital_winddown(self.strategy_key, risk_pct_per_unit=0.01,
+                                         as_of_date=datetime.date(2024, 1, 1),
+                                         current_equity=100_251.41)
+        self.assertAlmostEqual(result["withdrawn"], 251.41, places=2)
+        self.assertAlmostEqual(pte.load_portfolio(self.strategy_key)["cash"], 63_431.0 - 251.41, places=2)
+
     def test_reduced_floor_does_not_apply_once_equity_at_target(self):
         """The moment current_equity is at or below the real target, this
         must revert to normal behavior -- a strategy is never wound down
