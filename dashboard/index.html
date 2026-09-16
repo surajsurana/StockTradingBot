@@ -39,9 +39,9 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
 .cards .gi{display:flex;flex-direction:column;gap:6px}
 .cards .gi span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;color:var(--muted);background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px}
-.cards .gi i{font-style:normal}.cards .gi span.link{cursor:pointer}.cards .gi span.link:hover{border-color:var(--accent)}
+.cards .gi i{font-style:normal}.cards .gi .sw2{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid var(--rule);border-radius:10px;font-size:10.5px;color:var(--accent)}.cards .gi span.link{cursor:pointer}.cards .gi span.link:hover{border-color:var(--accent)}
 .cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
-.cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}
+.cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}.cards .gi .op{color:var(--muted);margin:0 5px;font-size:13px}
 @media (prefers-reduced-motion:reduce){.cards .grp{animation:none}}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
@@ -165,7 +165,7 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .cal .grid .h{color:var(--muted);font-size:10px}.cal .grid .o{opacity:.35}
 .cal .grid .in{background:color-mix(in srgb,var(--accent) 18%,var(--card))}.cal .grid .end{background:var(--accent);color:var(--accent-ink)}
 .cal .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11.5px;color:var(--muted)}
-th{position:relative}th .hf{display:inline-flex;align-items:center;gap:2px}
+th{position:relative;white-space:nowrap}th .hf{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
 th .fbtn{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;padding:0 3px;border-radius:3px}th .fbtn:hover{background:var(--band);color:var(--ink)}th .fbtn.on{color:var(--accent);font-weight:700}
 th .hpop{position:absolute;top:100%;left:0;z-index:6;min-width:150px;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);text-transform:none;letter-spacing:0;text-align:left}
 th .hpop[hidden]{display:none}
@@ -347,7 +347,7 @@ function renderOverview(s){
   let rows = "";
   for(const k of ["A","F","B","C"]){
     const p = s.pools[k]; if(!p) continue;
-    rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised,true,`p.${k}.unreal`)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
+    rows += `<tr><td>${names[k]}${p.books > 1 ? `<div class="note">${p.books} books of ₹1,00,000 each</div>` : ""}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised,true,`p.${k}.unreal`)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
   }
   rows += `<tr><td>Pool D — intraday (Nifty 500, one book)</td><td class="n">${inr(d.capital)}</td><td class="n">${d.positions}</td><td class="n">${inr(d.deployed)}</td><td class="n">${inr(d.cash)}</td>${cell(d.unrealised,true,"p.D.unreal")}${cell(d.realised)}${cell(d.realised_today)}<td>${d.updated_today?`<span class="pill ok">ticking · ${(d.last_tick||"").slice(11)}</span>`:`<span class="pill">idle</span>`}</td></tr>`;
   if(f.exists){
@@ -495,7 +495,6 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
     else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
     else p = s.pools[k];
     if(!p) continue;
-    strategies += booksIn[k] || 0;
     capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
   }
   const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
@@ -507,14 +506,21 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   const item = (html, label, title) => `<span title="${esc(title||"")}">${html}<i>${label}</i></span>`;
   const grp = (title, items, i) => `<div class="grp" style="animation-delay:${i*70}ms"><div class="gt">${title}</div><div class="gi">${items.join("")}</div></div>`;
   const allStrats = s.strategies || [], researched = allStrats.filter(r => r.experiment).length;
+  const poolsOfRow = r => String(r.pool||"").split(", ").map(x => x.replace("Pool ", ""));
+  strategies = live ? Object.values(booksIn).reduce((t, n) => t + n, 0)
+                    : allStrats.filter(r => r.status === "PAPER_TRADING" && poolsOfRow(r).some(k => keys.includes(k))).length;
+  const closedRowsAll = s.ledger.filter(a => a.status === "Closed" && poolLetters.has(a.pool) && a.pnl != null);
+  const closedWin = closedRowsAll.filter(a => +a.pnl > 0).length, closedLoss = closedRowsAll.filter(a => +a.pnl < 0).length, closedFlat = closedRowsAll.length - closedWin - closedLoss;
+  const flat = open - inProfit - inLoss;
+  const pair = (win, loss, flatN, total) => `<b class="gain">${win}</b><span class="op">+</span><b class="loss">${loss}</b>${flatN ? `<span class="op">+</span><b>${flatN}</b>` : ""}<span class="op">=</span><b>${total}</b>`;
   const currentValue = cash + deployed + unbooked;
   const link = (html, label, title, filters) => `<span class="link" title="${esc(title||"")}" data-filters='${esc(JSON.stringify(filters))}'>${html}<i>${label}</i></span>`;
   document.getElementById("livecards").innerHTML = [
     grp("Capital", [
       item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
       PNL_MODE === "today"
-        ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L</i></span>`
-        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L</i></span>`,
+        ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L <span class="sw2" title="click for total">⇄ total</span></i></span>`
+        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄ today</span></i></span>`,
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
     grp("Deployed", [
@@ -522,9 +528,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
       item(val("live.cash", cash, false), "Cash available", scope),
     ], 1),
     grp("Positions", [
-      item(`<b>${open}</b>`, "Open positions", scope),
-      item(`<b class="gain">${inProfit}</b>`, "In profit", scope),
-      item(`<b class="loss">${inLoss}</b>`, "In loss", scope),
+      item(pair(inProfit, inLoss, flat, open), "Open: profit + loss = total", `${flat ? flat + " open position(s) are exactly at 0 (no move yet or no quote) · " : ""}${scope}`),
+      item(pair(closedWin, closedLoss, closedFlat, closedRowsAll.length), "Closed: profit + loss = total", `all closed trades on record · ${scope}`),
     ], 2),
     grp("Strategies", [
       link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": "PAPER_TRADING", "reg-pool": poolF || ""}),
