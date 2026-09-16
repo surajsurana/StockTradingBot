@@ -38,12 +38,12 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
 .cards .gi{display:flex;flex-direction:column;gap:6px}
-.cards .gi span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;color:var(--muted);background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px}
+.cards .gi > span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;color:var(--muted);background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px}
 .cards .gi i{font-style:normal}.cards .gi .sw2{display:inline-block;margin-left:6px;padding:1px 6px;border:1px solid var(--rule);border-radius:10px;font-size:10.5px;color:var(--accent)}.cards .gi span.link{cursor:pointer}.cards .gi span.link:hover{border-color:var(--accent)}
 .cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
 .cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}
 .cards .gi .trio{display:inline-flex;align-items:baseline;gap:12px}.cards .gi .trio em{font-style:normal;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px;font-weight:500}
-.cards .gi span.posrow{display:grid;grid-template-columns:1fr repeat(4,minmax(54px,auto));align-items:center;gap:10px}.cards .gi span.posrow em,.cards .gi span.posrow b{justify-self:end}
+.cards .gi > span.posrow{display:grid;grid-template-columns:1fr repeat(4,minmax(54px,auto));align-items:center;gap:10px}.cards .gi span.posrow em,.cards .gi span.posrow b{justify-self:end}
 .cards .gi span.posrow em{font-style:normal;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px;font-weight:500}.cards .gi span.posrow em.gain{color:var(--gain)}.cards .gi span.posrow em.loss{color:var(--loss)}.cards .gi span.posrow em.flat{color:var(--muted)}
 .cards .gi .trio em.gain{color:var(--gain)}.cards .gi .trio em.loss{color:var(--loss)}.cards .gi .trio em.flat{color:var(--muted)}.cards .gi .trio b{margin-left:4px}
 @media (prefers-reduced-motion:reduce){.cards .grp{animation:none}}
