@@ -50,7 +50,8 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 table{border-collapse:collapse;width:100%;min-width:640px}
 th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
 th button{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
-th button::after{content:" ↕";opacity:.4}th button.asc::after{content:" ↑";opacity:1}th button.desc::after{content:" ↓";opacity:1}
+th button.withsort::after,th button.sortbtn::after{content:"↕";opacity:.4}th button.asc::after{content:"↑";opacity:1}th button.desc::after{content:"↓";opacity:1}
+th button.withsort::after{margin-left:4px}th button.sortbtn{padding:0 2px}th button.sortbtn.asc::after,th button.sortbtn.desc::after{content:""}th button.sortbtn.asc::after{content:"↑"}th button.sortbtn.desc::after{content:"↓"}
 td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;vertical-align:top}
 #tape-wrap{overflow-x:visible}#tape-wrap table{min-width:0;font-size:12px}#tape-wrap th{padding:5px 6px;letter-spacing:.02em}#tape-wrap td{padding:4px 6px}
 #tape-wrap td.amt{font-weight:700;color:var(--ink)}
@@ -166,11 +167,11 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .cal .grid .in{background:color-mix(in srgb,var(--accent) 18%,var(--card))}.cal .grid .end{background:var(--accent);color:var(--accent-ink)}
 .cal .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11.5px;color:var(--muted)}
 th{position:relative}th .hf{display:inline-flex;align-items:center;gap:2px}
-th .fbtn{all:unset;cursor:pointer;font-size:10px;padding:0 4px;border-radius:3px;color:var(--muted);line-height:1.4}th .fbtn:hover,th .fbtn.on{background:var(--accent);color:var(--accent-ink)}
+th .fbtn{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;padding:0 3px;border-radius:3px}th .fbtn:hover{background:var(--band);color:var(--ink)}th .fbtn.on{color:var(--accent);font-weight:700}
 th .hpop{position:absolute;top:100%;left:0;z-index:6;min-width:150px;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);text-transform:none;letter-spacing:0;text-align:left}
 th .hpop[hidden]{display:none}
 th .hpop select,th .hpop input{font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%;box-sizing:border-box}
-th .calwrap .pop{left:0}
+th .pop{left:0;top:100%}
 .pop input{font:inherit;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)}
 .pop button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;align-self:flex-end}
 dialog p{margin:0 0 12px}
@@ -414,7 +415,8 @@ function calRender(){
 }
 // A column header with its own filter, Excel-style: label (sorts) + a small funnel that opens the control.
 function hcell(label, k, control, extraClass=""){
-  return `<th class="${extraClass}"><span class="hf"><button data-sort="${k}">${label}</button>${control ? `<button class="fbtn" data-hf="${k}" title="Filter">&#9662;</button><div class="hpop" data-hpop="${k}" hidden>${control}</div>` : ""}</span></th>`;
+  if(!control) return `<th class="${extraClass}"><span class="hf"><button data-sort="${k}" class="withsort">${label}</button></span></th>`;
+  return `<th class="${extraClass}"><span class="hf"><button class="fbtn" data-hf="${k}" title="Filter ${label}">${label}</button><button data-sort="${k}" class="sortbtn" title="Sort"></button><div class="hpop" data-hpop="${k}" hidden>${control}</div></span></th>`;
 }
 function wireHeadPopovers(head){
   head.querySelectorAll(".fbtn").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); const pop = head.querySelector(`.hpop[data-hpop="${b.dataset.hf}"]`); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden){ const f = pop.querySelector("input,select"); if(f) f.focus(); } }));
@@ -429,13 +431,13 @@ function buildTapeHead(){
   head.dataset.built = "1";
   const cell = k => ({
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>`,
-    date: `<span class="calwrap"><button id="tape-cal" class="iconbtn" title="Filter by date">&#128197;</button><div id="tape-pop" class="pop" hidden></div></span>`,
+    date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
     pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="date" ? `<th class="n"><span class="hf"><button data-sort="date">Date</button>${cell("date")}</span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
+  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="date" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Date</button><button data-sort="date" class="sortbtn" title="Sort"></button><div id="tape-pop" class="pop" hidden></div></span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
@@ -454,6 +456,7 @@ function renderTape(s){
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
   const fromF = CAL.from, toF = CAL.to;
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
+  document.getElementById("tape-cal").textContent = fromF || toF ? "Date ●" : "Date";
   const inRange = a => (!fromF || (a.date || "") >= fromF) && (!toF || (a.date || "") <= toF);
   const bookNames = [...new Set(s.ledger.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
