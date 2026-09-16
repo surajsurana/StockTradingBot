@@ -469,15 +469,8 @@ function renderTape(s){
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
   const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool G"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
-  const bookNames = [...new Set([
-    ...s.books.filter(b => inScope("Pool " + b.pool)).map(b => b.display_name),
-    ...(inScope("Pool D") ? ["Intraday"] : []),
-    ...(inScope("Pool E") && s.pool_e.exists ? s.pool_e.books.map(b => b.display_name) : []),
-    ...(inScope("Pool G") && s.pool_g.exists ? ["AI judgment"] : []),
-    ...s.ledger.filter(a => inScope(a.pool)).map(a => a.book),
-  ].filter(Boolean))].sort();
-  // Each book's SW code, so the dropdown can show and be searched by it (typing "SW-014" jumps
-  // to it via the browser's own select typeahead, since that matches the option's visible text).
+  // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
+  // jumps straight to it via the browser's own select typeahead, which matches the visible text).
   const strategyByKey = {}; (s.strategies || []).forEach(r => { strategyByKey[r.key] = r; });
   const sidFor = name => {
     const ab = s.books.find(b => b.display_name === name);
@@ -488,6 +481,14 @@ function renderTape(s){
     if(name === "AI judgment") return (strategyByKey["portfolio_g"] || {}).sid || "";
     return "";
   };
+  const sidNumber = sid => { const m = /(\d+)/.exec(sid || ""); return m ? +m[1] : Infinity; };
+  const bookNames = [...new Set([
+    ...s.books.filter(b => inScope("Pool " + b.pool)).map(b => b.display_name),
+    ...(inScope("Pool D") ? ["Intraday"] : []),
+    ...(inScope("Pool E") && s.pool_e.exists ? s.pool_e.books.map(b => b.display_name) : []),
+    ...(inScope("Pool G") && s.pool_g.exists ? ["AI judgment"] : []),
+    ...s.ledger.filter(a => inScope(a.pool)).map(a => a.book),
+  ].filter(Boolean))].sort((a, b) => sidNumber(sidFor(a)) - sidNumber(sidFor(b)) || a.localeCompare(b));
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => {
     const sid = sidFor(n);
     return `<option value="${esc(n)}"${n===prevBook?" selected":""}>${sid?esc(sid)+" · ":""}${esc(n)}</option>`;
