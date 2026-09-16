@@ -432,7 +432,9 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         else:
             b = summary["books"][pool][0]
             book_dir = os.path.join(state_dir, dirname)
-            books.append({**b, "pool": pool, "sid": "", "positions_detail": _positions_detail(book_dir, prices),
+            rec = next((r for r in registry_records if r.strategy_key == b["key"]), None)
+            books.append({**b, "pool": pool, "sid": getattr(rec, "strategy_id", "") if rec else "",
+                          "positions_detail": _positions_detail(book_dir, prices),
                           "recent_trades": _recent_trades(book_dir)})
 
     d_pf = _read_json(os.path.join(state_dir, "pool_d", "portfolio.json")) or {}
