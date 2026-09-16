@@ -124,19 +124,26 @@ def get_decisions(snapshot: dict, held: dict, api_key: str, model: str = "claude
 def _call_claude_best_effort(prompt: str, api_key: str, model: str) -> tuple:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
-    kwargs = dict(model=model, max_tokens=1500, system=SYSTEM_PROMPT,
+    # Five reasoned decisions plus any web-search result tokens can run well past a small
+    # budget before the model reaches its final JSON -- 1500 was cutting the reply off
+    # (stop_reason max_tokens, zero text blocks) on the very first live run.
+    kwargs = dict(model=model, max_tokens=4096, system=SYSTEM_PROMPT,
                  messages=[{"role": "user", "content": prompt}])
     # Best-effort: try with server-side web search so the model isn't reasoning purely from
     # its training data (materially stale for anything crypto-specific by now); if the SDK
-    # or the account's plan doesn't support it, fall back to a plain call rather than failing.
+    # or the account's plan doesn't support it, or the search-enabled reply comes back with
+    # no usable text (e.g. cut off mid-synthesis), fall back to a plain call rather than
+    # failing the whole run.
     try:
         response = client.messages.create(tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
                                            **kwargs)
-        web_search_used = True
+        text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
+        if text_blocks:
+            return "\n".join(text_blocks), True
     except Exception:
-        response = client.messages.create(**kwargs)
-        web_search_used = False
+        pass
+    response = client.messages.create(**kwargs)
     text_blocks = [b.text for b in response.content if getattr(b, "type", None) == "text"]
     if not text_blocks:
         raise RuntimeError("Claude's response contained no text block")
-    return "\n".join(text_blocks), web_search_used
+    return "\n".join(text_blocks), False
