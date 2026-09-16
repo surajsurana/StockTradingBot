@@ -165,9 +165,12 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .cal .grid .h{color:var(--muted);font-size:10px}.cal .grid .o{opacity:.35}
 .cal .grid .in{background:color-mix(in srgb,var(--accent) 18%,var(--card))}.cal .grid .end{background:var(--accent);color:var(--accent-ink)}
 .cal .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11.5px;color:var(--muted)}
-tr.filters th{padding:3px 4px;background:var(--card);border-bottom:2px solid var(--rule)}
-tr.filters select,tr.filters input{font:inherit;font-size:11.5px;padding:3px 4px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%;max-width:150px;text-transform:none;letter-spacing:0}
-tr.filters .calwrap{justify-content:center}
+th{position:relative}th .hf{display:inline-flex;align-items:center;gap:2px}
+th .fbtn{all:unset;cursor:pointer;font-size:10px;padding:0 4px;border-radius:3px;color:var(--muted);line-height:1.4}th .fbtn:hover,th .fbtn.on{background:var(--accent);color:var(--accent-ink)}
+th .hpop{position:absolute;top:100%;left:0;z-index:6;min-width:150px;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);text-transform:none;letter-spacing:0;text-align:left}
+th .hpop[hidden]{display:none}
+th .hpop select,th .hpop input{font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%;box-sizing:border-box}
+th .calwrap .pop{left:0}
 .pop input{font:inherit;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)}
 .pop button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;align-self:flex-end}
 dialog p{margin:0 0 12px}
@@ -409,6 +412,18 @@ function calRender(){
     calRender(); if(STATE) renderTape(STATE); }));
   document.getElementById("tape-clear").addEventListener("click", e => { e.stopPropagation(); CAL.from = ""; CAL.to = ""; calRender(); if(STATE) renderTape(STATE); });
 }
+// A column header with its own filter, Excel-style: label (sorts) + a small funnel that opens the control.
+function hcell(label, k, control, extraClass=""){
+  return `<th class="${extraClass}"><span class="hf"><button data-sort="${k}">${label}</button>${control ? `<button class="fbtn" data-hf="${k}" title="Filter">&#9662;</button><div class="hpop" data-hpop="${k}" hidden>${control}</div>` : ""}</span></th>`;
+}
+function wireHeadPopovers(head){
+  head.querySelectorAll(".fbtn").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); const pop = head.querySelector(`.hpop[data-hpop="${b.dataset.hf}"]`); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden){ const f = pop.querySelector("input,select"); if(f) f.focus(); } }));
+  head.querySelectorAll(".hpop").forEach(pop => pop.addEventListener("click", e => e.stopPropagation()));
+}
+document.addEventListener("click", () => document.querySelectorAll(".hpop").forEach(x => x.hidden = true));
+function markFilters(head, active){   // light up the funnels whose filter is set
+  head.querySelectorAll(".fbtn").forEach(b => b.classList.toggle("on", !!active[b.dataset.hf]));
+}
 function buildTapeHead(){
   const head = document.getElementById("tape-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
@@ -420,18 +435,19 @@ function buildTapeHead(){
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}${k==="symbol"||k==="book"?" l":""}"><button data-sort="${k}">${l}</button></th>`).join("")}</tr>`
-    + `<tr class="filters">${TAPE_COLS.map(([k]) => `<th>${cell(k)}</th>`).join("")}</tr>`;
+  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="date" ? `<th class="n"><span class="hf"><button data-sort="date">Date</button>${cell("date")}</span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
+  wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
   ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
-  document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); pop.hidden = !pop.hidden; if(!pop.hidden) calRender(); });
+  document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(); });
   document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
   document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
 }
 function renderTape(s){
   buildTapeHead();
   document.querySelectorAll("#tape-head button[data-sort]").forEach(b => { b.className = TAPE_SORT.key===b.dataset.sort ? (TAPE_SORT.dir>0?"asc":"desc") : ""; });
+  markFilters(document.getElementById("tape-head"), {status: sel("tape-status"), symbol: FILTER, pool: sel("tape-pool"), kind: sel("tape-kind"), book: sel("tape-book")});
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
   const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
   // the Strategy list only offers the books that belong to the selected pool / type
@@ -482,12 +498,14 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   const val = (key, n, signed) => lv(key, n, `<b class="${signed ? cls(n) : ""}">${money(n, signed)}</b>`);
   const item = (html, label, title) => `<span title="${esc(title||"")}">${html}<i>${label}</i></span>`;
   const grp = (title, items, i) => `<div class="grp" style="animation-delay:${i*70}ms"><div class="gt">${title}</div><div class="gi">${items.join("")}</div></div>`;
-  const allStrats = s.strategies || [], passed = allStrats.filter(r => r.verdict === "PASS").length, researched = allStrats.filter(r => r.experiment).length;
+  const allStrats = s.strategies || [], researched = allStrats.filter(r => r.experiment).length;
+  const currentValue = cash + deployed + unbooked;
   const link = (html, label, title, filters) => `<span class="link" title="${esc(title||"")}" data-filters='${esc(JSON.stringify(filters))}'>${html}<i>${label}</i></span>`;
   document.getElementById("livecards").innerHTML = [
     grp("Capital", [
-      item(val("live.capital", capital, false), "Total capital", `what the selected books were given · ${scope}`),
-      item(val("live.deployed", deployed, false), "Deployed", `at cost · ${scope}`),
+      item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
+      item(val("live.value", currentValue, false), "Current value", `cash + open positions at the latest quote = starting capital + total P&L · ${scope}`),
+      item(val("live.deployed", deployed, false), "Deployed", `open positions at cost · ${scope}`),
       item(val("live.cash", cash, false), "Cash available", scope),
     ], 0),
     grp("P&L", [
@@ -501,8 +519,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
     ], 2),
     grp("Strategies", [
       link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": "PAPER_TRADING", "reg-pool": poolF || ""}),
-      link(`<b class="gain">${passed}</b>`, "Passed research", "strategies with a PASS verdict · click to see them", {"reg-verdict": "PASS"}),
-      link(`<b>${researched}</b>`, "Researched", "every strategy with an experiment on record · click to see them", {}),
+      link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
     ], 3),
   ].join("");
   document.querySelectorAll("#livecards .link").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
@@ -631,8 +648,8 @@ function buildRegHead(){
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => `<th><button data-sort="${k}">${l}</button></th>`).join("")}</tr>`
-    + `<tr class="filters">${REG_COLS.map(([k]) => `<th>${cell(k)}</th>`).join("")}</tr>`;
+  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => hcell(l, k, cell(k))).join("")}</tr>`;
+  wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
   ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
 }
@@ -644,6 +661,7 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
 function renderRegistry(s){
   buildRegHead();
   document.querySelectorAll("#reg-head button[data-sort]").forEach(b => { b.className = REG_SORT.key===b.dataset.sort ? (REG_SORT.dir>0?"asc":"desc") : ""; });
+  markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
