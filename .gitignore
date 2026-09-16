@@ -42,3 +42,4 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+deployment/state/manual_actions.jsonl

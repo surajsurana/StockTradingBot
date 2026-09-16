@@ -250,6 +250,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        """Manual sell from the page (dashboard/manual_exit.py). Only the
+        paper books; 'market' resolves to the latest cached quote."""
+        parsed = urlparse(self.path)
+        if not is_authorized(parse_qs(parsed.query), self.headers.get("Cookie", ""), self.access_key):
+            self._send(HTTPStatus.FORBIDDEN, b'{"error": "forbidden"}', "application/json")
+            return
+        if parsed.path != "/api/manual_exit":
+            self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
+            return
+        from dashboard.manual_exit import ManualExitError, apply_manual_exit
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            pool, book = str(body.get("pool", "")).replace("Pool ", "").strip(), body.get("book") or None
+            symbol, quantity = str(body.get("symbol", "")), float(body.get("quantity", 0))
+            mode = "market" if body.get("price_mode") == "market" else "manual"
+            if mode == "market":
+                prices, _ = self.price_cache.snapshot()
+                crypto, usdinr = self.price_cache.crypto_snapshot()
+                price = crypto.get(symbol) if pool == "E" else prices.get(symbol, prices.get(symbol.replace(".NS", "")))
+                if not price:
+                    raise ManualExitError(f"no live quote for {symbol} right now -- enter a price manually")
+            else:
+                price = float(body.get("price", 0))
+            trade = apply_manual_exit(STATE_DIR, pool, book, symbol, quantity, price, price_mode=mode)
+            self._send(HTTPStatus.OK, json.dumps({"ok": True, "trade": trade}).encode("utf-8"), "application/json")
+        except ManualExitError as e:
+            self._send(HTTPStatus.CONFLICT, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+        except Exception as e:   # a bad body or an unexpected state file -- report, never crash the server
+            self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}).encode("utf-8"),
+                       "application/json")
+
     def do_GET(self):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)

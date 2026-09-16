@@ -369,6 +369,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
             bare = symbol.replace(".NS", "")
             entered_today = p.get("entry_date") == today_iso
             rows.append({"time": "09:30" if entered_today else "", "action": "BUY", "symbol": bare,
+                         "symbol_key": symbol, "book_key": b["key"] if b["pool"] == "A" else None,
                          "qty": int(p["quantity"]), "price": round(float(p["entry_price"]), 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Open",
                          "pnl": unbooked_by_symbol.get(bare), "note": "", "fill_today": entered_today,
@@ -388,7 +389,8 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
         ts = p.get("entry_timestamp", "")
         if ts.startswith(today_iso):
             rows.append({"time": ts[11:16], "action": "SELL" if p.get("direction") == "SELL" else "BUY",
-                         "symbol": symbol, "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
+                         "symbol": symbol, "symbol_key": symbol, "book_key": None,
+                         "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
                          "pool": "Pool D", "book": "Intraday", "status": "Open", "fill_today": True,
                          "pnl": d_unbooked.get(symbol), "note": "", "bought_on": today_iso, "held_days": 0,
                          "cost": float(p["entry_price"]) * float(p.get("quantity", 0) or 0)})
@@ -415,6 +417,7 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
         for p in b["open_positions"]:   # every open coin, whenever it was bought
             entered_today = p.get("entry_date") == today_iso
             rows.append({"time": "05:30" if entered_today else "", "action": "BUY", "symbol": p["symbol"],
+                         "symbol_key": p["symbol"], "book_key": b["key"],
                          "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool E",
                          "book": b["display_name"], "status": "Open", "fill_today": entered_today,
                          "pnl": round(p["unbooked_post_tax"] * rate, 2),
