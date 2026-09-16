@@ -486,13 +486,13 @@ function renderTape(s){
     return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || tie;
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
-  renderLiveCards(s, rows, poolF, kindF, statusF);
+  renderLiveCards(s, rows, poolF, kindF, statusF, bookF);
   document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 
-// The cards above the Live day tab: today's numbers for whatever the pool/type filters select.
-function renderLiveCards(s, rows, poolF, kindF, statusF){
+// The cards above the Live day tab: today's numbers for whatever the pool/type/strategy filters select.
+function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
   const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","G"]};
@@ -503,28 +503,54 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   const booksIn = live
     ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: s.pool_g.exists ? 1 : 0}
     : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: 1};
-  for(const k of keys){
-    let p = null;
-    if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
-    else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
-    else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.post_tax*r, unrealised: g.unbooked.post_tax*r, realised_today: g.booked_today.post_tax*r, positions: g.positions}; }
-    else p = s.pools[k];
-    if(!p) continue;
-    capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
+  // A single strategy/book picked from the "Strategy" filter -- the cards should show THAT
+  // book's own numbers, not the whole pool's. Look it up directly rather than summing `keys`.
+  const e_rate = s.pool_e.usdinr || 0, g_rate = s.pool_g.usdinr || 0;
+  let bookOne = null;
+  if(bookF){
+    const ab = s.books.find(b => b.display_name === bookF);
+    const eb = s.pool_e.exists ? s.pool_e.books.find(b => b.display_name === bookF) : null;
+    if(ab) bookOne = {pool: ab.pool, capital: ab.capital, deployed: ab.deployed, cash: ab.cash,
+                      realised: ab.realised, unrealised: ab.unrealised, realised_today: ab.realised_today, positions: ab.positions};
+    else if(eb) bookOne = {pool: "E", capital: eb.capital*e_rate, deployed: eb.deployed*e_rate, cash: eb.cash*e_rate,
+                          realised: eb.booked.post_tax*e_rate, unrealised: eb.unbooked.post_tax*e_rate,
+                          realised_today: eb.booked_today.post_tax*e_rate, positions: eb.positions};
+    else if(bookF === "Intraday") bookOne = {pool: "D", capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash,
+                                             realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
+    else if(bookF === "AI judgment" && s.pool_g.exists) bookOne = {pool: "G", capital: s.pool_g.capital*g_rate, deployed: s.pool_g.deployed*g_rate, cash: s.pool_g.cash*g_rate,
+                                                                    realised: s.pool_g.booked.post_tax*g_rate, unrealised: s.pool_g.unbooked.post_tax*g_rate,
+                                                                    realised_today: s.pool_g.booked_today.post_tax*g_rate, positions: s.pool_g.positions};
   }
-  const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
+  if(bookOne){
+    keys = [bookOne.pool];
+    capital = +bookOne.capital || 0; deployed = +bookOne.deployed || 0; cash = +bookOne.cash || 0;
+    booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; today = +bookOne.realised_today || 0; open = +bookOne.positions || 0;
+  } else {
+    for(const k of keys){
+      let p = null;
+      if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
+      else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
+      else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.post_tax*r, unrealised: g.unbooked.post_tax*r, realised_today: g.booked_today.post_tax*r, positions: g.positions}; }
+      else p = s.pools[k];
+      if(!p) continue;
+      capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
+    }
+  }
+  const scope = bookF || poolF || kindF ? [poolF, kindF, bookF].filter(Boolean).join(" · ") : "all pools";
   const poolLetters = new Set(keys.map(k => "Pool " + k));
-  const openMove = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && a.pnl_today != null).reduce((t, a) => t + (+a.pnl_today || 0), 0);
-  const openRows = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool));
+  const inBook = a => !bookF || a.book === bookF;
+  const openMove = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a) && a.pnl_today != null).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  const openRows = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a));
   const inProfit = openRows.filter(a => (+a.pnl || 0) > 0).length, inLoss = openRows.filter(a => (+a.pnl || 0) < 0).length;
   const val = (key, n, signed) => lv(key, n, `<b class="${signed ? cls(n) : ""}">${money(n, signed)}</b>`);
   const item = (html, label, title) => `<span title="${esc(title||"")}">${html}<i>${label}</i></span>`;
   const grp = (title, items, i) => `<div class="grp" style="animation-delay:${i*70}ms"><div class="gt">${title}</div><div class="gi">${items.join("")}</div></div>`;
   const allStrats = s.strategies || [], researched = allStrats.filter(r => r.experiment).length;
   const poolsOfRow = r => String(r.pool||"").split(", ").map(x => x.replace("Pool ", ""));
-  strategies = live ? Object.values(booksIn).reduce((t, n) => t + n, 0)
+  strategies = bookF ? 1
+             : live ? Object.values(booksIn).reduce((t, n) => t + n, 0)
                     : allStrats.filter(r => r.status === "PAPER_TRADING" && poolsOfRow(r).some(k => keys.includes(k))).length;
-  const closedRowsAll = s.ledger.filter(a => a.status === "Closed" && poolLetters.has(a.pool) && a.pnl != null);
+  const closedRowsAll = s.ledger.filter(a => a.status === "Closed" && poolLetters.has(a.pool) && inBook(a) && a.pnl != null);
   const closedWin = closedRowsAll.filter(a => +a.pnl > 0).length, closedLoss = closedRowsAll.filter(a => +a.pnl < 0).length, closedFlat = closedRowsAll.length - closedWin - closedLoss;
   const flat = open - inProfit - inLoss;
   const posrow = (label, win, loss, flatN, total, title) => `<span class="posrow" title="${esc(title||"")}"><i>${label}</i><em class="gain" title="in profit">&#9650; ${win}</em><em class="loss" title="in loss">&#9660; ${loss}</em><em class="flat" title="at zero (no move yet or no quote)">&#9679; ${flatN}</em><b title="total">${total}</b></span>`;
