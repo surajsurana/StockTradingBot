@@ -113,6 +113,8 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(all(str(rows[k]["sid"]) for k in ("portfolio_b", "portfolio_c", "pool_d_vwap_fade")))
         self.assertTrue(rows["crypto_trend_timing"]["brief"])
         self.assertTrue(rows["crypto_trend_timing"]["how"]["entry"])
+        self.assertEqual([v["pool"] for v in rows["alpha"]["variants"]], [])          # no Pool F twin in this fixture
+        self.assertEqual(rows["alpha"]["pool"], "Pool A")
         from dashboard.state_view import STRATEGY_HOW
         self.assertEqual([k for k in STRATEGY_BRIEFS if k not in STRATEGY_HOW], [])   # every brief has a how-it-trades
         from deployment.deployment_manager import list_strategies

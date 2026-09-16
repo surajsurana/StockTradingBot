@@ -146,6 +146,9 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 dialog{border:1px solid var(--rule);border-radius:12px;padding:18px 20px;max-width:420px;background:var(--card);color:var(--ink)}
 dialog#brief{max-width:560px}dialog#brief h4{margin:12px 0 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}dialog#brief p{margin:0 0 4px;line-height:1.5}
 dialog#brief .stats{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px}dialog#brief .stats b{font-family:"IBM Plex Mono",ui-monospace,monospace}
+dialog#brief .vtabs{display:flex;gap:6px;margin:10px 0 4px;border-bottom:1px solid var(--rule)}
+dialog#brief .vtab{all:unset;cursor:pointer;font:inherit;font-weight:600;font-size:12.5px;padding:6px 12px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+dialog#brief .vtab.on{color:var(--accent);border-bottom-color:var(--accent)}
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog .av{font-size:40px;line-height:1}
 dialog h3{margin:8px 0 2px;font-size:17px}
@@ -256,7 +259,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <label><input type="radio" name="sell-mode" value="manual"> Manual <input id="sell-price" type="number" min="0" step="0.01" disabled></label></div>
   <p class="err" id="sell-err" hidden></p>
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
-<dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4>What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
+<dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4 id="brief-what">What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
 
 <script>
@@ -702,7 +705,23 @@ function renderRegistry(s){
     const h = r.how || {}, m = r.research || {};
     const pct = v => v==null ? "—" : `${(+v).toFixed(1)}%`;
     const stats = Object.keys(m).length ? `<div class="stats">${m.total_trades!=null?`<span><b>${m.total_trades}</b> trades</span>`:""}${m.win_rate!=null?`<span><b>${(m.win_rate*100).toFixed(0)}%</b> win rate</span>`:""}${m.cagr!=null?`<span><b>${pct(m.cagr)}</b> a year${m.pre_tax?" post-tax":""}</span>`:""}${m.pre_tax&&m.pre_tax.cagr!=null?`<span><b>${pct(m.pre_tax.cagr)}</b> a year pre-tax</span>`:""}${m.max_drawdown_pct!=null?`<span><b>${pct(m.max_drawdown_pct)}</b> worst drawdown</span>`:""}${m.avg_holding_period_days!=null?`<span><b>${(+m.avg_holding_period_days).toFixed(0)}</b> days average hold</span>`:""}${m.evidence?`<span>evidence <b>${esc(m.evidence)}</b></span>`:""}</div>` : `<p class="note">No backtest on record${r.experiment?"":" (not a researched strategy)"}.</p>`;
-    document.getElementById("brief-how").innerHTML = `<h4>When it buys</h4><p>${esc(h.entry||"—")}</p><h4>When it sells</h4><p>${esc(h.exit||"—")}</p><h4>Size and risk</h4><p>${esc(h.risk||"—")}</p><h4>Where the idea comes from</h4><p>${esc(h.source||"—")}</p><h4>What the research found${r.experiment?" ("+esc(r.experiment)+")":""}</h4>${stats}`;
+    const mainHow = `<h4>When it buys</h4><p>${esc(h.entry||"—")}</p><h4>When it sells</h4><p>${esc(h.exit||"—")}</p><h4>Size and risk</h4><p>${esc(h.risk||"—")}</p><h4>Where the idea comes from</h4><p>${esc(h.source||"—")}</p><h4>What the research found${r.experiment?" ("+esc(r.experiment)+")":""}</h4>${stats}`;
+    const variants = r.variants || [];
+    if(variants.length > 1){
+      // one tab per pool: the main pool shows the strategy; a twin pool shows only what it changes
+      const panes = variants.map((v, i) => v.diff
+        ? `<div class="vpane" data-v="${i}" hidden><h4>${esc(v.title || "What this pool does differently")}</h4><p>${esc(v.brief||"")}</p><h4>When it sells</h4><p>${esc((v.how||{}).exit||"—")}</p><h4>Size and risk</h4><p>${esc((v.how||{}).risk||"—")}</p><p class="note">Everything else is exactly the ${esc(variants[0].pool)} strategy shown in the first tab.</p></div>`
+        : `<div class="vpane" data-v="${i}"><p>${esc(r.brief || "")}</p>${mainHow}</div>`).join("");
+      document.getElementById("brief-text").textContent = ""; document.getElementById("brief-what").hidden = true;
+      document.getElementById("brief-how").innerHTML = `<div class="vtabs">${variants.map((v, i) => `<button class="vtab ${i===0?"on":""}" data-v="${i}">${esc(v.pool)}</button>`).join("")}</div>${panes}`;
+      document.querySelectorAll("#brief-how .vtab").forEach(b => b.addEventListener("click", () => {
+        document.querySelectorAll("#brief-how .vtab").forEach(x => x.classList.toggle("on", x === b));
+        document.querySelectorAll("#brief-how .vpane").forEach(p => p.hidden = p.dataset.v !== b.dataset.v);
+      }));
+    } else {
+      document.getElementById("brief-what").hidden = false;
+      document.getElementById("brief-how").innerHTML = mainHow;
+    }
     document.getElementById("brief").showModal();
   }));
 

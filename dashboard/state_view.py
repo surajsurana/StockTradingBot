@@ -269,7 +269,12 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief,
-                     "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp)})
+                     "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
+                     # one tab per pool the strategy runs in; a twin pool carries only what it changes
+                     "variants": ([{"pool": "Pool A", "diff": False},
+                                   {"pool": "Pool F", "diff": True, "title": "What Pool F does differently",
+                                    "brief": STRATEGY_BRIEFS["pool_f"][1], "how": STRATEGY_HOW["pool_f"]}]
+                                  if pool == "Pool A, F" else [])})
     keys = {r["key"] for r in rows}
     # Before 2026-09-16 these three were not registry entries; keep the synthetic rows only if they are still missing.
     if "portfolio_b" not in keys:
