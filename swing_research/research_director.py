@@ -794,6 +794,55 @@ def run_max_effect_experiment(data: dict, start_date: date, end_date: date,
     )
 
 
+def run_turnover_liquidity_experiment(data: dict, start_date: date, end_date: date,
+                                       starting_capital: float = 1_000_000,
+                                       n_walk_forward_windows: int = 3,
+                                       narrative_api_key: str = "",
+                                       narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                       experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                       knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                       skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for Turnover /
+    Liquidity Anomaly -- computes the 1-month trailing average-turnover
+    cross-sectional percentile ONCE up front (same pattern as every prior
+    cross-sectional strategy), reused across every walk-forward window by
+    run_walk_forward_generic()'s own per-window slicing of
+    extra_columns_by_symbol. The one addition versus every prior
+    cross-sectional strategy: a shares-outstanding SNAPSHOT fetch (see
+    data/fetch_shares_outstanding.py's module docstring for the disclosed
+    historical-series limitation this implies).
+    """
+    from swing_research.strategies.turnover_liquidity import TurnoverLiquidityStrategy
+    from swing_research.published_research_analyst import TURNOVER_LIQUIDITY
+    from swing_research.cross_sectional import compute_turnover_percentile_ranks
+    from data.fetch_shares_outstanding import get_shares_outstanding
+
+    shares_outstanding = get_shares_outstanding(list(data.keys()), max_age_days=30)
+    turnover_percentiles = compute_turnover_percentile_ranks(data, shares_outstanding)
+    extra_columns = {symbol: series.rename("turnover_percentile") for symbol, series in turnover_percentiles.items()}
+
+    strategy = TurnoverLiquidityStrategy()
+    return run_generic_swing_experiment(
+        strategy, TURNOVER_LIQUIDITY, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "turnover_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "turnover_stop_loss_pct": 0.08,
+            "turnover_percentile_threshold": 10.0,
+            "turnover_formation_days": 21,
+            "turnover_holding_period_trading_days": 21,
+            "turnover_single_vintage": True,
+            "turnover_percentile_based_early_exit": False,
+            "shares_outstanding_symbols_found": len(shares_outstanding),
+            "shares_outstanding_symbols_requested": len(data),
+        },
+    )
+
+
 def run_idiosyncratic_volatility_experiment(data: dict, start_date: date, end_date: date,
                                              starting_capital: float = 1_000_000,
                                              n_walk_forward_windows: int = 3,

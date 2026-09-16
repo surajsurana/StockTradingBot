@@ -87,6 +87,7 @@ class TestResearchExperimentCatalogStructure(unittest.TestCase):
         "cross_sectional_momentum", "short_term_reversal", "betting_against_beta", "amihud_illiquidity",
         "max_effect", "idiosyncratic_volatility", "turn_of_month", "overnight_return_anomaly",
         "high_volume_return_premium", "earnings_announcement_premium", "downside_beta", "nifty_low_volatility_30", "ma_pullback", "volume_backed_breakout",
+        "turnover_liquidity",
     }
 
     def test_no_duplicate_keys(self):

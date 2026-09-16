@@ -214,6 +214,58 @@ def compute_max_effect_percentile_ranks(data: dict) -> dict:
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+TURNOVER_FORMATION_DAYS = 21   # ~1 month -- same window convention as every other cross-sectional
+                               # score in this module (RS, momentum, reversal, MAX effect); the
+                               # source paper's own formation window is not independently
+                               # re-verified beyond its existence (see turnover_liquidity.py's
+                               # module docstring), so this reuses the program's own established
+                               # default rather than inventing a paper-specific one.
+
+
+def compute_turnover_score(price_history: pd.DataFrame, shares_outstanding: float) -> pd.Series:
+    """Datar, Naik & Radcliffe (1998)'s turnover measure: traded volume as
+    a fraction of shares outstanding, averaged over the trailing
+    TURNOVER_FORMATION_DAYS. shares_outstanding is a single CURRENT
+    snapshot value (see data/fetch_shares_outstanding.py's module
+    docstring for the disclosed historical-series limitation) applied
+    across the whole price history -- if shares_outstanding is missing or
+    non-positive, returns an all-NaN Series so the symbol simply never
+    qualifies rather than dividing by zero."""
+    if not shares_outstanding or shares_outstanding <= 0:
+        return pd.Series(float("nan"), index=price_history.index)
+    daily_turnover = price_history["Volume"] / shares_outstanding
+    return daily_turnover.rolling(TURNOVER_FORMATION_DAYS).mean()
+
+
+def compute_turnover_percentile_ranks(data: dict, shares_outstanding: dict) -> dict:
+    """data: {symbol: DataFrame of daily OHLCV bars}. shares_outstanding:
+    {symbol: float}, from data/fetch_shares_outstanding.py.
+
+    Returns {symbol: pd.Series of turnover_percentile (0-100)} -- each
+    symbol's cross-sectional percentile rank, among whatever symbols have
+    both price history and a known share count that day, of its own
+    trailing-month average turnover. LOW percentile = LOW turnover (an
+    illiquid stock, trading a small fraction of its shares outstanding) --
+    this strategy's entry condition is percentile <=10, the bottom decile,
+    the same "long the calmer/less-traded decile" polarity as MAX Effect
+    and Betting Against Beta's bottom-decile conventions. Symbols with no
+    shares-outstanding figure are silently excluded from the cross-section
+    for every date (their score is all-NaN, so pandas' rank() ignores
+    them), not treated as automatically illiquid."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_turnover_score(df.sort_index(), shares_outstanding.get(symbol))
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 # Frazzini & Pedersen (2014) beta estimator: beta = rho x (sigma_i / sigma_m),
 # shrunk 0.6/0.4 toward 1.0. BETA_LOOKBACK_DAYS is an APPROVED DEVIATION
 # (2026-08-15) from the paper's own preferred 5-year (minimum 3-year)

@@ -1499,3 +1499,68 @@ CRYPTO_TREND_TIMING_DAILY = PublishedStrategy(
     distinctiveness="The fastest cadence of the SW-020 rule tested, completing the monthly/weekly/daily set requested to see where daily-tax economics stop supporting more frequent decisions.",
     assumptions_impact="Identical to SW-020 except: daily instead of monthly decisions -- the experiment's own question, expected (per SW-028's result) to trade more and carry a rougher drawdown.",
 )
+
+
+TURNOVER_LIQUIDITY = PublishedStrategy(
+    name="Turnover / Liquidity Anomaly",
+    source_citation=(
+        "Datar, V.T., Naik, N.Y. and Radcliffe, R. (1998), \"Liquidity and Stock Returns: An "
+        "Alternative Test,\" Journal of Financial Markets, Vol. 1, No. 2."
+    ),
+    mechanism=(
+        "Stocks that trade a smaller fraction of their own shares outstanding are harder to enter and "
+        "exit in size, and demand a return premium for that illiquidity -- a second, independent "
+        "operationalization of the same liquidity-premium family already tested via Amihud Illiquidity "
+        "(SW-010, a price-impact-per-rupee-traded proxy). Turnover and Amihud's ILLIQ are correlated "
+        "but not identical: turnover ignores price impact entirely and only measures how much of a "
+        "company's own float actually changes hands."
+    ),
+    rules=(
+        "Turnover, each formation date: trailing average of (daily Volume / shares outstanding). "
+        "Cross-sectional decile sort by turnover at each formation date. Long the BOTTOM decile "
+        "(lowest turnover, most illiquid) -- the paper's documented finding is an inverse relationship "
+        "between turnover and subsequent return."
+    ),
+    variant_chosen=(
+        "1-month (21-trading-day) trailing average turnover, this program's own established "
+        "cross-sectional formation window (same as RS, momentum, reversal, MAX effect) rather than a "
+        "paper-specific window independently re-verified beyond the paper's existence. 1-month holding, "
+        "single-vintage, same structural adaptation as every prior cross-sectional strategy."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy). SHARES OUTSTANDING IS A "
+        "CURRENT SNAPSHOT (data/fetch_shares_outstanding.py), not a historical series -- applied across "
+        "the whole backtest. This is the central disclosed approximation of this strategy: mild for a "
+        "large, stable Nifty 500 constituent, more material for anything with a big past split, bonus "
+        "issue, buyback or follow-on dilution between the backtest's start date and today. "
+        "SINGLE-VINTAGE HOLDING instead of any overlapping-portfolio construction. EXIT RULE is ONLY "
+        "the 21-trading-day time-stop or the synthetic protective stop -- no percentile-based early "
+        "exit, same discipline as every prior strategy. PROTECTIVE STOP-LOSS (8%) and POSITION SIZING "
+        "(1% risk per unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- the source paper is a "
+        "factor-return study with no position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "A second, independent liquidity-premium operationalization alongside Amihud Illiquidity "
+        "(SW-010) -- picked over the higher-raw-score Nifty Momentum 30 style and Industry Momentum "
+        "candidates specifically because the roadmap's own diversification scoring rates it far above "
+        "either (9.0/10 vs ~7.5): this program already has two PASS momentum-family strategies "
+        "(SW-003, SW-006), so a third adds little; a genuinely different risk-premium family adds more. "
+        "Reuses swing_research/cross_sectional.py's existing vectorized .rank(pct=True, axis=1) "
+        "pattern via a new compute_turnover_percentile_ranks() function, and the new "
+        "data/fetch_shares_outstanding.py cache module for the one new data input this candidate "
+        "needs that no prior strategy has required."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. "
+        "Current-snapshot shares outstanding (vs. a true historical series): MINOR for most Nifty 500 "
+        "constituents (stable float), but POTENTIALLY MATERIAL for any name with a large historical "
+        "split/bonus/buyback/dilution inside the backtest window -- not individually audited per symbol "
+        "here. 1-month formation window (vs. a paper-specific window not independently re-verified): "
+        "MINOR, a direct reuse of this program's own established cross-sectional default. "
+        "Single-vintage holding (vs. an overlapping-portfolio construction): MODERATE, same direction "
+        "and magnitude as every prior cross-sectional strategy's identical deviation. "
+        "8% stop-loss and 1% position sizing (not part of the original methodology): MODERATE, adds "
+        "risk control the zero-cost academic portfolio never needed, likely REDUCES both upside and "
+        "drawdown versus the paper's unconstrained long leg."
+    ),
+)

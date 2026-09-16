@@ -293,6 +293,13 @@ RESEARCH_EXPERIMENT_SPECS = [
         ).run_idiosyncratic_volatility_experiment,
     ),
     ResearchExperimentSpec(
+        strategy_key="turnover_liquidity",
+        variant_description="Turnover / Liquidity Anomaly (trailing 1mo average Volume/shares-outstanding, bottom-decile percentile, 1mo single-vintage, current-snapshot shares outstanding)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_turnover_liquidity_experiment"]
+        ).run_turnover_liquidity_experiment,
+    ),
+    ResearchExperimentSpec(
         strategy_key="turn_of_month",
         variant_description="Turn-of-the-Month Effect (last trading day of month entry, 3-trading-day hold, applied per-symbol universe-wide, no cross-sectional selection)",
         runner_getter=lambda: __import__(
