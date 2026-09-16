@@ -390,7 +390,8 @@ def _activity_today(state_dir: str, books: list, d_pf: dict, d_trades: list, tod
     for symbol, p in (d_pf.get("positions") or {}).items():
         ts = p.get("entry_timestamp", "")
         if ts.startswith(today_iso):
-            rows.append({"time": ts[11:16], "action": "SELL" if p.get("direction") == "SELL" else "BUY",
+            rows.append({"time": ts[11:16], "action": "SHORT" if p.get("direction") == "SELL" else "BUY",
+                         "direction": p.get("direction", "BUY"),
                          "symbol": symbol, "symbol_key": symbol, "book_key": None,
                          "qty": p.get("quantity"), "price": round(float(p["entry_price"]), 2),
                          "pool": "Pool D", "book": "Intraday", "status": "Open", "fill_today": True,

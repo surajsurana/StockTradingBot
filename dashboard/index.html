@@ -44,9 +44,11 @@ th button{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-tran
 th button::after{content:" ↕";opacity:.4}th button.asc::after{content:" ↑";opacity:1}th button.desc::after{content:" ↓";opacity:1}
 td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;vertical-align:top}
 #tape-wrap{overflow-x:visible}#tape-wrap table{min-width:0;font-size:12px}#tape-wrap th{padding:5px 6px;letter-spacing:.02em}#tape-wrap td{padding:4px 6px}
-#tape-wrap td.amt{font-weight:600;color:var(--ink);background:color-mix(in srgb,var(--band) 70%,var(--card))}
+#tape-wrap td.amt{font-weight:700;color:var(--ink)}
+#tape-wrap td,#tape-wrap th{text-align:center}#tape-wrap th button{width:100%;text-align:center}
+#tape-wrap td.narrow,#tape-wrap th.narrow{max-width:96px;overflow:hidden;text-overflow:ellipsis}
 .sellbtn.buy{border-color:var(--gain);color:var(--gain)}.sellbtn.buy:hover{background:var(--gain);color:#fff}
-#tape-wrap td.trunc{max-width:150px;overflow:hidden;text-overflow:ellipsis}
+#tape-wrap td.trunc{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 tr.clickable{cursor:pointer}
@@ -184,6 +186,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="teamline big" id="livecards"></div>
   <h2>Positions and today's trades</h2>
   <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
+    <label for="tape-book">Strategy</label><select id="tape-book"><option value="">All</option></select>
     <label for="tape-status">Status</label><select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>
     <label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
     <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
@@ -358,7 +361,7 @@ function sortRows(rows, cols, state, tieKey){
 }
 const sel = id => document.getElementById(id).value;
 document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
-["tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
+["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
   renderTape(s);
@@ -371,9 +374,12 @@ function renderTape(s){
   document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
-  const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
+  const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
+  const bookNames = [...new Set(s.activity_today.map(a => a.book).filter(Boolean))].sort();
+  bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
+  const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status"), bookF = sel("tape-book");
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.activity_today.filter(a => hit(a) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
+  const rows = s.activity_today.filter(a => hit(a) && (!bookF || a.book === bookF) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
     const k = TAPE_SORT.key, x = a[k], y = b[k];
     if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || (a.time||"").localeCompare(b.time||""); }
@@ -381,7 +387,7 @@ function renderTape(s){
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
   renderLiveCards(s, rows, poolF, kindF, statusF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td class="trunc" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.symbol_key && MODE==="paper" && !(a.status==="Closed" && a.pool==="Pool D") ? `<button class="sellbtn ${a.status==="Closed"?"buy":""}" data-row="${esc(JSON.stringify({side:a.status==="Open"?"sell":"buy", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.status==="Open"?"Sell":"Buy"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No open positions and nothing closed today.</td></tr>`;
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td class="trunc narrow" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No open positions and nothing closed today.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 
@@ -392,18 +398,19 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   const poolsOf = {Swing: ["A","B","C"], Intraday: ["D"], Crypto: ["E"]};
   let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
-  let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0;
+  let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0;
   for(const k of keys){
     let p = null;
-    if(k === "D") p = {deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
-    else if(k === "E"){ if(s.pool_e.exists) p = {deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
+    if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
+    else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
     else p = s.pools[k];
     if(!p) continue;
-    deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
+    capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
   }
   const scope = poolF || kindF ? [poolF, kindF].filter(Boolean).join(" · ") : "all pools";
   const card = (v, label, i, title) => `<span class="k" style="animation-delay:${i*60}ms" title="${esc(title||"")}"><b>${v}</b>${label}</span>`;
   document.getElementById("livecards").innerHTML = [
+    card(lv("live.capital", capital, money(capital)), "total capital", 6, `what the selected books were given · ${scope}`),
     card(lv("live.total", booked + unbooked, money(booked + unbooked, true)), "total P&L", 0, `booked ${money(booked, true)} + current ${money(unbooked, true)} · ${scope}`),
     card(lv("live.current", unbooked, money(unbooked, true)), "current P&L", 1, `on ${open} open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
     card(lv("live.today", today, money(today, true)), "today's P&L", 2, `booked today · ${scope}`),
@@ -487,16 +494,16 @@ function livePriceFor(r){
 }
 function openSell(r){
   SELL = r; const live = livePriceFor(r), buying = r.side === "buy";
-  document.getElementById("sell-title").textContent = `${buying ? "Buy" : "Sell"} ${r.shown}`;
+  document.getElementById("sell-title").textContent = `${buying ? "Buy" : (r.short ? "Buy back" : "Sell")} ${r.shown}`;
   document.getElementById("sell-sub").textContent = buying
     ? `${r.pool}${r.book_name && r.book_name!=="Intraday" ? " · " + r.book_name : ""} · buy back into this book; the pool's usual stop is set below the fill`
-    : `${r.pool}${r.book_name && r.book_name!=="Intraday" ? " · " + r.book_name : ""} · holding ${r.qty} at ${(+r.price).toFixed(2)}${r.kind==="Crypto"?" USDT":""}`;
+    : `${r.pool}${r.book_name && r.book_name!=="Intraday" ? " · " + r.book_name : ""} · ${r.short ? "short" : "holding"} ${r.qty} at ${(+r.price).toFixed(2)}${r.kind==="Crypto"?" USDT":""}`;
   const q = document.getElementById("sell-qty"); q.value = r.qty; q.max = buying ? "" : r.qty; q.step = r.kind==="Crypto" ? "any" : "1";
   document.getElementById("sell-live").textContent = live ? `(now ${(+live).toFixed(2)})` : "(no live quote — use manual)";
   const market = document.querySelector('input[name="sell-mode"][value="market"]'), manual = document.querySelector('input[name="sell-mode"][value="manual"]');
   market.disabled = !live; (live ? market : manual).checked = true;
   const price = document.getElementById("sell-price"); price.value = live ? (+live).toFixed(2) : (+r.price).toFixed(2); price.disabled = !!live;
-  document.getElementById("sell-go").textContent = buying ? "Buy" : "Sell";
+  document.getElementById("sell-go").textContent = buying ? "Buy" : (r.short ? "Buy back" : "Sell");
   document.getElementById("sell-err").hidden = true;
   document.getElementById("sell").showModal();
 }
