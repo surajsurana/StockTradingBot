@@ -1,0 +1,43 @@
+{
+  "generated_at": "2026-09-16T21:42:06.558373",
+  "strategy_name": "volume_backed_breakout",
+  "strategy_variant": "Volume-Backed Breakout (ported prototype: close above prior 20-day high on >= 1.5x average volume, ATR stop, 2x reward:risk target)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "01bef274fda8bd73b62e4585bc31e6a5e0c40c34",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M swing_research/knowledge_base.jsonl",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? deployment/state/daily_details.json",
+      "?? strategies/pullback_continuation.py",
+      "?? swing_research/experiments/EXP-090/",
+      "?? swing_research/run_manifests/2026-09-16T21-18-50-947405_ma_pullback.json",
+      "?? test_kite_connection.py"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "data_period": "2024-09-16 to 2026-09-16",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. Current-snapshot shares outstanding (vs. a true historical series): MINOR for most Nifty 500 constituents (stable float), but POTENTIALLY MATERIAL for any name with a large historical split/bonus/buyback/dilution inside the backtest window -- not individually audited per symbol here. 1-month formation window (vs. a paper-specific window not independently re-verified): MINOR, a direct reuse of this program's own established cross-sectional default. Single-vintage holding (vs. an overlapping-portfolio construction): MODERATE, same direction and magnitude as every prior cross-sectional strategy's identical deviation. 8% stop-loss and 1% position sizing (not part of the original methodology): MODERATE, adds risk control the zero-cost academic portfolio never needed, likely REDUCES both upside and drawdown versus the paper's unconstrained long leg.",
+  "turnover_risk_pct_per_unit": 0.01,
+  "turnover_stop_loss_pct": 0.08,
+  "turnover_percentile_threshold": 10.0,
+  "turnover_formation_days": 21,
+  "turnover_holding_period_trading_days": 21,
+  "turnover_single_vintage": true,
+  "turnover_percentile_based_early_exit": false,
+  "shares_outstanding_symbols_found": 457,
+  "shares_outstanding_symbols_requested": 457
+}

@@ -1,0 +1,17 @@
+{
+  "data_period": "2024-09-16 to 2026-09-16",
+  "starting_capital": 100000,
+  "universe_version": "v1",
+  "universe_symbol_count": 457,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Long-only: DIRECTIONALLY UNKNOWN. Entry-order ranking for the 10 slots: MINOR. Everything else is the prototype's own rule.",
+  "vbb_breakout_lookback_days": 20,
+  "vbb_volume_multiple": 1.5,
+  "vbb_stop_atr_multiple": 1.5,
+  "vbb_reward_risk_multiple": 2.0,
+  "vbb_risk_pct_per_unit": 0.01,
+  "fixed_target_checked_by_engine": true
+}
