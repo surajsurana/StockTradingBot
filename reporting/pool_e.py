@@ -32,7 +32,8 @@ from swing_research.crypto_costs import INDIA_VDA_TAX_RATE, INDIA_VDA_TDS_RATE, 
 POOL_E_DIRNAME = "pool_e"
 POOL_E_STARTING_CAPITAL_USDT = 1_000.0
 POOL_E_NAMES = {"crypto_trend_timing": "Crypto Trend Timing (Faber 10-month SMA)",
-                "crypto_tsmom": "Crypto Time-Series Momentum 12m (MOP 2012)"}
+                "crypto_tsmom": "Crypto Time-Series Momentum 12m (MOP 2012)",
+                "crypto_trend_timing_weekly": "Crypto Weekly Trend Timing (Faber, weekly)"}
 
 
 def _read_json(path: str) -> Optional[dict]:

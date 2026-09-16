@@ -40,6 +40,7 @@ from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from reporting.pool_e import POOL_E_STARTING_CAPITAL_USDT
 from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy, compute_month_end_sma
+from swing_research.strategies.crypto_trend_timing_weekly import CryptoWeeklyTrendTimingStrategy, compute_week_end_sma
 from swing_research.strategies.crypto_tsmom import CryptoTimeSeriesMomentumStrategy, compute_tsmom_signal
 
 POOL_E_STATE_DIR = os.path.join(STATE_DIR, "pool_e")
@@ -56,6 +57,13 @@ POOL_E_STRATEGIES = {
     "crypto_tsmom": (
         CryptoTimeSeriesMomentumStrategy, CRYPTO_MAJORS,
         lambda data: {s: compute_tsmom_signal(df)[["tsmom_return"]] for s, df in data.items()},
+    ),
+    # SW-028, promoted 2026-09-17 per direction ("crypto that runs all day ... not a single trade yet"):
+    # SW-020's own rule at weekly cadence -- EXP-089 PASS post-tax, more active but a rougher twin of
+    # SW-020, so this book mostly duplicates that exposure at a faster pace -- disclosed when promoted.
+    "crypto_trend_timing_weekly": (
+        CryptoWeeklyTrendTimingStrategy, CRYPTO_MAJORS,
+        lambda data: {s: compute_week_end_sma(df)[["sma_week_end"]] for s, df in data.items()},
     ),
 }
 
