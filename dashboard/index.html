@@ -50,8 +50,7 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 table{border-collapse:collapse;width:100%;min-width:640px}
 th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
 th button{all:unset;cursor:pointer;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
-th button.withsort::after,th button.sortbtn::after{content:"↕";opacity:.4}th button.asc::after{content:"↑";opacity:1}th button.desc::after{content:"↓";opacity:1}
-th button.withsort::after{margin-left:4px}th button.sortbtn{padding:0 2px}th button.sortbtn.asc::after,th button.sortbtn.desc::after{content:""}th button.sortbtn.asc::after{content:"↑"}th button.sortbtn.desc::after{content:"↓"}
+th button.sortbtn{padding:0 3px;opacity:.45}th button.sortbtn.asc,th button.sortbtn.desc{opacity:1;color:var(--accent)}
 td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;vertical-align:top}
 #tape-wrap{overflow-x:visible}#tape-wrap table{min-width:0;font-size:12px}#tape-wrap th{padding:5px 6px;letter-spacing:.02em}#tape-wrap td{padding:4px 6px}
 #tape-wrap td.amt{font-weight:700;color:var(--ink)}
@@ -288,7 +287,7 @@ function animateChanges(){
 }
 const tileMoney = (key, n, signed) => `<span class="lv ${cls(n)}" data-k="${key}" data-v="${n}" data-tween="money" data-signed="${signed?1:0}">${money(n, signed)}</span>`;
 const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper";
+let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper", PNL_MODE = "total";
 try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
 document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
@@ -396,8 +395,8 @@ function renderLive(s){
 
 }
 
-const TAPE_COLS = [["status","Status",false],["date","Date",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
-let TAPE_SORT = {key:"date", dir:-1};
+const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
+let TAPE_SORT = {key:"bought_on", dir:-1};
 const CAL = {y: null, m: null, from: "", to: ""};
 function pad(n){ return String(n).padStart(2, "0"); }
 function calRender(){
@@ -415,16 +414,19 @@ function calRender(){
 }
 // A column header with its own filter, Excel-style: label (sorts) + a small funnel that opens the control.
 function hcell(label, k, control, extraClass=""){
-  if(!control) return `<th class="${extraClass}"><span class="hf"><button data-sort="${k}" class="withsort">${label}</button></span></th>`;
-  return `<th class="${extraClass}"><span class="hf"><button class="fbtn" data-hf="${k}" title="Filter ${label}">${label}</button><button data-sort="${k}" class="sortbtn" title="Sort"></button><div class="hpop" data-hpop="${k}" hidden>${control}</div></span></th>`;
+  if(!control) return `<th class="${extraClass}"><span class="hf"><span class="lbl">${label}</span><button data-sort="${k}" class="sortbtn" title="Sort">↕</button></span></th>`;
+  return `<th class="${extraClass}"><span class="hf"><button class="fbtn" data-hf="${k}" title="Filter ${label}">${label}</button><button data-sort="${k}" class="sortbtn" title="Sort">↕</button><div class="hpop" data-hpop="${k}" hidden>${control}</div></span></th>`;
 }
 function wireHeadPopovers(head){
   head.querySelectorAll(".fbtn").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); const pop = head.querySelector(`.hpop[data-hpop="${b.dataset.hf}"]`); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden){ const f = pop.querySelector("input,select"); if(f) f.focus(); } }));
   head.querySelectorAll(".hpop").forEach(pop => pop.addEventListener("click", e => e.stopPropagation()));
 }
 document.addEventListener("click", () => document.querySelectorAll(".hpop").forEach(x => x.hidden = true));
-function markFilters(head, active){   // light up the funnels whose filter is set
+function markFilters(head, active){   // light up the column names whose filter is set
   head.querySelectorAll(".fbtn").forEach(b => b.classList.toggle("on", !!active[b.dataset.hf]));
+}
+function markSort(head, sort){        // arrow text on the sortable headers
+  head.querySelectorAll("button[data-sort]").forEach(b => { const on = sort.key===b.dataset.sort; b.className = "sortbtn" + (on ? (sort.dir>0?" asc":" desc") : ""); b.textContent = on ? (sort.dir>0 ? "↑" : "↓") : "↕"; });
 }
 function buildTapeHead(){
   const head = document.getElementById("tape-head"); if(head.dataset.built) return;
@@ -437,7 +439,7 @@ function buildTapeHead(){
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="date" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Date</button><button data-sort="date" class="sortbtn" title="Sort"></button><div id="tape-pop" class="pop" hidden></div></span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
+  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
@@ -448,7 +450,7 @@ function buildTapeHead(){
 }
 function renderTape(s){
   buildTapeHead();
-  document.querySelectorAll("#tape-head button[data-sort]").forEach(b => { b.className = TAPE_SORT.key===b.dataset.sort ? (TAPE_SORT.dir>0?"asc":"desc") : ""; });
+  markSort(document.getElementById("tape-head"), TAPE_SORT);
   markFilters(document.getElementById("tape-head"), {status: sel("tape-status"), symbol: FILTER, pool: sel("tape-pool"), kind: sel("tape-kind"), book: sel("tape-book")});
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
   const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
@@ -456,8 +458,8 @@ function renderTape(s){
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
   const fromF = CAL.from, toF = CAL.to;
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
-  document.getElementById("tape-cal").textContent = fromF || toF ? "Date ●" : "Date";
-  const inRange = a => (!fromF || (a.date || "") >= fromF) && (!toF || (a.date || "") <= toF);
+  document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
+  const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
   const bookNames = [...new Set(s.ledger.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
@@ -471,7 +473,7 @@ function renderTape(s){
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
   renderLiveCards(s, rows, poolF, kindF, statusF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.date||"—")}</td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="16" class="note">No positions or trades match.</td></tr>`;
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 
@@ -483,7 +485,10 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
-  const booksIn = {A: s.books.filter(b => b.pool === "A").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0};
+  const live = s.mode === "live";
+  const booksIn = live
+    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0}
+    : {A: s.books.filter(b => b.pool === "A").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0};
   for(const k of keys){
     let p = null;
     if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
@@ -507,13 +512,14 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   document.getElementById("livecards").innerHTML = [
     grp("Capital", [
       item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
-      item(val("live.value", currentValue, false), "Current value", `cash + open positions at the latest quote = starting capital + total P&L · ${scope}`),
+      PNL_MODE === "today"
+        ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L</i></span>`
+        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L</i></span>`,
+      item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
+    ], 0),
+    grp("Deployed", [
       item(val("live.deployed", deployed, false), "Deployed", `open positions at cost · ${scope}`),
       item(val("live.cash", cash, false), "Cash available", scope),
-    ], 0),
-    grp("P&L", [
-      item(val("live.total", booked + unbooked, true), "Total", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
-      item(val("live.today", today + openMove, true), "Today", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
     ], 1),
     grp("Positions", [
       item(`<b>${open}</b>`, "Open positions", scope),
@@ -525,7 +531,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
       link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
     ], 3),
   ].join("");
-  document.querySelectorAll("#livecards .link").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
+  document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
+  document.getElementById("pnl-toggle").addEventListener("click", () => { PNL_MODE = PNL_MODE === "today" ? "total" : "today"; renderTape(STATE); });
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
@@ -663,7 +670,7 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
 }
 function renderRegistry(s){
   buildRegHead();
-  document.querySelectorAll("#reg-head button[data-sort]").forEach(b => { b.className = REG_SORT.key===b.dataset.sort ? (REG_SORT.dir>0?"asc":"desc") : ""; });
+  markSort(document.getElementById("reg-head"), REG_SORT);
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
