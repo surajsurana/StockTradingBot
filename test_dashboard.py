@@ -111,6 +111,9 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["old"]["pool"], "-")
         self.assertEqual((rows["portfolio_b"]["type"], rows["portfolio_c"]["pool"], rows["pool_d_vwap_fade"]["verdict"]), ("AI", "Pool C", "REJECT"))
         self.assertTrue(rows["crypto_trend_timing"]["brief"])
+        self.assertTrue(rows["crypto_trend_timing"]["how"]["entry"])
+        from dashboard.state_view import STRATEGY_HOW
+        self.assertEqual([k for k in STRATEGY_BRIEFS if k not in STRATEGY_HOW], [])   # every brief has a how-it-trades
         from deployment.deployment_manager import list_strategies
         missing = [r.strategy_key for r in list_strategies() if r.strategy_key not in STRATEGY_BRIEFS]
         self.assertEqual(missing, [])   # every real registry strategy has a plain-language brief

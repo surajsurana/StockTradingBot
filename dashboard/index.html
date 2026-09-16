@@ -35,10 +35,11 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .teamline .pulse.off{background:var(--muted);animation:none}
 .teamline.big .k{padding:10px 16px;font-size:13.5px;gap:4px}.teamline.big b{font-size:19px}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
-.cards .grp{flex:1 1 260px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 14px;animation:rise .4s ease both}
-.cards .gt{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-.cards .gi{display:flex;flex-direction:column;gap:4px}
-.cards .gi span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:baseline;gap:12px;font-size:12.5px;color:var(--muted)}.cards .gi i{font-style:normal}
+.cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
+.cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
+.cards .gi{display:flex;flex-direction:column;gap:6px}
+.cards .gi span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:12px;font-size:12.5px;color:var(--muted);background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px}
+.cards .gi i{font-style:normal}.cards .gi span.link{cursor:pointer}.cards .gi span.link:hover{border-color:var(--accent)}
 .cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
 .cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}
 @media (prefers-reduced-motion:reduce){.cards .grp{animation:none}}
@@ -139,6 +140,8 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 0;color:var(--muted);font-size:12px}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
 dialog{border:1px solid var(--rule);border-radius:12px;padding:18px 20px;max-width:420px;background:var(--card);color:var(--ink)}
+dialog#brief{max-width:560px}dialog#brief h4{margin:12px 0 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}dialog#brief p{margin:0 0 4px;line-height:1.5}
+dialog#brief .stats{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px}dialog#brief .stats b{font-family:"IBM Plex Mono",ui-monospace,monospace}
 dialog::backdrop{background:rgba(0,0,0,.35)}
 dialog .av{font-size:40px;line-height:1}
 dialog h3{margin:8px 0 2px;font-size:17px}
@@ -151,9 +154,20 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .sellbtn{font:inherit;font-size:11.5px;padding:2px 9px;border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:4px;cursor:pointer}
 .sellbtn:hover{background:var(--accent);color:var(--accent-ink)}
 .calwrap{position:relative;display:inline-flex;align-items:center;gap:6px}
-.iconbtn{font:inherit;font-size:15px;padding:3px 8px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;line-height:1.2}
+.iconbtn{font:inherit;font-size:15px;padding:3px 8px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;line-height:1.2}.iconbtn.on{border-color:var(--accent);background:var(--chip)}
 .pop{position:absolute;top:34px;left:0;z-index:5;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);font-size:12.5px}
+.pop[hidden]{display:none}
 .pop label{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cal{width:224px;user-select:none}.cal .nav{display:flex;justify-content:space-between;align-items:center;font-weight:600;margin-bottom:6px}
+.cal .nav button{all:unset;cursor:pointer;padding:2px 8px;border-radius:4px}.cal .nav button:hover{background:var(--band)}
+.cal .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:11.5px}
+.cal .grid .d{padding:4px 0;border-radius:4px;cursor:pointer}.cal .grid .d:hover{background:var(--band)}
+.cal .grid .h{color:var(--muted);font-size:10px}.cal .grid .o{opacity:.35}
+.cal .grid .in{background:color-mix(in srgb,var(--accent) 18%,var(--card))}.cal .grid .end{background:var(--accent);color:var(--accent-ink)}
+.cal .foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:11.5px;color:var(--muted)}
+tr.filters th{padding:3px 4px;background:var(--card);border-bottom:2px solid var(--rule)}
+tr.filters select,tr.filters input{font:inherit;font-size:11.5px;padding:3px 4px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink);width:100%;max-width:150px;text-transform:none;letter-spacing:0}
+tr.filters .calwrap{justify-content:center}
 .pop input{font:inherit;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)}
 .pop button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;align-self:flex-end}
 dialog p{margin:0 0 12px}
@@ -199,15 +213,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-live" hidden>
   <div class="cards" id="livecards"></div>
-  <h2>Positions and today's trades</h2>
-  <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
-    <span class="calwrap"><button id="tape-cal" class="iconbtn" title="Filter by date">&#128197;</button><span id="tape-range" class="chip" hidden></span>
-      <div id="tape-pop" class="pop" hidden><label>From <input id="tape-from" type="date"></label><label>To <input id="tape-to" type="date"></label><button id="tape-clear">Clear</button></div></span>
-    <label for="tape-book">Strategy</label><select id="tape-book"><option value="">All</option></select>
-    <label for="tape-status">Status</label><select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>
-    <label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
-    <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
-    <span id="tape-count" class="note"></span>
+  <h2>Positions and trades</h2>
+  <div class="tools"><span id="tape-count" class="note"></span>
     <span class="note" style="margin-left:auto"><i class="sw" style="background:color-mix(in srgb,var(--accent) 35%,var(--card))"></i> open &nbsp; <i class="sw" style="background:color-mix(in srgb,var(--warn) 40%,var(--card))"></i> closed</span></div>
   <div class="tblwrap" id="tape-wrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
 </section>
@@ -226,11 +233,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
-  <div class="tools"><label for="reg-q">Find</label><input id="reg-q" type="search" placeholder="name or ID…" autocomplete="off">
-    <label for="reg-pool">Pool</label><select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option value="-">Not trading</option></select>
-    <label for="reg-type">Type</label><select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>
-    <label for="reg-verdict">Verdict</label><select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>
-    <span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy for what it does</span></div>
+  <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <h2>Next up for research</h2>
   <p class="note">Published strategies not yet built, ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value).</p>
@@ -246,7 +249,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <label><input type="radio" name="sell-mode" value="manual"> Manual <input id="sell-price" type="number" min="0" step="0.01" disabled></label></div>
   <p class="err" id="sell-err" hidden></p>
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
-<dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><p id="brief-text"></p><button id="brief-close">Close</button></dialog>
+<dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4>What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
 
 <script>
@@ -383,12 +386,6 @@ function sortRows(rows, cols, state, tieKey){
   });
 }
 const sel = id => document.getElementById(id).value;
-document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
-document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); pop.hidden = !pop.hidden; });
-document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
-document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
-document.getElementById("tape-clear").addEventListener("click", () => { document.getElementById("tape-from").value = ""; document.getElementById("tape-to").value = ""; document.getElementById("tape-pop").hidden = true; if(STATE) renderTape(STATE); });
-["tape-from","tape-to","tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
   renderTape(s);
@@ -397,15 +394,50 @@ function renderLive(s){
 
 const TAPE_COLS = [["status","Status",false],["date","Date",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"date", dir:-1};
+const CAL = {y: null, m: null, from: "", to: ""};
+function pad(n){ return String(n).padStart(2, "0"); }
+function calRender(){
+  const now = new Date(); if(CAL.y === null){ CAL.y = now.getFullYear(); CAL.m = now.getMonth(); }
+  const first = new Date(CAL.y, CAL.m, 1), start = (first.getDay() + 6) % 7, days = new Date(CAL.y, CAL.m + 1, 0).getDate();
+  const iso = d => `${CAL.y}-${pad(CAL.m + 1)}-${pad(d)}`;
+  let cells = ["M","T","W","T","F","S","S"].map(h => `<div class="h">${h}</div>`).join("") + `<div class="o"></div>`.repeat(start);
+  for(let d = 1; d <= days; d++){ const v = iso(d); const cl = (v === CAL.from || v === CAL.to) ? "end" : (CAL.from && CAL.to && v > CAL.from && v < CAL.to) ? "in" : ""; cells += `<div class="d ${cl}" data-d="${v}">${d}</div>`; }
+  document.getElementById("tape-pop").innerHTML = `<div class="cal"><div class="nav"><button data-nav="-1">&#8249;</button><span>${first.toLocaleString("en-IN",{month:"long",year:"numeric"})}</span><button data-nav="1">&#8250;</button></div><div class="grid">${cells}</div><div class="foot"><span>${CAL.from ? (CAL.to ? `${CAL.from} → ${CAL.to}` : `${CAL.from} → pick the end`) : "pick a start day"}</span><button id="tape-clear" class="iconbtn" style="font-size:11.5px">Clear</button></div></div>`;
+  document.querySelectorAll("#tape-pop [data-nav]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); CAL.m += +b.dataset.nav; if(CAL.m < 0){ CAL.m = 11; CAL.y--; } if(CAL.m > 11){ CAL.m = 0; CAL.y++; } calRender(); }));
+  document.querySelectorAll("#tape-pop .d[data-d]").forEach(c => c.addEventListener("click", e => { e.stopPropagation(); const v = c.dataset.d;
+    if(!CAL.from || (CAL.from && CAL.to)){ CAL.from = v; CAL.to = ""; } else if(v < CAL.from){ CAL.to = CAL.from; CAL.from = v; } else { CAL.to = v; }
+    calRender(); if(STATE) renderTape(STATE); }));
+  document.getElementById("tape-clear").addEventListener("click", e => { e.stopPropagation(); CAL.from = ""; CAL.to = ""; calRender(); if(STATE) renderTape(STATE); });
+}
+function buildTapeHead(){
+  const head = document.getElementById("tape-head"); if(head.dataset.built) return;
+  head.dataset.built = "1";
+  const cell = k => ({
+    status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>`,
+    date: `<span class="calwrap"><button id="tape-cal" class="iconbtn" title="Filter by date">&#128197;</button><div id="tape-pop" class="pop" hidden></div></span>`,
+    symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>`,
+    kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
+    book: `<select id="tape-book"><option value="">All</option></select>`,
+  })[k] || "";
+  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}${k==="symbol"||k==="book"?" l":""}"><button data-sort="${k}">${l}</button></th>`).join("")}</tr>`
+    + `<tr class="filters">${TAPE_COLS.map(([k]) => `<th>${cell(k)}</th>`).join("")}</tr>`;
+  head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
+  document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
+  ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
+  document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); pop.hidden = !pop.hidden; if(!pop.hidden) calRender(); });
+  document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
+}
 function renderTape(s){
-  document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}${k==="symbol"||k==="book"?" l":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
-  document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
+  buildTapeHead();
+  document.querySelectorAll("#tape-head button[data-sort]").forEach(b => { b.className = TAPE_SORT.key===b.dataset.sort ? (TAPE_SORT.dir>0?"asc":"desc") : ""; });
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
   const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
   // the Strategy list only offers the books that belong to the selected pool / type
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
-  const fromF = sel("tape-from"), toF = sel("tape-to");
-  const rangeChip = document.getElementById("tape-range"); rangeChip.hidden = !(fromF || toF); rangeChip.textContent = `${fromF || "…"} → ${toF || "…"}`;
+  const fromF = CAL.from, toF = CAL.to;
+  document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   const inRange = a => (!fromF || (a.date || "") >= fromF) && (!toF || (a.date || "") <= toF);
   const bookNames = [...new Set(s.ledger.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
@@ -450,23 +482,30 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
   const val = (key, n, signed) => lv(key, n, `<b class="${signed ? cls(n) : ""}">${money(n, signed)}</b>`);
   const item = (html, label, title) => `<span title="${esc(title||"")}">${html}<i>${label}</i></span>`;
   const grp = (title, items, i) => `<div class="grp" style="animation-delay:${i*70}ms"><div class="gt">${title}</div><div class="gi">${items.join("")}</div></div>`;
+  const allStrats = s.strategies || [], passed = allStrats.filter(r => r.verdict === "PASS").length, researched = allStrats.filter(r => r.experiment).length;
+  const link = (html, label, title, filters) => `<span class="link" title="${esc(title||"")}" data-filters='${esc(JSON.stringify(filters))}'>${html}<i>${label}</i></span>`;
   document.getElementById("livecards").innerHTML = [
     grp("Capital", [
-      item(val("live.capital", capital, false), "total capital", `what the selected books were given · ${scope}`),
-      item(val("live.deployed", deployed, false), "deployed", `at cost · ${scope}`),
-      item(val("live.cash", cash, false), "cash available", scope),
+      item(val("live.capital", capital, false), "Total capital", `what the selected books were given · ${scope}`),
+      item(val("live.deployed", deployed, false), "Deployed", `at cost · ${scope}`),
+      item(val("live.cash", cash, false), "Cash available", scope),
     ], 0),
     grp("P&L", [
-      item(val("live.total", booked + unbooked, true), "total", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
-      item(val("live.today", today + openMove, true), "today", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
+      item(val("live.total", booked + unbooked, true), "Total", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions · ${scope}${keys.includes("E")?" · Pool E post-tax":""}`),
+      item(val("live.today", today + openMove, true), "Today", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
     ], 1),
-    grp("Positions and strategies", [
-      item(`<b>${open}</b>`, "open positions", scope),
-      item(`<b class="gain">${inProfit}</b>`, "in profit", scope),
-      item(`<b class="loss">${inLoss}</b>`, "in loss", scope),
-      item(`<b>${strategies}</b>`, "active strategies", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""}`),
+    grp("Positions", [
+      item(`<b>${open}</b>`, "Open positions", scope),
+      item(`<b class="gain">${inProfit}</b>`, "In profit", scope),
+      item(`<b class="loss">${inLoss}</b>`, "In loss", scope),
     ], 2),
+    grp("Strategies", [
+      link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": "PAPER_TRADING", "reg-pool": poolF || ""}),
+      link(`<b class="gain">${passed}</b>`, "Passed research", "strategies with a PASS verdict · click to see them", {"reg-verdict": "PASS"}),
+      link(`<b>${researched}</b>`, "Researched", "every strategy with an experiment on record · click to see them", {}),
+    ], 3),
   ].join("");
+  document.querySelectorAll("#livecards .link").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
@@ -582,13 +621,32 @@ document.getElementById("sell-go").addEventListener("click", async () => {
 });
 
 const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
-["reg-q","reg-pool","reg-type","reg-verdict"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
+function buildRegHead(){
+  const head = document.getElementById("reg-head"); if(head.dataset.built) return;
+  head.dataset.built = "1";
+  const cell = k => ({
+    name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option value="-">Not trading</option></select>`,
+    type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>`,
+    verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
+    status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
+  })[k] || "";
+  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => `<th><button data-sort="${k}">${l}</button></th>`).join("")}</tr>`
+    + `<tr class="filters">${REG_COLS.map(([k]) => `<th>${cell(k)}</th>`).join("")}</tr>`;
+  head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
+  ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
+}
+function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
+  buildRegHead();
+  for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"]) document.getElementById(id).value = filters[id] || "";
+  document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
+}
 function renderRegistry(s){
-  document.getElementById("reg-head").innerHTML = `<tr>${REG_COLS.map(([k,l]) => `<th><button data-sort="${k}" class="${REG_SORT.key===k?(REG_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
-  document.querySelectorAll("#reg-head button").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
-  const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict");
+  buildRegHead();
+  document.querySelectorAll("#reg-head button[data-sort]").forEach(b => { b.className = REG_SORT.key===b.dataset.sort ? (REG_SORT.dir>0?"asc":"desc") : ""; });
+  const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
     .sort((a,b) => { const k=REG_SORT.key; const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace(/_/g," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");
@@ -597,6 +655,10 @@ function renderRegistry(s){
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
     document.getElementById("brief-meta").textContent = `${r.pool==="-"?"Not trading":r.pool} · ${r.type} · verdict ${r.verdict.replace(/_/g," ")} · ${r.status.replace(/_/g," ")}${r.experiment?" · "+r.experiment:""}`;
     document.getElementById("brief-text").textContent = r.brief || "No description written yet.";
+    const h = r.how || {}, m = r.research || {};
+    const pct = v => v==null ? "—" : `${(+v).toFixed(1)}%`;
+    const stats = Object.keys(m).length ? `<div class="stats">${m.total_trades!=null?`<span><b>${m.total_trades}</b> trades</span>`:""}${m.win_rate!=null?`<span><b>${(m.win_rate*100).toFixed(0)}%</b> win rate</span>`:""}${m.cagr!=null?`<span><b>${pct(m.cagr)}</b> a year${m.pre_tax?" post-tax":""}</span>`:""}${m.pre_tax&&m.pre_tax.cagr!=null?`<span><b>${pct(m.pre_tax.cagr)}</b> a year pre-tax</span>`:""}${m.max_drawdown_pct!=null?`<span><b>${pct(m.max_drawdown_pct)}</b> worst drawdown</span>`:""}${m.avg_holding_period_days!=null?`<span><b>${(+m.avg_holding_period_days).toFixed(0)}</b> days average hold</span>`:""}${m.evidence?`<span>evidence <b>${esc(m.evidence)}</b></span>`:""}</div>` : `<p class="note">No backtest on record${r.experiment?"":" (not a researched strategy)"}.</p>`;
+    document.getElementById("brief-how").innerHTML = `<h4>When it buys</h4><p>${esc(h.entry||"—")}</p><h4>When it sells</h4><p>${esc(h.exit||"—")}</p><h4>Size and risk</h4><p>${esc(h.risk||"—")}</p><h4>Where the idea comes from</h4><p>${esc(h.source||"—")}</p><h4>What the research found${r.experiment?" ("+esc(r.experiment)+")":""}</h4>${stats}`;
     document.getElementById("brief").showModal();
   }));
 

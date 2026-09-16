@@ -192,6 +192,61 @@ STRATEGY_BRIEFS = {
 }
 
 
+# How each strategy actually trades, in plain words: what it buys, when it
+# sells, how it is sized, and where the rule comes from.
+STRATEGY_HOW = {
+    "turtle_system2": {"entry": "Buy when today's price is the highest of the last 55 trading days; add up to four times as it keeps rising.", "exit": "Sell when the price falls to its lowest of the last 20 days, or at the stop.", "risk": "Position size set so a normal day's move risks about 1% of the book; stop two average daily ranges below entry.", "source": "Dennis and Eckhardt's Turtle rules (1983), as published by Curtis Faith."},
+    "minervini_trend_template_filter": {"entry": "Buy only stocks meeting all eight trend checks (rising 50/150/200-day averages in the right order, at least 30% above the 52-week low, within 25% of the 52-week high, stronger than 70% of the market), on the day they first qualify.", "exit": "Sell when the stock stops meeting the template, or at the 8% stop.", "risk": "1% of the book risked per position against an 8% stop; at most 10 positions.", "source": "Mark Minervini, Trade Like a Stock Market Wizard (2013)."},
+    "fifty_two_week_high_momentum": {"entry": "Buy the stocks closest to their 52-week high (top decile), on the day they enter it.", "exit": "Hold about six months, or the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "George and Hwang (2004), Journal of Finance."},
+    "ma_crossover": {"entry": "Buy when the 20-day average crosses above the 50-day average.", "exit": "Sell on the reverse cross or at the stop.", "risk": "Production risk settings: 1% per trade.", "source": "Classic technical rule; kept as a benchmark."},
+    "mean_reversion": {"entry": "Buy when the price drops two standard deviations below its 20-day average.", "exit": "Sell when it returns to the average, or at the stop.", "risk": "Production risk settings: 1% per trade.", "source": "Classic technical rule; kept as a benchmark."},
+    "cross_sectional_momentum": {"entry": "Rank every stock by its return over the past six months; buy the top decile on the day a stock enters it.", "exit": "Sell after one month (single vintage), or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions ranked by momentum.", "source": "Jegadeesh and Titman (1993), Journal of Finance."},
+    "pead": {"entry": "Buy on the day after a company reports results that beat expectations by a wide margin.", "exit": "Sell about 60 trading days later, or at the stop.", "risk": "1% risk per position, 8% stop.", "source": "Bernard and Thomas (1989); forward-evidence experiment, no historical backtest."},
+    "short_term_reversal": {"entry": "Rank every stock by its return over the past month; buy the bottom decile on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Jegadeesh (1990), Journal of Finance."},
+    "betting_against_beta": {"entry": "Rank stocks by how much they move with the market (beta); buy the least sensitive decile.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop.", "source": "Frazzini and Pedersen (2014), Journal of Financial Economics."},
+    "amihud_illiquidity": {"entry": "Rank stocks by how much price moves per rupee traded; buy the most illiquid decile.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop; realistic fill costs modelled.", "source": "Amihud (2002), Journal of Financial Markets."},
+    "max_effect": {"entry": "Rank stocks by their single biggest daily gain over the past month; buy the decile with the smallest, on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Bali, Cakici and Whitelaw (2011), Journal of Financial Economics."},
+    "idiosyncratic_volatility": {"entry": "Rank stocks by the volatility left after removing the market's moves; buy the calmest decile.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop.", "source": "Ang, Hodrick, Xing and Zhang (2006), Journal of Finance."},
+    "turn_of_month": {"entry": "Buy at the close of the last trading day of the month (the strongest stocks by recent return).", "exit": "Sell at the close of the third trading day of the new month.", "risk": "1% risk per position, 8% stop.", "source": "Lakonishok and Smidt (1988); Ariel (1987)."},
+    "ma_pullback": {"entry": "In a stock above its 50-day average, buy when the price dips to touch the average and closes back above it.", "exit": "Sell on a close below the average, or at the 8% stop.", "risk": "1% risk per position, 8% stop.", "source": "Ported from the earlier production strategy; informally backtested."},
+    "volume_backed_breakout": {"entry": "Buy when a stock closes at a new 20-day high on at least twice its normal volume.", "exit": "Sell on a close below the 10-day low, or at the 8% stop.", "risk": "1% risk per position, 8% stop.", "source": "Ported from the earlier production strategy; informally backtested."},
+    "overnight_return_anomaly": {"entry": "Rank stocks by their overnight (close-to-open) gains over the past month; buy the top decile at the close.", "exit": "Sell at the next morning's open.", "risk": "1% risk per position; fills at close and open, not at the same close.", "source": "Lou, Polk and Skouras (2019), Journal of Financial Economics."},
+    "high_volume_return_premium": {"entry": "Rank stocks by last week's volume against their usual volume; buy the top decile on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Gervais, Kaniel and Mingelgrin (2001), Journal of Finance."},
+    "earnings_announcement_premium": {"entry": "On the last trading day of the month, buy stocks that reported results in the same month last year (expected announcers), ranked by how much of their volume clusters around results.", "exit": "Sell at the last trading day of the following month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Frazzini and Lamont (2007); Barber et al. (2013)."},
+    "crypto_xs_momentum": {"entry": "Each Monday, rank 40 large coins by their 3-week return; buy the top fifth.", "exit": "Sell the following Monday, or at the 20% stop.", "risk": "2.5% risk per coin against a 20% stop; fees 0.30% a side; India's 31.2% tax on each profitable trade.", "source": "Liu, Tsyvinski and Wu (2022), Journal of Finance."},
+    "crypto_trend_timing": {"entry": "At each month-end, buy a coin (BTC, ETH, BNB, XRP, SOL) whose close is above the average of its last 10 month-end closes.", "exit": "Sell at a month-end when the close is below that average, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict.", "source": "Faber (2007), Journal of Wealth Management."},
+    "crypto_tsmom": {"entry": "At each month-end, buy a coin that is higher than it was 12 months ago.", "exit": "Sell at a month-end when it is lower than 12 months ago, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict.", "source": "Moskowitz, Ooi and Pedersen (2012), Journal of Financial Economics."},
+    "downside_beta": {"entry": "Rank stocks by how hard they fall on the market's down days over the past year; buy the top fifth on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Ang, Chen and Xing (2006), Review of Financial Studies."},
+    "crypto_vol_managed": {"entry": "Always long the five majors; at each month-end, size each sleeve by min(1, (60% / last month's volatility)^2).", "exit": "Re-size at month-end when the weight moves more than 10%; 20% stop.", "risk": "Monthly re-sizing books a taxable gain every profitable month.", "source": "Moreira and Muir (2017), Journal of Finance."},
+    "nifty_low_volatility_30": {"entry": "Rank stocks by one-year daily volatility; buy the calmest decile on the day a stock enters it.", "exit": "Sell after six months, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "NSE Nifty100 Low Volatility 30 methodology; Baker, Bradley and Wurgler (2011)."},
+    "portfolio_b": {"entry": "You add a stock to the watchlist on Telegram; the Fundamentals, News and Research analysts each grade it; the Portfolio Manager decides whether to buy and how much; the Risk Manager sizes it against its stop.", "exit": "The team reviews holdings daily and sells on an unfavourable verdict, or at the stop.", "risk": "Risk Manager: 1% risk per position, book-level limits.", "source": "This program's own AI team; no published paper."},
+    "portfolio_c": {"entry": "Each day the AI team looks at every entry signal Pool A's strategies produced and buys the ones it agrees with.", "exit": "Follows the originating strategy's exit, the team's verdict, or the stop.", "risk": "Risk Manager sizing, 1% per position.", "source": "This program's own AI team; no published paper."},
+    "pool_d_vwap_fade": {"entry": "During the day, when a stock has stretched unusually far from its volume-weighted average price and stalls, sell (or buy) it expecting a snap back.", "exit": "Target at the average price, tight stop, or the 15:25 square-off.", "risk": "1% risk per trade on one shared Rs.1,00,000 book, at most 25% of the book per name, 3 trades a day per stock, 2% daily loss limit.", "source": "Proposed by the Quant Researcher; rejected in EXP-008 and kept as a framework test."},
+}
+
+
+def _experiment_summary(exp_id: str) -> dict:
+    """The headline numbers of a strategy's primary experiment, if its
+    folder is on disk (swing experiments first, then the intraday lab)."""
+    if not exp_id:
+        return {}
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for sub in ("swing_research", "research_lab"):
+        path = os.path.join(here, sub, "experiments", exp_id, "metrics.json")
+        if os.path.exists(path):
+            m = _read_json(path) or {}
+            out = {k: m.get(k) for k in ("total_trades", "cagr", "sharpe_ratio", "max_drawdown_pct", "win_rate",
+                                         "avg_holding_period_days", "total_pnl")}
+            eq = m.get("evidence_quality") or {}
+            out["evidence"] = f"{eq.get('label', '')} {eq.get('score', '')}".strip()
+            if "pre_tax" in m:
+                pre = m["pre_tax"].get("full_period", {})
+                out["pre_tax"] = {k: pre.get(k) for k in ("cagr", "total_pnl", "max_drawdown_pct")}
+                out["book_currency"] = m.get("book_currency", "USDT")
+            return out
+    return {}
+
+
 def strategies_view(registry_records: list, pool_d_strategy: str) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
     brief, and the registry's verdict/status -- Pools B, C and D included
@@ -202,15 +257,20 @@ def strategies_view(registry_records: list, pool_d_strategy: str) -> list:
         crypto = is_crypto_record(r)
         kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("Crypto" if crypto else "Swing", ""))
         pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
+        exp = getattr(r, "primary_experiment_id", "") or ""
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
-                     "status": status, "experiment": getattr(r, "primary_experiment_id", ""), "brief": brief})
+                     "status": status, "experiment": exp, "brief": brief,
+                     "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp)})
     rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
-                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1]})
+                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
+                 "how": STRATEGY_HOW["portfolio_b"], "research": {}})
     rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
-                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1]})
+                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
+                 "how": STRATEGY_HOW["portfolio_c"], "research": {}})
     rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
-                 "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1]})
+                 "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
+                 "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 
