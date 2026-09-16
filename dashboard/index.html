@@ -55,6 +55,7 @@ select{font:inherit;padding:6px 8px;border:1px solid var(--rule);border-radius:4
 select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .tools label{color:var(--muted)}
 .note{color:var(--muted);font-size:12.5px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .err{color:var(--loss);font-weight:500}
 .livebadge{display:none;font-size:11px;font-weight:700;letter-spacing:.1em;padding:2px 8px;border-radius:10px;background:var(--loss);color:#fff}
 .livebadge.on{display:inline-block}
@@ -67,6 +68,10 @@ select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .modeswitch button.on{background:var(--accent);color:var(--accent-ink)}
 .modeswitch button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 tr.total td{background:var(--band);font-weight:600;border-top:2px solid var(--rule)}
+tr.tape-open td{background:color-mix(in srgb,var(--accent) 10%,var(--card));border-left:0}
+tr.tape-open td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tr.tape-closed td{background:color-mix(in srgb,var(--warn) 12%,var(--card))}
+tr.tape-closed td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
 .axes{display:inline-flex;gap:3px;vertical-align:middle}
 .axes i{display:inline-block;width:6px;border-radius:2px;background:var(--accent);opacity:.75}
 details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--accent);font-weight:500}
@@ -175,13 +180,11 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-live" hidden>
   <div class="teamline" id="livecards"></div>
-  <h2>Today</h2>
-  <div class="timeline" id="timeline"></div>
-  <div class="jobs" id="jobs"></div>
   <h2>Bought and sold today</h2>
   <div class="tools"><label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
     <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
-    <span id="tape-count" class="note"></span></div>
+    <span id="tape-count" class="note"></span>
+    <span class="note" style="margin-left:auto"><i class="sw" style="background:color-mix(in srgb,var(--accent) 35%,var(--card))"></i> opened today &nbsp; <i class="sw" style="background:color-mix(in srgb,var(--warn) 40%,var(--card))"></i> closed today</span></div>
   <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
 </section>
 
@@ -385,27 +388,6 @@ document.getElementById("q").addEventListener("input", e => { FILTER = e.target.
 ["tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
-  const tl = document.getElementById("timeline"); tl.innerHTML = "";
-  const start = 8.5, end = 16.5, pct = h => ((h-start)/(end-start)*100).toFixed(2)+"%";
-  for(let h=9; h<=16; h++){ tl.insertAdjacentHTML("beforeend", `<div class="hourmark" style="left:${pct(h)}"><span>${String(h).padStart(2,"0")}:00</span></div>`); }
-  const todayLog = j => j.last_log_write && j.last_log_write.startsWith(s.today);
-  const spans = {prep:[9,9.2], ticks:[9.25,15.5], open:[9.5,9.75], eod_a:[15.58,15.75], eod_a1:[15.67,15.83], eod_c:[15.75,15.92], eod_b:[15.83,16.0], summary:[16.08,16.3]};
-  const short = {pool_e:"Pool E crypto", prep:"Pool D prep", ticks:"Pool D ticking", open:"Fills at open", eod_a:"Pool A", eod_a1:"A1", eod_c:"Pool C", eod_b:"Pool B", summary:"Telegram"};
-  for(const j of s.schedule){
-    if(j.id==="eod_a1") continue;
-    const [a,b] = spans[j.id] || [9,9.1];
-    tl.insertAdjacentHTML("beforeend", `<div class="job ${todayLog(j)?"done":""}" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)})" title="${esc(j.label)} ${esc(j.at)}">${short[j.id]||esc(j.label)}</div>`);
-  }
-  const now = new Date(s.generated_at); const nh = now.getHours()+now.getMinutes()/60;
-  if(nh>start && nh<end) tl.insertAdjacentHTML("beforeend", `<div class="now" style="left:${pct(nh)}"><span>now</span></div>`);
-  const nowMin = now.getHours()*60+now.getMinutes(), weekday = now.getDay()>0 && now.getDay()<6;
-  document.getElementById("jobs").innerHTML = s.schedule.filter(j=>j.id!=="eod_a1").map(j => {
-    const startMin = parseInt(j.at.slice(0,2))*60 + parseInt(j.at.slice(3,5));
-    const done = todayLog(j);
-    const st = done ? `<span class="pill ok">done</span>` : (weekday && nowMin > startMin + 20 ? `<span class="pill miss">missing</span>` : `<span class="pill">${j.at.split(" ")[0]}</span>`);
-    return `<span class="j">${esc(j.label)} ${st}</span>`;
-  }).join("");
-
   renderTape(s);
 
 }
@@ -424,7 +406,7 @@ function renderTape(s){
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.activity_today.length}`;
   renderLiveCards(s, rows, poolF, kindF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
+  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.pnl!=null?"tape-closed":"tape-open"}"><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td>${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n">${inr(a.amount)}</td><td>${esc(a.pool)}</td><td>${esc(a.kind)}</td><td>${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="note">${a.note && a.note!=="entry"?esc(a.note):""}</td></tr>`).join("") : `<tr><td colspan="11" class="note">Nothing bought or sold yet today.</td></tr>`;
 }
 
 // The cards above the Live day tab: today's numbers for whatever the pool/type filters select.
