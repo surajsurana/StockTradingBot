@@ -375,10 +375,12 @@ function renderTape(s){
   document.getElementById("tape-head").innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : `<th class="${num?"n":""}${k==="symbol"||k==="book"?" l":""}"><button data-sort="${k}" class="${TAPE_SORT.key===k?(TAPE_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#tape-head button").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   const numeric = new Set(TAPE_COLS.filter(c=>c[2]).map(c=>c[0]));
+  const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status");
+  // the Strategy list only offers the books that belong to the selected pool / type
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
-  const bookNames = [...new Set(s.activity_today.map(a => a.book).filter(Boolean))].sort();
+  const bookNames = [...new Set(s.activity_today.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
-  const poolF = sel("tape-pool"), kindF = sel("tape-kind"), statusF = sel("tape-status"), bookF = sel("tape-book");
+  const bookF = bookNames.includes(prevBook) ? prevBook : "";
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
   const rows = s.activity_today.filter(a => hit(a) && (!bookF || a.book === bookF) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
