@@ -37,9 +37,9 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
 .cards .grp{flex:1 1 260px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 14px;animation:rise .4s ease both}
 .cards .gt{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-.cards .gi{display:flex;flex-wrap:wrap;gap:6px 22px}
-.cards .gi span{display:flex;flex-direction:column;gap:1px;font-size:12px;color:var(--muted)}.cards .gi i{font-style:normal}
-.cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:18px;color:var(--ink);font-variant-numeric:tabular-nums}
+.cards .gi{display:flex;flex-direction:column;gap:4px}
+.cards .gi span{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:baseline;gap:12px;font-size:12.5px;color:var(--muted)}.cards .gi i{font-style:normal}
+.cards .gi b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
 .cards .gi b.gain{color:var(--gain)}.cards .gi b.loss{color:var(--loss)}
 @media (prefers-reduced-motion:reduce){.cards .grp{animation:none}}
 @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -150,6 +150,12 @@ dialog .row{display:flex;gap:8px;margin-top:12px}
 dialog button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .sellbtn{font:inherit;font-size:11.5px;padding:2px 9px;border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:4px;cursor:pointer}
 .sellbtn:hover{background:var(--accent);color:var(--accent-ink)}
+.calwrap{position:relative;display:inline-flex;align-items:center;gap:6px}
+.iconbtn{font:inherit;font-size:15px;padding:3px 8px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;line-height:1.2}
+.pop{position:absolute;top:34px;left:0;z-index:5;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);font-size:12.5px}
+.pop label{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pop input{font:inherit;padding:4px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)}
+.pop button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;align-self:flex-end}
 dialog p{margin:0 0 12px}
 dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);background:var(--band);color:var(--ink);border-radius:4px;cursor:pointer}
 @media (max-width:560px){h1{font-size:22px}.status{margin-left:0}}
@@ -195,7 +201,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="cards" id="livecards"></div>
   <h2>Positions and today's trades</h2>
   <div class="tools"><label for="q">Find</label><input id="q" type="search" placeholder="symbol or strategy…" autocomplete="off">
-    <label for="tape-from">From</label><input id="tape-from" type="date"><label for="tape-to">To</label><input id="tape-to" type="date">
+    <span class="calwrap"><button id="tape-cal" class="iconbtn" title="Filter by date">&#128197;</button><span id="tape-range" class="chip" hidden></span>
+      <div id="tape-pop" class="pop" hidden><label>From <input id="tape-from" type="date"></label><label>To <input id="tape-to" type="date"></label><button id="tape-clear">Clear</button></div></span>
     <label for="tape-book">Strategy</label><select id="tape-book"><option value="">All</option></select>
     <label for="tape-status">Status</label><select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>
     <label for="tape-pool">Pool</label><select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>
@@ -219,6 +226,11 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
+  <div class="tools"><label for="reg-q">Find</label><input id="reg-q" type="search" placeholder="name or ID…" autocomplete="off">
+    <label for="reg-pool">Pool</label><select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option value="-">Not trading</option></select>
+    <label for="reg-type">Type</label><select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>
+    <label for="reg-verdict">Verdict</label><select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>
+    <span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy for what it does</span></div>
   <div class="tblwrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <h2>Next up for research</h2>
   <p class="note">Published strategies not yet built, ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value).</p>
@@ -234,6 +246,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <label><input type="radio" name="sell-mode" value="manual"> Manual <input id="sell-price" type="number" min="0" step="0.01" disabled></label></div>
   <p class="err" id="sell-err" hidden></p>
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
+<dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><p id="brief-text"></p><button id="brief-close">Close</button></dialog>
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
 
 <script>
@@ -371,6 +384,10 @@ function sortRows(rows, cols, state, tieKey){
 }
 const sel = id => document.getElementById(id).value;
 document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
+document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); pop.hidden = !pop.hidden; });
+document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
+document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
+document.getElementById("tape-clear").addEventListener("click", () => { document.getElementById("tape-from").value = ""; document.getElementById("tape-to").value = ""; document.getElementById("tape-pop").hidden = true; if(STATE) renderTape(STATE); });
 ["tape-from","tape-to","tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
 
 function renderLive(s){
@@ -388,6 +405,7 @@ function renderTape(s){
   // the Strategy list only offers the books that belong to the selected pool / type
   const bookSel = document.getElementById("tape-book"), prevBook = bookSel.value;
   const fromF = sel("tape-from"), toF = sel("tape-to");
+  const rangeChip = document.getElementById("tape-range"); rangeChip.hidden = !(fromF || toF); rangeChip.textContent = `${fromF || "…"} → ${toF || "…"}`;
   const inRange = a => (!fromF || (a.date || "") >= fromF) && (!toF || (a.date || "") <= toF);
   const bookNames = [...new Set(s.ledger.filter(a => (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
@@ -512,6 +530,7 @@ function renderTeam(s){
   }));
 }
 document.getElementById("who-close").addEventListener("click", () => document.getElementById("who").close());
+document.getElementById("brief-close").addEventListener("click", () => document.getElementById("brief").close());
 
 let SELL = null;
 function livePriceFor(r){
@@ -562,13 +581,24 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+["reg-q","reg-pool","reg-type","reg-verdict"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
 function renderRegistry(s){
   document.getElementById("reg-head").innerHTML = `<tr>${REG_COLS.map(([k,l]) => `<th><button data-sort="${k}" class="${REG_SORT.key===k?(REG_SORT.dir>0?"asc":"desc"):""}">${l}</button></th>`).join("")}</tr>`;
   document.querySelectorAll("#reg-head button").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
-  const norm = r => ({sid:r.sid, name:r.name, verdict:r.verdict.split(".").pop(), status:r.status.split(".").pop(), experiment:r.experiment||""});
-  const rows = s.registry.map(norm).sort((a,b) => { const k=REG_SORT.key; const x=a[k]||"", y=b[k]||""; if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir; } return x.localeCompare(y)*REG_SORT.dir; });
-  document.getElementById("registry").innerHTML = rows.map(r => `<tr><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td><span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace("_"," "))}</span></td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace("_"," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");
+  const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict");
+  const all = s.strategies || [];
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF))
+    .sort((a,b) => { const k=REG_SORT.key; const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
+  document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
+  document.getElementById("registry").innerHTML = rows.map(r => `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace(/_/g," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");
+  document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
+    const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
+    document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
+    document.getElementById("brief-meta").textContent = `${r.pool==="-"?"Not trading":r.pool} · ${r.type} · verdict ${r.verdict.replace(/_/g," ")} · ${r.status.replace(/_/g," ")}${r.experiment?" · "+r.experiment:""}`;
+    document.getElementById("brief-text").textContent = r.brief || "No description written yet.";
+    document.getElementById("brief").showModal();
+  }));
 
   const rm = s.roadmap || {ready:[], deferred:[]};
   const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };

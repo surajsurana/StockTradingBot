@@ -158,6 +158,62 @@ FLOWS = {
 }
 
 
+# Plain-language briefs for the Strategies tab (one per registry key, plus
+# the three books that are not registry strategies). type: Swing / Intraday /
+# Crypto / AI.
+STRATEGY_BRIEFS = {
+    "turtle_system2": ("Swing", "Buys a stock when it breaks above its highest price of the last 55 days and rides the trend, adding on the way up; sells when it drops below its 20-day low. The classic 1980s trend-following system."),
+    "minervini_trend_template_filter": ("Swing", "Only buys stocks in a strong uptrend: price above its rising 50, 150 and 200-day averages, well off its 52-week low, near its 52-week high, and stronger than most of the market."),
+    "fifty_two_week_high_momentum": ("Swing", "Buys stocks trading close to their 52-week high, on the idea that people are slow to push a stock to a new high, so it keeps drifting up. Retired after failing its tests."),
+    "ma_crossover": ("Swing", "Buys when a short moving average crosses above a long one and sells on the reverse cross. A basic trend rule, kept as a benchmark."),
+    "mean_reversion": ("Swing", "Buys stocks that have fallen well below their recent average and sells when they bounce back to it. Kept as a benchmark."),
+    "cross_sectional_momentum": ("Swing", "Every month, buys the stocks that rose the most over the last six months and holds them for a month. Winners tend to keep winning for a while."),
+    "pead": ("Swing", "After a company reports better-than-expected results, buys it and holds for about two months, because prices keep drifting up for weeks after good news."),
+    "short_term_reversal": ("Swing", "Buys the stocks that fell the most over the last month and holds them a month. Short sharp drops tend to bounce back."),
+    "betting_against_beta": ("Swing", "Buys the calmest, least market-sensitive stocks. The idea is that investors overpay for exciting stocks and underpay for boring ones."),
+    "amihud_illiquidity": ("Swing", "Buys stocks that are hard to trade in size, because investors demand extra return for that inconvenience."),
+    "max_effect": ("Swing", "Avoids lottery-like stocks: buys the ones with the smallest single-day jumps over the last month. Gamblers overpay for big-jump stocks, leaving the calm ones cheap."),
+    "idiosyncratic_volatility": ("Swing", "Buys stocks whose own ups and downs, apart from the market's, are the smallest."),
+    "turn_of_month": ("Swing", "Buys a few days before the end of each month and sells a few days into the next, when salary and fund money flows into the market."),
+    "ma_pullback": ("Swing", "Waits for a stock in an uptrend to dip back to its moving average, then buys the dip."),
+    "volume_backed_breakout": ("Swing", "Buys a stock breaking out to a new high on much higher-than-usual volume, a sign that big buyers are behind the move."),
+    "overnight_return_anomaly": ("Swing", "Buys at the close and sells at the next open, in stocks that have been gaining overnight. Most of some stocks' gains happen while the market is shut."),
+    "high_volume_return_premium": ("Swing", "Buys stocks that just had an unusually busy trading day or week and holds a month. A burst of attention brings in new buyers over the following weeks."),
+    "earnings_announcement_premium": ("Swing", "Buys stocks a month before their scheduled results and holds through the announcement, because attention and buying build up around results day."),
+    "crypto_xs_momentum": ("Crypto", "Each week, buys the coins that rose most over the last three weeks. Rejected: after fees and India's crypto tax it lost money."),
+    "crypto_trend_timing": ("Crypto", "At each month-end, holds a coin only if its price is above its 10-month average, otherwise stays in cash. Aims to skip the deep crypto crashes."),
+    "crypto_tsmom": ("Crypto", "At each month-end, holds a coin only if it is higher than a year ago, otherwise cash. A slower cousin of the moving-average rule."),
+    "downside_beta": ("Swing", "Buys the stocks that fall the hardest when the market falls, because investors demand a premium to hold them. Passed its test but earned less than the index, so not promoted."),
+    "crypto_vol_managed": ("Crypto", "Always holds the big coins but holds less after a volatile month and more after a calm one. Rejected: monthly re-sizing triggers India's tax on every profitable month."),
+    "nifty_low_volatility_30": ("Swing", "Buys the calmest stocks by one-year price swings and holds six months, the way NSE's Low Volatility 30 index does. Rejected: stopped working in 2025-26."),
+    "portfolio_b": ("AI", "Pool B: your watchlist. The AI team (fundamentals, news, research analyst, portfolio manager, risk manager) debates each stock you add and decides whether and how much to buy."),
+    "portfolio_c": ("AI", "Pool C: the AI team reviews the signals Pool A's strategies produce each day and picks the ones it agrees with, sized by the risk manager."),
+    "pool_d_vwap_fade": ("Intraday", "Pool D: when a stock stretches unusually far from its day's average price and then stalls, bets on it snapping back; everything is squared off by 15:25. A known-reject rule kept running to test the intraday machinery."),
+}
+
+
+def strategies_view(registry_records: list, pool_d_strategy: str) -> list:
+    """Every strategy the desk knows, with its pool, type, plain-language
+    brief, and the registry's verdict/status -- Pools B, C and D included
+    even though they are not registry strategies."""
+    rows = []
+    for r in registry_records:
+        status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
+        crypto = is_crypto_record(r)
+        kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("Crypto" if crypto else "Swing", ""))
+        pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
+        rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
+                     "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
+                     "status": status, "experiment": getattr(r, "primary_experiment_id", ""), "brief": brief})
+    rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
+                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1]})
+    rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
+                 "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1]})
+    rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
+                 "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1]})
+    return rows
+
+
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
     {"id": "pool_e", "label": "Pool E crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_e.log"},
@@ -344,6 +400,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
+        "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade"),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 

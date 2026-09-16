@@ -103,6 +103,18 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(buys[0]["amount"], 20000.0)
         self.assertIn("pool_e", [j["id"] for j in self.s["schedule"]])
 
+    def test_strategies_tab_lists_every_pool_with_briefs(self):
+        from dashboard.state_view import STRATEGY_BRIEFS
+        rows = {r["key"]: r for r in self.s["strategies"]}
+        self.assertEqual(rows["alpha"]["pool"], "Pool A")
+        self.assertEqual(rows["crypto_trend_timing"]["pool"], "Pool E")
+        self.assertEqual(rows["old"]["pool"], "-")
+        self.assertEqual((rows["portfolio_b"]["type"], rows["portfolio_c"]["pool"], rows["pool_d_vwap_fade"]["verdict"]), ("AI", "Pool C", "REJECT"))
+        self.assertTrue(rows["crypto_trend_timing"]["brief"])
+        from deployment.deployment_manager import list_strategies
+        missing = [r.strategy_key for r in list_strategies() if r.strategy_key not in STRATEGY_BRIEFS]
+        self.assertEqual(missing, [])   # every real registry strategy has a plain-language brief
+
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
