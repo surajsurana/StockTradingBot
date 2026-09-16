@@ -333,8 +333,8 @@ function render(){
 function renderOverview(s){
   const o = s.overall, d = s.pool_d, f = s.pool_e;
   document.getElementById("tiles").innerHTML = [
-    ["Total capital", tileMoney("t.capital", o.capital, false), "Pools A, B, C, D, E (E post-tax, at ₹/USD)"],
-    ["Open positions", o.positions, "Pools A, B, C, D, E"],
+    ["Total capital", tileMoney("t.capital", o.capital, false), "Pools A, B, C, D, E, F (E post-tax, at ₹/USD)"],
+    ["Open positions", o.positions, "Pools A, B, C, D, E, F"],
     ["Deployed", tileMoney("t.deployed", o.deployed, false), "at cost"],
     ["Cash", tileMoney("t.cash", o.cash, false), "all books"],
     ["Unbooked P&L", tileMoney("t.unreal", o.unrealised, true), "at latest quote"],
@@ -343,9 +343,9 @@ function renderOverview(s){
     ["Pool E post-tax", f.exists ? tileMoney("t.fpost", f.inr.booked.post_tax + f.inr.unbooked.post_tax, true) : "—", f.exists ? `pre-tax ${lv("t.fpre", f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, money(f.inr.booked.pre_tax + f.inr.unbooked.pre_tax, true))} · ${f.usdt.positions} open · ₹${(+f.usdinr).toFixed(1)}/USD` : "no crypto book yet"],
   ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
 
-  const names = {A:"Pool A — swing strategies", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
+  const names = {A:"Pool A — swing strategies", F:"Pool F — Pool A twin with partial profit booking", B:"Pool B — LLM watchlist", C:"Pool C — LLM overlay"};
   let rows = "";
-  for(const k of ["A","B","C"]){
+  for(const k of ["A","F","B","C"]){
     const p = s.pools[k]; if(!p) continue;
     rows += `<tr><td>${names[k]}</td><td class="n">${inr(p.capital)}</td><td class="n">${p.positions}</td><td class="n">${inr(p.deployed)}</td><td class="n">${inr(p.cash)}</td>${cell(p.unrealised,true,`p.${k}.unreal`)}${cell(p.realised)}${cell(p.realised_today)}<td>${p.not_updated.length?`<span class="pill due">${p.updated_today}/${p.books} run today</span>`:`<span class="pill ok">up to date</span>`}</td></tr>`;
   }
@@ -435,7 +435,7 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -481,14 +481,14 @@ function renderTape(s){
 function renderLiveCards(s, rows, poolF, kindF, statusF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C"], Intraday: ["D"], Crypto: ["E"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E"];
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const live = s.mode === "live";
   const booksIn = live
-    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0}
-    : {A: s.books.filter(b => b.pool === "A").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0};
+    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0}
+    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0};
   for(const k of keys){
     let p = null;
     if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
@@ -653,7 +653,7 @@ function buildRegHead(){
   head.dataset.built = "1";
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option value="-">Not trading</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
@@ -674,7 +674,7 @@ function renderRegistry(s){
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
     .sort((a,b) => { const k=REG_SORT.key; const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace(/_/g," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");

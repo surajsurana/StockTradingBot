@@ -21,8 +21,8 @@ from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_su
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
 # dashboard, per explicit direction 2026-09-11 -- it stays in the daily
 # Telegram summary only.
-POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c"}
-POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "F": "Pool E"}
+POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "F": "pool_f"}
+POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": "Pool E", "F": "Pool F"}
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -33,7 +33,7 @@ DESKS = [
      "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data."},
     {"id": "swing_research", "name": "Swing Research (feeds Pool A)", "icon": "\U0001F4DA",
      "blurb": "Takes strategies from the academic literature and proves them on years of NSE data."},
-    {"id": "trading_desk", "name": "Trading Desk (Pools A and D)", "icon": "\U0001F4C8",
+    {"id": "trading_desk", "name": "Trading Desk (Pools A, D and F)", "icon": "\U0001F4C8",
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
@@ -89,7 +89,7 @@ AGENTS = [
      "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
                "trades unless it is marked PAPER_TRADING here."},
     {"id": "paper_trading_engine", "avatar": {"type": "robot", "body": "#5A6E7F", "eye": "#F2C14E", "shape": "square"}, "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
-     "job": "Runs the Pool A books after the close", "status_from": "eod_a",
+     "job": "Runs the Pool A and Pool F books after the close", "status_from": "eod_a",
      "detail": "Checks stops and targets, asks each strategy for exits and entries, queues the entries for "
                "the next open, marks the book and writes the report."},
     {"id": "pool_d_engine", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#E0706A", "shape": "square"}, "name": "Intraday Trader", "icon": "\u26A1", "desk": "trading_desk", "kind": "Mechanical",
@@ -188,6 +188,7 @@ STRATEGY_BRIEFS = {
     "nifty_low_volatility_30": ("Swing", "Buys the calmest stocks by one-year price swings and holds six months, the way NSE's Low Volatility 30 index does. Rejected: stopped working in 2025-26."),
     "portfolio_b": ("AI", "Pool B: your watchlist. The AI team (fundamentals, news, research analyst, portfolio manager, risk manager) debates each stock you add and decides whether and how much to buy."),
     "portfolio_c": ("AI", "Pool C: the AI team reviews the signals Pool A's strategies produce each day and picks the ones it agrees with, sized by the risk manager."),
+    "pool_f": ("Swing", "Pool F: the same strategies as Pool A on their own books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool A so the two can be compared."),
     "pool_d_vwap_fade": ("Intraday", "Pool D: when a stock stretches unusually far from its day's average price and then stalls, bets on it snapping back; everything is squared off by 15:25. A known-reject rule kept running to test the intraday machinery."),
 }
 
@@ -221,6 +222,7 @@ STRATEGY_HOW = {
     "nifty_low_volatility_30": {"entry": "Rank stocks by one-year daily volatility; buy the calmest decile on the day a stock enters it.", "exit": "Sell after six months, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "NSE Nifty100 Low Volatility 30 methodology; Baker, Bradley and Wurgler (2011)."},
     "portfolio_b": {"entry": "You add a stock to the watchlist on Telegram; the Fundamentals, News and Research analysts each grade it; the Portfolio Manager decides whether to buy and how much; the Risk Manager sizes it against its stop.", "exit": "The team reviews holdings daily and sells on an unfavourable verdict, or at the stop.", "risk": "Risk Manager: 1% risk per position, book-level limits.", "source": "This program's own AI team; no published paper."},
     "portfolio_c": {"entry": "Each day the AI team looks at every entry signal Pool A's strategies produced and buys the ones it agrees with.", "exit": "Follows the originating strategy's exit, the team's verdict, or the stop.", "risk": "Risk Manager sizing, 1% per position.", "source": "This program's own AI team; no published paper."},
+    "pool_f": {"entry": "Exactly as the Pool A strategy it mirrors: same signals, same universe, same data, same fills.", "exit": "The moment a position is up 5% during the day, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same 1% risk sizing and 8% initial stop as Pool A; the raised stop applies from the next day.", "source": "This program's own experiment (2026-09-16); the 5% / half / stop-to-entry numbers are a disclosed a-priori choice."},
     "pool_d_vwap_fade": {"entry": "During the day, when a stock has stretched unusually far from its volume-weighted average price and stalls, sell (or buy) it expecting a snap back.", "exit": "Target at the average price, tight stop, or the 15:25 square-off.", "risk": "1% risk per trade on one shared Rs.1,00,000 book, at most 25% of the book per name, 3 trades a day per stock, 2% daily loss limit.", "source": "Proposed by the Quant Researcher; rejected in EXP-008 and kept as a framework test."},
 }
 
@@ -247,7 +249,7 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
-def strategies_view(registry_records: list, pool_d_strategy: str) -> list:
+def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
     brief, and the registry's verdict/status -- Pools B, C and D included
     even though they are not registry strategies."""
@@ -257,6 +259,8 @@ def strategies_view(registry_records: list, pool_d_strategy: str) -> list:
         crypto = is_crypto_record(r)
         kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("Crypto" if crypto else "Swing", ""))
         pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
+        if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
+            pool = "Pool A, F"
         exp = getattr(r, "primary_experiment_id", "") or ""
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
@@ -281,6 +285,7 @@ SCHEDULE = [
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
     {"id": "open", "label": "Fill-at-open passes (A, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
     {"id": "eod_a", "label": "Pool A end-of-day", "at": "15:35", "log": "paper_trading.log"},
+    {"id": "eod_f", "label": "Pool F end-of-day (partial booking twin)", "at": "15:38", "log": "pool_f.log"},
     {"id": "eod_a1", "label": "Pool A1 end-of-day", "at": "15:40", "log": "pool_a1.log"},
     {"id": "eod_c", "label": "Portfolio C", "at": "15:45", "log": "portfolio_c.log"},
     {"id": "eod_b", "label": "Portfolio B", "at": "15:50", "log": "portfolio_b.log"},
@@ -386,7 +391,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
 
     books = []
     for pool, dirname in POOL_DIRS.items():
-        if pool == "A":
+        if pool in ("A", "F"):
             for b in summary["books"][pool]:
                 book_dir = os.path.join(state_dir, dirname, b["key"])
                 rec = next((r for r in registry_records if r.strategy_key == b["key"]), None)
@@ -460,7 +465,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
-        "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade"),
+        "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
+                                      {b["key"] for b in summary["books"].get("F", [])}),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 
@@ -501,7 +507,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         return round((float(price) - float(ref)) * qty, 2) if ref else None
 
     for b in books:
-        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] == "A" else "")
+        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] in ("A", "F") else "")
         pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
         unbooked_by_symbol = {d["symbol"]: d["unbooked"] for d in b.get("positions_detail", [])}
         for symbol, p in (pf.get("positions") or {}).items():
@@ -509,7 +515,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
             entered_today = p.get("entry_date") == today_iso
             qty, entry = int(p["quantity"]), float(p["entry_price"])
             rows.append({"date": p.get("entry_date"), "time": "09:30" if entered_today else "", "action": "BUY",
-                         "symbol": bare, "symbol_key": symbol, "book_key": b["key"] if b["pool"] == "A" else None,
+                         "symbol": bare, "symbol_key": symbol, "book_key": b["key"] if b["pool"] in ("A", "F") else None,
                          "qty": qty, "price": round(entry, 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Open",
                          "pnl": unbooked_by_symbol.get(bare), "note": "", "fill_today": entered_today,
@@ -519,7 +525,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
             rows.append({"date": t.get("exit_date"), "time": "09:30", "action": "SELL",
                          "symbol": str(t.get("symbol", "")).replace(".NS", ""),
-                         "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] == "A" else None,
+                         "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] in ("A", "F") else None,
                          "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
                          "fill_today": t.get("exit_date") == today_iso, "bought_on": t.get("entry_date"),

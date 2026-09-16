@@ -29,7 +29,7 @@ import os
 from datetime import date, datetime
 from typing import Optional
 
-POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "D": "pool_d", "E": "pool_e"}
+POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "D": "pool_d", "E": "pool_e", "F": "pool_f"}
 AUDIT_FILENAME = "manual_actions.jsonl"
 POOL_D_LOCK_STALE_MINUTES = 10
 
@@ -58,9 +58,9 @@ def _book_dir(state_dir: str, pool: str, book_key: Optional[str]) -> str:
     if pool not in POOL_DIRS:
         raise ManualExitError(f"unknown pool {pool!r}")
     base = os.path.join(state_dir, POOL_DIRS[pool])
-    if pool in ("A", "E"):
+    if pool in ("A", "E", "F"):
         if not book_key:
-            raise ManualExitError("a Pool A / Pool E sell needs the book (strategy) key")
+            raise ManualExitError("a Pool A / E / F sell needs the book (strategy) key")
         base = os.path.join(base, book_key)
     if not os.path.exists(os.path.join(base, "portfolio.json")):
         raise ManualExitError(f"no book at {base}")
@@ -125,7 +125,7 @@ def apply_manual_exit(state_dir: str, pool: str, book_key: Optional[str], symbol
     remaining = held - qty
     if remaining <= (1e-9 if fractional else 0):
         positions.pop(symbol)
-        if pool in ("A", "B", "C", "E"):
+        if pool in ("A", "B", "C", "E", "F"):
             (pf.get("pending_exits") or {}).pop(symbol, None)
     else:
         pos["quantity"] = round(remaining, 6) if fractional else int(remaining)
@@ -140,7 +140,7 @@ def apply_manual_exit(state_dir: str, pool: str, book_key: Optional[str], symbol
     return {**trade, "pool": pool, "book": book_key, "remaining": pos["quantity"] if symbol in positions else 0}
 
 
-DEFAULT_STOP_PCT = {"A": 0.08, "B": 0.08, "C": 0.08, "E": 0.20}   # each pool's own protective-stop convention
+DEFAULT_STOP_PCT = {"A": 0.08, "B": 0.08, "C": 0.08, "E": 0.20, "F": 0.08}   # each pool's own protective-stop convention
 
 
 def apply_manual_entry(state_dir: str, pool: str, book_key: Optional[str], symbol: str, quantity: float,

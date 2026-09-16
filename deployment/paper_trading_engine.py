@@ -256,6 +256,21 @@ def _previous_mark_to_market_equity(strategy_key: str, before_date: date_type) -
     return (latest_date, latest_equity) if latest_date is not None else None
 
 
+@dataclass(frozen=True)
+class PartialBookingConfig:
+    """Pool F's one difference from Pool A (2026-09-16): when a long
+    position's day High reaches entry x (1 + trigger_pct), book_fraction
+    of it is sold at that level (a mechanical price-level fill, like the
+    engine's target check) and, if move_stop_to_entry, the stop on the
+    remainder is raised to the entry price. Happens at most once per
+    position; the remainder then follows the strategy's own exit rule.
+    None (the default everywhere) = no partial booking, byte-identical
+    behaviour for every existing book."""
+    trigger_pct: float = 0.05
+    book_fraction: float = 0.5
+    move_stop_to_entry: bool = True
+
+
 def _size(raw_quantity: float, fractional_quantities: bool) -> float:
     """floor() to whole shares, or 6 decimals for a strategy that declares
     fractional_quantities (crypto lane, 2026-09-13)."""
@@ -466,7 +481,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
               execution_config: Optional[ExecutionRealismConfig] = None,
               min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
               sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
-              entries_enabled: bool = True) -> dict:
+              entries_enabled: bool = True,
+              partial_booking: Optional["PartialBookingConfig"] = None) -> dict:
     """
     The idempotent daily runner. Call this once per trading day, after
     market close, for a given strategy already registered in the
@@ -594,6 +610,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # it's simply no longer in pending_entries/pending_exits here (a
     # harmless no-op re-check, not a double-fill).
     fractional = getattr(strategy, "fractional_quantities", False)
+    new_partial_exits = []
     new_entries, new_exits = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
         min_position_value_rupees, sizing_capital_cap, fractional_quantities=fractional,
@@ -625,10 +642,44 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                      quantity=pos_state["quantity"])],
                 stop_loss=pos_state["stop_loss"], size_multiplier=float(pos_state.get("size_multiplier", 1.0)),
             )
+            # Partial profit booking (Pool F only; partial_booking is None for
+            # every other book). Stop first: a day that touched both the stop
+            # and the trigger is treated as stopped out, the conservative
+            # reading. Otherwise book the fraction at the trigger level and
+            # continue with the remainder. A stop raised to entry applies from
+            # the NEXT day -- today's low may have printed before the trigger.
+            stop_for_today = float(pos_state["stop_loss"])
+            if (partial_booking is not None and not pos_state.get("partial_booked")
+                    and float(row.Low) > pos_state["stop_loss"]
+                    and float(row.High) >= pos_state["entry_price"] * (1 + partial_booking.trigger_pct)):
+                trigger_price = round(pos_state["entry_price"] * (1 + partial_booking.trigger_pct), 2)
+                book_qty = _size(pos_state["quantity"] * partial_booking.book_fraction, fractional)
+                if book_qty >= _min_quantity(fractional) and book_qty < pos_state["quantity"]:
+                    fill_price, _ = _cost_adjusted(symbol, "SELL", trigger_price, book_qty)
+                    pnl = (fill_price - pos_state["entry_price"]) * book_qty
+                    cash += fill_price * book_qty - execution_config.brokerage_flat_rs
+                    trade = Trade(symbol=symbol, entry_date=entry_date, exit_date=target_date,
+                                   entry_price=pos_state["entry_price"], exit_price=fill_price,
+                                   quantity=book_qty, pnl=pnl, exit_reason="partial_profit", direction="BUY")
+                    _append_trade(strategy_key, trade)
+                    pos_state["quantity"] = pos_state["quantity"] - book_qty
+                    pos_state["partial_booked"] = True
+                    pos_state["partial_booked_on"] = target_date.isoformat()
+                    if partial_booking.move_stop_to_entry:
+                        pos_state["stop_loss"] = max(float(pos_state["stop_loss"]), float(pos_state["entry_price"]))
+                    new_partial_exits.append({"symbol": symbol, "exit_price": fill_price, "quantity": book_qty,
+                                              "pnl": round(pnl, 2), "remaining": pos_state["quantity"],
+                                              "stop_loss": pos_state["stop_loss"]})
+                    open_position = OpenPosition(
+                        symbol=symbol, direction="BUY",
+                        units=[PositionUnit(entry_price=pos_state["entry_price"], entry_date=entry_date,
+                                             quantity=pos_state["quantity"])],
+                        stop_loss=pos_state["stop_loss"], size_multiplier=float(pos_state.get("size_multiplier", 1.0)),
+                    )
             exit_price = None
             exit_reason = None
             target_price = pos_state.get("target_price")
-            if float(row.Low) <= pos_state["stop_loss"]:
+            if float(row.Low) <= stop_for_today:
                 exit_price = pos_state["stop_loss"]
                 exit_reason = "stop_loss"
             elif target_price is not None and float(row.High) >= target_price:
@@ -803,7 +854,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     _append_daily_equity(strategy_key, target_date, cash, mark_to_market_equity)
 
     return {
-        "status": "processed", "as_of_date": target_date.isoformat(),
+        "status": "processed", "as_of_date": target_date.isoformat(), "new_partial_exits": new_partial_exits,
         "new_entries": new_entries, "new_exits": new_exits,
         "new_pending_entries": new_pending_entries, "new_pending_exits": new_pending_exits,
         "open_positions": len(positions), "open_positions_detail": open_positions_detail,

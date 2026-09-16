@@ -109,7 +109,7 @@ class TestPoolEInSummary(unittest.TestCase):
                        "Deployed 200.00 USDT (Rs.20,000)", "Unbooked pre-tax +8.36 USDT / post-tax +5.24 USDT (+Rs.524)",
                        "Booked raw 0.00 USDT | fees 3.60 USDT | tax 9.36 USDT",
                        "Booked pre-tax -3.60 USDT / post-tax -12.96 USDT (-Rs.1,296; today post-tax +18.12 USDT)",
-                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, E post-tax -- A1 not counted)*"):
+                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, F, E post-tax -- A1 not counted)*"):
             self.assertIn(needle, text)
         self.assertNotIn("_", text)
 

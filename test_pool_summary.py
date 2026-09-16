@@ -121,7 +121,7 @@ class TestFormat(unittest.TestCase):
         text = format_pool_summary(summary)
         for needle in ("*Paper Trading -- Thu 10 Sep 2026*", "*Pool A*", "*Pool A1", "*Pool B*", "*Pool C*",
                        "*Pool D (intraday)*", "*Pool E (crypto)* -- no book yet",
-                       "*All pools (A, B, C, D, E post-tax -- A1 not counted)*",
+                       "*All pools (A, B, C, D, F, E post-tax -- A1 not counted)*",
                        "Deployed Rs.50,000 | Cash Rs.1,40,000",
                        "Unrealised +Rs.2,000 | Realised -Rs.750 (today +Rs.250)", "Not updated today: Beta"):
             self.assertIn(needle, text)
