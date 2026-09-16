@@ -285,8 +285,8 @@
     "strategy_key": "ma_pullback",
     "display_name": "Moving Average Pullback",
     "strategy_family": "swing_research ported strategy (informally backtested, not walk-forward validated)",
-    "research_verdict": "NOT_YET_EVALUATED",
-    "research_verdict_source": "",
+    "research_verdict": "REJECT",
+    "research_verdict_source": "EXP-090 (HIGH evidence, 0/2 windows positive)",
     "deployment_status": "PAPER_TRADING",
     "deployment_status_history": [
       {
@@ -300,7 +300,7 @@
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-014",
-    "primary_experiment_id": ""
+    "primary_experiment_id": "EXP-090"
   },
   "volume_backed_breakout": {
     "strategy_key": "volume_backed_breakout",
@@ -567,5 +567,47 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-028",
     "primary_experiment_id": "EXP-089"
+  },
+  "crypto_trend_timing_daily": {
+    "strategy_key": "crypto_trend_timing_daily",
+    "display_name": "Crypto Daily Trend Timing (Faber, daily cadence)",
+    "strategy_family": "crypto research published strategy",
+    "research_verdict": "PASS",
+    "research_verdict_source": "EXP-091 (post-tax; strongest audit signal of the three cadences, but 18% win rate)",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789575539.5720558,
+        "reason": "Pool E fourth book, 1,000 USDT, per direction 2026-09-17 (daily cadence for the monthly/weekly/daily set); duplicates SW-020/SW-028 exposure, disclosed"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-029",
+    "primary_experiment_id": "EXP-091"
+  },
+  "portfolio_g": {
+    "strategy_key": "portfolio_g",
+    "display_name": "Portfolio G (AI judgment book, crypto)",
+    "strategy_family": "AI judgment book (crypto, Pool G)",
+    "research_verdict": "NOT_YET_EVALUATED",
+    "research_verdict_source": "no backtest possible -- LLM judgment on historical data cannot be honestly walk-forward tested",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789575560.8804102,
+        "reason": "live AI judgment book, 1,000 USDT, per direction 2026-09-17"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "Twice Daily",
+    "strategy_id": "SW-030",
+    "primary_experiment_id": ""
   }
 }

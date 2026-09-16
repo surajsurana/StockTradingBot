@@ -106,6 +106,10 @@ class PriceCache:
         for path in glob.glob(os.path.join(self.state_dir, "pool_e", "*", "portfolio.json")):
             with open(path, encoding="utf-8") as f:
                 held |= set((json.load(f).get("positions") or {}).keys())
+        pool_g_path = os.path.join(self.state_dir, "pool_g", "portfolio.json")
+        if os.path.exists(pool_g_path):
+            with open(pool_g_path, encoding="utf-8") as f:
+                held |= set((json.load(f).get("positions") or {}).keys())
         return sorted(held)
 
     def refresh_crypto(self, with_rate: bool = False) -> None:

@@ -267,3 +267,21 @@ def run_crypto_trend_timing_weekly_experiment(data: dict, start_date: date, end_
                           "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_signal_warm_up_from_full_history": True},
         **kwargs,
     )
+
+
+def run_crypto_trend_timing_daily_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Faber's rule at daily cadence (2026-09-17) -- see crypto_trend_timing_daily.py."""
+    from swing_research.strategies.crypto_trend_timing_daily import (
+        CryptoDailyTrendTimingStrategy, SMA_LOOKBACK_DAYS, STOP_LOSS_PCT, compute_daily_sma,
+    )
+    from swing_research.published_research_analyst import CRYPTO_TREND_TIMING_DAILY
+
+    extra_columns = {symbol: compute_daily_sma(df)[["sma_daily"]] for symbol, df in data.items()}
+    return run_crypto_experiment_generic(
+        CryptoDailyTrendTimingStrategy(), CRYPTO_TREND_TIMING_DAILY, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_sma_lookback_days": SMA_LOOKBACK_DAYS,
+                          "crypto_rebalance": "every day", "crypto_stop_loss_pct": STOP_LOSS_PCT,
+                          "crypto_signal_warm_up_from_full_history": True},
+        **kwargs,
+    )

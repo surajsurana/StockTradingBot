@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-09-16T21:18:50.947405",
+  "strategy_name": "ma_pullback",
+  "strategy_variant": "Moving Average Pullback (ported prototype: 20/50-day MA uptrend, 1.5% pullback band, green reaction candle, pattern stop, 20-day-high target at >= 1.8x reward:risk)",
+  "engine_version": "v1",
+  "universe": {
+    "version": "v1",
+    "frozen_on": "2026-08-02",
+    "full_symbol_count": 457,
+    "limit_applied_this_run": 457
+  },
+  "data_period_years_requested": 2,
+  "n_walk_forward_windows": 3,
+  "benchmark_config": {
+    "benchmarks": [
+      "ma_crossover_production",
+      "mean_reversion_production",
+      "buy_and_hold",
+      "nifty_500_index"
+    ],
+    "starting_capital": 100000
+  },
+  "git": {
+    "commit_hash": "53ca3f1fbe5d23883d21b9d4d54e4c056662ec2a",
+    "working_tree_dirty": true,
+    "dirty_files": [
+      "M backtest_trailing_stop.py",
+      " M dashboard/state_view.py",
+      " M deployment/base.py",
+      " M deployment/state/strategy_registry.json",
+      " M monitor_positions.py",
+      " M risk/trailing_stop.py",
+      " M run_pool_f.py",
+      " M send_daily_pool_summary.py",
+      " M swing_research/backtesting_engine.py",
+      " M swing_research/base.py",
+      " M swing_research/published_research_analyst.py",
+      " M swing_research/research_director.py",
+      " M swing_research/strategy_catalog.py",
+      " M test_dashboard.py",
+      " M test_strategy_catalog.py",
+      " M test_swing_backtesting_engine.py",
+      " M test_trailing_stop.py",
+      "?? SESSION_HANDOFF.md",
+      "?? audit2_final.json",
+      "?? backtest_pullback_continuation.py",
+      "?? backtest_pullback_continuation_portfolio.py",
+      "?? deployment/state/daily_details.json",
+      "?? strategies/pullback_continuation.py",
+      "?? test_kite_connection.py"
+    ]
+  }
+}

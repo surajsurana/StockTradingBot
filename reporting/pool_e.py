@@ -33,7 +33,8 @@ POOL_E_DIRNAME = "pool_e"
 POOL_E_STARTING_CAPITAL_USDT = 1_000.0
 POOL_E_NAMES = {"crypto_trend_timing": "Crypto Trend Timing (Faber 10-month SMA)",
                 "crypto_tsmom": "Crypto Time-Series Momentum 12m (MOP 2012)",
-                "crypto_trend_timing_weekly": "Crypto Weekly Trend Timing (Faber, weekly)"}
+                "crypto_trend_timing_weekly": "Crypto Weekly Trend Timing (Faber, weekly)",
+                "crypto_trend_timing_daily": "Crypto Daily Trend Timing (Faber, daily)"}
 
 
 def _read_json(path: str) -> Optional[dict]:

@@ -37,7 +37,7 @@ DESKS = [
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
-    {"id": "crypto_desk", "name": "Crypto Desk (Pool E)", "icon": "\u20BF",
+    {"id": "crypto_desk", "name": "Crypto Desk (Pools E and G)", "icon": "\u20BF",
      "blurb": "Tests published crypto rules on Binance history, judged only after fees and India's 31.2% tax, "
               "and runs the survivors as a 1,000 USDT paper book."},
     {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
@@ -124,6 +124,11 @@ AGENTS = [
      "job": "Runs Pool E after the 00:00 UTC close", "status_from": "pool_e",
      "detail": "Same paper engine as Pool A on a 1,000 USDT book: month-end decisions from the strategy, 20% "
                "stops checked daily, fractional coins, fills at the close it just saw (crypto never closes)."},
+    {"id": "crypto_judge", "avatar": {"type": "robot", "body": "#8A5A9E", "eye": "#F2C14E", "shape": "round"}, "name": "Crypto Judge", "icon": "\U0001F52E", "desk": "crypto_desk", "kind": "AI",
+     "job": "Calls BUY/SELL/HOLD on the majors, twice a day", "status_from": "pool_g",
+     "detail": "No backtest behind this one -- a live judgment call on BTC, ETH, BNB, XRP and SOL each run. A "
+               "mechanical 18% stop protects every position regardless of what the model says; the model is "
+               "told the tax cost of flipping a winning position and asked to avoid pointless churn."},
     {"id": "pool_summary", "avatar": {"type": "robot", "body": "#7D6B8A", "eye": "#5FB7C0", "shape": "square"}, "name": "Bookkeeper", "icon": "\U0001F9FE", "desk": "reporting", "kind": "Mechanical",
      "job": "Sends the daily Telegram", "status_from": "summary",
      "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
@@ -136,6 +141,7 @@ FLOWS = {
         "title": "A trading day",
         "steps": [
             {"id": "pool_e", "icon": "\u20BF", "label": "05:45", "text": "Crypto Trader marks Pool E after the UTC close (every day)"},
+            {"id": "pool_g", "icon": "\U0001F52E", "label": "08:30 & 20:30", "text": "Crypto Judge calls BUY/SELL/HOLD on the majors, twice a day"},
             {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
             {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
@@ -183,6 +189,7 @@ STRATEGY_BRIEFS = {
     "crypto_xs_momentum": ("Crypto", "Each week, buys the coins that rose most over the last three weeks. Rejected: after fees and India's crypto tax it lost money."),
     "crypto_trend_timing": ("Crypto", "At each month-end, holds a coin only if its price is above its 10-month average, otherwise stays in cash. Aims to skip the deep crypto crashes."),
     "crypto_trend_timing_weekly": ("Crypto", "The same rule as Crypto Trend Timing, checked every week instead of every month, so it trades more often. Built for a more active crypto book."),
+    "crypto_trend_timing_daily": ("Crypto", "The same rule as Crypto Trend Timing, checked every single day -- the fastest cadence tested. Higher return than the monthly and weekly versions after tax, but a rougher ride: only about 1 in 5 trades wins, and it only comes out ahead because the winners run far."),
     "crypto_tsmom": ("Crypto", "At each month-end, holds a coin only if it is higher than a year ago, otherwise cash. A slower cousin of the moving-average rule."),
     "downside_beta": ("Swing", "Buys the stocks that fall the hardest when the market falls, because investors demand a premium to hold them. Passed its test but earned less than the index, so not promoted."),
     "crypto_vol_managed": ("Crypto", "Always holds the big coins but holds less after a volatile month and more after a calm one. Rejected: monthly re-sizing triggers India's tax on every profitable month."),
@@ -190,6 +197,7 @@ STRATEGY_BRIEFS = {
     "portfolio_b": ("AI", "Pool B: your watchlist. The AI team (fundamentals, news, research analyst, portfolio manager, risk manager) debates each stock you add and decides whether and how much to buy."),
     "portfolio_c": ("AI", "Pool C: the AI team reviews the signals Pool A's strategies produce each day and picks the ones it agrees with, sized by the risk manager."),
     "pool_f": ("Swing", "Pool F: the same strategies as Pool A on their own books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool A so the two can be compared."),
+    "portfolio_g": ("Crypto", "Pool G: an AI judgment call on Bitcoin, Ethereum, BNB, XRP and Solana, twice a day. No backtest -- it is judged on its live paper record. A mechanical stop protects every position; the model decides entries and exits itself, and is told to avoid flipping a winning position just to bank a small taxable gain."),
     "pool_d_vwap_fade": ("Intraday", "Pool D: when a stock stretches unusually far from its day's average price and then stalls, bets on it snapping back; everything is squared off by 15:25. A known-reject rule kept running to test the intraday machinery."),
 }
 
@@ -218,6 +226,7 @@ STRATEGY_HOW = {
     "crypto_xs_momentum": {"entry": "Each Monday, rank 40 large coins by their 3-week return; buy the top fifth.", "exit": "Sell the following Monday, or at the 20% stop.", "risk": "2.5% risk per coin against a 20% stop; fees 0.30% a side; India's 31.2% tax on each profitable trade.", "source": "Liu, Tsyvinski and Wu (2022), Journal of Finance."},
     "crypto_trend_timing": {"entry": "At each month-end, buy a coin (BTC, ETH, BNB, XRP, SOL) whose close is above the average of its last 10 month-end closes.", "exit": "Sell at a month-end when the close is below that average, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict.", "source": "Faber (2007), Journal of Wealth Management."},
     "crypto_trend_timing_weekly": {"entry": "Every week (Sunday, UTC), buy a coin whose close is above its 300-day average.", "exit": "Sell on a week-end close below that average, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict.", "source": "Faber (2007) -- this program's own weekly-cadence variant of Crypto Trend Timing, 2026-09-17."},
+    "crypto_trend_timing_daily": {"entry": "Every day, buy a coin whose close is above its 300-day average.", "exit": "Sell on a daily close below that average, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict. Win rate only about 18% on the tested period -- most exits are small losses, and the edge comes from the few winners running far.", "source": "Faber (2007) -- this program's own daily-cadence variant of Crypto Trend Timing, 2026-09-17, completing the monthly/weekly/daily set."},
     "crypto_tsmom": {"entry": "At each month-end, buy a coin that is higher than it was 12 months ago.", "exit": "Sell at a month-end when it is lower than 12 months ago, or at the 20% stop.", "risk": "Equal 20% sleeve per coin; fees and 31.2% tax applied before the verdict.", "source": "Moskowitz, Ooi and Pedersen (2012), Journal of Financial Economics."},
     "downside_beta": {"entry": "Rank stocks by how hard they fall on the market's down days over the past year; buy the top fifth on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop.", "risk": "1% risk per position, 8% stop, 10 positions.", "source": "Ang, Chen and Xing (2006), Review of Financial Studies."},
     "crypto_vol_managed": {"entry": "Always long the five majors; at each month-end, size each sleeve by min(1, (60% / last month's volatility)^2).", "exit": "Re-size at month-end when the weight moves more than 10%; 20% stop.", "risk": "Monthly re-sizing books a taxable gain every profitable month.", "source": "Moreira and Muir (2017), Journal of Finance."},
@@ -225,6 +234,7 @@ STRATEGY_HOW = {
     "portfolio_b": {"entry": "You add a stock to the watchlist on Telegram; the Fundamentals, News and Research analysts each grade it; the Portfolio Manager decides whether to buy and how much; the Risk Manager sizes it against its stop.", "exit": "The team reviews holdings daily and sells on an unfavourable verdict, or at the stop.", "risk": "Risk Manager: 1% risk per position, book-level limits.", "source": "This program's own AI team; no published paper."},
     "portfolio_c": {"entry": "Each day the AI team looks at every entry signal Pool A's strategies produced and buys the ones it agrees with.", "exit": "Follows the originating strategy's exit, the team's verdict, or the stop.", "risk": "Risk Manager sizing, 1% per position.", "source": "This program's own AI team; no published paper."},
     "pool_f": {"entry": "Exactly as the Pool A strategy it mirrors: same signals, same universe, same data, same fills.", "exit": "The moment a position is up 5% during the day, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same 1% risk sizing and 8% initial stop as Pool A; the raised stop applies from the next day.", "source": "This program's own experiment (2026-09-16); the 5% / half / stop-to-entry numbers are a disclosed a-priori choice."},
+    "portfolio_g": {"entry": "The model is shown price, 1/7/30-day change and distance from the 300-day average for each coin, twice a day, and calls BUY/SELL/HOLD/AVOID with a one-line reason each time.", "exit": "The model can say SELL any time its view changes; independently, a mechanical 18% stop (set at entry, never moved by the model) closes a position immediately if it is touched, before the model is even consulted.", "risk": "At most 25% of the 1,000 USDT book per coin; no minimum holding period, but the model is told each realised gain costs 31.2% tax with no relief for losses, so it is instructed against flipping a winner just to bank it.", "source": "This program's own live experiment (2026-09-17) -- no published paper; a real-time test of whether an LLM's judgment beats the researched trend rules."},
     "pool_d_vwap_fade": {"entry": "During the day, when a stock has stretched unusually far from its volume-weighted average price and stalls, sell (or buy) it expecting a snap back.", "exit": "Target at the average price, tight stop, or the 15:25 square-off.", "risk": "1% risk per trade on one shared Rs.1,00,000 book, at most 25% of the book per name, 3 trades a day per stock, 2% daily loss limit.", "source": "Proposed by the Quant Researcher; rejected in EXP-008 and kept as a framework test."},
 }
 
@@ -287,6 +297,10 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
                      "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+    if "portfolio_g" not in keys:
+        rows.append({"key": "portfolio_g", "sid": "G", "name": "Portfolio G (AI judgment book, crypto)", "pool": "Pool G", "type": "Crypto",
+                     "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_g"][1],
+                     "how": STRATEGY_HOW["portfolio_g"], "research": {}})
     if "pool_d_vwap_fade" not in keys:
         rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
                      "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
@@ -297,6 +311,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
     {"id": "pool_e", "label": "Pool E crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_e.log"},
+    {"id": "pool_g", "label": "Pool G crypto AI judgment", "at": "08:30 & 20:30", "log": "pool_g.log"},
     {"id": "prep", "label": "Pool D prepare", "at": "09:00", "log": "pool_d.log"},
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
     {"id": "open", "label": "Fill-at-open passes (A, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
@@ -468,18 +483,22 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
             for b in pool_e["books"]:
                 if b["key"] == r.strategy_key:
                     b["sid"] = getattr(r, "strategy_id", "")
-    overall = dict(summary["overall"])
+    from reporting.pool_g import build_pool_g
+    from data.fetch_crypto import DEFAULT_USDINR
+    pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
+    g_rate = pool_g.get("usdinr") or 0
+    overall = dict(summary["overall"])   # already carries Pool E's and Pool G's post-tax rupee figures (reporting/pool_summary.py)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
-                               + pool_e["inr"]["capital"], 2)
+                               + pool_e["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},
-        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e,
+        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e, "pool_g": pool_g,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                          prices=prices, crypto_prices=crypto_prices),
+                          prices=prices, crypto_prices=crypto_prices, pool_g=pool_g),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])}),
@@ -497,7 +516,8 @@ def _days_between(start_iso, end_iso) -> Optional[int]:
 def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
             pool_e: Optional[dict] = None, d_open: Optional[list] = None,
             prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
-            prices: Optional[dict] = None, crypto_prices: Optional[dict] = None) -> list:
+            prices: Optional[dict] = None, crypto_prices: Optional[dict] = None,
+            pool_g: Optional[dict] = None) -> list:
     """One list for the Live day tab: EVERY open position (whenever it was
     bought, with its current P&L) plus EVERY closed trade on record, across
     Pools A, B, C, D and E. Each row carries `date` (the exit date for a
@@ -605,6 +625,33 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
                          "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
                          "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
+    # Pool G: a single shared book, twice-daily live-price fills, prices/P&L in USDT converted to rupees.
+    g_rate = float((pool_g or {}).get("usdinr") or 0)
+    for p in (pool_g or {}).get("open_positions", []):
+        entered_today = p.get("entry_date") == today_iso
+        move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
+                        crypto_prices.get(p["symbol"]), crypto_prev_close.get(p["symbol"]))
+        rows.append({"date": p.get("entry_date"), "time": "", "action": "BUY",
+                     "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
+                     "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",
+                     "book": "AI judgment", "status": "Open", "fill_today": entered_today,
+                     "pnl": round(p["unbooked_post_tax"] * g_rate, 2),
+                     "pnl_today": round(move * g_rate, 2) if move is not None else None,
+                     "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
+                     "cost": p["entry_price"] * p["quantity"] * g_rate,
+                     "note": p.get("reasoning", "") or "price in USDT; P&L post-tax in Rs.", "kind": "Crypto",
+                     "amount": round(p["entry_price"] * p["quantity"] * g_rate, 2)})
+    for t in _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl")):
+        qty = float(t.get("quantity", 0) or 0)
+        rows.append({"date": t.get("exit_date"), "time": "", "action": "SELL", "symbol": t.get("symbol"),
+                     "qty": qty, "symbol_key": t.get("symbol"), "book_key": None,
+                     "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool G",
+                     "book": "AI judgment", "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
+                     "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
+                     "cost": float(t.get("entry_price", 0) or 0) * qty * g_rate,
+                     "pnl": round(float(t.get("pnl", 0) or 0) * g_rate, 2),
+                     "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (raw, USDT)",
+                     "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * g_rate, 2)})
     for r in rows:
         cost = float(r.pop("cost", 0) or 0)
         r["pct"] = round(float(r["pnl"]) / cost * 100, 2) if r.get("pnl") is not None and cost > 0 else None

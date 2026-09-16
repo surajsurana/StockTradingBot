@@ -44,3 +44,4 @@ Thumbs.db
 .vscode/
 .idea/
 deployment/state/manual_actions.jsonl
+deployment/state/pool_g/

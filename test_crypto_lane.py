@@ -462,5 +462,29 @@ class TestWeeklyTrendTimingRules(unittest.TestCase):
                 self.assertIsNone(strategy.entry_signal_at(r))
 
 
+class TestDailyTrendTimingRules(unittest.TestCase):
+    def test_enters_and_exits_on_the_crossing_day(self):
+        from swing_research.strategies.crypto_trend_timing_daily import STOP_LOSS_PCT, CryptoDailyTrendTimingStrategy
+        strategy = CryptoDailyTrendTimingStrategy()
+        closes = [100.0] * 300 + [130.0, 131.0, 70.0]   # flat warm-up, two up days, then a crash below the SMA
+        df = strategy.precompute(_daily(closes, start=date(2025, 1, 1)))
+        rows = [r for r in df.itertuples() if not pd.isna(r.sma_daily)]
+        up1, up2, crash = rows[-3], rows[-2], rows[-1]
+        sig = strategy.entry_signal_at(up1)
+        self.assertIsNotNone(sig)
+        self.assertAlmostEqual(sig.stop_loss, 130.0 * (1 - STOP_LOSS_PCT))
+        from swing_research.base import OpenPosition, PositionUnit
+        pos = OpenPosition(symbol="X", direction="BUY",
+                           units=[PositionUnit(entry_price=130.0, entry_date=up1.Index.date(), quantity=1.0)])
+        self.assertIsNone(strategy.exit_signal_at(up2, pos))
+        self.assertEqual(strategy.exit_signal_at(crash, pos), 70.0)
+
+    def test_no_signal_before_warm_up(self):
+        from swing_research.strategies.crypto_trend_timing_daily import CryptoDailyTrendTimingStrategy
+        strategy = CryptoDailyTrendTimingStrategy()
+        df = strategy.precompute(_daily([100.0] * 50, start=date(2025, 1, 1)))
+        self.assertTrue(all(strategy.entry_signal_at(r) is None for r in df.itertuples()))
+
+
 if __name__ == "__main__":
     unittest.main()

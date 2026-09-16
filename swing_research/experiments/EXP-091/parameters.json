@@ -1,0 +1,34 @@
+{
+  "data_period": "2017-09-16 to 2026-09-15",
+  "starting_capital": 1000.0,
+  "universe_version": "crypto-usdt-2026-09-13",
+  "universe_symbol_count": 5,
+  "n_walk_forward_windows": 3,
+  "benchmark_capital_model": "MA Crossover / Mean Reversion: ONE shared starting_capital pool, sized under production's real RISK_PER_TRADE_PCT=0.01 / MAX_OPEN_POSITIONS=10 / MAX_DEPLOYED_CAPITAL_PCT=0.60 / MAX_CAPITAL_PER_TRADE_PCT=0.12 / DAILY_LOSS_CIRCUIT_BREAKER_PCT=0.03 (config/settings.py values, reimplemented read-only in simulate_portfolio_single_unit()). Buy & Hold: starting_capital divided equally across the universe (a real passive-investor allocation model).",
+  "transaction_costs_modeled": false,
+  "slippage_modeled": false,
+  "assumptions_impact": "Identical to SW-020 except: daily instead of monthly decisions -- the experiment's own question, expected (per SW-028's result) to trade more and carry a rougher drawdown.",
+  "universe_symbols": [
+    "BNB",
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP"
+  ],
+  "book_currency": "USDT",
+  "crypto_risk_pct_per_unit": 0.04,
+  "crypto_long_only": true,
+  "crypto_cost_model": {
+    "fee_pct_per_side": 0.3,
+    "spread_bps_per_side_assumption": 10.0
+  },
+  "india_vda_tax_rate_per_profitable_trade": 0.312,
+  "india_vda_loss_offset": false,
+  "india_vda_fees_deductible": false,
+  "india_vda_tds_rate_on_sales": 0.01,
+  "verdict_basis": "POST-TAX trades (fees + spread + 31.2% per profitable trade)",
+  "crypto_sma_lookback_days": 300,
+  "crypto_rebalance": "every day",
+  "crypto_stop_loss_pct": 0.2,
+  "crypto_signal_warm_up_from_full_history": true
+}

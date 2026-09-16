@@ -442,7 +442,7 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -495,18 +495,19 @@ function renderTape(s){
 function renderLiveCards(s, rows, poolF, kindF, statusF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F"];
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","G"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F","G"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const live = s.mode === "live";
   const booksIn = live
-    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0}
-    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0};
+    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: s.pool_g.exists ? 1 : 0}
+    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: 1};
   for(const k of keys){
     let p = null;
     if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
     else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
+    else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.post_tax*r, unrealised: g.unbooked.post_tax*r, realised_today: g.booked_today.post_tax*r, positions: g.positions}; }
     else p = s.pools[k];
     if(!p) continue;
     capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
@@ -672,7 +673,7 @@ function buildRegHead(){
   head.dataset.built = "1";
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option value="-">Not trading</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,

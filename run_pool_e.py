@@ -41,6 +41,7 @@ from deployment.settings import STATE_DIR
 from reporting.pool_e import POOL_E_STARTING_CAPITAL_USDT
 from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy, compute_month_end_sma
 from swing_research.strategies.crypto_trend_timing_weekly import CryptoWeeklyTrendTimingStrategy, compute_week_end_sma
+from swing_research.strategies.crypto_trend_timing_daily import CryptoDailyTrendTimingStrategy, compute_daily_sma
 from swing_research.strategies.crypto_tsmom import CryptoTimeSeriesMomentumStrategy, compute_tsmom_signal
 
 POOL_E_STATE_DIR = os.path.join(STATE_DIR, "pool_e")
@@ -64,6 +65,13 @@ POOL_E_STRATEGIES = {
     "crypto_trend_timing_weekly": (
         CryptoWeeklyTrendTimingStrategy, CRYPTO_MAJORS,
         lambda data: {s: compute_week_end_sma(df)[["sma_week_end"]] for s, df in data.items()},
+    ),
+    # SW-029, promoted 2026-09-17 per direction ("can we do the same strategy daily ... monthly, weekly and
+    # daily"): SW-020's own rule at daily cadence -- EXP-091 PASS post-tax, the strongest audit signal of the
+    # three cadences but only an 18% win rate; duplicates SW-020/SW-028 exposure, disclosed when promoted.
+    "crypto_trend_timing_daily": (
+        CryptoDailyTrendTimingStrategy, CRYPTO_MAJORS,
+        lambda data: {s: compute_daily_sma(df)[["sma_daily"]] for s, df in data.items()},
     ),
 }
 

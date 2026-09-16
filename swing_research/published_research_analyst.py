@@ -1483,3 +1483,19 @@ CRYPTO_TREND_TIMING_WEEKLY = PublishedStrategy(
     distinctiveness="A cadence robustness check on SW-020's own rule, not a new mechanism -- built to answer whether more frequent decisions survive the tax, not to add a different signal.",
     assumptions_impact="Identical to SW-020 except: weekly instead of monthly decisions -- MODERATE, DIRECTIONALLY UNKNOWN, the experiment's own question.",
 )
+
+
+CRYPTO_TREND_TIMING_DAILY = PublishedStrategy(
+    name="Crypto Daily Trend Timing (Faber 10-month SMA, daily cadence)",
+    source_citation=(
+        "Faber, M.T. (2007), \"A Quantitative Approach to Tactical Asset Allocation,\" The Journal of "
+        "Wealth Management 9(4) -- this program's own daily-cadence variant (2026-09-17), the third "
+        "cadence of the same rule alongside SW-020 (monthly) and SW-028 (weekly)."
+    ),
+    mechanism="Identical to SW-020/SW-028: hold above the 10-month SMA, cash below it. This variant reads the filter every day, the fastest cadence tested for this trend-hold rule.",
+    rules="Faber's rule (see SW-020), read every day instead of every month or week.",
+    variant_chosen="Same five majors, 20% sleeves, 20% stop, ~300-day SMA warmed up from full history; decision day = every day.",
+    scope_reductions="Identical to SW-020's (long only, no leverage, 20% stop not in the source, costs and 31.2% tax before the audit); the only change is decision frequency.",
+    distinctiveness="The fastest cadence of the SW-020 rule tested, completing the monthly/weekly/daily set requested to see where daily-tax economics stop supporting more frequent decisions.",
+    assumptions_impact="Identical to SW-020 except: daily instead of monthly decisions -- the experiment's own question, expected (per SW-028's result) to trade more and carry a rougher drawdown.",
+)

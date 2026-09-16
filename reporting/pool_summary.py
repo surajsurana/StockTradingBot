@@ -115,8 +115,10 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     """
     from data.fetch_crypto import DEFAULT_USDINR
     from reporting.pool_e import build_pool_e
+    from reporting.pool_g import build_pool_g
     today = today or date.today()
     pool_e = build_pool_e(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
+    pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
     prices = price_fn(sorted(_held_symbols(state_dir))) if callable(price_fn) else {}
 
     pool_a = [_book(os.path.join(state_dir, POOL_A_DIRNAME, key), key, name, today, prices)
@@ -157,17 +159,23 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     # taken out), at the usdinr rate -- the only figure an Indian resident
     # would actually keep. Its own block shows the pre-tax side too.
     f = pool_e["inr"]
+    g_rate = pool_g.get("usdinr") or 0
+    g_deployed_inr = round(pool_g.get("deployed", 0) * g_rate, 2)
+    g_cash_inr = round(pool_g.get("cash", 0) * g_rate, 2)
+    g_unbooked_inr = round(pool_g.get("unbooked", {}).get("post_tax", 0) * g_rate, 2)
+    g_booked_inr = round(pool_g.get("booked", {}).get("post_tax", 0) * g_rate, 2)
+    g_booked_today_inr = round(pool_g.get("booked_today", {}).get("post_tax", 0) * g_rate, 2)
     overall = {
-        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"] + f["deployed"], 2),
-        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"] + f["cash"], 2),
-        "unrealised": round(sum(p["unrealised"] for p in counted) + f["unbooked"]["post_tax"], 2),
-        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"] + f["booked"]["post_tax"], 2),
+        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"] + f["deployed"] + g_deployed_inr, 2),
+        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"] + f["cash"] + g_cash_inr, 2),
+        "unrealised": round(sum(p["unrealised"] for p in counted) + f["unbooked"]["post_tax"] + g_unbooked_inr, 2),
+        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"] + f["booked"]["post_tax"] + g_booked_inr, 2),
         "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"]
-                                + f["booked_today"]["post_tax"], 2),
-        "positions": sum(p["positions"] for p in counted) + pool_e["usdt"]["positions"],
+                                + f["booked_today"]["post_tax"] + g_booked_today_inr, 2),
+        "positions": sum(p["positions"] for p in counted) + pool_e["usdt"]["positions"] + pool_g.get("positions", 0),
     }
     return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "pool_e": pool_e, "overall": overall,
-            "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c, "F": pool_f}}
+            "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c, "F": pool_f}, "pool_g": pool_g}
 
 
 def inr(amount: float, signed: bool = False) -> str:
@@ -213,6 +221,17 @@ def format_pool_summary(summary: dict) -> str:
         f_ = pools["F"]
         lines += _pool_block("Pool F (Pool A twin, partial profit booking)", f_,
                              f"{f_['positions']} positions, {f_['updated_today']}/{f_['books']} books updated")
+    if summary.get("pool_g", {}).get("exists"):
+        from reporting.pool_e import usdt as _usdt
+        g_ = summary["pool_g"]
+        lines += [
+            f"*Pool G (crypto, AI judgment, USDT; Rs. at {g_['usdinr']:.1f}/USD)* -- {g_['positions']} positions, "
+            f"{g_['runs_today']} run(s) today",
+            f"Deployed {_usdt(g_['deployed'])} ({inr(g_['deployed']*g_['usdinr'])}) | Cash {_usdt(g_['cash'])} ({inr(g_['cash']*g_['usdinr'])})",
+            f"Unbooked post-tax {_usdt(g_['unbooked']['post_tax'], True)} | Booked post-tax {_usdt(g_['booked']['post_tax'], True)} "
+            f"(today {_usdt(g_['booked_today']['post_tax'], True)})",
+            "",
+        ]
     lines += _pool_block("Pool B", pools["B"], f"{pools['B']['positions']} positions")
     lines += _pool_block("Pool C", pools["C"], f"{pools['C']['positions']} positions")
     lines += [
