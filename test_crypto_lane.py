@@ -428,5 +428,39 @@ class TestVolManagedRules(unittest.TestCase):
         self.assertEqual(s.exit_signal_at(low, pos), 100.0)
 
 
+class TestWeeklyTrendTimingRules(unittest.TestCase):
+    def test_decision_day_is_sunday_only(self):
+        from swing_research.strategies.crypto_trend_timing_weekly import compute_week_end_sma
+        df = compute_week_end_sma(_daily([100.0] * 30, start=date(2026, 1, 5)))   # 5 Jan 2026 is a Monday
+        sundays = df[df["is_week_end"]]
+        self.assertTrue(all(d.weekday() == 6 for d in sundays.index))
+        self.assertEqual(len(sundays), 4)
+
+    def test_entry_above_sma_exit_below_weekly(self):
+        from swing_research.base import OpenPosition, PositionUnit
+        from swing_research.strategies.crypto_trend_timing_weekly import STOP_LOSS_PCT, CryptoWeeklyTrendTimingStrategy
+        strategy = CryptoWeeklyTrendTimingStrategy()
+        closes = [100.0] * 300 + [120.0] * 7 + [80.0] * 7   # flat warm-up, then a week up, then a week down
+        df = strategy.precompute(_daily(closes, start=date(2025, 3, 1)))
+        rows = [r for r in df.itertuples() if r.is_week_end and not pd.isna(r.sma_week_end)]
+        self.assertTrue(rows)
+        up_week, down_week = rows[-2], rows[-1]
+        sig = strategy.entry_signal_at(up_week)
+        self.assertIsNotNone(sig)
+        self.assertAlmostEqual(sig.stop_loss, 120.0 * (1 - STOP_LOSS_PCT))
+        pos = OpenPosition(symbol="X", direction="BUY",
+                           units=[PositionUnit(entry_price=120.0, entry_date=up_week.Index.date(), quantity=1.0)])
+        self.assertIsNone(strategy.exit_signal_at(up_week, pos))
+        self.assertEqual(strategy.exit_signal_at(down_week, pos), 80.0)
+
+    def test_no_signal_on_non_week_end_days(self):
+        from swing_research.strategies.crypto_trend_timing_weekly import CryptoWeeklyTrendTimingStrategy
+        strategy = CryptoWeeklyTrendTimingStrategy()
+        df = strategy.precompute(_daily([100.0] * 310, start=date(2025, 3, 1)))
+        for r in df.itertuples():
+            if not r.is_week_end:
+                self.assertIsNone(strategy.entry_signal_at(r))
+
+
 if __name__ == "__main__":
     unittest.main()

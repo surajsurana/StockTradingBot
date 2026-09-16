@@ -1462,3 +1462,24 @@ VOLUME_BACKED_BREAKOUT = PublishedStrategy(
     distinctiveness="A volume-confirmed breakout with a fixed 2:1 target -- Turtle System 2 (SW-001) is the only other breakout rule, with no volume filter and no target.",
     assumptions_impact="Long-only: DIRECTIONALLY UNKNOWN. Entry-order ranking for the 10 slots: MINOR. Everything else is the prototype's own rule.",
 )
+
+
+CRYPTO_TREND_TIMING_WEEKLY = PublishedStrategy(
+    name="Crypto Weekly Trend Timing (Faber 10-month SMA, weekly cadence)",
+    source_citation=(
+        "Faber, M.T. (2007), \"A Quantitative Approach to Tactical Asset Allocation,\" The Journal of "
+        "Wealth Management 9(4) -- same rule as SW-020, this program's own weekly-cadence variant "
+        "(2026-09-17), built after direction to give the crypto lane visible, more frequent activity."
+    ),
+    mechanism=(
+        "Identical to SW-020: a long moving-average filter stays with a trend and steps aside for deep "
+        "drawdowns. This variant reads the filter every week instead of every month -- crypto trades "
+        "every day, so a weekly check is a natural cadence; the question is whether faster reaction to "
+        "a trend change (helps) outweighs reacting to more noise (hurts) once costs and tax are paid."
+    ),
+    rules="Exactly Faber's rule (see SW-020): hold above the 10-month SMA, cash below it -- read on the last day of every ISO week instead of every month.",
+    variant_chosen="Same five majors, 20% sleeves, 20% stop, ~300-day SMA warmed up from full history; decision day = every Sunday (UTC) instead of month-end.",
+    scope_reductions="Identical to SW-020's (long only, no leverage, 20% stop not in the source, costs and 31.2% tax before the audit); the only change is decision frequency.",
+    distinctiveness="A cadence robustness check on SW-020's own rule, not a new mechanism -- built to answer whether more frequent decisions survive the tax, not to add a different signal.",
+    assumptions_impact="Identical to SW-020 except: weekly instead of monthly decisions -- MODERATE, DIRECTIONALLY UNKNOWN, the experiment's own question.",
+)
