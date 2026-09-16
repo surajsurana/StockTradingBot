@@ -65,10 +65,12 @@ from deployment.settings import PAPER_TRADING_STATE_DIR
 
 STRATEGY_KEY = "pead"
 EARNINGS_LOOKBACK_DAYS = 10   # how far back an announcement can be and still be considered "recent"
+STATE_DIR_OVERRIDE = None     # Pool F (2026-09-16) points this at deployment/state/pool_f so PEAD's events and
+                              # processed-events files live with that pool's book, not Pool A's
 
 
 def _pead_state_dir() -> str:
-    return os.path.join(PAPER_TRADING_STATE_DIR, STRATEGY_KEY)
+    return os.path.join(STATE_DIR_OVERRIDE or PAPER_TRADING_STATE_DIR, STRATEGY_KEY)
 
 
 def _events_path() -> str:
@@ -118,7 +120,8 @@ def load_events(strategy_key: str = STRATEGY_KEY) -> list:
 
 def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force: bool = False,
                     fetch_ohlcv_fn=None,
-                    execution_config: Optional[ExecutionRealismConfig] = None) -> dict:
+                    execution_config: Optional[ExecutionRealismConfig] = None,
+                    partial_booking=None, state_dir: Optional[str] = None) -> dict:
     """
     The idempotent daily PEAD runner -- call once per trading day, after
     market close, same cadence as every other paper-trading strategy.
@@ -144,6 +147,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     "new_exits": [...], ...} -- open_positions/cash/mark_to_market_equity
     included via the underlying run_daily() result.
     """
+    global STATE_DIR_OVERRIDE
+    STATE_DIR_OVERRIDE = state_dir   # None = Pool A's own folder (deployment.settings.PAPER_TRADING_STATE_DIR)
     target_date = as_of_date or date_type.today()
     portfolio = _load_portfolio(STRATEGY_KEY)
 
@@ -291,7 +296,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     from swing_research.strategies.pead import PEADStrategy
     strategy = PEADStrategy()
     daily_result = run_daily(STRATEGY_KEY, strategy, fetch_data_fn=lambda: data,
-                              as_of_date=target_date, force=force, execution_config=execution_config)
+                              as_of_date=target_date, force=force, execution_config=execution_config,
+                              partial_booking=partial_booking)
 
     if daily_result["status"] != "processed":
         return daily_result
