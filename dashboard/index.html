@@ -183,9 +183,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <label for="tape-kind">Type</label><select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>
     <span id="tape-count" class="note"></span></div>
   <div class="tblwrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
-  <h2>Pool D right now</h2>
-  <div class="tiles" id="pooldtiles"></div>
-  <div class="tblwrap" style="margin-top:10px"><table><thead><tr><th>Open position</th><th>Side</th><th class="n">Qty</th><th class="n">Entry</th><th class="n">Now</th><th class="n">Unbooked</th><th class="n">%</th><th class="n">Stop</th><th class="n">Target</th><th>Since</th></tr></thead><tbody id="pooldopen"></tbody></table></div>
 </section>
 
 <section id="tab-team" hidden>
@@ -411,15 +408,6 @@ function renderLive(s){
 
   renderTape(s);
 
-  const d = s.pool_d;
-  document.getElementById("pooldtiles").innerHTML = [
-    ["Cash", money(d.cash), `of ${money(d.starting_capital||100000)}`],
-    ["Open now", d.positions, `unbooked ${lv("dl.unreal", d.unrealised, money(d.unrealised,true))}`],
-    ["Trades today", d.trades_today, `${d.trades_total} all time`],
-    ["Today's P&L", tileMoney("dl.today", d.realised_today, true), `all time ${money(d.realised,true)}`],
-    ["Last check", d.last_tick ? d.last_tick.slice(11) : "—", d.updated_today ? "today" : "not today"],
-  ].map(([l,v,sub])=>`<div class="tile"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${sub}</div></div>`).join("");
-  document.getElementById("pooldopen").innerHTML = d.open_positions.length ? d.open_positions.map(p => `<tr><td>${esc(p.symbol)}</td><td class="${p.direction==="SELL"?"loss":"gain"}">${p.direction==="SELL"?"short":"long"}</td><td class="n">${p.quantity}</td><td class="n">${(+p.entry_price).toFixed(2)}</td><td class="n">${lv(`d.${p.symbol}.px`, +p.price, (+p.price).toFixed(2))}${p.priced?"":" <span class='warn' title='no quote yet'>?</span>"}</td>${cell(+p.unbooked,true,`d.${p.symbol}.un`)}<td class="n ${cls(+p.pct)}">${p.pct>0?"+":""}${(+p.pct).toFixed(2)}%</td><td class="n">${(+p.stop_loss).toFixed(2)}</td><td class="n">${(+p.target).toFixed(2)}</td><td>${(p.entry_timestamp||"").slice(11,16)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">${s.market_open?"nothing open right now":"flat — Pool D holds nothing overnight"}</td></tr>`;
 }
 
 const TAPE_COLS = [["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["note","Note",false]];
