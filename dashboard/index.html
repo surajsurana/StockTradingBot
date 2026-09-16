@@ -531,7 +531,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF){
       item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
       PNL_MODE === "today"
         ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L <span class="sw2" title="click for total">⇄ total</span></i></span>`
-        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄ today</span></i></span>`,
+        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄ today</span></i></span>`,
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
     grp("Deployed", [
