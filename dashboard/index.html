@@ -70,6 +70,11 @@ tr.clickable{cursor:pointer}
 .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--accent);margin-left:6px;vertical-align:middle}
 .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--rule);color:var(--muted)}
 .pill.ok{border-color:var(--gain);color:var(--gain)}.pill.due{border-color:var(--warn);color:var(--warn)}.pill.miss{border-color:var(--loss);color:var(--loss)}
+.tristate{display:inline-flex;border:1px solid var(--rule);border-radius:10px;overflow:hidden;font-size:10.5px}
+.tristate i{font-style:normal;padding:2px 7px;color:var(--muted)}
+.tristate i.on.paper{background:var(--chip);color:var(--accent)}
+.tristate i.on.live{background:var(--gain);color:var(--accent-ink)}
+.tristate i.on.off{background:var(--band);color:var(--muted)}
 .tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
 input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
 select{font:inherit;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink)}
@@ -710,7 +715,10 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["capital","Capital"],["pnl","Total P&L"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+// DeploymentStatus -> the three states the user actually cares about: real money running,
+// paper (virtual) money running, or not deployed at all (research-only or retired).
+const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
 function buildRegHead(){
   const head = document.getElementById("reg-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
@@ -738,9 +746,12 @@ function renderRegistry(s){
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
-    .sort((a,b) => { const k=REG_SORT.key; const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
+    .sort((a,b) => { const k=REG_SORT.key;
+      if(k==="capital"||k==="pnl"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
+      const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
-  document.getElementById("registry").innerHTML = rows.map(r => `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="pill ${r.status==="PAPER_TRADING"?"ok":""}">${esc(r.status.replace(/_/g," "))}</span></td><td>${esc(r.experiment)}</td></tr>`).join("");
+  document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status);
+    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;

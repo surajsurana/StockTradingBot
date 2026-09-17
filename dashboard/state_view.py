@@ -263,10 +263,40 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
-def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None) -> list:
+def _strategy_capital_and_pnl(key: str, books: list, pool_d: dict, pool_e: dict, pool_g: dict) -> tuple:
+    """(capital, total P&L to date), both in rupees, for whatever book(s)
+    actually run this strategy -- None/None if it has never been
+    deployed. A strategy with both a Pool A and a Pool F book (the same
+    strategy on two books, see strategies_view()'s "variants" tabs) gets
+    the two summed, since the Strategies tab shows them as one row."""
+    a_f = [b for b in books if b.get("key") == key]
+    if a_f:
+        capital = sum(b.get("capital", 0) or 0 for b in a_f)
+        pnl = sum((b.get("realised", 0) or 0) + (b.get("unrealised", 0) or 0) for b in a_f)
+        return round(capital, 2), round(pnl, 2)
+    if key == "pool_d_vwap_fade" and pool_d.get("capital") is not None:
+        return round(pool_d["capital"], 2), round((pool_d.get("realised", 0) or 0) + (pool_d.get("unrealised", 0) or 0), 2)
+    if key == "portfolio_g" and pool_g.get("exists"):
+        rate = pool_g.get("usdinr") or 0
+        pnl = (pool_g["booked"]["post_tax"] + pool_g["unbooked"]["post_tax"]) * rate
+        return round(pool_g["capital"] * rate, 2), round(pnl, 2)
+    if pool_e.get("exists"):
+        eb = next((b for b in pool_e["books"] if b.get("key") == key), None)
+        if eb:
+            rate = pool_e.get("usdinr") or 0
+            pnl = (eb["booked"]["post_tax"] + eb["unbooked"]["post_tax"]) * rate
+            return round(eb["capital"] * rate, 2), round(pnl, 2)
+    return None, None
+
+
+def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None,
+                    books: Optional[list] = None, pool_d: Optional[dict] = None,
+                    pool_e: Optional[dict] = None, pool_g: Optional[dict] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
-    brief, and the registry's verdict/status -- Pools B, C and D included
-    even though they are not registry strategies."""
+    brief, capital allocated, total P&L to date, and the registry's
+    verdict/status -- Pools B, C and D included even though they are not
+    registry strategies."""
+    books, pool_d, pool_e, pool_g = books or [], pool_d or {}, pool_e or {}, pool_g or {}
     rows = []
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
@@ -280,9 +310,10 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
             pool = "Pool A, F"
         exp = getattr(r, "primary_experiment_id", "") or ""
+        capital, pnl = _strategy_capital_and_pnl(r.strategy_key, books, pool_d, pool_e, pool_g)
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
-                     "status": status, "experiment": exp, "brief": brief,
+                     "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
                      "variants": ([{"pool": "Pool A", "diff": False},
@@ -294,19 +325,19 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     if "portfolio_b" not in keys:
         rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
-                     "how": STRATEGY_HOW["portfolio_b"], "research": {}})
+                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_b"], "research": {}})
     if "portfolio_c" not in keys:
         rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
-                     "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_c"], "research": {}})
     if "portfolio_g" not in keys:
         rows.append({"key": "portfolio_g", "sid": "G", "name": "Portfolio G (AI judgment book, crypto)", "pool": "Pool G", "type": "Crypto",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_g"][1],
-                     "how": STRATEGY_HOW["portfolio_g"], "research": {}})
+                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_g"], "research": {}})
     if "pool_d_vwap_fade" not in keys:
         rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
                      "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
-                     "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
+                     "capital": None, "pnl": None, "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 
@@ -505,7 +536,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g),
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
-                                      {b["key"] for b in summary["books"].get("F", [])}),
+                                      {b["key"] for b in summary["books"].get("F", [])},
+                                      books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 

@@ -121,6 +121,20 @@ class TestBuildDashboardState(unittest.TestCase):
         missing = [r.strategy_key for r in list_strategies() if r.strategy_key not in STRATEGY_BRIEFS]
         self.assertEqual(missing, [])   # every real registry strategy has a plain-language brief
 
+    def test_strategies_tab_shows_capital_and_total_pnl_per_strategy(self):
+        rows = {r["key"]: r for r in self.s["strategies"]}
+        # alpha: cash 40,000 + deployed 50,000 (500 X.NS @ 100) - realised -1,000 = 91,000 capital;
+        # P&L = realised -1,000 + unrealised 2,000 (500 @ +4) = 1,000.
+        self.assertAlmostEqual(rows["alpha"]["capital"], 91000.0)
+        self.assertAlmostEqual(rows["alpha"]["pnl"], 1000.0)
+        # crypto_trend_timing: Pool E book, USDT converted to rupees at the fixture's 100 rate --
+        # capital 1,000 USDT x 100, P&L 5.24 USDT post-tax x 100 (matches test_pool_e_is_its_own_pool_not_a_pool_a_book).
+        self.assertAlmostEqual(rows["crypto_trend_timing"]["capital"], 100000.0)
+        self.assertAlmostEqual(rows["crypto_trend_timing"]["pnl"], 524.0)
+        # old: ARCHIVED, no book anywhere in the fixture -- never allocated, not zero.
+        self.assertIsNone(rows["old"]["capital"])
+        self.assertIsNone(rows["old"]["pnl"])
+
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
