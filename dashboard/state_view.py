@@ -300,14 +300,49 @@ def _strategy_capital_and_pnl(key: str, books: list, pool_d: dict, pool_e: dict,
     return None, None
 
 
+def _strategy_trade_stats(key: str, books: list, state_dir: str, d_trades: list, pool_e: dict, pool_g: dict) -> dict:
+    """closed_trades (count) and reward_risk (average win / average loss,
+    both in absolute currency) for whatever book(s) run this strategy --
+    reads each book's own trades.jsonl directly, not the 10-15-row
+    "recent trades" lists shown elsewhere, since a reward:risk ratio
+    needs every closed trade, not just the latest few. closed_trades is
+    None if the strategy has never had a book at all (never deployed),
+    0 if it has one but nothing has closed yet; reward_risk is None
+    whenever there isn't at least one win AND one loss to divide."""
+    trades, has_book = [], False
+    for b in books:
+        if b.get("key") != key:
+            continue
+        has_book = True
+        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], key) if b["pool"] in ("A", "F") \
+            else os.path.join(state_dir, POOL_DIRS[b["pool"]])
+        trades += _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
+    if key == "pool_d_vwap_fade":
+        has_book = True
+        trades += d_trades
+    if key == "portfolio_g" and pool_g.get("exists"):
+        has_book = True
+        trades += _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl"))
+    if pool_e.get("exists") and any(b.get("key") == key for b in pool_e["books"]):
+        has_book = True
+        trades += _read_jsonl(os.path.join(state_dir, "pool_e", key, "trades.jsonl"))
+    pnls = [float(t.get("pnl", 0) or 0) for t in trades]
+    wins, losses = [p for p in pnls if p > 0], [-p for p in pnls if p < 0]
+    avg_win = sum(wins) / len(wins) if wins else None
+    avg_loss = sum(losses) / len(losses) if losses else None
+    reward_risk = round(avg_win / avg_loss, 2) if avg_win and avg_loss else None
+    return {"closed_trades": len(trades) if has_book else None, "reward_risk": reward_risk}
+
+
 def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None,
                     books: Optional[list] = None, pool_d: Optional[dict] = None,
-                    pool_e: Optional[dict] = None, pool_g: Optional[dict] = None) -> list:
+                    pool_e: Optional[dict] = None, pool_g: Optional[dict] = None,
+                    state_dir: str = "", d_trades: Optional[list] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
-    brief, capital allocated, total P&L to date, and the registry's
-    verdict/status -- Pools B, C and D included even though they are not
-    registry strategies."""
-    books, pool_d, pool_e, pool_g = books or [], pool_d or {}, pool_e or {}, pool_g or {}
+    brief, capital allocated, total P&L to date, closed-trade count,
+    reward:risk ratio, and the registry's verdict/status -- Pools B, C
+    and D included even though they are not registry strategies."""
+    books, pool_d, pool_e, pool_g, d_trades = books or [], pool_d or {}, pool_e or {}, pool_g or {}, d_trades or []
     rows = []
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
@@ -322,10 +357,12 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
             pool = "Pool A, F"
         exp = getattr(r, "primary_experiment_id", "") or ""
         capital, pnl = _strategy_capital_and_pnl(r.strategy_key, books, pool_d, pool_e, pool_g)
+        trade_stats = _strategy_trade_stats(r.strategy_key, books, state_dir, d_trades, pool_e, pool_g)
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
-                     "started": _paper_trading_started(r),
+                     "started": _paper_trading_started(r), "closed_trades": trade_stats["closed_trades"],
+                     "reward_risk": trade_stats["reward_risk"],
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
                      "variants": ([{"pool": "Pool A", "diff": False},
@@ -337,19 +374,19 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     if "portfolio_b" not in keys:
         rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
-                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_b"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "reward_risk": None, "how": STRATEGY_HOW["portfolio_b"], "research": {}})
     if "portfolio_c" not in keys:
         rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
-                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "reward_risk": None, "how": STRATEGY_HOW["portfolio_c"], "research": {}})
     if "portfolio_g" not in keys:
         rows.append({"key": "portfolio_g", "sid": "G", "name": "Portfolio G (AI judgment book, crypto)", "pool": "Pool G", "type": "Crypto",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_g"][1],
-                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_g"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "reward_risk": None, "how": STRATEGY_HOW["portfolio_g"], "research": {}})
     if "pool_d_vwap_fade" not in keys:
         rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
                      "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
-                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "reward_risk": None, "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 
@@ -549,7 +586,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
-                                      books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g),
+                                      books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
+                                      state_dir=state_dir, d_trades=d_trades),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
 

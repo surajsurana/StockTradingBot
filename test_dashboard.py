@@ -138,6 +138,29 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertIsNone(rows["old"]["capital"])
         self.assertIsNone(rows["old"]["pnl"])
 
+    def test_strategies_tab_shows_closed_trades_and_reward_risk(self):
+        rows = {r["key"]: r for r in self.s["strategies"]}
+        # alpha: one closed trade (Y.NS, a loss) -- a reward:risk ratio needs at least one win
+        # AND one loss to divide, so with zero wins it must be None, not a division by zero.
+        self.assertEqual(rows["alpha"]["closed_trades"], 1)
+        self.assertIsNone(rows["alpha"]["reward_risk"])
+        # crypto_trend_timing: a Pool E book exists (one open BTC position) but no trades.jsonl
+        # file at all -- 0 closed trades, not None (None means "never had a book").
+        self.assertEqual(rows["crypto_trend_timing"]["closed_trades"], 0)
+        # old: ARCHIVED, no book anywhere -- genuinely never traded, not zero.
+        self.assertIsNone(rows["old"]["closed_trades"])
+
+    def test_reward_risk_is_average_win_over_average_loss(self):
+        from dashboard.state_view import _strategy_trade_stats
+        root = tempfile.mkdtemp()
+        _write(os.path.join(root, "paper_trading", "beta", "trades.jsonl"),
+              [{"pnl": 300.0}, {"pnl": 100.0}, {"pnl": -50.0}, {"pnl": -150.0}], jsonl=True)
+        books = [{"key": "beta", "pool": "A"}]
+        stats = _strategy_trade_stats("beta", books, root, [], {}, {})
+        self.assertEqual(stats["closed_trades"], 4)
+        # avg win = (300+100)/2 = 200; avg loss = (50+150)/2 = 100; reward:risk = 2.0
+        self.assertAlmostEqual(stats["reward_risk"], 2.0)
+
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date
         rows = {r["key"]: r for r in self.s["strategies"]}
