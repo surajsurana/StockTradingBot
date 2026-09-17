@@ -779,7 +779,10 @@ function buildRegHead(){
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => hcell(l, k, cell(k))).join("")}</tr>`;
+  // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
+  // sort arrow and column text sit at opposite ends of the column from the numbers under them.
+  const alignOf = {started:"n", capital:"n", pnl:"n", pnl_pct:"n", closed_trades:"c", days:"c"};
+  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => hcell(l, k, cell(k), alignOf[k] || "")).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
   ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
