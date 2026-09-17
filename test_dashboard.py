@@ -150,15 +150,31 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_pool_breakdown_lists_each_pool_separately_for_a_twin_strategy(self):
         from dashboard.state_view import _strategy_pool_breakdown
         root = tempfile.mkdtemp()
-        _write(os.path.join(root, "paper_trading", "beta", "trades.jsonl"), [{"pnl": 100.0}], jsonl=True)
-        _write(os.path.join(root, "pool_f", "beta", "trades.jsonl"), [{"pnl": -50.0}, {"pnl": 20.0}], jsonl=True)
+        # Pool A has been trading since 2026-09-07; Pool F is a twin book added much later,
+        # 2026-09-16 -- each book's OWN started date must reflect that, not a shared date
+        # copied from the registry's single strategy-level PAPER_TRADING transition.
+        _write(os.path.join(root, "paper_trading", "beta", "trades.jsonl"),
+              [{"pnl": 100.0, "entry_date": "2026-09-07"}], jsonl=True)
+        _write(os.path.join(root, "pool_f", "beta", "trades.jsonl"),
+              [{"pnl": -50.0, "entry_date": "2026-09-16"}, {"pnl": 20.0, "entry_date": "2026-09-16"}], jsonl=True)
         books = [{"key": "beta", "pool": "A", "capital": 91000.0, "realised": 100.0, "unrealised": 0.0},
                 {"key": "beta", "pool": "F", "capital": 199000.0, "realised": -30.0, "unrealised": 500.0}]
         breakdown = _strategy_pool_breakdown("beta", books, root, [], {}, {}, {})
         self.assertEqual(len(breakdown), 2)
         a, f = breakdown[0], breakdown[1]
-        self.assertEqual((a["pool"], a["capital"], a["pnl"], a["closed_trades"]), ("Pool A", 91000.0, 100.0, 1))
-        self.assertEqual((f["pool"], f["capital"], f["pnl"], f["closed_trades"]), ("Pool F", 199000.0, 470.0, 2))
+        self.assertEqual((a["pool"], a["capital"], a["pnl"], a["closed_trades"], a["started"]),
+                         ("Pool A", 91000.0, 100.0, 1, "2026-09-07"))
+        self.assertEqual((f["pool"], f["capital"], f["pnl"], f["closed_trades"], f["started"]),
+                         ("Pool F", 199000.0, 470.0, 2, "2026-09-16"))
+
+    def test_book_started_falls_back_to_an_open_positions_entry_date(self):
+        from dashboard.state_view import _book_started
+        root = tempfile.mkdtemp()
+        book_dir = os.path.join(root, "pool_f", "gamma")
+        _write(os.path.join(book_dir, "portfolio.json"),
+              {"cash": 1000.0, "positions": {"X.NS": {"entry_date": "2026-09-16", "entry_price": 100, "quantity": 1}}})
+        self.assertEqual(_book_started(book_dir, []), "2026-09-16")
+        self.assertIsNone(_book_started(os.path.join(root, "nonexistent"), []))
 
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date

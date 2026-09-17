@@ -274,16 +274,32 @@ def _paper_trading_started(r) -> Optional[str]:
     return date.fromtimestamp(max(stamps)).isoformat() if stamps else None
 
 
+def _book_started(book_dir: str, trades: list) -> Optional[str]:
+    """The earliest date THIS BOOK has any recorded activity -- the
+    smaller of its earliest closed trade's entry_date and its earliest
+    still-open position's entry_date, read straight from its own
+    portfolio.json. None if the book has never entered anything."""
+    dates = [t.get("entry_date") for t in trades if t.get("entry_date")]
+    pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
+    dates += [p.get("entry_date") for p in (pf.get("positions") or {}).values() if p.get("entry_date")]
+    return min(dates) if dates else None
+
+
 def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: list, pool_d: dict,
                              pool_e: dict, pool_g: dict) -> list:
     """One entry per pool this strategy actually runs in -- {"pool":
-    "Pool A", "capital", "pnl", "closed_trades"}, all in rupees. Usually
-    a single entry; a strategy with both a Pool A and a Pool F book (the
-    same strategy on two books) gets two, which the Strategies tab shows
-    combined (summed) by default and can expand to show separately.
-    Every book's trades.jsonl is read in full here (not the 10-15-row
-    "recent trades" list shown elsewhere), since a closed-trade count
-    needs every trade, not just the latest few."""
+    "Pool A", "capital", "pnl", "closed_trades", "started"}, all in
+    rupees. Usually a single entry; a strategy with both a Pool A and a
+    Pool F book (the same strategy on two books) gets two, which the
+    Strategies tab shows combined (summed) by default and can expand to
+    show separately. Every book's trades.jsonl is read in full here (not
+    the 10-15-row "recent trades" list shown elsewhere), since a
+    closed-trade count needs every trade, not just the latest few.
+    "started" is THIS BOOK's own earliest activity date, not the
+    registry's strategy-level PAPER_TRADING date (which only reflects
+    whichever pool the strategy was FIRST deployed to -- a twin book
+    added later, e.g. Pool F built well after Pool A, would otherwise
+    wrongly show Pool A's own start date)."""
     out = []
     for b in books:
         if b.get("key") != key:
@@ -294,25 +310,28 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
         out.append({"pool": POOL_LABELS.get(b["pool"], "Pool " + b["pool"]),
                     "capital": round(b.get("capital", 0) or 0, 2),
                     "pnl": round((b.get("realised", 0) or 0) + (b.get("unrealised", 0) or 0), 2),
-                    "closed_trades": len(trades)})
+                    "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
     if key == "pool_d_vwap_fade" and pool_d.get("capital") is not None:
+        book_dir = os.path.join(state_dir, "pool_d")
         out.append({"pool": "Pool D", "capital": round(pool_d["capital"], 2),
                     "pnl": round((pool_d.get("realised", 0) or 0) + (pool_d.get("unrealised", 0) or 0), 2),
-                    "closed_trades": len(d_trades)})
+                    "closed_trades": len(d_trades), "started": _book_started(book_dir, d_trades)})
     if key == "portfolio_g" and pool_g.get("exists"):
         rate = pool_g.get("usdinr") or 0
-        trades = _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl"))
+        book_dir = os.path.join(state_dir, "pool_g")
+        trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         out.append({"pool": "Pool G", "capital": round(pool_g["capital"] * rate, 2),
                     "pnl": round((pool_g["booked"]["post_tax"] + pool_g["unbooked"]["post_tax"]) * rate, 2),
-                    "closed_trades": len(trades)})
+                    "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
     if pool_e.get("exists"):
         eb = next((b for b in pool_e["books"] if b.get("key") == key), None)
         if eb:
             rate = pool_e.get("usdinr") or 0
-            trades = _read_jsonl(os.path.join(state_dir, "pool_e", key, "trades.jsonl"))
+            book_dir = os.path.join(state_dir, "pool_e", key)
+            trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
             out.append({"pool": "Pool E", "capital": round(eb["capital"] * rate, 2),
                         "pnl": round((eb["booked"]["post_tax"] + eb["unbooked"]["post_tax"]) * rate, 2),
-                        "closed_trades": len(trades)})
+                        "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
     return out
 
 
