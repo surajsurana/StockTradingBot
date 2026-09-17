@@ -263,6 +263,17 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
+def _paper_trading_started(r) -> Optional[str]:
+    """The date this strategy MOST RECENTLY moved into PAPER_TRADING, from
+    the registry's own deployment_status_history (see
+    deployment.deployment_manager.set_deployment_status()) -- None if it
+    has never been through that transition (never deployed, or a
+    hand-edited registry entry that skipped the normal call)."""
+    history = getattr(r, "deployment_status_history", None) or []
+    stamps = [h.get("timestamp") for h in history if h.get("to_status") == "PAPER_TRADING" and h.get("timestamp")]
+    return date.fromtimestamp(max(stamps)).isoformat() if stamps else None
+
+
 def _strategy_capital_and_pnl(key: str, books: list, pool_d: dict, pool_e: dict, pool_g: dict) -> tuple:
     """(capital, total P&L to date), both in rupees, for whatever book(s)
     actually run this strategy -- None/None if it has never been
@@ -314,6 +325,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
+                     "started": _paper_trading_started(r),
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
                      "variants": ([{"pool": "Pool A", "diff": False},
@@ -325,19 +337,19 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     if "portfolio_b" not in keys:
         rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
-                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_b"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_b"], "research": {}})
     if "portfolio_c" not in keys:
         rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
-                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_c"], "research": {}})
     if "portfolio_g" not in keys:
         rows.append({"key": "portfolio_g", "sid": "G", "name": "Portfolio G (AI judgment book, crypto)", "pool": "Pool G", "type": "Crypto",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_g"][1],
-                     "capital": None, "pnl": None, "how": STRATEGY_HOW["portfolio_g"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["portfolio_g"], "research": {}})
     if "pool_d_vwap_fade" not in keys:
         rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
                      "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
-                     "capital": None, "pnl": None, "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
+                     "capital": None, "pnl": None, "started": None, "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 

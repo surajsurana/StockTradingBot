@@ -530,21 +530,27 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const e_rate = s.pool_e.usdinr || 0, g_rate = s.pool_g.usdinr || 0;
   let bookOne = null;
   if(bookF){
-    const ab = s.books.find(b => b.display_name === bookF);
+    // A Pool A strategy with a Pool F twin shares the SAME display_name across both books
+    // (that's how the dropdown collapses them into one option) -- sum every matching book,
+    // not just the first, or the twin's numbers silently go missing from the cards.
+    const abMatches = s.books.filter(b => b.display_name === bookF);
     const eb = s.pool_e.exists ? s.pool_e.books.find(b => b.display_name === bookF) : null;
-    if(ab) bookOne = {pool: ab.pool, capital: ab.capital, deployed: ab.deployed, cash: ab.cash,
-                      realised: ab.realised, unrealised: ab.unrealised, realised_today: ab.realised_today, positions: ab.positions};
-    else if(eb) bookOne = {pool: "E", capital: eb.capital*e_rate, deployed: eb.deployed*e_rate, cash: eb.cash*e_rate,
+    if(abMatches.length) bookOne = {pools: abMatches.map(b => b.pool),
+                      capital: abMatches.reduce((t,b) => t+(+b.capital||0), 0), deployed: abMatches.reduce((t,b) => t+(+b.deployed||0), 0),
+                      cash: abMatches.reduce((t,b) => t+(+b.cash||0), 0), realised: abMatches.reduce((t,b) => t+(+b.realised||0), 0),
+                      unrealised: abMatches.reduce((t,b) => t+(+b.unrealised||0), 0), realised_today: abMatches.reduce((t,b) => t+(+b.realised_today||0), 0),
+                      positions: abMatches.reduce((t,b) => t+(+b.positions||0), 0)};
+    else if(eb) bookOne = {pools: ["E"], capital: eb.capital*e_rate, deployed: eb.deployed*e_rate, cash: eb.cash*e_rate,
                           realised: eb.booked.post_tax*e_rate, unrealised: eb.unbooked.post_tax*e_rate,
                           realised_today: eb.booked_today.post_tax*e_rate, positions: eb.positions};
-    else if(bookF === "Intraday") bookOne = {pool: "D", capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash,
+    else if(bookF === "Intraday") bookOne = {pools: ["D"], capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash,
                                              realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
-    else if(bookF === "AI judgment" && s.pool_g.exists) bookOne = {pool: "G", capital: s.pool_g.capital*g_rate, deployed: s.pool_g.deployed*g_rate, cash: s.pool_g.cash*g_rate,
+    else if(bookF === "AI judgment" && s.pool_g.exists) bookOne = {pools: ["G"], capital: s.pool_g.capital*g_rate, deployed: s.pool_g.deployed*g_rate, cash: s.pool_g.cash*g_rate,
                                                                     realised: s.pool_g.booked.post_tax*g_rate, unrealised: s.pool_g.unbooked.post_tax*g_rate,
                                                                     realised_today: s.pool_g.booked_today.post_tax*g_rate, positions: s.pool_g.positions};
   }
   if(bookOne){
-    keys = [bookOne.pool];
+    keys = bookOne.pools;
     capital = +bookOne.capital || 0; deployed = +bookOne.deployed || 0; cash = +bookOne.cash || 0;
     booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; today = +bookOne.realised_today || 0; open = +bookOne.positions || 0;
   } else {
@@ -715,7 +721,7 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["capital","Capital"],["pnl","Total P&L"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
@@ -745,13 +751,16 @@ function renderRegistry(s){
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
   const all = s.strategies || [];
+  const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
     .sort((a,b) => { const k=REG_SORT.key;
       if(k==="capital"||k==="pnl"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
+      if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
+      if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
-  document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status);
-    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
+  document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r);
+    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n">${r.started||"—"}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;

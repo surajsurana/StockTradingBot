@@ -69,15 +69,18 @@ def _tree():
 
 
 def _record(key, name, sid, status="DeploymentStatus.PAPER_TRADING", verdict="ResearchVerdict.PASS",
-            family="swing_research published strategy"):
+            family="swing_research published strategy", deployment_status_history=None):
     return SimpleNamespace(strategy_key=key, display_name=name, strategy_id=sid, deployment_status=status,
-                           research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family=family)
+                           research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family=family,
+                           deployment_status_history=deployment_status_history or [])
 
 
 class TestBuildDashboardState(unittest.TestCase):
     def setUp(self):
         self.state_dir, self.logs_dir = _tree()
-        self.records = [_record("alpha", "Alpha", "SW-001"),
+        self.alpha_paper_trading_since = datetime(2026, 8, 15, 12, 0).timestamp()
+        self.records = [_record("alpha", "Alpha", "SW-001", deployment_status_history=[
+                            {"from_status": "RESEARCH", "to_status": "PAPER_TRADING", "timestamp": self.alpha_paper_trading_since, "reason": "test"}]),
                         _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT"),
                         _record("crypto_trend_timing", "Crypto Trend Timing", "SW-020",
                                 family="crypto research published strategy")]
@@ -134,6 +137,15 @@ class TestBuildDashboardState(unittest.TestCase):
         # old: ARCHIVED, no book anywhere in the fixture -- never allocated, not zero.
         self.assertIsNone(rows["old"]["capital"])
         self.assertIsNone(rows["old"]["pnl"])
+
+    def test_strategies_tab_shows_when_paper_trading_started(self):
+        from datetime import date
+        rows = {r["key"]: r for r in self.s["strategies"]}
+        expected = date.fromtimestamp(self.alpha_paper_trading_since).isoformat()
+        self.assertEqual(rows["alpha"]["started"], expected)
+        # crypto_trend_timing's fixture record never went through set_deployment_status --
+        # no history entry means no known start date, not a guessed one.
+        self.assertIsNone(rows["crypto_trend_timing"]["started"])
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
