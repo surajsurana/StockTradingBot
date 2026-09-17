@@ -76,7 +76,15 @@ tr.clickable{cursor:pointer}
 .tristate i.on.paper{background:var(--chip);color:var(--accent)}
 .tristate i.on.live{background:var(--gain);color:var(--accent-ink)}
 .tristate i.on.off{background:var(--band);color:var(--muted)}
+.expand-toggle{all:unset;cursor:pointer;color:var(--muted);font-size:10px;padding:0 3px;vertical-align:middle}
+.expand-toggle:hover{color:var(--accent)}
+tr.subrow td{background:var(--band);color:var(--muted)}
+tr.subrow td.note{padding-left:22px}
 .tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
+.pager{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0 4px}
+.pager select{font:inherit;padding:3px 6px;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:4px}
+.pagebtns{display:flex;gap:6px;margin-left:auto}
+.pagebtns button:disabled{opacity:.4;cursor:default}
 input[type=search]{font:inherit;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink);min-width:240px}
 select{font:inherit;padding:6px 8px;border:1px solid var(--rule);border-radius:4px;background:var(--card);color:var(--ink)}
 select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
@@ -233,6 +241,11 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="tools"><span id="tape-count" class="note"></span>
     <span class="note" style="margin-left:auto"><i class="sw" style="background:color-mix(in srgb,var(--accent) 35%,var(--card))"></i> open &nbsp; <i class="sw" style="background:color-mix(in srgb,var(--warn) 40%,var(--card))"></i> closed</span></div>
   <div class="tblwrap" id="tape-wrap"><table><thead id="tape-head"></thead><tbody id="tape"></tbody></table></div>
+  <div class="pager" id="tape-pager">
+    <label class="note">Rows per page <select id="tape-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+    <span class="note" id="tape-pageinfo"></span>
+    <span class="pagebtns"><button id="tape-prev" class="iconbtn">‹ Prev</button><button id="tape-next" class="iconbtn">Next ›</button></span>
+  </div>
 </section>
 
 <section id="tab-team" hidden>
@@ -303,6 +316,7 @@ function animateChanges(){
 const tileMoney = (key, n, signed) => `<span class="lv ${cls(n)}" data-k="${key}" data-v="${n}" data-tween="money" data-signed="${signed?1:0}">${money(n, signed)}</span>`;
 const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper", PNL_MODE = "total";
+let TAPE_PAGE = 1, TAPE_PAGE_SIZE = 50, TAPE_LAST_SIG = null;
 try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
 document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
@@ -512,8 +526,31 @@ function renderTape(s){
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
   renderLiveCards(s, rows, poolF, kindF, statusF, bookF);
-  document.getElementById("tape").innerHTML = rows.length ? rows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
+
+  // Pagination -- reset to page 1 whenever the filtered/sorted set itself changes (a new
+  // filter, search, date range or sort), not on every render (e.g. the periodic price refresh
+  // or the P&L today/total toggle would otherwise silently kick the user back to page 1).
+  const sig = JSON.stringify([f, bookF, poolF, kindF, statusF, fromF, toF, TAPE_SORT.key, TAPE_SORT.dir]);
+  if(sig !== TAPE_LAST_SIG){ TAPE_PAGE = 1; TAPE_LAST_SIG = sig; }
+  wireTapePager();
+  const pageSize = TAPE_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  TAPE_PAGE = Math.min(Math.max(1, TAPE_PAGE), totalPages);
+  const pageRows = rows.slice((TAPE_PAGE - 1) * pageSize, TAPE_PAGE * pageSize);
+  document.getElementById("tape-pageinfo").textContent = rows.length
+    ? `Page ${TAPE_PAGE} of ${totalPages} (rows ${(TAPE_PAGE-1)*pageSize+1}–${Math.min(TAPE_PAGE*pageSize, rows.length)})` : "";
+  document.getElementById("tape-prev").disabled = TAPE_PAGE <= 1;
+  document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
+
+  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
+}
+function wireTapePager(){
+  const pager = document.getElementById("tape-pager"); if(pager.dataset.wired) return;
+  pager.dataset.wired = "1";
+  document.getElementById("tape-pagesize").addEventListener("change", e => { TAPE_PAGE_SIZE = +e.target.value; TAPE_PAGE = 1; if(STATE) renderTape(STATE); });
+  document.getElementById("tape-prev").addEventListener("click", () => { TAPE_PAGE--; if(STATE) renderTape(STATE); });
+  document.getElementById("tape-next").addEventListener("click", () => { TAPE_PAGE++; if(STATE) renderTape(STATE); });
 }
 
 // The cards above the Live day tab: today's numbers for whatever the pool/type/strategy filters select.
@@ -764,7 +801,18 @@ function renderRegistry(s){
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
-    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="c">${days==null?"—":days}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
+    const pb = r.pools_breakdown || [], expandable = pb.length > 1;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button> `:""}${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="c">${days==null?"—":days}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`;
+    const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null;
+      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note">${esc(p.pool)}</td><td></td><td></td><td></td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td></td><td></td><td></td></tr>`;
+    }).join("") : "";
+    return mainRow + subRows; }).join("");
+  document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
+    e.stopPropagation();
+    const open = btn.textContent === "▾";
+    btn.textContent = open ? "▸" : "▾";
+    document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(btn.dataset.key)}"]`).forEach(tr => tr.hidden = open);
+  }));
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
