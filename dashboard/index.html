@@ -63,6 +63,9 @@ td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;verti
 #tape-wrap td.narrow,#tape-wrap th.narrow{max-width:96px;overflow:hidden;text-overflow:ellipsis}
 .sellbtn.buy{border-color:var(--gain);color:var(--gain)}.sellbtn.buy:hover{background:var(--gain);color:#fff}
 #tape-wrap td.trunc{max-width:120px;overflow:hidden;text-overflow:ellipsis}
+#reg-wrap{overflow-x:auto}#reg-wrap table{min-width:0;font-size:11.5px}
+#reg-wrap th{padding:5px 6px;letter-spacing:.01em}#reg-wrap td{padding:4px 6px}
+#reg-wrap td:nth-child(2){max-width:190px;overflow:hidden;text-overflow:ellipsis}
 tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
@@ -263,7 +266,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
   <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
-  <div class="tblwrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
+  <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <h2>Next up for research</h2>
   <p class="note">Published strategies not yet built, ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value).</p>
   <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th></tr></thead><tbody id="roadmap"></tbody></table></div>
@@ -761,7 +764,7 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["days","Days"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed trades"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed"],["verdict","Verdict"],["status","Status"],["experiment","Exp"],["days","Days"]];
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
@@ -802,9 +805,9 @@ function renderRegistry(s){
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button> `:""}${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="c">${days==null?"—":days}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td>${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button> `:""}${esc(r.sid)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${days==null?"—":days}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null;
-      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note">${esc(p.pool)}</td><td></td><td></td><td></td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td></td><td></td><td></td></tr>`;
+      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note">${esc(p.pool)}</td><td></td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td></td><td></td><td></td><td class="c">${days==null?"—":days}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("");
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
