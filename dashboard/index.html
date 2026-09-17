@@ -65,6 +65,7 @@ td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;verti
 #tape-wrap td.trunc{max-width:120px;overflow:hidden;text-overflow:ellipsis}
 tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+td.c,th.c{text-align:center}
 tr.clickable{cursor:pointer}
 .gain{color:var(--gain)}.loss{color:var(--loss)}.warn{color:var(--warn)}
 .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--accent);margin-left:6px;vertical-align:middle}
@@ -722,7 +723,7 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed trades"],["reward_risk","Reward:Risk"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed trades"],["verdict","Verdict"],["status","Status"],["experiment","Experiment"]];
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
@@ -755,13 +756,13 @@ function renderRegistry(s){
   const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
     .sort((a,b) => { const k=REG_SORT.key;
-      if(k==="capital"||k==="pnl"||k==="closed_trades"||k==="reward_risk"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
+      if(k==="capital"||k==="pnl"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r);
-    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="n">${r.closed_trades==null?"—":r.closed_trades}</td><td class="n">${r.reward_risk==null?"—":r.reward_risk.toFixed(2)}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
+    return `<tr class="clickable" data-key="${esc(r.key)}"><td>${esc(r.sid)}</td><td>${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td></tr>`; }).join("");
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
