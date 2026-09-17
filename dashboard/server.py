@@ -15,10 +15,15 @@ PRICES: unrealised P&L needs a latest price per held symbol. A background
 thread does a full yfinance refresh every PRICE_REFRESH_SECONDS and, while
 the market is open, a Kite last-traded-price refresh for every held
 symbol every LIVE_SECONDS (added 2026-09-11 so the page genuinely moves
-with the tape -- real quotes, never simulated movement). The page shows
-what it has and says how old it is. The state itself (cash, positions,
-trades) is re-read from disk on every request, so it is always current
-to the last run/tick.
+with the tape -- real quotes, never simulated movement). Crypto's last-
+traded price (Binance, refresh_crypto()) refreshes every LIVE_SECONDS
+ALWAYS, not gated on NSE hours at all -- crypto trades round the clock,
+so tying its cadence to whether the Indian equity market happened to be
+open (the loop used to sleep 60s instead of LIVE_SECONDS whenever NSE was
+shut, which slowed crypto down for no reason of its own) was a bug, fixed
+2026-09-17. The page shows what it has and says how old it is. The state
+itself (cash, positions, trades) is re-read from disk on every request,
+so it is always current to the last run/tick.
 
     python dashboard/server.py            # 0.0.0.0:8085
     python dashboard/server.py --port N
@@ -234,7 +239,11 @@ class PriceCache:
                         self.refresh_crypto()
                 except Exception as e:   # never let a data hiccup kill the refresher
                     print(f"price refresh failed: {type(e).__name__}: {e}", flush=True)
-                time.sleep(LIVE_SECONDS if self._market_open() else 60)
+                # ALWAYS LIVE_SECONDS, never a slower fallback tied to NSE hours -- crypto's own
+                # refresh_crypto() call above runs every iteration regardless of market hours, and
+                # crypto trades around the clock, so this loop must not slow down just because the
+                # Indian equity market happens to be shut (see module docstring, fixed 2026-09-17).
+                time.sleep(LIVE_SECONDS)
         threading.Thread(target=loop, daemon=True, name="price-refresh").start()
 
 

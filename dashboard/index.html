@@ -779,7 +779,7 @@ function renderRegistry(s){
 
 load();
 (function schedule(){ setTimeout(async () => { await load(); schedule(); }, STATE && STATE.market_open ? REFRESH_OPEN_MS : REFRESH_CLOSED_MS); })();
-setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago${STATE.market_open?" · live every 15s":""}`; }, 1000);
+setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago · crypto live every 20s${STATE.market_open?" · NSE quotes live every 20s":""}`; }, 1000);
 </script>
 </body>
 </html>
