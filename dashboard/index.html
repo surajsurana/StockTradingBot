@@ -809,19 +809,25 @@ function renderRegistry(s){
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td title="${esc(r.name)}">${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${days==null?"—":days}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${days==null?"—":days}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td></td><td></td><td></td><td class="c">${pdays==null?"—":pdays}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("");
-  document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
-    e.stopPropagation();
+  const toggleExpand = key => {
+    const btn = document.querySelector(`#registry .expand-toggle[data-key="${CSS.escape(key)}"]`); if(!btn) return;
     const open = btn.textContent === "▾";
     btn.textContent = open ? "▸" : "▾";
-    document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(btn.dataset.key)}"]`).forEach(tr => tr.hidden = open);
+    document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(key)}"]`).forEach(tr => tr.hidden = open);
+  };
+  document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
+    e.stopPropagation(); toggleExpand(btn.dataset.key);
   }));
-  document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", () => {
+  document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", e => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
+    // Only the strategy name opens the "how it works" popup -- clicking anywhere else on the
+    // row toggles its pool breakdown, if it has one; otherwise the click does nothing.
+    if(!e.target.closest(".strategy-name")){ toggleExpand(tr.dataset.key); return; }
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
     document.getElementById("brief-meta").textContent = `${r.pool==="-"?"Not trading":r.pool} · ${r.type} · verdict ${r.verdict.replace(/_/g," ")} · ${r.status.replace(/_/g," ")}${r.experiment?" · "+r.experiment:""}`;
     document.getElementById("brief-text").textContent = r.brief || "No description written yet.";
