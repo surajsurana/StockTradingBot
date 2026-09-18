@@ -30,7 +30,7 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": 
 # ----------------------------------------------------------------------------
 # One plain line per pool, shown on the Team tab.
 POOLS_INFO = [
-    {"pool": "A", "name": "Swing strategies", "text": "Each researched swing strategy trades its own 20b91,00,000 paper book on NSE stocks, holding for days to weeks."},
+    {"pool": "A", "name": "Swing strategies", "text": "Each researched swing strategy trades its own ₹1,00,000 paper book on NSE stocks, holding for days to weeks."},
     {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
