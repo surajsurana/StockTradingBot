@@ -34,9 +34,9 @@ POOLS_INFO = [
     {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
-    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy, after fees and 31.2% tax."},
+    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. P&L totals are AFTER fees and 31.2% tax (open positions as if sold now); Live day's closed-trade rows show the raw gain before both."},
     {"pool": "F", "name": "Pool A with partial profit booking", "text": "The same strategies as Pool A on fresh books, but at +5% half is sold and the stop on the rest moves to entry."},
-    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live."},
+    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. P&L totals are AFTER fees and 31.2% tax, same as Pool E."},
 ]
 
 
