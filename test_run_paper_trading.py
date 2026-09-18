@@ -107,13 +107,19 @@ class TestPerStrategyExecutionConfigOverride(unittest.TestCase):
         self.assertIn("execution_config", config)
         self.assertEqual(config["execution_config"].fill_timing, "close_to_next_open")
 
+    def test_amihud_uses_the_execution_realism_its_verdict_was_computed_under(self):
+        config = rpt._STRATEGY_FACTORIES["amihud_illiquidity"]["execution_config"]
+        self.assertEqual(config.fill_timing, "next_day_open")
+        self.assertEqual(config.max_participation_pct_of_adv, 0.05)
+        self.assertAlmostEqual(config.illiq_cost_k, 203.42202795875735)   # EXP-068's saved calibration
+
     def test_every_other_strategy_has_no_override(self):
         """Confirms this is an OPT-IN, per-strategy mechanism -- every
         strategy that never set execution_config_factory in the catalog
         must have no "execution_config" key in _STRATEGY_FACTORIES at
         all, falling through to _DEFAULT_EXECUTION_CONFIG unchanged."""
         for strategy_key, config in rpt._STRATEGY_FACTORIES.items():
-            if strategy_key == "overnight_return_anomaly":
+            if strategy_key in ("overnight_return_anomaly", "amihud_illiquidity"):
                 continue
             with self.subTest(strategy_key=strategy_key):
                 self.assertNotIn("execution_config", config)

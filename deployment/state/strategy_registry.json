@@ -203,8 +203,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "INCONCLUSIVE",
     "research_verdict_source": "EXP-063 (base, PASS), EXP-066 (recent-period, REJECT), EXP-069 (robustness sub-period, PASS -- conflicts, unlike the original robustness check which corroborated) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original REJECT to INCONCLUSIVE. Supersedes EXP-024/EXP-025/EXP-026. Deployment Status (RESEARCH) unchanged.",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789756251.332325,
+        "reason": "Moved to paper trading 2026-09-19 per direction, as a forward check on an INCONCLUSIVE research verdict -- NOT a promotion route. Pre-declared rule: no promotion without >= 60 closed trades and a fresh walk-forward test; rules run exactly as researched, never adjusted."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -217,8 +224,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "INCONCLUSIVE",
     "research_verdict_source": "EXP-068 (base, PASS), EXP-070 (recent-period, REJECT -- thin, LOW evidence, 0/1 windows), EXP-071 (robustness sub-period, PASS -- conflicts) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-08-31. VERDICT CHANGE from original PASS to INCONCLUSIVE. Deployment Status (RESEARCH) unchanged.",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789756251.3429623,
+        "reason": "Moved to paper trading 2026-09-19 per direction, as a forward check on an INCONCLUSIVE research verdict -- NOT a promotion route. Pre-declared rule: no promotion without >= 60 closed trades and a fresh walk-forward test; rules run exactly as researched, never adjusted."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -252,8 +266,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "INCONCLUSIVE",
     "research_verdict_source": "EXP-074 (base, PASS -- CAGR 13.71%, Sharpe 0.922, OOS +94.95/trade, HIGH evidence), EXP-072 (recent-period, REJECT -- OOS -55.48/trade), EXP-073 (robustness sub-period, PASS -- OOS +43.82/trade, conflicts) -- RE-VERIFIED under the generic candidate-ranking architecture fix, 2026-09-02. Verdict UNCHANGED from original (same base-PASS/recent-REJECT/robustness-PASS-conflicts pattern as before the fix, same as Minervini). Deployment Status (RESEARCH) unchanged.",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "to_status": "PAPER_TRADING",
+        "timestamp": 1789756251.3535078,
+        "reason": "Moved to paper trading 2026-09-19 per direction, as a forward check on an INCONCLUSIVE research verdict -- NOT a promotion route. Pre-declared rule: no promotion without >= 60 closed trades and a fresh walk-forward test; rules run exactly as researched, never adjusted."
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",

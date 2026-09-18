@@ -218,6 +218,52 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # No execution_config_factory: EXP-081 ran on the default same-day-close research engine,
         # so the platform default (next_day_open) applies live, same as High-Volume Return Premium.
     ),
+    # --- The three INCONCLUSIVE strategies, moved to paper trading 2026-09-19 (per direction) as a
+    # forward check on the research, NOT a promotion route: nothing here is promoted without >= 60
+    # closed trades and a fresh walk-forward test. Rules are exactly the researched ones. ---
+    PaperTradingStrategySpec(
+        strategy_key="betting_against_beta",
+        display_name="Betting Against Beta",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.betting_against_beta", fromlist=["BettingAgainstBetaStrategy"]
+        ).BettingAgainstBetaStrategy(),
+        # Needs the Nifty 50 series as the market, exactly as the research runner does (EXP-063).
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_shrunk_beta_percentile_ranks"]
+        ).compute_shrunk_beta_percentile_ranks(
+            data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
+        ), "beta_percentile"),
+    ),
+    PaperTradingStrategySpec(
+        strategy_key="amihud_illiquidity",
+        display_name="Amihud Illiquidity Premium",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.amihud_illiquidity", fromlist=["AmihudIlliquidityStrategy"]
+        ).AmihudIlliquidityStrategy(),
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_amihud_illiq_percentile_ranks"]
+        ).compute_amihud_illiq_percentile_ranks(data), "illiq_percentile"),
+        # EXP-068's verdict was computed under execution realism (5% of average daily volume cap,
+        # ILLIQ-derived cost, next-day-open fills), so live paper trading uses that SAME
+        # configuration. illiq_cost_k is the value EXP-068 calibrated once and saved in its
+        # parameters.json -- fixed here, never re-tuned.
+        execution_config_factory=lambda: __import__(
+            "deployment.paper_trading_engine", fromlist=["ExecutionRealismConfig"]
+        ).ExecutionRealismConfig(fill_timing="next_day_open", max_participation_pct_of_adv=0.05,
+                                 illiq_cost_k=203.42202795875735),
+    ),
+    PaperTradingStrategySpec(
+        strategy_key="idiosyncratic_volatility",
+        display_name="Idiosyncratic Volatility Anomaly",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.idiosyncratic_volatility", fromlist=["IdiosyncraticVolatilityStrategy"]
+        ).IdiosyncraticVolatilityStrategy(),
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_idiosyncratic_volatility_percentile_ranks"]
+        ).compute_idiosyncratic_volatility_percentile_ranks(
+            data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
+        ), "idio_vol_percentile"),
+    ),
 ]
 
 

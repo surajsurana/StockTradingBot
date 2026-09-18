@@ -286,6 +286,11 @@ def _paper_trading_started(r) -> Optional[str]:
     return date.fromtimestamp(max(stamps)).isoformat() if stamps else None
 
 
+def _wins(trades: list) -> int:
+    """Closed trades that made money."""
+    return sum(1 for t in trades if float(t.get("pnl", 0) or 0) > 0)
+
+
 def _book_started(book_dir: str, trades: list) -> Optional[str]:
     """The earliest date THIS BOOK has any recorded activity -- the
     smaller of its earliest closed trade's entry_date and its earliest
@@ -322,19 +327,19 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
         out.append({"pool": POOL_LABELS.get(b["pool"], "Pool " + b["pool"]),
                     "capital": round(b.get("capital", 0) or 0, 2),
                     "pnl": round((b.get("realised", 0) or 0) + (b.get("unrealised", 0) or 0), 2),
-                    "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
+                    "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
     if key == "pool_d_vwap_fade" and pool_d.get("capital") is not None:
         book_dir = os.path.join(state_dir, "pool_d")
         out.append({"pool": "Pool D", "capital": round(pool_d["capital"], 2),
                     "pnl": round((pool_d.get("realised", 0) or 0) + (pool_d.get("unrealised", 0) or 0), 2),
-                    "closed_trades": len(d_trades), "started": _book_started(book_dir, d_trades)})
+                    "closed_trades": len(d_trades), "wins": _wins(d_trades), "started": _book_started(book_dir, d_trades)})
     if key == "portfolio_g" and pool_g.get("exists"):
         rate = pool_g.get("usdinr") or 0
         book_dir = os.path.join(state_dir, "pool_g")
         trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         out.append({"pool": "Pool G", "capital": round(pool_g["capital"] * rate, 2),
                     "pnl": round((pool_g["booked"]["post_tax"] + pool_g["unbooked"]["post_tax"]) * rate, 2),
-                    "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
+                    "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
     if pool_e.get("exists"):
         eb = next((b for b in pool_e["books"] if b.get("key") == key), None)
         if eb:
@@ -343,7 +348,7 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
             trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
             out.append({"pool": "Pool E", "capital": round(eb["capital"] * rate, 2),
                         "pnl": round((eb["booked"]["post_tax"] + eb["unbooked"]["post_tax"]) * rate, 2),
-                        "closed_trades": len(trades), "started": _book_started(book_dir, trades)})
+                        "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
     return out
 
 
@@ -373,10 +378,11 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         capital = round(sum(p["capital"] for p in pools_breakdown), 2) if pools_breakdown else None
         pnl = round(sum(p["pnl"] for p in pools_breakdown), 2) if pools_breakdown else None
         closed_trades = sum(p["closed_trades"] for p in pools_breakdown) if pools_breakdown else None
+        wins = sum(p["wins"] for p in pools_breakdown) if pools_breakdown else None
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
-                     "started": _paper_trading_started(r), "closed_trades": closed_trades,
+                     "started": _paper_trading_started(r), "closed_trades": closed_trades, "wins": wins,
                      "pools_breakdown": pools_breakdown,
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
@@ -389,19 +395,19 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     if "portfolio_b" not in keys:
         rows.append({"key": "portfolio_b", "sid": "B", "name": "Portfolio B (AI watchlist book)", "pool": "Pool B", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_b"][1],
-                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_b"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "wins": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_b"], "research": {}})
     if "portfolio_c" not in keys:
         rows.append({"key": "portfolio_c", "sid": "C", "name": "Portfolio C (AI overlay on Pool A)", "pool": "Pool C", "type": "AI",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_c"][1],
-                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_c"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "wins": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_c"], "research": {}})
     if "portfolio_g" not in keys:
         rows.append({"key": "portfolio_g", "sid": "G", "name": "Portfolio G (AI judgment book, crypto)", "pool": "Pool G", "type": "Crypto",
                      "verdict": "-", "status": "PAPER_TRADING", "experiment": "", "brief": STRATEGY_BRIEFS["portfolio_g"][1],
-                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_g"], "research": {}})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "wins": None, "pools_breakdown": [], "how": STRATEGY_HOW["portfolio_g"], "research": {}})
     if "pool_d_vwap_fade" not in keys:
         rows.append({"key": "pool_d_vwap_fade", "sid": "D", "name": pool_d_strategy, "pool": "Pool D", "type": "Intraday",
                      "verdict": "REJECT", "status": "PAPER_TRADING", "experiment": "EXP-008", "brief": STRATEGY_BRIEFS["pool_d_vwap_fade"][1],
-                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "pools_breakdown": [], "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
+                     "capital": None, "pnl": None, "started": None, "closed_trades": None, "wins": None, "pools_breakdown": [], "how": STRATEGY_HOW["pool_d_vwap_fade"], "research": _experiment_summary("EXP-008")})
     return rows
 
 
