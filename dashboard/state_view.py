@@ -16,8 +16,6 @@ from datetime import date, datetime, time as dtime
 from typing import Callable, Optional
 
 from deployment.base import is_crypto_record, is_pool_a_record
-from reporting.pool_e import _ledger as _crypto_ledger
-from swing_research.crypto_costs import INDIA_VDA_TAX_RATE, CryptoCostModel
 from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_summary  # noqa: F401
 
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
@@ -36,9 +34,9 @@ POOLS_INFO = [
     {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
-    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. All P&L shown is AFTER fees and 31.2% tax (open positions as if sold now)."},
+    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. Profit on Live day and Strategies is gross, before fees and tax, like every pool; the P&L tab shows fees, tax and net."},
     {"pool": "F", "name": "Pool A with partial profit booking", "text": "The same strategies as Pool A on fresh books, but at +5% half is sold and the stop on the rest moves to entry."},
-    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. All P&L shown is AFTER fees and 31.2% tax, same as Pool E."},
+    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. Profit on Live day and Strategies is gross, before fees and tax; the P&L tab shows fees, tax and net."},
 ]
 
 
@@ -340,7 +338,7 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
         book_dir = os.path.join(state_dir, "pool_g")
         trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         out.append({"pool": "Pool G", "capital": round(pool_g["capital"] * rate, 2),
-                    "pnl": round((pool_g["booked"]["post_tax"] + pool_g["unbooked"]["post_tax"]) * rate, 2),
+                    "pnl": round((pool_g["booked"]["raw"] + pool_g["unbooked"]["raw"]) * rate, 2),
                     "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
     if pool_e.get("exists"):
         eb = next((b for b in pool_e["books"] if b.get("key") == key), None)
@@ -349,8 +347,49 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
             book_dir = os.path.join(state_dir, "pool_e", key)
             trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
             out.append({"pool": "Pool E", "capital": round(eb["capital"] * rate, 2),
-                        "pnl": round((eb["booked"]["post_tax"] + eb["unbooked"]["post_tax"]) * rate, 2),
+                        "pnl": round((eb["booked"]["raw"] + eb["unbooked"]["raw"]) * rate, 2),
                         "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
+    return out
+
+
+def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, registry_records: list) -> list:
+    """One line per book (strategy x pool) for the P&L tab, all in rupees and all GROSS -- the
+    dashboard's other tabs show the same gross numbers. Crypto books also carry the fees and India
+    31.2% tax that reporting/pool_e.py already computes per trade (open positions as if sold now);
+    equity books carry None there because brokerage and capital-gains tax are not modeled in paper
+    trading. capital + realised + unrealised == cash + deployed + unrealised by construction (capital
+    is defined as cash + deployed - realised), so the balance sheet always balances."""
+    sid_of = {r.strategy_key: getattr(r, "strategy_id", "") for r in registry_records}
+    out = []
+    for b in books:
+        out.append({"pool": POOL_LABELS.get(b["pool"], "Pool " + b["pool"]), "key": b["key"], "sid": b.get("sid", "") or sid_of.get(b["key"], ""),
+                    "name": b["display_name"], "type": "AI" if b["pool"] in ("B", "C") else "Swing",
+                    "capital": b.get("capital", 0) or 0, "cash": b.get("cash", 0) or 0, "deployed": b.get("deployed", 0) or 0,
+                    "realised": b.get("realised", 0) or 0, "unrealised": b.get("unrealised", 0) or 0,
+                    "fees": None, "tax": None, "taxable": False})
+    if pool_d.get("capital") is not None:
+        out.append({"pool": "Pool D", "key": "pool_d_vwap_fade", "sid": sid_of.get("pool_d_vwap_fade", ""), "name": "Intraday (VWAP fade)", "type": "Intraday",
+                    "capital": pool_d["capital"], "cash": pool_d.get("cash", 0) or 0, "deployed": pool_d.get("deployed", 0) or 0,
+                    "realised": pool_d.get("realised", 0) or 0, "unrealised": pool_d.get("unrealised", 0) or 0,
+                    "fees": None, "tax": None, "taxable": False})
+
+    def crypto_line(pool, key, sid, name, capital, cash, deployed, booked, unbooked, rate):
+        return {"pool": pool, "key": key, "sid": sid, "name": name, "type": "Crypto",
+                "capital": capital * rate, "cash": cash * rate, "deployed": deployed * rate,
+                "realised": booked["raw"] * rate, "unrealised": unbooked["raw"] * rate,
+                "fees": (booked["fees"] + unbooked["fees"]) * rate, "tax": (booked["tax"] + unbooked["tax"]) * rate, "taxable": True}
+    if pool_e.get("exists"):
+        rate = pool_e.get("usdinr") or 0
+        for eb in pool_e["books"]:
+            out.append(crypto_line("Pool E", eb["key"], eb.get("sid", "") or sid_of.get(eb["key"], ""), eb["display_name"],
+                                   eb["capital"], eb["cash"], eb["deployed"], eb["booked"], eb["unbooked"], rate))
+    if pool_g.get("exists"):
+        out.append(crypto_line("Pool G", "portfolio_g", sid_of.get("portfolio_g", ""), "AI judgment", pool_g["capital"], pool_g["cash"],
+                               pool_g["deployed"], pool_g["booked"], pool_g["unbooked"], pool_g.get("usdinr") or 0))
+    for l in out:
+        for k in ("capital", "cash", "deployed", "realised", "unrealised", "fees", "tax"):
+            if l[k] is not None:
+                l[k] = round(l[k], 2)
     return out
 
 
@@ -594,7 +633,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     from data.fetch_crypto import DEFAULT_USDINR
     pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
     g_rate = pool_g.get("usdinr") or 0
-    overall = dict(summary["overall"])   # already carries Pool E's and Pool G's post-tax rupee figures (reporting/pool_summary.py)
+    overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
                                + pool_e["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
@@ -606,23 +645,13 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g),
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO,
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
-
-
-def _closed_crypto_post_tax(t: dict) -> float:
-    """A closed crypto trade's profit AFTER fees and India's 31.2% tax, in USDT -- the same
-    per-trade arithmetic reporting/pool_e.py uses for the book totals, so the Live day rows add
-    up to the totals shown everywhere else."""
-    qty = float(t.get("quantity", 0) or 0)
-    led = _crypto_ledger(float(t.get("pnl", 0) or 0), float(t.get("entry_price", 0) or 0) * qty,
-                         float(t.get("exit_price", 0) or 0) * qty, CryptoCostModel(), INDIA_VDA_TAX_RATE)
-    return led["post_tax"]
 
 
 def _days_between(start_iso, end_iso) -> Optional[int]:
@@ -716,7 +745,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
         r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
-    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts and P&L in rupees (post-tax on open rows).
+    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts and P&L in rupees (gross, before fees and tax).
     rate = float((pool_e or {}).get("usdinr") or 0)
     for b in (pool_e or {}).get("books", []):
         for p in b["open_positions"]:
@@ -727,11 +756,11 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": b["key"],
                          "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool E",
                          "book": b["display_name"], "status": "Open", "fill_today": entered_today,
-                         "pnl": round(p["unbooked_post_tax"] * rate, 2),
+                         "pnl": round(p["unbooked_raw"] * rate, 2),
                          "pnl_today": round(move * rate, 2) if move is not None else None,
                          "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
                          "cost": p["entry_price"] * p["quantity"] * rate,
-                         "note": "price in USDT; P&L post-tax in Rs.", "kind": "Crypto",
+                         "note": "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
                          "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
         for t in _read_jsonl(os.path.join(state_dir, "pool_e", b["key"], "trades.jsonl")):
             qty = float(t.get("quantity", 0) or 0)
@@ -741,8 +770,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                          "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
                          "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
-                         "pnl": round(_closed_crypto_post_tax(t) * rate, 2),
-                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (after fees and tax)",
+                         "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
+                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (price in USDT)",
                          "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
     # Pool G: a single shared book, twice-daily live-price fills, prices/P&L in USDT converted to rupees.
     g_rate = float((pool_g or {}).get("usdinr") or 0)
@@ -754,11 +783,11 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
                      "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",
                      "book": "AI judgment", "status": "Open", "fill_today": entered_today,
-                     "pnl": round(p["unbooked_post_tax"] * g_rate, 2),
+                     "pnl": round(p["unbooked_raw"] * g_rate, 2),
                      "pnl_today": round(move * g_rate, 2) if move is not None else None,
                      "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
                      "cost": p["entry_price"] * p["quantity"] * g_rate,
-                     "note": p.get("reasoning", "") or "price in USDT; P&L post-tax in Rs.", "kind": "Crypto",
+                     "note": p.get("reasoning", "") or "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
                      "amount": round(p["entry_price"] * p["quantity"] * g_rate, 2)})
     for t in _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl")):
         qty = float(t.get("quantity", 0) or 0)
@@ -768,8 +797,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "book": "AI judgment", "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                      "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
                      "cost": float(t.get("entry_price", 0) or 0) * qty * g_rate,
-                     "pnl": round(_closed_crypto_post_tax(t) * g_rate, 2),
-                     "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (after fees and tax)",
+                     "pnl": round(float(t.get("pnl", 0) or 0) * g_rate, 2),
+                     "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (price in USDT)",
                      "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * g_rate, 2)})
     for r in rows:
         cost = float(r.pop("cost", 0) or 0)

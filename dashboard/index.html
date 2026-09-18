@@ -227,6 +227,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="true" data-tab="team">The team</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
+  <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
 </nav>
 <p id="error" class="err" hidden></p>
 
@@ -255,6 +256,17 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· teal robots with a round head = AI agents, grey robots with a square head = rule-based engines · tap anyone to see what they do</span></div>
   <h2 id="flow-research-title"></h2>
   <div class="strip" id="flow-research"></div>
+</section>
+
+<section id="tab-statement" hidden>
+  <div class="tools"><label class="note">Pool <select id="st-pool"></select></label>
+    <label class="note">Strategy <select id="st-strategy"></select></label>
+    <span class="note" id="st-count"></span></div>
+  <h2>Profit and loss</h2>
+  <div class="tblwrap"><table class="stmt"><thead><tr><th>Pool</th><th>Strategy</th><th class="n">Realised</th><th class="n">Unrealised</th><th class="n">Gross P&amp;L</th><th class="n">Fees</th><th class="n">Tax</th><th class="n">Net P&amp;L</th></tr></thead><tbody id="st-pnl"></tbody></table></div>
+  <p class="note" id="st-note"></p>
+  <h2>Balance sheet</h2>
+  <div class="tblwrap" style="max-width:560px"><table class="stmt"><tbody id="st-bs"></tbody></table></div>
 </section>
 
 <section id="tab-registry" hidden>
@@ -351,7 +363,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
-  renderLive(s); renderTeam(s); renderRegistry(s);
+  renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s);
   animateChanges();
 }
 
@@ -533,13 +545,13 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
                       unrealised: abMatches.reduce((t,b) => t+(+b.unrealised||0), 0), realised_today: abMatches.reduce((t,b) => t+(+b.realised_today||0), 0),
                       positions: abMatches.reduce((t,b) => t+(+b.positions||0), 0)};
     else if(eb) bookOne = {pools: ["E"], capital: eb.capital*e_rate, deployed: eb.deployed*e_rate, cash: eb.cash*e_rate,
-                          realised: eb.booked.post_tax*e_rate, unrealised: eb.unbooked.post_tax*e_rate,
-                          realised_today: eb.booked_today.post_tax*e_rate, positions: eb.positions};
+                          realised: eb.booked.raw*e_rate, unrealised: eb.unbooked.raw*e_rate,
+                          realised_today: eb.booked_today.raw*e_rate, positions: eb.positions};
     else if(bookF === "Intraday") bookOne = {pools: ["D"], capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash,
                                              realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
     else if(bookF === "AI judgment" && s.pool_g.exists) bookOne = {pools: ["G"], capital: s.pool_g.capital*g_rate, deployed: s.pool_g.deployed*g_rate, cash: s.pool_g.cash*g_rate,
-                                                                    realised: s.pool_g.booked.post_tax*g_rate, unrealised: s.pool_g.unbooked.post_tax*g_rate,
-                                                                    realised_today: s.pool_g.booked_today.post_tax*g_rate, positions: s.pool_g.positions};
+                                                                    realised: s.pool_g.booked.raw*g_rate, unrealised: s.pool_g.unbooked.raw*g_rate,
+                                                                    realised_today: s.pool_g.booked_today.raw*g_rate, positions: s.pool_g.positions};
   }
   if(bookOne){
     keys = bookOne.pools;
@@ -549,8 +561,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
     for(const k of keys){
       let p = null;
       if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
-      else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.post_tax, unrealised: s.pool_e.inr.unbooked.post_tax, realised_today: s.pool_e.inr.booked_today.post_tax, positions: s.pool_e.usdt.positions}; }
-      else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.post_tax*r, unrealised: g.unbooked.post_tax*r, realised_today: g.booked_today.post_tax*r, positions: g.positions}; }
+      else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.raw, unrealised: s.pool_e.inr.unbooked.raw, realised_today: s.pool_e.inr.booked_today.raw, positions: s.pool_e.usdt.positions}; }
+      else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.raw*r, unrealised: g.unbooked.raw*r, realised_today: g.booked_today.raw*r, positions: g.positions}; }
       else p = s.pools[k];
       if(!p) continue;
       capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
@@ -581,7 +593,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
       PNL_MODE === "today"
         ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L <span class="sw2" title="click for total">⇄</span></i></span>`
-        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today${keys.includes("E")?" · Pool E post-tax":""} · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄</span></i></span>`,
+        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄</span></i></span>`,
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
     grp("Deployed", [
@@ -740,6 +752,41 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
   buildRegHead();
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"]) document.getElementById(id).value = filters[id] || "";
   document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
+}
+function renderStatement(s){
+  const lines = s.statement || [];
+  const poolSel = document.getElementById("st-pool"), stratSel = document.getElementById("st-strategy");
+  const prevP = poolSel.value, prevS = stratSel.value;
+  const poolNames = [...new Set(lines.map(l => l.pool))].sort();
+  poolSel.innerHTML = `<option value="">All pools</option>` + poolNames.map(p => `<option${p===prevP?" selected":""}>${esc(p)}</option>`).join("");
+  const P = poolNames.includes(prevP) ? prevP : "";
+  const sidNum = l => { const m = /(\d+)/.exec(l.sid || ""); return m ? +m[1] : Infinity; };
+  const stratOpts = new Map();
+  lines.filter(l => !P || l.pool === P).sort((a,b) => sidNum(a) - sidNum(b)).forEach(l => { const k = l.sid || l.key; if(!stratOpts.has(k)) stratOpts.set(k, `${l.sid ? l.sid + " · " : ""}${l.name}`); });
+  stratSel.innerHTML = `<option value="">All strategies</option>` + [...stratOpts].map(([k,label]) => `<option value="${esc(k)}"${k===prevS?" selected":""}>${esc(label)}</option>`).join("");
+  const S = stratOpts.has(prevS) ? prevS : "";
+  if(!poolSel.dataset.wired){ poolSel.dataset.wired = "1"; poolSel.addEventListener("change", () => STATE && renderStatement(STATE)); stratSel.addEventListener("change", () => STATE && renderStatement(STATE)); }
+
+  const rows = lines.filter(l => (!P || l.pool === P) && (!S || (l.sid || l.key) === S))
+                    .sort((a,b) => a.pool.localeCompare(b.pool) || sidNum(a) - sidNum(b));
+  const gross = l => l.realised + l.unrealised, net = l => gross(l) - (l.fees||0) - (l.tax||0);
+  const amt = (n, signed) => `<td class="n ${signed ? cls(n) : ""}">${money(n, signed)}</td>`;
+  const opt = n => n == null ? `<td class="n">—</td>` : `<td class="n">${money(n)}</td>`;
+  document.getElementById("st-count").textContent = `${rows.length} book${rows.length===1?"":"s"}`;
+  const sum = k => rows.reduce((t, l) => t + (+l[k] || 0), 0);
+  const anyTaxed = rows.some(l => l.taxable);
+  document.getElementById("st-pnl").innerHTML = rows.length
+    ? rows.map(l => `<tr><td>${esc(l.pool)}</td><td>${l.sid?`<span class="chip">${esc(l.sid)}</span> `:""}${esc(l.name)}</td>${amt(l.realised,true)}${amt(l.unrealised,true)}${amt(gross(l),true)}${opt(l.fees)}${opt(l.tax)}${amt(net(l),true)}</tr>`).join("")
+      + `<tr class="total"><td colspan="2">Total</td>${amt(sum("realised"),true)}${amt(sum("unrealised"),true)}${amt(sum("realised")+sum("unrealised"),true)}${anyTaxed?`<td class="n">${money(sum("fees"))}</td><td class="n">${money(sum("tax"))}</td>`:`<td class="n">—</td><td class="n">—</td>`}${amt(rows.reduce((t,l)=>t+net(l),0),true)}</tr>`
+    : `<tr><td colspan="8" class="note">Nothing matches these filters.</td></tr>`;
+  document.getElementById("st-note").textContent = "Crypto (Pools E and G, converted to rupees at today's USD/INR): fees 0.30% a side plus 10 bps spread, and 31.2% tax on each profitable trade with no set-off for losses; open positions are taxed as if sold today; the 1% TDS is refundable so it is not counted. Swing, AI and intraday pools show a dash: brokerage and capital-gains tax are not modeled in paper trading, so their net equals gross. Every other tab shows gross.";
+
+  const cash = sum("cash"), dep = sum("deployed"), unr = sum("unrealised"), cap = sum("capital"), rea = sum("realised"), ft = sum("fees") + sum("tax");
+  const bs = (label, n, opts={}) => `<tr class="${opts.total?"total":""}"><td${opts.indent?' style="padding-left:24px"':""}>${label}</td>${amt(n, !!opts.signed)}</tr>`;
+  document.getElementById("st-bs").innerHTML =
+    `<tr><td colspan="2"><b>Assets</b></td></tr>` + bs("Cash", cash, {indent:1}) + bs("Open positions at market value", dep + unr, {indent:1}) + bs("Total assets", cash + dep + unr, {total:1}) +
+    `<tr><td colspan="2"><b>Funded by</b></td></tr>` + bs("Capital allocated", cap, {indent:1}) + bs("Realised profit", rea, {indent:1, signed:1}) + bs("Unrealised profit", unr, {indent:1, signed:1}) + bs("Total", cap + rea + unr, {total:1}) +
+    (anyTaxed ? bs("Less: fees and tax on crypto (estimated)", -ft, {indent:1, signed:1}) + bs("Net worth after fees and tax", cap + rea + unr - ft, {total:1}) : "");
 }
 function renderRegistry(s){
   buildRegHead();

@@ -131,9 +131,10 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(rows["alpha"]["capital"], 91000.0)
         self.assertAlmostEqual(rows["alpha"]["pnl"], 1000.0)
         # crypto_trend_timing: Pool E book, USDT converted to rupees at the fixture's 100 rate --
-        # capital 1,000 USDT x 100, P&L 5.24 USDT post-tax x 100 (matches test_pool_e_is_its_own_pool_not_a_pool_a_book).
+        # capital 1,000 USDT x 100, GROSS P&L 10 USDT x 100 (every dashboard tab shows gross; fees and
+        # tax live on the P&L tab, see test_statement_*).
         self.assertAlmostEqual(rows["crypto_trend_timing"]["capital"], 100000.0)
-        self.assertAlmostEqual(rows["crypto_trend_timing"]["pnl"], 524.0)
+        self.assertAlmostEqual(rows["crypto_trend_timing"]["pnl"], 1000.0)
         # old: ARCHIVED, no book anywhere in the fixture -- never allocated, not zero.
         self.assertIsNone(rows["old"]["capital"])
         self.assertIsNone(rows["old"]["pnl"])
@@ -176,15 +177,24 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(_book_started(book_dir, []), "2026-09-16")
         self.assertIsNone(_book_started(os.path.join(root, "nonexistent"), []))
 
-    def test_closed_crypto_rows_are_after_fees_and_tax_like_the_book_totals(self):
-        from dashboard.state_view import _closed_crypto_post_tax
-        from swing_research.crypto_costs import CryptoCostModel, INDIA_VDA_TAX_RATE
-        model = CryptoCostModel()
-        win = {"pnl": 20.0, "entry_price": 100.0, "exit_price": 120.0, "quantity": 1.0}
-        self.assertAlmostEqual(_closed_crypto_post_tax(win), 20.0 - model.round_trip_cost(100.0, 120.0) - 20.0 * INDIA_VDA_TAX_RATE)
-        loss = {"pnl": -10.0, "entry_price": 100.0, "exit_price": 90.0, "quantity": 1.0}
-        # a loss earns no tax credit: only fees make it worse
-        self.assertAlmostEqual(_closed_crypto_post_tax(loss), -10.0 - model.round_trip_cost(100.0, 90.0))
+    def test_statement_lines_carry_gross_fees_and_tax_per_book(self):
+        lines = {(l["pool"], l["key"]): l for l in self.s["statement"]}
+        alpha = lines[("Pool A", "alpha")]
+        # equity: no fees or tax modeled -> None, not zero
+        self.assertEqual((alpha["fees"], alpha["tax"], alpha["taxable"]), (None, None, False))
+        self.assertAlmostEqual(alpha["realised"], -1000.0)
+        self.assertAlmostEqual(alpha["unrealised"], 2000.0)
+        self.assertAlmostEqual(alpha["capital"] + alpha["realised"] + alpha["unrealised"],
+                               alpha["cash"] + alpha["deployed"] + alpha["unrealised"])   # the balance sheet balances
+        crypto = lines[("Pool E", "crypto_trend_timing")]
+        # 10 USDT gross on the open BTC position x 100; tax 31.2% of the gain, fees both sides
+        self.assertAlmostEqual(crypto["unrealised"], 1000.0)
+        self.assertTrue(crypto["taxable"])
+        self.assertAlmostEqual(crypto["tax"], 312.0)
+        self.assertGreater(crypto["fees"], 0)
+        self.assertAlmostEqual(crypto["capital"] + crypto["realised"] + crypto["unrealised"],
+                               crypto["cash"] + crypto["deployed"] + crypto["unrealised"])
+        self.assertEqual(lines[("Pool D", "pool_d_vwap_fade")]["type"], "Intraday")
 
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date
