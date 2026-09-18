@@ -16,6 +16,8 @@ from datetime import date, datetime, time as dtime
 from typing import Callable, Optional
 
 from deployment.base import is_crypto_record, is_pool_a_record
+from reporting.pool_e import _ledger as _crypto_ledger
+from swing_research.crypto_costs import INDIA_VDA_TAX_RATE, CryptoCostModel
 from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_summary  # noqa: F401
 
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
@@ -34,9 +36,9 @@ POOLS_INFO = [
     {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
-    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. P&L totals are AFTER fees and 31.2% tax (open positions as if sold now); Live day's closed-trade rows show the raw gain before both."},
+    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. All P&L shown is AFTER fees and 31.2% tax (open positions as if sold now)."},
     {"pool": "F", "name": "Pool A with partial profit booking", "text": "The same strategies as Pool A on fresh books, but at +5% half is sold and the stop on the rest moves to entry."},
-    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. P&L totals are AFTER fees and 31.2% tax, same as Pool E."},
+    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. All P&L shown is AFTER fees and 31.2% tax, same as Pool E."},
 ]
 
 
@@ -613,6 +615,16 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     }
 
 
+def _closed_crypto_post_tax(t: dict) -> float:
+    """A closed crypto trade's profit AFTER fees and India's 31.2% tax, in USDT -- the same
+    per-trade arithmetic reporting/pool_e.py uses for the book totals, so the Live day rows add
+    up to the totals shown everywhere else."""
+    qty = float(t.get("quantity", 0) or 0)
+    led = _crypto_ledger(float(t.get("pnl", 0) or 0), float(t.get("entry_price", 0) or 0) * qty,
+                         float(t.get("exit_price", 0) or 0) * qty, CryptoCostModel(), INDIA_VDA_TAX_RATE)
+    return led["post_tax"]
+
+
 def _days_between(start_iso, end_iso) -> Optional[int]:
     try:
         return (date.fromisoformat(end_iso) - date.fromisoformat(start_iso)).days
@@ -729,8 +741,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                          "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
                          "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
-                         "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
-                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (raw, USDT)",
+                         "pnl": round(_closed_crypto_post_tax(t) * rate, 2),
+                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (after fees and tax)",
                          "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
     # Pool G: a single shared book, twice-daily live-price fills, prices/P&L in USDT converted to rupees.
     g_rate = float((pool_g or {}).get("usdinr") or 0)
@@ -756,8 +768,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "book": "AI judgment", "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                      "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
                      "cost": float(t.get("entry_price", 0) or 0) * qty * g_rate,
-                     "pnl": round(float(t.get("pnl", 0) or 0) * g_rate, 2),
-                     "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (raw, USDT)",
+                     "pnl": round(_closed_crypto_post_tax(t) * g_rate, 2),
+                     "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (after fees and tax)",
                      "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * g_rate, 2)})
     for r in rows:
         cost = float(r.pop("cost", 0) or 0)

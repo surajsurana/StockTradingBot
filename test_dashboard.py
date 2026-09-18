@@ -176,6 +176,16 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(_book_started(book_dir, []), "2026-09-16")
         self.assertIsNone(_book_started(os.path.join(root, "nonexistent"), []))
 
+    def test_closed_crypto_rows_are_after_fees_and_tax_like_the_book_totals(self):
+        from dashboard.state_view import _closed_crypto_post_tax
+        from swing_research.crypto_costs import CryptoCostModel, INDIA_VDA_TAX_RATE
+        model = CryptoCostModel()
+        win = {"pnl": 20.0, "entry_price": 100.0, "exit_price": 120.0, "quantity": 1.0}
+        self.assertAlmostEqual(_closed_crypto_post_tax(win), 20.0 - model.round_trip_cost(100.0, 120.0) - 20.0 * INDIA_VDA_TAX_RATE)
+        loss = {"pnl": -10.0, "entry_price": 100.0, "exit_price": 90.0, "quantity": 1.0}
+        # a loss earns no tax credit: only fees make it worse
+        self.assertAlmostEqual(_closed_crypto_post_tax(loss), -10.0 - model.round_trip_cost(100.0, 90.0))
+
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date
         rows = {r["key"]: r for r in self.s["strategies"]}
