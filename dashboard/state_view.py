@@ -28,6 +28,18 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": 
 # Static: the agent team and the pipelines. Kept as data so the page can
 # draw them and highlight what ran today without hand-maintained HTML.
 # ----------------------------------------------------------------------------
+# One plain line per pool, shown on the Team tab.
+POOLS_INFO = [
+    {"pool": "A", "name": "Swing strategies", "text": "Each researched swing strategy trades its own 20b91,00,000 paper book on NSE stocks, holding for days to weeks."},
+    {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
+    {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
+    {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
+    {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy, after fees and 31.2% tax."},
+    {"pool": "F", "name": "Pool A with partial profit booking", "text": "The same strategies as Pool A on fresh books, but at +5% half is sold and the stop on the rest moves to entry."},
+    {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live."},
+]
+
+
 DESKS = [
     {"id": "research_lab", "name": "Intraday Research Lab (feeds Pool D)", "icon": "\U0001F52C",
      "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data."},
@@ -586,7 +598,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g),
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS,
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO,
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,

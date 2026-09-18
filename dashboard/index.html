@@ -134,6 +134,10 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .jobs{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 .jobs .j{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--card);border:1px solid var(--rule);border-radius:20px;font-size:12.5px}
 /* team */
+.poollist{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:8px 16px;margin-bottom:6px}
+.poolrow{display:flex;gap:10px;align-items:baseline;padding:7px 10px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;font-size:13px;color:var(--muted)}
+.poolrow .pl{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;color:var(--accent);min-width:14px}
+.poolrow b{color:var(--ink);font-weight:600}
 .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px}
 .step{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:12px 12px 10px;position:relative}
 .step.hot{border-color:var(--live);box-shadow:inset 0 0 0 1px var(--live)}
@@ -241,6 +245,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-team">
   <div class="teamline" id="teamtiles"></div>
+  <h2>The pools</h2>
+  <div class="poollist" id="poollist"></div>
   <h2 id="flow-daily-title"></h2>
   <div class="strip" id="flow-daily"></div>
   <p class="note">Steps light up as they happen today.</p>
@@ -643,6 +649,7 @@ function renderTeam(s){
     item(done, "done for today", 5),
     item(s.agents.length - working - done, "on call", 6),
   ].join("");
+  document.getElementById("poollist").innerHTML = (s.pools_info || []).map(p => `<div class="poolrow"><span class="pl">${esc(p.pool)}</span><span><b>${esc(p.name)}.</b> ${esc(p.text)}</span></div>`).join("");
   document.getElementById("office").innerHTML = s.desks.map(d => {
     const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
     return `<div class="desk"><div class="head"><span class="ic">${d.icon}</span><span class="nm">${esc(d.name)}</span></div><p class="blurb">${esc(d.blurb)}</p><div class="seats">${seats}</div></div>`;
