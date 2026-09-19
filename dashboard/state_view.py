@@ -449,6 +449,95 @@ def portfolio_view(snap: Optional[dict], prices: dict, prev_close: Optional[dict
             "holdings": rows, "totals": totals}
 
 
+# How the real Groww holdings are grouped for the Reports tab's "where the profit comes from".
+LONG_TERM_GROUPS = {
+    "GOLDBEES": "Gold and silver", "SILVERBEES": "Gold and silver",
+    "NIFTYBEES": "India index ETFs", "MID150BEES": "India index ETFs", "HDFCSML250": "India index ETFs", "ITBEES": "India index ETFs",
+    "MON100": "US tech (Nasdaq-100)", "GROWWDEFNC": "Defence ETF",
+}
+SPIN_OFF_SHARES = {"VAML", "VOGL", "VEDPOWER", "VISL"}   # demerger shares: Groww's cost for them is an allocation, not a purchase
+
+
+def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: date) -> Optional[dict]:
+    """The Reports tab: returns on the money put into the real Groww account, what drives the profit,
+    and what it costs. `rep` is the file built by reporting/groww_reports.py from Groww's downloaded
+    reports; today's value comes from the live holdings in `mine` (portfolio_view). Money added since the
+    reports were downloaded is inferred from the change in holdings cost and dated today."""
+    from reporting.groww_reports import modified_dietz, xirr
+    if not rep or not mine or not mine.get("holdings"):
+        return None
+    tot = mine["totals"]
+    value, invested_now = float(tot["value"]), float(tot["invested"])
+    added_since = round(invested_now - float(rep["net_invested"]), 2)
+    if abs(added_since) < 1:
+        added_since = 0.0
+    flows = [(date.fromisoformat(d), a) for d, a in rep["flows"]]
+    own_flows = flows + ([(today, -added_since)] if added_since else []) + [(today, value)]
+    bench_now = next((h["price"] for h in mine["holdings"] if h["symbol"] == rep["benchmark"] and h.get("price")), None) or rep.get("benchmark_price_at_report")
+    units = float(rep["bench_units_total"]) + (added_since / bench_now if bench_now else 0.0)
+    bench_value = units * bench_now if bench_now else None
+    bench_flows = [(d, a) for d, a in flows] + ([(today, -added_since)] if added_since else []) + ([(today, bench_value)] if bench_value else [])
+    net_in = float(rep["net_invested"]) + added_since
+
+    def _round(x, n=2):
+        return None if x is None else round(x, n)
+    own_x, bench_x = xirr(own_flows), (xirr(bench_flows) if bench_value else None)
+
+    years = []
+    for y in rep["yearly"]:
+        cur = y["end_own"] is None
+        end_own = value if cur else y["end_own"]
+        end_bench = bench_value if cur else y["end_bench"]
+        net = y["net_added"] + (added_since if cur else 0.0)
+        own_ret = modified_dietz(y["start_own"], end_own, net, y["weighted_net"] + (0.0 if not cur else 0.0))
+        bench_ret = modified_dietz(y["start_bench"], end_bench, net, y["weighted_net"]) if end_bench is not None else None
+        years.append({"year": y["year"], "label": f'{y["year"]}{" (to date)" if cur else ""}', "start": y["start_own"], "net_added": round(net, 2),
+                      "buys": y["buys"], "sells": y["sells"], "n_buys": y["n_buys"], "n_sells": y["n_sells"],
+                      "end": _round(end_own), "gain": _round(end_own - y["start_own"] - net),
+                      "return_pct": _round(own_ret * 100, 1) if own_ret is not None else None,
+                      "bench_return_pct": _round(bench_ret * 100, 1) if bench_ret is not None else None})
+    monthly, cum = [], 0.0
+    for m in rep["monthly"]:
+        cum += m["buys"] - m["sells"]
+        monthly.append({**m, "net": round(m["buys"] - m["sells"], 2), "cum": round(cum, 2)})
+
+    groups: dict = {}
+    rows = []
+    for h in mine["holdings"]:
+        if h.get("value") is None:
+            continue
+        g = LONG_TERM_GROUPS.get(h["symbol"], "Individual stocks")
+        s = groups.setdefault(g, {"group": g, "invested": 0.0, "value": 0.0, "count": 0})
+        s["invested"] += h["invested"]; s["value"] += h["value"]; s["count"] += 1
+        rows.append({"symbol": h["symbol"], "group": g, "invested": h["invested"], "value": h["value"], "pnl": h["pnl"], "pct": h["pct"],
+                     "spin_off": h["symbol"] in SPIN_OFF_SHARES})
+    total_pnl = sum(r["pnl"] for r in rows)
+    group_rows = []
+    for s in sorted(groups.values(), key=lambda s: -(s["value"] - s["invested"])):
+        pnl = s["value"] - s["invested"]
+        group_rows.append({**s, "invested": round(s["invested"], 2), "value": round(s["value"], 2), "pnl": round(pnl, 2),
+                           "pct": round((s["value"] / s["invested"] - 1) * 100, 1) if s["invested"] else None,
+                           "weight": round(s["value"] / value * 100, 1) if value else None,
+                           "share_of_profit": round(pnl / total_pnl * 100, 1) if total_pnl else None})
+    rows.sort(key=lambda r: -r["pnl"])
+    ledger = rep.get("ledger") or {}
+    fy = rep["fy"]
+    return {
+        "as_of_reports": rep["as_of"], "benchmark": rep["benchmark"], "cash": cash,
+        "headline": {"invested": round(net_in, 2), "value": round(value, 2), "gain": round(value - net_in, 2),
+                     "gain_pct": round((value / net_in - 1) * 100, 2) if net_in else None,
+                     "xirr_pct": _round(own_x * 100, 1) if own_x is not None else None,
+                     "bench_value": _round(bench_value), "bench_gain": _round(bench_value - net_in) if bench_value else None,
+                     "bench_xirr_pct": _round(bench_x * 100, 1) if bench_x is not None else None,
+                     "added_since_reports": added_since, "first_trade": rep["flows"][0][0] if rep["flows"] else None},
+        "years": years, "monthly": monthly, "groups": group_rows,
+        "winners": [r for r in rows if r["pnl"] > 0][:8], "losers": sorted([r for r in rows if r["pnl"] < 0], key=lambda r: r["pnl"])[:8],
+        "fy": fy, "ledger": ledger,
+        "totals": {"charges": round(sum(f["charges"] for f in fy), 2), "dividends": round(sum(f["dividends"] for f in fy), 2),
+                   "realised": round(sum(f["intraday"] + f["short_term"] + f["long_term"] for f in fy), 2)},
+    }
+
+
 def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None,
                     books: Optional[list] = None, pool_d: Optional[dict] = None,
                     pool_e: Optional[dict] = None, pool_g: Optional[dict] = None,
@@ -612,7 +701,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           roadmap: Optional[dict] = None, mode: str = "paper",
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
-                          groww: Optional[dict] = None) -> dict:
+                          groww: Optional[dict] = None, reports: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -676,6 +765,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                 for r in registry_records]
 
     market_open = now.weekday() < 5 and dtime(9, 15) <= now.time() <= dtime(15, 30)
+    my_portfolio = portfolio_view(groww, prices, prev_close, session_today=now.weekday() < 5 and now.time() >= dtime(9, 15))
     pools = {k: _with_capital(dict(v)) for k, v in summary["pools"].items() if k != "A1"}
     pool_d = _with_capital(pool_d)
     for b in books:
@@ -704,7 +794,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": portfolio_view(groww, prices, prev_close, session_today=now.weekday() < 5 and now.time() >= dtime(9, 15)), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date()), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,

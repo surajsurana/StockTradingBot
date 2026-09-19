@@ -51,3 +51,5 @@ deployment/state/groww_token.txt
 deployment/state/groww_holdings.json
 deployment/state/groww_totp.json
 deployment/state/groww_access.json
+deployment/state/groww_reports.json
+Groww Portfolio/

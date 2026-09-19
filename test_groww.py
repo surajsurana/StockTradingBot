@@ -159,5 +159,53 @@ class TestPortfolioView(unittest.TestCase):
         self.assertEqual((v["status"], v["holdings"], v["totals"]["holdings"]), ("not_connected", [], 0))
 
 
+class TestReports(unittest.TestCase):
+    def test_xirr_matches_a_known_return_and_needs_both_signs(self):
+        from datetime import date
+        from reporting.groww_reports import xirr
+        r = xirr([(date(2025, 1, 1), -1000.0), (date(2026, 1, 1), 1100.0)])
+        self.assertAlmostEqual(r, 0.10, places=3)
+        self.assertIsNone(xirr([(date(2025, 1, 1), -1000.0)]))
+
+    def test_modified_dietz_weights_new_money(self):
+        from reporting.groww_reports import modified_dietz
+        # start 1000, add 1000 half-way (weighted 500), end 2300 -> gain 300 on 1500 at work
+        self.assertAlmostEqual(modified_dietz(1000, 2300, 1000, 500), 0.2)
+        self.assertIsNone(modified_dietz(0, 0, 0, 0))
+
+    def test_reports_view_returns_gain_benchmark_groups_and_added_money(self):
+        from datetime import date
+        from dashboard.state_view import reports_view
+        rep = {"as_of": "2026-09-01", "benchmark": "NIFTYBEES", "benchmark_price_at_report": 100.0, "net_invested": 1000.0,
+               "flows": [["2025-09-19", -1000.0]], "bench_units_total": 10.0,
+               "yearly": [{"year": 2025, "buys": 1000.0, "sells": 0.0, "n_buys": 1, "n_sells": 0, "net_added": 1000.0, "weighted_net": 300.0,
+                           "start_own": 0.0, "end_own": None, "start_bench": 0.0, "end_bench": None}],
+               "monthly": [{"month": "2025-09", "buys": 1000.0, "sells": 0.0}], "fy": [{"fy": "FY25-26", "charges": 5.0, "dividends": 2.0, "intraday": 0.0, "short_term": 10.0, "long_term": 0.0, "brokerage": 3.0, "gst": 1.0, "stt": 1.0, "dp": 0.0}],
+               "ledger": {"years": [], "first_date": None}}
+        mine = {"holdings": [{"symbol": "NIFTYBEES", "invested": 500.0, "value": 600.0, "pnl": 100.0, "pct": 20.0, "price": 120.0},
+                             {"symbol": "ABC", "invested": 600.0, "value": 500.0, "pnl": -100.0, "pct": -16.7, "price": 50.0}],
+                "totals": {"value": 1100.0, "invested": 1100.0}}
+        v = reports_view(rep, mine, 42.0, date(2026, 9, 19))
+        h = v["headline"]
+        self.assertEqual((h["invested"], h["value"], h["gain"], h["added_since_reports"]), (1100.0, 1100.0, 0.0, 100.0))   # 100 more cost than the reports knew
+        self.assertAlmostEqual(h["bench_value"], (10 + 100 / 120) * 120, places=1)
+        self.assertEqual(v["cash"], 42.0)
+        self.assertEqual([g["group"] for g in v["groups"]], ["India index ETFs", "Individual stocks"])
+        self.assertEqual(v["totals"], {"charges": 5.0, "dividends": 2.0, "realised": 10.0})
+        self.assertIsNone(reports_view(None, mine, None, date(2026, 9, 19)))
+
+    def test_cash_is_stored_with_holdings_and_a_failed_lookup_keeps_the_last_value(self):
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, fg.TOKEN_FILE), "w") as f:
+            f.write("T")
+        fg.sync_holdings(d, fetch_fn=lambda t: [], cash_fn=lambda t: 123.0, now=datetime(2026, 9, 19, 10, 0))
+        self.assertEqual(fg.load_snapshot(d)["cash"], 123.0)
+
+        def boom(t):
+            raise RuntimeError("x")
+        snap = fg.sync_holdings(d, fetch_fn=lambda t: [], cash_fn=boom, now=datetime(2026, 9, 19, 11, 0))
+        self.assertEqual((snap["status"], snap["cash"]), ("connected", 123.0))
+
+
 if __name__ == "__main__":
     unittest.main()

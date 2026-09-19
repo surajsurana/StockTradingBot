@@ -36,6 +36,7 @@ from typing import Callable, Optional
 import requests
 
 HOLDINGS_URL = "https://api.groww.in/v1/holdings/user"
+MARGIN_URL = "https://api.groww.in/v1/margins/detail/user"
 TOKEN_URL = "https://api.groww.in/v1/token/api/access"
 TOKEN_FILE = "groww_token.txt"
 CREDS_FILE = "groww_totp.json"
@@ -142,6 +143,17 @@ def fetch_holdings(token: str, timeout: int = 20) -> list:
     return out
 
 
+def fetch_cash(token: str, timeout: int = 20) -> Optional[float]:
+    """Cash sitting in the Groww account (a read-only balance lookup), or None if it is not in the reply."""
+    resp = requests.get(MARGIN_URL, timeout=timeout, headers={
+        "Accept": "application/json", "Authorization": f"Bearer {token}", "X-API-VERSION": "1.0"})
+    if resp.status_code in (401, 403):
+        raise GrowwAuthError(f"Groww rejected the token (HTTP {resp.status_code})")
+    resp.raise_for_status()
+    payload = resp.json().get("payload") or {}
+    return float(payload["clear_cash"]) if payload.get("clear_cash") is not None else None
+
+
 def load_snapshot(state_dir: str) -> dict:
     path = os.path.join(state_dir, SNAPSHOT_FILE)
     if not os.path.exists(path):
@@ -157,7 +169,8 @@ def _save(state_dir: str, snap: dict) -> None:
 
 
 def sync_holdings(state_dir: str, fetch_fn: Optional[Callable[[str], list]] = None, now: Optional[datetime] = None,
-                  mint_fn: Optional[Callable[[str, str], str]] = None, now_epoch: Optional[float] = None) -> dict:
+                  mint_fn: Optional[Callable[[str, str], str]] = None, now_epoch: Optional[float] = None,
+                  cash_fn: Optional[Callable[[str], Optional[float]]] = None) -> dict:
     """Refresh the snapshot. Status: not_connected (no credentials at all), connected, expired (a
     manual token was rejected), auth_failed (the TOTP key pair was rejected), error (Groww
     unreachable or an odd reply). Last holdings are kept on every failure. If a cached minted token
@@ -166,10 +179,12 @@ def sync_holdings(state_dir: str, fetch_fn: Optional[Callable[[str], list]] = No
     now = now or datetime.now()
     previous = load_snapshot(state_dir)
     fetch = fetch_fn or fetch_holdings
+    cash_fn = cash_fn or (fetch_cash if fetch_fn is None else None)   # injected fetchers (tests) never touch the network
 
-    def result(status, message="", holdings=None, fetched_at=None):
+    def result(status, message="", holdings=None, fetched_at=None, cash="keep"):
         snap = {"status": status, "holdings": previous.get("holdings", []) if holdings is None else holdings,
-                "fetched_at": previous.get("fetched_at") if fetched_at is None else fetched_at, "message": message}
+                "fetched_at": previous.get("fetched_at") if fetched_at is None else fetched_at, "message": message,
+                "cash": previous.get("cash") if cash == "keep" else cash}
         _save(state_dir, snap)
         return snap
 
@@ -184,7 +199,13 @@ def sync_holdings(state_dir: str, fetch_fn: Optional[Callable[[str], list]] = No
             if not automatic:
                 raise
             holdings = fetch(get_token(state_dir, force=True, now_epoch=now_epoch, mint_fn=mint_fn))
-        return result("connected", "", holdings, now.isoformat(timespec="seconds"))
+        cash = "keep"
+        if cash_fn:
+            try:
+                cash = cash_fn(token if not automatic else get_token(state_dir, now_epoch=now_epoch, mint_fn=mint_fn))
+            except Exception:
+                cash = "keep"       # the balance is a nicety; never fail the holdings sync over it
+        return result("connected", "", holdings, now.isoformat(timespec="seconds"), cash)
     except GrowwAuthError as e:
         return result("auth_failed" if automatic else "expired", str(e))
     except Exception as e:

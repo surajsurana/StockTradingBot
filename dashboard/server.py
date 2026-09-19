@@ -50,6 +50,16 @@ from deployment.settings import STATE_DIR                   # noqa: E402
 from dashboard.state_view import build_dashboard_state             # noqa: E402
 from data.fetch_groww import load_snapshot as load_groww_snapshot   # noqa: E402
 
+
+def _load_reports(state_dir: str):
+    """The return-report data built from the downloaded Groww reports, or None if it has not been built."""
+    try:
+        with open(os.path.join(state_dir, "groww_reports.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
 LOGS_DIR = os.path.join(REPO_DIR, "logs")
 INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 KEY_PATH = os.path.join(STATE_DIR, "dashboard_key.txt")
@@ -364,7 +374,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           roadmap=self.roadmap_cache.get(), mode=mode,
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                                          groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None)
+                                          groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
+                                          reports=_load_reports(STATE_DIR) if mode == "live" else None)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):
