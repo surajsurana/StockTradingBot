@@ -80,6 +80,8 @@ tr.clickable{cursor:pointer}
 .tristate i.on.paper{background:var(--chip);color:var(--accent)}
 .tristate i.on.live{background:var(--gain);color:var(--accent-ink)}
 .tristate i.on.off{background:var(--band);color:var(--muted)}
+.taxbtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
+.taxbtn:hover{color:var(--ink)}
 .lifebtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
 .lifebtn:hover{color:var(--ink)}
 #life{border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
@@ -539,6 +541,36 @@ function showLife(id){
 document.addEventListener("click", e => { const b = e.target.closest(".lifebtn"); if(b){ e.stopPropagation(); showLife(b.dataset.life); } });
 document.getElementById("life-close").addEventListener("click", () => document.getElementById("life").close());
 document.getElementById("life").addEventListener("click", e => { if(e.target.id === "life") e.target.close(); });
+const TAX_ITEMS = [
+  ["brokerage", "Brokerage", "Intraday: 0.03% or ₹20 a leg, whichever is lower; delivery: none"],
+  ["stt", "STT", "Delivery 0.1% on buy and sell; intraday 0.025% on sell"],
+  ["exchange", "NSE transaction charge", "0.00297% of trade value"],
+  ["sebi", "SEBI fee", "₹10 per crore"],
+  ["stamp", "Stamp duty", "Buy side: delivery 0.015%, intraday 0.003%"],
+  ["dp", "DP charge", "₹13.5 per scrip sold from demat"],
+  ["crypto_fee", "Exchange fee and spread", "0.30% plus 10 bps, each side"],
+];
+function showTax(idx){
+  const set = idx === "all" ? ST_VIEW : [ST_VIEW[+idx]].filter(Boolean); if(!set.length) return;
+  const sumK = k => set.reduce((t, l) => t + (+l[k] || 0), 0), comp = k => set.reduce((t, l) => t + ((l.detail || {})[k] || 0), 0);
+  const gross = set.reduce((t, l) => t + l.realised + l.unrealised, 0);
+  const rows = TAX_ITEMS.filter(([k]) => comp(k) > 0).map(([k, label, basis]) => `<tr><td>${label}</td><td class="note">${basis}</td><td class="n">${money(comp(k))}</td></tr>`);
+  if(sumK("gst") > 0) rows.push(`<tr><td>GST</td><td class="note">18% on brokerage, exchange, SEBI and DP charges</td><td class="n">${money(sumK("gst"))}</td></tr>`);
+  const rates = [...new Set(set.filter(l => l.tax_rate).map(l => l.tax_rate))].map(r => (r * 100).toFixed(1) + "%").join(" / ");
+  const kinds = new Set(set.map(l => l.type));
+  const taxBasis = set.length === 1
+    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
+    : `${rates} of the net gain after charges (crypto: per profitable trade)`;
+  rows.push(`<tr><td>Income tax</td><td class="note">${taxBasis}</td><td class="n">${money(sumK("tax"))}</td></tr>`);
+  const total = sumK("charges") + sumK("gst") + sumK("tax");
+  rows.push(`<tr class="total"><td>Total tax and charges</td><td></td><td class="n">${money(total)}</td></tr>`);
+  rows.push(`<tr><td>Net P&amp;L</td><td class="note">Gross ${money(gross, true)} less the total</td><td class="n ${cls(gross - total)}">${money(gross - total, true)}</td></tr>`);
+  if(set.some(l => l.tds != null)) rows.push(`<tr><td>TDS withheld</td><td class="note">Crypto 1% of sales; memo, refundable, not deducted above</td><td class="n">${money(sumK("tds"))}</td></tr>`);
+  const title = set.length === 1 ? `${esc(set[0].pool)} · ${esc(set[0].name)}` : `Selection (${set.length} books)`;
+  document.getElementById("life-body").innerHTML = `<h3>Tax and charges <span class="note">${title}</span></h3><table><thead><tr><th>Item</th><th>Basis</th><th class="n">Amount</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  document.getElementById("life").showModal();
+}
+document.addEventListener("click", e => { const b = e.target.closest(".taxbtn"); if(b){ e.stopPropagation(); showTax(b.dataset.idx); } });
 function wireTapePager(){
   const pager = document.getElementById("tape-pager"); if(pager.dataset.wired) return;
   pager.dataset.wired = "1";
@@ -784,12 +816,11 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
   document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
 }
 let ST_SORT = {key:"pool", dir:1};
-const infoIcon = id => ` <span class="info" id="${id}" tabindex="0">ⓘ</span>`;
 const ST_COLS = [["pool","Pool",""],["type","Type",""],["name","Strategy",""],["realised","Realised","n"],["unrealised","Unrealised","n"],["gross","Gross P&L","n"],
-                 ["charges","Charges"+infoIcon("st-info-charges"),"n"],["gst","GST"+infoIcon("st-info-gst"),"n"],["tax","Tax"+infoIcon("st-info-tax"),"n"],
-                 ["net","Net P&L","n"],["tds","TDS"+infoIcon("st-info-tds"),"n"]];
+                 ["deduct","Tax & charges","n"],["net","Net P&L","n"]];
+let ST_VIEW = [];
 function renderStatement(s){
-  const lines = (s.statement || []).map(l => { const gross = l.realised + l.unrealised; return {...l, gross, net: gross - (l.charges||0) - (l.gst||0) - (l.tax||0)}; });
+  const lines = (s.statement || []).map(l => { const gross = l.realised + l.unrealised; return {...l, gross, deduct: (l.charges||0) + (l.gst||0) + (l.tax||0), net: gross - (l.charges||0) - (l.gst||0) - (l.tax||0)}; });
   const head = document.getElementById("st-head");
   if(!head.dataset.built){
     head.dataset.built = "1";
@@ -812,7 +843,7 @@ function renderStatement(s){
   const S = stratOpts.has(prev.s) ? prev.s : "";
   markFilters(head, {pool: P, type: T, name: S});
 
-  const numeric = new Set(["realised","unrealised","gross","charges","gst","tax","net","tds"]);
+  const numeric = new Set(["realised","unrealised","gross","deduct","net"]);
   const rows = lines.filter(l => (!P || l.pool === P) && (!T || l.type === T) && (!S || (l.sid || l.key) === S)).sort((a,b) => {
     const k = ST_SORT.key;
     const tie = a.pool.localeCompare(b.pool) || sidNum(a) - sidNum(b);
@@ -824,20 +855,13 @@ function renderStatement(s){
   document.getElementById("st-count").textContent = `${rows.length} book${rows.length===1?"":"s"}`;
   const sum = k => rows.reduce((t, l) => t + (+l[k] || 0), 0);
   const anyTds = rows.some(l => l.tds != null);
+  ST_VIEW = rows;
+  const taxBtn = idx => ` <button class="taxbtn" data-idx="${idx}" title="Tax and charges breakup">ⓘ</button>`;
   document.getElementById("st-pnl").innerHTML = rows.length
-    ? rows.map(l => `<tr><td>${esc(l.pool)}</td><td>${esc(l.type)}</td><td>${l.sid?`<span class="chip">${esc(l.sid)}</span> `:""}${esc(l.name)}</td>${amt(l.realised,true)}${amt(l.unrealised,true)}${amt(l.gross,true)}${opt(l.charges)}${opt(l.gst)}${opt(l.tax)}${amt(l.net,true)}${opt(l.tds)}</tr>`).join("")
-      + `<tr class="total"><td colspan="3">Total</td>${amt(sum("realised"),true)}${amt(sum("unrealised"),true)}${amt(sum("gross"),true)}<td class="n">${money(sum("charges"))}</td><td class="n">${money(sum("gst"))}</td><td class="n">${money(sum("tax"))}</td>${amt(sum("net"),true)}${anyTds?`<td class="n">${money(sum("tds"))}</td>`:`<td class="n">—</td>`}</tr>`
-    : `<tr><td colspan="11" class="note">Nothing matches these filters.</td></tr>`;
-
-  // Hover text on the info icons: the rates, plus the amounts for whatever is on screen.
-  const comp = k => rows.reduce((t, l) => t + ((l.detail || {})[k] || 0), 0);
-  const byPool = k => { const m = {}; rows.forEach(l => { if(l[k] != null) m[l.pool] = (m[l.pool]||0) + l[k]; }); return Object.entries(m).map(([p,v]) => `${p} ${money(v)}`).join(", ") || "none"; };
-  const tip = (id, text) => { const el = document.getElementById(id); if(el) el.title = text; };
-  tip("st-info-charges", `Stock pools (A, B, C, D, F):\nBrokerage (intraday only, 0.03% or ₹20 a leg, whichever is lower): ${money(comp("brokerage"))}\nSTT (delivery 0.1% on buy and sell; intraday 0.025% on sell): ${money(comp("stt"))}\nNSE transaction charge 0.00297%: ${money(comp("exchange"))}\nSEBI fee ₹10 a crore: ${money(comp("sebi"))}\nStamp duty on buys (delivery 0.015%, intraday 0.003%): ${money(comp("stamp"))}\nDP charge ₹13.5 per scrip sold: ${money(comp("dp"))}\nCrypto (E, G): 0.30% exchange fee a side plus a 10 bps spread a side: ${money(comp("crypto_fee"))}\nOpen positions include the estimated cost of selling today.`);
-  tip("st-info-gst", `Stock pools: 18% on brokerage, NSE transaction charge, SEBI fee and DP charge: ${money(sum("gst"))}\nCrypto: the 0.30% exchange fee is treated as GST-inclusive, so none is added.`);
-  tip("st-info-tax", `Swing and AI pools (A, B, C, F): 20.8% (20% short-term capital gains + 4% cess) on each book's net gain after charges and GST. Gains and losses inside one book offset; there is no offset between books.\nIntraday (D): business income, assumed top slab 30% + 4% cess = 31.2%.\nCrypto (E, G): 31.2% on each profitable trade, no set-off for losses.\nOpen positions are taxed as if sold today.\nIn this selection: ${byPool("tax")}.`);
-  tip("st-info-tds", `Memo only: not deducted from Net P&L.\nCrypto: 1% of every sale value is withheld; it is refundable or creditable against the tax.\nStock pools: no TDS on a resident investor's equity gains, so a dash.\nIn this selection: ${byPool("tds")}.`);
-  document.getElementById("st-note").textContent = "Charges, GST and tax are estimates for reporting: paper trades still fill at raw prices, and every other tab shows gross. Crypto is converted to rupees at today's USD/INR. Rates are set in reporting/equity_costs.py; the intraday slab rate is an assumption.";
+    ? rows.map((l, n) => `<tr><td>${esc(l.pool)}</td><td>${esc(l.type)}</td><td>${l.sid?`<span class="chip">${esc(l.sid)}</span> `:""}${esc(l.name)}</td>${amt(l.realised,true)}${amt(l.unrealised,true)}${amt(l.gross,true)}<td class="n">${money(l.deduct)}${taxBtn(n)}</td>${amt(l.net,true)}</tr>`).join("")
+      + `<tr class="total"><td colspan="3">Total</td>${amt(sum("realised"),true)}${amt(sum("unrealised"),true)}${amt(sum("gross"),true)}<td class="n">${money(sum("deduct"))}${taxBtn("all")}</td>${amt(sum("net"),true)}</tr>`
+    : `<tr><td colspan="8" class="note">Nothing matches these filters.</td></tr>`;
+  document.getElementById("st-note").textContent = "Tax & charges is everything deducted from the gross profit: broker and exchange charges, GST and income tax; click the ⓘ for the breakup and rates. These are estimates for reporting: paper trades still fill at raw prices and every other tab shows gross. Crypto is converted to rupees at today's USD/INR. Rates are set in reporting/equity_costs.py; the intraday slab rate is an assumption.";
 
   const cash = sum("cash"), dep = sum("deployed"), unr = sum("unrealised"), cap = sum("capital"), rea = sum("realised"), ct = sum("charges") + sum("gst") + sum("tax");
   const bs = (label, n, opts={}) => `<tr class="${opts.total?"total":""}"><td${opts.indent?' style="padding-left:24px"':""}>${label}</td>${amt(n, !!opts.signed)}</tr>`;
