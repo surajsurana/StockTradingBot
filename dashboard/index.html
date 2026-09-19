@@ -906,8 +906,9 @@ function renderMine(s){
   markSort(head, MINE_SORT);
   const at = m.fetched_at ? new Date(m.fetched_at).toLocaleString("en-IN", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}) : "never";
   document.getElementById("mine-status").textContent = {
-    not_connected: "Not connected yet. Once a Groww access token is added on the server, your real holdings appear here (read-only, nothing is ever bought or sold from this page).",
+    not_connected: "Not connected yet. Once Groww credentials are added on the server, your real holdings appear here (read-only, nothing is ever bought or sold from this page).",
     connected: `Connected to Groww, read-only. Holdings read ${at}; prices from the same feed as the paper pools.`,
+    auth_failed: `Groww rejected the login (${m.message || "TOTP key"}). Showing the holdings last read ${at}; the Groww key needs replacing.`,
     expired: `The Groww token has expired (Groww lapses it daily at 6 AM). Showing the holdings last read ${at}; a fresh token is needed to update them.`,
     error: `Could not reach Groww (${m.message || "unknown error"}). Showing the holdings last read ${at}.`,
   }[m.status] || "";

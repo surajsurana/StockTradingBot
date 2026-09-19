@@ -78,6 +78,64 @@ class TestSync(unittest.TestCase):
         self.assertIn("ConnectionError", snap["message"])
 
 
+class TestAutoToken(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        with open(os.path.join(self.dir, fg.CREDS_FILE), "w") as f:
+            f.write('{"totp_token": "TT", "totp_secret": "JBSWY3DPEHPK3PXP"}')
+        # 2026-09-19 10:00 IST
+        self.t0 = datetime(2026, 9, 19, 10, 0, tzinfo=fg.IST).timestamp()
+        self.mints = []
+
+    def _mint(self, tok, sec):
+        self.mints.append((tok, sec))
+        return f"ACCESS{len(self.mints)}"
+
+    def test_mints_once_then_reuses_cached_token_until_6am_ist(self):
+        seen = []
+        fg.sync_holdings(self.dir, fetch_fn=lambda t: seen.append(t) or [], mint_fn=self._mint, now_epoch=self.t0)
+        fg.sync_holdings(self.dir, fetch_fn=lambda t: seen.append(t) or [], mint_fn=self._mint, now_epoch=self.t0 + 3600)
+        self.assertEqual((len(self.mints), seen), (1, ["ACCESS1", "ACCESS1"]))
+        next_day = datetime(2026, 9, 20, 6, 1, tzinfo=fg.IST).timestamp()
+        fg.sync_holdings(self.dir, fetch_fn=lambda t: seen.append(t) or [], mint_fn=self._mint, now_epoch=next_day)
+        self.assertEqual(seen[-1], "ACCESS2")
+
+    def test_rejected_cached_token_is_reminted_once_and_retried(self):
+        fg.sync_holdings(self.dir, fetch_fn=lambda t: [], mint_fn=self._mint, now_epoch=self.t0)
+        calls = []
+
+        def fetch(t):
+            calls.append(t)
+            if t == "ACCESS1":
+                raise fg.GrowwAuthError("401")
+            return [{"symbol": "TCS", "quantity": 1.0, "avg_price": 1.0, "isin": None}]
+        snap = fg.sync_holdings(self.dir, fetch_fn=fetch, mint_fn=self._mint, now_epoch=self.t0 + 400)
+        self.assertEqual((snap["status"], calls), ("connected", ["ACCESS1", "ACCESS2"]))
+
+    def test_rejected_credentials_give_auth_failed_and_mint_attempts_are_throttled(self):
+        def deny(a, b):
+            self.mints.append(1)
+            raise fg.GrowwAuthError("Groww rejected the TOTP credentials (HTTP 401)")
+        fetch = lambda t: self.fail("no token, no fetch")
+        s1 = fg.sync_holdings(self.dir, fetch_fn=fetch, mint_fn=deny, now_epoch=self.t0)
+        s2 = fg.sync_holdings(self.dir, fetch_fn=fetch, mint_fn=deny, now_epoch=self.t0 + 60)
+        self.assertEqual((s1["status"], s2["status"], len(self.mints)), ("auth_failed", "auth_failed", 1))
+
+    def test_mint_parses_token_shapes_and_sends_totp(self):
+        for body in ({"token": "A"}, {"payload": {"token": "A"}}, {"access_token": "A"}):
+            with mock.patch.object(fg.requests, "post", return_value=_resp(200, body)) as post:
+                self.assertEqual(fg.mint_access_token("TT", "JBSWY3DPEHPK3PXP"), "A")
+        kw = post.call_args.kwargs
+        self.assertEqual((kw["json"]["key_type"], len(kw["json"]["totp"]), kw["headers"]["Authorization"]), ("totp", 6, "Bearer TT"))
+        with mock.patch.object(fg.requests, "post", return_value=_resp(401, {})):
+            with self.assertRaises(fg.GrowwAuthError):
+                fg.mint_access_token("TT", "JBSWY3DPEHPK3PXP")
+
+    def test_secrets_never_reach_the_snapshot(self):
+        fg.sync_holdings(self.dir, fetch_fn=lambda t: [], mint_fn=self._mint, now_epoch=self.t0)
+        self.assertNotIn("ACCESS1", open(os.path.join(self.dir, fg.SNAPSHOT_FILE)).read())
+
+
 class TestPortfolioView(unittest.TestCase):
     def test_value_pnl_today_and_totals(self):
         snap = {"status": "connected", "fetched_at": "x", "holdings": [

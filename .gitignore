@@ -49,3 +49,5 @@ deployment/state/pool_g/
 # real Groww credential and holdings -- never commit
 deployment/state/groww_token.txt
 deployment/state/groww_holdings.json
+deployment/state/groww_totp.json
+deployment/state/groww_access.json
