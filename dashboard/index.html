@@ -134,6 +134,9 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .jobs{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 .jobs .j{display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--card);border:1px solid var(--rule);border-radius:20px;font-size:12.5px}
 /* team */
+#tab-statement table{min-width:0}
+#st-bs-wrap{overflow:visible;max-width:560px}
+.info{cursor:help;color:var(--accent);font-size:11px;margin-left:3px;text-transform:none;letter-spacing:0}
 .poollist{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:8px 16px;margin-bottom:6px}
 .poolrow{display:flex;gap:10px;align-items:baseline;padding:7px 10px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;font-size:13px;color:var(--muted)}
 .poolrow .pl{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;color:var(--accent);min-width:14px}
@@ -260,13 +263,14 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-statement" hidden>
   <div class="tools"><label class="note">Pool <select id="st-pool"></select></label>
+    <label class="note">Type <select id="st-type"></select></label>
     <label class="note">Strategy <select id="st-strategy"></select></label>
     <span class="note" id="st-count"></span></div>
   <h2>Profit and loss</h2>
-  <div class="tblwrap"><table class="stmt"><thead><tr><th>Pool</th><th>Strategy</th><th class="n">Realised</th><th class="n">Unrealised</th><th class="n">Gross P&amp;L</th><th class="n">Fees</th><th class="n">Tax</th><th class="n">Net P&amp;L</th></tr></thead><tbody id="st-pnl"></tbody></table></div>
+  <div class="tblwrap" id="st-pnl-wrap"><table class="stmt"><thead id="st-head"></thead><tbody id="st-pnl"></tbody></table></div>
   <p class="note" id="st-note"></p>
   <h2>Balance sheet</h2>
-  <div class="tblwrap" style="max-width:560px"><table class="stmt"><tbody id="st-bs"></tbody></table></div>
+  <div class="tblwrap" id="st-bs-wrap"><table class="stmt"><tbody id="st-bs"></tbody></table></div>
 </section>
 
 <section id="tab-registry" hidden>
@@ -753,40 +757,60 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"]) document.getElementById(id).value = filters[id] || "";
   document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
 }
+let ST_SORT = {key:"pool", dir:1};
+const ST_COLS = [["pool","Pool",""],["type","Type",""],["name","Strategy",""],["realised","Realised","n"],["unrealised","Unrealised","n"],["gross","Gross P&L","n"],
+                 ["fees",'Fees <span class="info" id="st-info-fees" tabindex="0">ⓘ</span>',"n"],["tax",'Tax <span class="info" id="st-info-tax" tabindex="0">ⓘ</span>',"n"],["net","Net P&L","n"]];
 function renderStatement(s){
-  const lines = s.statement || [];
-  const poolSel = document.getElementById("st-pool"), stratSel = document.getElementById("st-strategy");
-  const prevP = poolSel.value, prevS = stratSel.value;
-  const poolNames = [...new Set(lines.map(l => l.pool))].sort();
-  poolSel.innerHTML = `<option value="">All pools</option>` + poolNames.map(p => `<option${p===prevP?" selected":""}>${esc(p)}</option>`).join("");
-  const P = poolNames.includes(prevP) ? prevP : "";
+  const lines = (s.statement || []).map(l => ({...l, gross: l.realised + l.unrealised, net: l.realised + l.unrealised - (l.fees||0) - (l.tax||0)}));
+  const head = document.getElementById("st-head");
+  if(!head.dataset.built){
+    head.dataset.built = "1";
+    head.innerHTML = `<tr>${ST_COLS.map(([k,l,c]) => hcell(l, k, "", c)).join("")}</tr>`;
+    head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { ST_SORT = {key:b.dataset.sort, dir: ST_SORT.key===b.dataset.sort ? -ST_SORT.dir : 1}; if(STATE) renderStatement(STATE); }));
+    ["st-pool","st-type","st-strategy"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderStatement(STATE); }));
+  }
+  markSort(head, ST_SORT);
+  const poolSel = document.getElementById("st-pool"), typeSel = document.getElementById("st-type"), stratSel = document.getElementById("st-strategy");
+  const prev = {p: poolSel.value, t: typeSel.value, s: stratSel.value};
+  const uniq = k => [...new Set(lines.map(l => l[k]))].sort();
+  const fill = (sel, all, values, cur) => { sel.innerHTML = `<option value="">${all}</option>` + values.map(v => `<option${v===cur?" selected":""}>${esc(v)}</option>`).join(""); return values.includes(cur) ? cur : ""; };
+  const P = fill(poolSel, "All pools", uniq("pool"), prev.p), T = fill(typeSel, "All types", uniq("type"), prev.t);
   const sidNum = l => { const m = /(\d+)/.exec(l.sid || ""); return m ? +m[1] : Infinity; };
   const stratOpts = new Map();
-  lines.filter(l => !P || l.pool === P).sort((a,b) => sidNum(a) - sidNum(b)).forEach(l => { const k = l.sid || l.key; if(!stratOpts.has(k)) stratOpts.set(k, `${l.sid ? l.sid + " · " : ""}${l.name}`); });
-  stratSel.innerHTML = `<option value="">All strategies</option>` + [...stratOpts].map(([k,label]) => `<option value="${esc(k)}"${k===prevS?" selected":""}>${esc(label)}</option>`).join("");
-  const S = stratOpts.has(prevS) ? prevS : "";
-  if(!poolSel.dataset.wired){ poolSel.dataset.wired = "1"; poolSel.addEventListener("change", () => STATE && renderStatement(STATE)); stratSel.addEventListener("change", () => STATE && renderStatement(STATE)); }
+  lines.filter(l => (!P || l.pool === P) && (!T || l.type === T)).sort((a,b) => sidNum(a) - sidNum(b)).forEach(l => { const k = l.sid || l.key; if(!stratOpts.has(k)) stratOpts.set(k, `${l.sid ? l.sid + " · " : ""}${l.name}`); });
+  stratSel.innerHTML = `<option value="">All strategies</option>` + [...stratOpts].map(([k,label]) => `<option value="${esc(k)}"${k===prev.s?" selected":""}>${esc(label)}</option>`).join("");
+  const S = stratOpts.has(prev.s) ? prev.s : "";
 
-  const rows = lines.filter(l => (!P || l.pool === P) && (!S || (l.sid || l.key) === S))
-                    .sort((a,b) => a.pool.localeCompare(b.pool) || sidNum(a) - sidNum(b));
-  const gross = l => l.realised + l.unrealised, net = l => gross(l) - (l.fees||0) - (l.tax||0);
+  const numeric = new Set(["realised","unrealised","gross","fees","tax","net"]);
+  const rows = lines.filter(l => (!P || l.pool === P) && (!T || l.type === T) && (!S || (l.sid || l.key) === S)).sort((a,b) => {
+    const k = ST_SORT.key;
+    const tie = a.pool.localeCompare(b.pool) || sidNum(a) - sidNum(b);
+    if(numeric.has(k)){ const x = a[k]==null?-Infinity:+a[k], y = b[k]==null?-Infinity:+b[k]; return (x-y)*ST_SORT.dir || tie; }
+    return String(a[k]||"").localeCompare(String(b[k]||""))*ST_SORT.dir || tie;
+  });
   const amt = (n, signed) => `<td class="n ${signed ? cls(n) : ""}">${money(n, signed)}</td>`;
   const opt = n => n == null ? `<td class="n">—</td>` : `<td class="n">${money(n)}</td>`;
   document.getElementById("st-count").textContent = `${rows.length} book${rows.length===1?"":"s"}`;
   const sum = k => rows.reduce((t, l) => t + (+l[k] || 0), 0);
-  const anyTaxed = rows.some(l => l.taxable);
+  const taxed = rows.filter(l => l.taxable);
   document.getElementById("st-pnl").innerHTML = rows.length
-    ? rows.map(l => `<tr><td>${esc(l.pool)}</td><td>${l.sid?`<span class="chip">${esc(l.sid)}</span> `:""}${esc(l.name)}</td>${amt(l.realised,true)}${amt(l.unrealised,true)}${amt(gross(l),true)}${opt(l.fees)}${opt(l.tax)}${amt(net(l),true)}</tr>`).join("")
-      + `<tr class="total"><td colspan="2">Total</td>${amt(sum("realised"),true)}${amt(sum("unrealised"),true)}${amt(sum("realised")+sum("unrealised"),true)}${anyTaxed?`<td class="n">${money(sum("fees"))}</td><td class="n">${money(sum("tax"))}</td>`:`<td class="n">—</td><td class="n">—</td>`}${amt(rows.reduce((t,l)=>t+net(l),0),true)}</tr>`
-    : `<tr><td colspan="8" class="note">Nothing matches these filters.</td></tr>`;
-  document.getElementById("st-note").textContent = "Crypto (Pools E and G, converted to rupees at today's USD/INR): fees 0.30% a side plus 10 bps spread, and 31.2% tax on each profitable trade with no set-off for losses; open positions are taxed as if sold today; the 1% TDS is refundable so it is not counted. Swing, AI and intraday pools show a dash: brokerage and capital-gains tax are not modeled in paper trading, so their net equals gross. Every other tab shows gross.";
+    ? rows.map(l => `<tr><td>${esc(l.pool)}</td><td>${esc(l.type)}</td><td>${l.sid?`<span class="chip">${esc(l.sid)}</span> `:""}${esc(l.name)}</td>${amt(l.realised,true)}${amt(l.unrealised,true)}${amt(l.gross,true)}${opt(l.fees)}${opt(l.tax)}${amt(l.net,true)}</tr>`).join("")
+      + `<tr class="total"><td colspan="3">Total</td>${amt(sum("realised"),true)}${amt(sum("unrealised"),true)}${amt(sum("gross"),true)}${taxed.length?`<td class="n">${money(sum("fees"))}</td><td class="n">${money(sum("tax"))}</td>`:`<td class="n">—</td><td class="n">—</td>`}${amt(sum("net"),true)}</tr>`
+    : `<tr><td colspan="9" class="note">Nothing matches these filters.</td></tr>`;
+
+  // Hover text on the two info icons: the rates, plus the amounts for whatever is on screen.
+  const byPool = k => { const m = {}; taxed.forEach(l => { m[l.pool] = (m[l.pool]||0) + (l[k]||0); }); return Object.entries(m).map(([p,v]) => `${p} ${money(v)}`).join(", ") || "none in this selection"; };
+  const fi = document.getElementById("st-info-fees"), ti = document.getElementById("st-info-tax");
+  if(fi) fi.title = `Crypto only (Pools E and G).\nExchange fee 0.30% of the trade value on each side, buy and sell, plus a 10 bps (0.10%) spread on each side.\nOpen positions include the estimated cost of selling today.\nSwing, AI and intraday pools: brokerage is not modeled (shown as —).\nIn this selection: ${byPool("fees")}.`;
+  if(ti) ti.title = `Crypto only (Pools E and G).\n31.2% (30% tax + 4% cess) on the gain of each profitable trade; no set-off for losses.\nOpen positions are taxed as if sold today.\n1% TDS is deducted on sales but is refundable, so it is not counted here.\nSwing, AI and intraday pools: capital-gains tax is not modeled (shown as —).\nIn this selection: ${byPool("tax")}.`;
+  document.getElementById("st-note").textContent = "Crypto is converted to rupees at today's USD/INR. Swing, AI and intraday pools show a dash for fees and tax, so their net equals gross. Every other tab shows gross.";
 
   const cash = sum("cash"), dep = sum("deployed"), unr = sum("unrealised"), cap = sum("capital"), rea = sum("realised"), ft = sum("fees") + sum("tax");
   const bs = (label, n, opts={}) => `<tr class="${opts.total?"total":""}"><td${opts.indent?' style="padding-left:24px"':""}>${label}</td>${amt(n, !!opts.signed)}</tr>`;
   document.getElementById("st-bs").innerHTML =
     `<tr><td colspan="2"><b>Assets</b></td></tr>` + bs("Cash", cash, {indent:1}) + bs("Open positions at market value", dep + unr, {indent:1}) + bs("Total assets", cash + dep + unr, {total:1}) +
     `<tr><td colspan="2"><b>Funded by</b></td></tr>` + bs("Capital allocated", cap, {indent:1}) + bs("Realised profit", rea, {indent:1, signed:1}) + bs("Unrealised profit", unr, {indent:1, signed:1}) + bs("Total", cap + rea + unr, {total:1}) +
-    (anyTaxed ? bs("Less: fees and tax on crypto (estimated)", -ft, {indent:1, signed:1}) + bs("Net worth after fees and tax", cap + rea + unr - ft, {total:1}) : "");
+    (taxed.length ? bs("Less: fees and tax on crypto (estimated)", -ft, {indent:1, signed:1}) + bs("Net worth after fees and tax", cap + rea + unr - ft, {total:1}) : "");
 }
 function renderRegistry(s){
   buildRegHead();
