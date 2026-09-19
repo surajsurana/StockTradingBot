@@ -34,6 +34,10 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .teamline .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--live);margin-right:6px;vertical-align:middle;animation:pulse 1.6s ease-in-out infinite}
 .teamline .pulse.off{background:var(--muted);animation:none}
 .teamline.big .k{padding:10px 16px;font-size:13.5px;gap:4px}.teamline.big b{font-size:19px}
+.todaybar{display:flex;justify-content:flex-end;margin:0 0 8px}
+.todaybar > span{display:inline-flex;align-items:baseline;gap:10px;padding:6px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
+.todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:20px}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
@@ -245,6 +249,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live" hidden>
+  <div class="todaybar" id="todaybar"></div>
   <div class="cards" id="livecards"></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -335,7 +340,7 @@ function animateChanges(){
   LIVE_PREV = next;
 }
 const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper", PNL_MODE = "total";
+let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper";
 let TAPE_PAGE = 1, TAPE_PAGE_SIZE = 50, TAPE_LAST_SIG = null;
 try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
 document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
@@ -657,9 +662,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   document.getElementById("livecards").innerHTML = [
     grp("Capital", [
       item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
-      PNL_MODE === "today"
-        ? `<span class="link" id="pnl-toggle" title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · click for total P&L`)}">${val("live.today", today + openMove, true)}<i>Today's P&L <span class="sw2" title="click for total">⇄</span></i></span>`
-        : `<span class="link" id="pnl-toggle" title="${esc(`${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today · click for today's P&L`)}">${val("live.total", booked + unbooked, true)}<i>Total P&L <span class="sw2" title="click for today">⇄</span></i></span>`,
+      item(val("live.total", booked + unbooked, true), "Total P&L", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today`),
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
     grp("Deployed", [
@@ -676,7 +679,9 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
     ], 3),
   ].join("");
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
-  document.getElementById("pnl-toggle").addEventListener("click", () => { PNL_MODE = PNL_MODE === "today" ? "total" : "today"; renderTape(STATE); });
+  // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
+  const todayTotal = today + openMove;
+  document.getElementById("todaybar").innerHTML = `<span title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`)}"><i>Today's P&L</i> ${val("live.today", todayTotal, true)}</span>`;
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
