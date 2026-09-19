@@ -637,6 +637,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
                                + pool_e["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
+    lifecycles = {}
     return {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
@@ -644,7 +645,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e, "pool_g": pool_g,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                          prices=prices, crypto_prices=crypto_prices, pool_g=pool_g),
+                          prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
+        "lifecycles": lifecycles,
         "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
@@ -661,11 +663,51 @@ def _days_between(start_iso, end_iso) -> Optional[int]:
         return None
 
 
+def _attach_lifecycles(rows: list) -> dict:
+    """Group ledger rows into one lifecycle per purchase: the entry, every sell leg (a partial
+    profit booking is its own leg), and whatever is still held. Each row gets a `life` id and a
+    `partial` flag (part sold while the rest is still open); the full story for the popup goes in
+    the returned {life_id: {...}} map so it is sent once, not once per row."""
+    groups = {}
+    for r in rows:
+        entry_price = float(r["price"] if r["status"] == "Open" else r.get("entry_price") or 0)
+        key = (r["pool"], r.get("book"), r.get("symbol_key") or r.get("symbol"), r.get("bought_on"), round(entry_price, 4))
+        groups.setdefault(key, []).append((r, entry_price))
+    lifecycles = {}
+    for n, (key, members) in enumerate(groups.items()):
+        life_id = f"L{n}"
+        opens = [r for r, _ in members if r["status"] == "Open"]
+        sells = sorted((r for r, _ in members if r["status"] == "Closed"), key=lambda r: (r["date"] or "", r["time"] or ""))
+        first, entry_price = members[0]
+        entry_action = first["action"] if first["status"] == "Open" else ("SELL" if first["action"] == "BUY" else "BUY")
+        qty_left = sum(float(r["qty"] or 0) for r in opens)
+        qty_sold = sum(float(r["qty"] or 0) for r in sells)
+        qty_bought = qty_left + qty_sold
+        unit_cost = (float(first.get("cost") or 0) / float(first["qty"])) if float(first["qty"] or 0) else 0.0
+        realised = round(sum(float(r["pnl"] or 0) for r in sells), 2)
+        unrealised = round(sum(float(r["pnl"] or 0) for r in opens), 2)
+        open_cost = sum(float(r.get("cost") or 0) for r in opens)
+        partial = bool(opens) and bool(sells)
+        for r, _ in members:
+            r["life"], r["partial"] = life_id, partial
+        lifecycles[life_id] = {
+            "symbol": first["symbol"], "book": first.get("book"), "pool": first["pool"], "kind": first.get("kind"),
+            "short": entry_action != "BUY",
+            "entry": {"date": first.get("bought_on"), "qty": qty_bought, "price": entry_price, "value": round(qty_bought * unit_cost, 2)},
+            "sells": [{"date": r["date"], "time": r.get("time") or "", "qty": r["qty"], "price": r["price"], "value": r["amount"],
+                       "pnl": r["pnl"], "reason": r.get("note") or ""} for r in sells],
+            "open": ({"qty": qty_left, "cost": round(open_cost, 2), "pnl": unrealised, "value_now": round(open_cost + unrealised, 2)} if opens else None),
+            "qty_bought": qty_bought, "qty_sold": qty_sold, "qty_left": qty_left,
+            "realised": realised, "unrealised": unrealised, "total": round(realised + unrealised, 2),
+        }
+    return lifecycles
+
+
 def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
             pool_e: Optional[dict] = None, d_open: Optional[list] = None,
             prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
             prices: Optional[dict] = None, crypto_prices: Optional[dict] = None,
-            pool_g: Optional[dict] = None) -> list:
+            pool_g: Optional[dict] = None, lifecycles: Optional[dict] = None) -> list:
     """One list for the Live day tab: EVERY open position (whenever it was
     bought, with its current P&L) plus EVERY closed trade on record, across
     Pools A, B, C, D and E. Each row carries `date` (the exit date for a
@@ -714,7 +756,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
                          "fill_today": t.get("exit_date") == today_iso, "bought_on": t.get("entry_date"),
                          "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
-                         "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
+                         "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
                          "pnl": round(float(t.get("pnl", 0) or 0), 2),
                          "note": (t.get("exit_reason") or t.get("reason") or "exit").replace("_", " ")})
     d_unbooked = {o["symbol"]: o["unbooked"] for o in (d_open or [])}
@@ -740,7 +782,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool D", "book": "Intraday",
                      "status": "Closed", "fill_today": exit_date == today_iso, "pnl": round(float(t.get("pnl", 0) or 0), 2),
                      "bought_on": opened[:10] or exit_date, "held_days": 0,
-                     "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
+                     "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * float(t.get("quantity", 0) or 0),
                      "note": str(t.get("reason", "")).replace("_", " ")})
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
@@ -769,7 +811,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                          "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
                          "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                          "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
-                         "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
+                         "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
                          "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
                          "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (price in USDT)",
                          "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
@@ -796,10 +838,13 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool G",
                      "book": "AI judgment", "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
                      "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
-                     "cost": float(t.get("entry_price", 0) or 0) * qty * g_rate,
+                     "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * qty * g_rate,
                      "pnl": round(float(t.get("pnl", 0) or 0) * g_rate, 2),
                      "note": f"{str(t.get('reason', '')) or t.get('exit_reason', '')} (price in USDT)",
                      "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * g_rate, 2)})
+    life = _attach_lifecycles(rows)
+    if lifecycles is not None:
+        lifecycles.update(life)
     for r in rows:
         cost = float(r.pop("cost", 0) or 0)
         r["pct"] = round(float(r["pnl"]) / cost * 100, 2) if r.get("pnl") is not None and cost > 0 else None

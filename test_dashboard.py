@@ -196,6 +196,28 @@ class TestBuildDashboardState(unittest.TestCase):
                                crypto["cash"] + crypto["deployed"] + crypto["unrealised"])
         self.assertEqual(lines[("Pool D", "pool_d_vwap_fade")]["type"], "Intraday")
 
+    def test_partly_sold_position_links_its_legs_and_is_flagged_partial(self):
+        from dashboard.state_view import _attach_lifecycles
+        base = {"pool": "Pool F", "book": "Alpha", "symbol": "ABC", "symbol_key": "ABC.NS", "bought_on": "2026-09-16", "action": "BUY"}
+        rows = [
+            {**base, "status": "Open", "date": "2026-09-16", "time": "", "qty": 21, "price": 100.0, "amount": 2100.0, "cost": 2100.0, "pnl": 50.0},
+            {**base, "status": "Closed", "date": "2026-09-17", "time": "09:30", "qty": 21, "price": 105.0, "amount": 2205.0,
+             "entry_price": 100.0, "cost": 2100.0, "pnl": 105.0, "note": "partial profit", "action": "SELL"},
+            # a different purchase of the same stock, fully sold -> its own lifecycle, not partial
+            {**base, "bought_on": "2026-09-01", "status": "Closed", "date": "2026-09-05", "time": "", "qty": 10, "price": 90.0, "amount": 900.0,
+             "entry_price": 80.0, "cost": 800.0, "pnl": 100.0, "note": "signal exit", "action": "SELL"},
+        ]
+        life = _attach_lifecycles(rows)
+        self.assertEqual(rows[0]["life"], rows[1]["life"])
+        self.assertNotEqual(rows[0]["life"], rows[2]["life"])
+        self.assertTrue(rows[0]["partial"] and rows[1]["partial"])
+        self.assertFalse(rows[2]["partial"])
+        L = life[rows[0]["life"]]
+        self.assertEqual((L["qty_bought"], L["qty_sold"], L["qty_left"]), (42, 21, 21))
+        self.assertAlmostEqual(L["entry"]["value"], 4200.0)
+        self.assertEqual((L["realised"], L["unrealised"], L["total"]), (105.0, 50.0, 155.0))
+        self.assertEqual(life[rows[2]["life"]]["open"], None)
+
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date
         rows = {r["key"]: r for r in self.s["strategies"]}

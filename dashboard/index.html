@@ -80,6 +80,14 @@ tr.clickable{cursor:pointer}
 .tristate i.on.paper{background:var(--chip);color:var(--accent)}
 .tristate i.on.live{background:var(--gain);color:var(--accent-ink)}
 .tristate i.on.off{background:var(--band);color:var(--muted)}
+.lifebtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
+.lifebtn:hover{color:var(--ink)}
+#life{border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
+#life::backdrop{background:rgba(0,0,0,.35)}
+#life h3{margin:0 0 2px;font-size:16px}#life .sub{color:var(--muted);font-size:12.5px;margin:0 0 10px}
+#life table{min-width:0;width:100%;font-size:12.5px}#life th,#life td{padding:5px 6px}
+#life .sum{margin:10px 0 0;font-size:12.5px;color:var(--muted)}#life .sum b{color:var(--ink)}
+#life .x{float:right}
 .expand-toggle{all:unset;cursor:pointer;color:var(--muted);font-size:10px;padding:0 3px;vertical-align:middle}
 .expand-toggle:hover{color:var(--accent)}
 tr.subrow td{background:var(--band);color:var(--muted)}
@@ -292,6 +300,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="err" id="sell-err" hidden></p>
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
 <dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4 id="brief-what">What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
+<dialog id="life"><button class="iconbtn x" id="life-close" aria-label="Close">×</button><div id="life-body"></div></dialog>
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
 
 <script>
@@ -306,7 +315,7 @@ const usd = (n, signed) => `${n>0&&signed?"+":""}${n<0?"−":""}${Math.abs(+n).t
 // and tiles count from the old value to the new one. Real quotes only -- the page never invents movement.
 let LIVE_PREV = new Map();
 const lv = (key, value, html) => `<span class="lv" data-k="${esc(key)}" data-v="${value}">${html}</span>`;
-const cell = (n, signed=true, key=null) => `<td class="n ${cls(n)}">${key?lv(key, n, money(n, signed)):money(n, signed)}</td>`;
+const cell = (n, signed=true, key=null, life=null) => `<td class="n ${cls(n)}">${key?lv(key, n, money(n, signed)):money(n, signed)}${life?` <button class="lifebtn" data-life="${life}" title="How this was bought and sold">ⓘ</button>`:""}</td>`;
 function animateChanges(){
   const next = new Map();
   document.querySelectorAll(".lv[data-k]").forEach(el => {
@@ -429,7 +438,7 @@ function buildTapeHead(){
   const head = document.getElementById("tape-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
   const cell = k => ({
-    status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Closed</option></select>`,
+    status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
     pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option></select>`,
@@ -485,7 +494,7 @@ function renderTape(s){
   }).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
+  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
     const k = TAPE_SORT.key, x = a[k], y = b[k];
     const tie = (b.date||"").localeCompare(a.date||"") || (b.time||"").localeCompare(a.time||"") || (a.symbol||"").localeCompare(b.symbol||"");
@@ -510,9 +519,32 @@ function renderTape(s){
   document.getElementById("tape-prev").disabled = TAPE_PAGE <= 1;
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
-  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
+  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
+function showLife(id){
+  const L = (STATE.lifecycles || {})[id]; if(!L) return;
+  const crypto = L.kind === "Crypto", pr = v => (+v).toFixed(2) + (crypto ? " USDT" : "");
+  const qty = v => (+v).toLocaleString("en-IN", {maximumFractionDigits: 6});
+  const dt = d => d ? fmtDate(d) : "—";
+  const buyWord = L.short ? "Sold short" : "Bought", sellWord = L.short ? "Bought back" : "Sold";
+  const why = t => String(t||"").replace(/\s*\(price in USDT\)\s*$/,"").replace(/^./, c => c.toUpperCase());
+  const row = (what, d, q, price, value, profit, extra="") => `<tr><td>${what}${extra}</td><td>${dt(d)}</td><td class="n">${qty(q)}</td><td class="n">${price}</td><td class="n">${money(value)}</td><td class="n ${profit==null?"":cls(profit)}">${profit==null?"":money(profit,true)}</td></tr>`;
+  let body = row(buyWord, L.entry.date, L.entry.qty, pr(L.entry.price), L.entry.value, null);
+  L.sells.forEach(x => { body += row(sellWord, x.date, x.qty, pr(x.price), x.value, x.pnl, x.reason ? ` <span class="note">(${esc(why(x.reason))})</span>` : ""); });
+  if(L.open) body += `<tr><td>Still held</td><td></td><td class="n">${qty(L.open.qty)}</td><td class="n">cost ${pr(L.entry.price)}</td><td class="n">${money(L.open.value_now)} now</td><td class="n ${cls(L.open.pnl)}">${money(L.open.pnl,true)}</td></tr>`;
+  const status = L.open ? (L.sells.length ? "Partly sold, the rest is still open" : "Open, nothing sold yet") : "Fully closed";
+  document.getElementById("life-body").innerHTML =
+    `<h3>${esc(L.symbol)}</h3><p class="sub">${esc(L.book || "")} · ${esc(L.pool)} · ${status}</p>` +
+    `<table><thead><tr><th></th><th>Date</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Value</th><th class="n">Profit</th></tr></thead><tbody>${body}</tbody></table>` +
+    `<p class="sum">Balance: <b>${qty(L.qty_left)}</b> left of ${qty(L.qty_bought)} (${qty(L.qty_sold)} sold). ` +
+    `Booked <b class="${cls(L.realised)}">${money(L.realised,true)}</b>${L.open ? ` · Open <b class="${cls(L.unrealised)}">${money(L.unrealised,true)}</b>` : ""} · Total <b class="${cls(L.total)}">${money(L.total,true)}</b>` +
+    `${crypto ? "<br>Prices are in USDT; values and profit are in rupees, before fees and tax." : ""}</p>`;
+  document.getElementById("life").showModal();
+}
+document.addEventListener("click", e => { const b = e.target.closest(".lifebtn"); if(b){ e.stopPropagation(); showLife(b.dataset.life); } });
+document.getElementById("life-close").addEventListener("click", () => document.getElementById("life").close());
+document.getElementById("life").addEventListener("click", e => { if(e.target.id === "life") e.target.close(); });
 function wireTapePager(){
   const pager = document.getElementById("tape-pager"); if(pager.dataset.wired) return;
   pager.dataset.wired = "1";
