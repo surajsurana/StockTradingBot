@@ -45,3 +45,7 @@ Thumbs.db
 .idea/
 deployment/state/manual_actions.jsonl
 deployment/state/pool_g/
+
+# real Groww credential and holdings -- never commit
+deployment/state/groww_token.txt
+deployment/state/groww_holdings.json

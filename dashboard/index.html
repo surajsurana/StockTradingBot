@@ -247,6 +247,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
+  <button role="tab" aria-selected="false" data-tab="mine">My Portfolio</button>
   <span class="todaybar" id="todaybar" hidden></span>
 </nav>
 <p id="error" class="err" hidden></p>
@@ -285,6 +286,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="note" id="st-note"></p>
   <h2>Balance sheet</h2>
   <div class="tblwrap" id="st-bs-wrap"><table class="stmt"><tbody id="st-bs"></tbody></table></div>
+</section>
+
+<section id="tab-mine" hidden>
+  <p class="note" id="mine-status"></p>
+  <div class="cards" id="mine-cards"></div>
+  <div class="tblwrap" id="mine-wrap"><table><thead id="mine-head"></thead><tbody id="mine"></tbody></table></div>
 </section>
 
 <section id="tab-registry" hidden>
@@ -383,7 +390,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
-  renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s);
+  renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s); renderMine(s);
   animateChanges();
 }
 
@@ -884,6 +891,43 @@ function renderStatement(s){
     `<tr><td colspan="2"><b>Funded by</b></td></tr>` + bs("Capital allocated", cap, {indent:1}) + bs("Realised profit", rea, {indent:1, signed:1}) + bs("Unrealised profit", unr, {indent:1, signed:1}) + bs("Total", cap + rea + unr, {total:1}) +
     bs("Less: charges, GST and tax (estimated)", -ct, {indent:1, signed:1}) + bs("Net worth after charges and tax", cap + rea + unr - ct, {total:1}) +
     (anyTds ? bs("TDS withheld on crypto (refundable, memo)", sum("tds"), {indent:1}) : "");
+}
+let MINE_SORT = {key:"value", dir:-1};
+const MINE_COLS = [["symbol","Symbol",""],["quantity","Qty","n"],["avg_price","Avg cost","n"],["invested","Invested","n"],["price","Price","n"],
+                   ["value","Value","n"],["pnl","P&L","n"],["pct","P&L %","n"],["today","Today","n"]];
+function renderMine(s){
+  const m = s.my_portfolio || {status:"not_connected", holdings:[], totals:{}};
+  const head = document.getElementById("mine-head");
+  if(!head.dataset.built){
+    head.dataset.built = "1";
+    head.innerHTML = `<tr>${MINE_COLS.map(([k,l,c]) => hcell(l, k, "", c)).join("")}</tr>`;
+    head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { MINE_SORT = {key:b.dataset.sort, dir: MINE_SORT.key===b.dataset.sort ? -MINE_SORT.dir : (b.dataset.sort==="symbol"?1:-1)}; if(STATE) renderMine(STATE); }));
+  }
+  markSort(head, MINE_SORT);
+  const at = m.fetched_at ? new Date(m.fetched_at).toLocaleString("en-IN", {day:"numeric", month:"short", hour:"2-digit", minute:"2-digit"}) : "never";
+  document.getElementById("mine-status").textContent = {
+    not_connected: "Not connected yet. Once a Groww access token is added on the server, your real holdings appear here (read-only, nothing is ever bought or sold from this page).",
+    connected: `Connected to Groww, read-only. Holdings read ${at}; prices from the same feed as the paper pools.`,
+    expired: `The Groww token has expired (Groww lapses it daily at 6 AM). Showing the holdings last read ${at}; a fresh token is needed to update them.`,
+    error: `Could not reach Groww (${m.message || "unknown error"}). Showing the holdings last read ${at}.`,
+  }[m.status] || "";
+  const t = m.totals || {};
+  const box = (title, items) => `<div class="grp"><div class="gt">${title}</div><div class="gi">${items.map(([label, html]) => `<span>${html}<i>${label}</i></span>`).join("")}</div></div>`;
+  const sg = n => `<b class="${cls(n)}">${money(n, true)}</b>`;
+  document.getElementById("mine-cards").innerHTML = m.holdings.length ? [
+    box("Portfolio", [["Invested", `<b>${money(t.invested)}</b>`], ["Current value", `<b>${money(t.value)}</b>`]]),
+    box("Profit and loss", [["Total P&L" + (t.pct != null ? ` (${t.pct > 0 ? "+" : ""}${t.pct.toFixed(2)}%)` : ""), sg(t.pnl)], ["Today", sg(t.today)]]),
+    box("Holdings", [["Stocks and ETFs", `<b>${t.holdings}</b>`], ["Not priced yet", `<b>${t.unpriced}</b>`]]),
+  ].join("") : "";
+  const numeric = new Set(["quantity","avg_price","invested","price","value","pnl","pct","today"]);
+  const rows = [...m.holdings].sort((a, b) => {
+    const k = MINE_SORT.key;
+    if(numeric.has(k)){ const x = a[k]==null?-Infinity:+a[k], y = b[k]==null?-Infinity:+b[k]; return (x-y)*MINE_SORT.dir || a.symbol.localeCompare(b.symbol); }
+    return String(a[k]||"").localeCompare(String(b[k]||""))*MINE_SORT.dir;
+  });
+  const opt = (n, f) => n == null ? `<td class="n">—</td>` : f(n);
+  document.getElementById("mine").innerHTML = rows.length ? rows.map(r => `<tr><td>${esc(r.symbol)}</td><td class="n">${(+r.quantity).toLocaleString("en-IN")}</td><td class="n">${r.avg_price.toFixed(2)}</td><td class="n">${money(r.invested)}</td>${opt(r.price, v => `<td class="n">${v.toFixed(2)}</td>`)}${opt(r.value, v => `<td class="n">${money(v)}</td>`)}${opt(r.pnl, v => cell(v))}${opt(r.pct, v => `<td class="n ${cls(v)}">${v>0?"+":""}${v.toFixed(2)}%</td>`)}${opt(r.today, v => cell(v))}</tr>`).join("")
+    : `<tr><td colspan="9" class="note">No holdings to show.</td></tr>`;
 }
 function renderRegistry(s){
   buildRegHead();

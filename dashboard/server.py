@@ -48,11 +48,13 @@ sys.path.insert(0, REPO_DIR)
 from deployment.deployment_manager import list_strategies   # noqa: E402
 from deployment.settings import STATE_DIR                   # noqa: E402
 from dashboard.state_view import build_dashboard_state             # noqa: E402
+from data.fetch_groww import load_snapshot as load_groww_snapshot   # noqa: E402
 
 LOGS_DIR = os.path.join(REPO_DIR, "logs")
 INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 KEY_PATH = os.path.join(STATE_DIR, "dashboard_key.txt")
 PRICE_REFRESH_SECONDS = 300   # full yfinance refresh
+GROWW_REFRESH_SECONDS = 600   # re-read the Groww holdings (a read-only call)
 LIVE_SECONDS = 20             # Kite quote refresh while the market is open (2 requests per pass)
 COOKIE_NAME = "dash_key"
 
@@ -94,7 +96,9 @@ class PriceCache:
 
     def _held_symbols(self) -> list:
         from reporting.pool_summary import _held_symbols
-        return sorted(_held_symbols(self.state_dir))
+        from data.fetch_groww import load_snapshot
+        groww = {f"{h['symbol']}.NS" for h in load_snapshot(self.state_dir).get("holdings", [])}   # priced like any held stock
+        return sorted(_held_symbols(self.state_dir) | groww)
 
     def _pool_d_symbols(self) -> list:
         import json
@@ -116,6 +120,16 @@ class PriceCache:
             with open(pool_g_path, encoding="utf-8") as f:
                 held |= set((json.load(f).get("positions") or {}).keys())
         return sorted(held)
+
+    _groww_last = 0.0
+
+    def refresh_groww(self) -> None:
+        """Re-read the real Groww holdings (read-only) at most every GROWW_REFRESH_SECONDS."""
+        if time.monotonic() - self._groww_last < GROWW_REFRESH_SECONDS:
+            return
+        self._groww_last = time.monotonic()
+        from data.fetch_groww import sync_holdings
+        sync_holdings(self.state_dir)
 
     def refresh_crypto(self, with_rate: bool = False) -> None:
         """Binance last prices for Pool E's open coins (one cheap call; the
@@ -230,6 +244,7 @@ class PriceCache:
             last_full = 0.0
             while True:
                 try:
+                    self.refresh_groww()
                     if time.monotonic() - last_full > self.refresh_seconds:
                         self.refresh_once()
                         last_full = time.monotonic()
@@ -348,7 +363,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
                                           roadmap=self.roadmap_cache.get(), mode=mode,
                                           crypto_prices=crypto_prices, usdinr=usdinr,
-                                          prev_close=prev_close, crypto_prev_close=crypto_prev_close)
+                                          prev_close=prev_close, crypto_prev_close=crypto_prev_close,
+                                          groww=load_groww_snapshot(STATE_DIR))
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):
