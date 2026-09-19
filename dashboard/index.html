@@ -57,7 +57,7 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
 @media (prefers-reduced-motion:reduce){.teamline .k,.teamline .pulse{animation:none}}
 .cards.two .grp{flex:1 1 320px}.tblwrap.flat{border:0;background:none}.cards .grp .tblwrap th,.cards .grp .tblwrap td{font-size:12.5px}
-.rep summary{cursor:pointer;margin:6px 0}.rep details{margin:10px 0}
+.rep summary{cursor:pointer;margin:6px 0}.fyrow{cursor:pointer;background:var(--band)}.fyrow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}.fymonth td.mname{padding-left:28px}.fyarrow{display:inline-block;width:12px;color:var(--muted)}.rep details{margin:10px 0}
 .tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:6px}
 table{border-collapse:collapse;width:100%;min-width:640px}
 th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
@@ -975,7 +975,16 @@ function renderReports(s){
 
   // ---- 1. returns
   const yrows = r.years.map(y => `<tr><td>${esc(y.label)}</td><td class="n">${money(y.start)}</td><td class="n">${money(y.net_added, true)}</td><td class="n">${money(y.end)}</td>${cell(y.gain)}${pcell(y.return_pct)}${pcell(y.bench_return_pct)}</tr>`).join("");
-  const mrows = [...r.monthly].reverse().map(m => `<tr><td>${esc(m.month)}</td><td class="n">${money(m.buys)}</td><td class="n">${m.sells ? money(m.sells) : "—"}</td><td class="n">${money(m.net, true)}</td><td class="n">${money(m.cum)}</td></tr>`).join("");
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const fys = {};
+  r.monthly.forEach(m => { const [yy, mm] = m.month.split("-").map(Number); const start = mm >= 4 ? yy : yy - 1;
+    (fys[start] = fys[start] || {start, months: []}).months.push({...m, name: MONTHS[mm-1]}); });
+  const mrows = Object.values(fys).sort((a, b) => b.start - a.start).map(f => {
+    const buys = f.months.reduce((t, m) => t + m.buys, 0), sells = f.months.reduce((t, m) => t + m.sells, 0), last = f.months[f.months.length-1];
+    const label = `FY${String(f.start).slice(2)}-${String(f.start+1).slice(2)}`;
+    return `<tr class="fyrow" data-fy="${f.start}" tabindex="0" role="button" aria-expanded="false"><td><b><span class="fyarrow">▸</span> ${label}</b></td><td class="n"><b>${money(buys)}</b></td><td class="n"><b>${sells ? money(sells) : "—"}</b></td><td class="n"><b>${money(buys - sells, true)}</b></td><td class="n"><b>${money(last.cum)}</b></td></tr>`
+      + [...f.months].reverse().map(m => `<tr class="fymonth" data-fy="${f.start}" hidden><td class="mname">${m.name}</td><td class="n">${money(m.buys)}</td><td class="n">${m.sells ? money(m.sells) : "—"}</td><td class="n">${money(m.net, true)}</td><td class="n">${money(m.cum)}</td></tr>`).join("");
+  }).join("");
   document.getElementById("rep-returns").innerHTML = `
     <div class="cards">
       ${box("Your money", [["Put in (net of sales)", `<b>${money(h.invested)}</b>`], ["Worth now", `<b>${money(h.value)}</b>`], [`Gain since ${since}`, `<span class="trio">${sg(h.gain)}${h.gain_pct != null ? `<em class="${cls(h.gain_pct)}">${pc(h.gain_pct, 2)}</em>` : ""}</span>`]])}
@@ -986,9 +995,15 @@ function renderReports(s){
     <h2>Year by year</h2>
     <div class="tblwrap"><table><thead><tr><th>Year</th><th class="n">Worth at start</th><th class="n">Money added</th><th class="n">Worth at end</th><th class="n">Gain</th><th class="n">Your return</th><th class="n">Nifty 50, same money</th></tr></thead><tbody>${yrows}</tbody></table></div>
     <p class="note">Selling shares or withdrawing money is never counted as a loss: money you take out is added back, so only price changes and charges show up as gain or loss. Yearly return = gain ÷ money at work that year (new money counts only for the part of the year it was invested). Year-end values are rebuilt from your orders and market prices, so they are close but not exact: shares you received free in demergers are left out before today (about 3% of today's value).</p>
-    <details><summary><b>Month by month: what you put in</b></summary>
-      <div class="tblwrap"><table><thead><tr><th>Month</th><th class="n">Bought</th><th class="n">Sold</th><th class="n">Net put in</th><th class="n">Total put in so far</th></tr></thead><tbody>${mrows}</tbody></table></div></details>
+    <details><summary><b>What you put in, by financial year</b> (click a year to see its months)</summary>
+      <div class="tblwrap"><table><thead><tr><th>Financial year / month</th><th class="n">Bought</th><th class="n">Sold</th><th class="n">Net put in</th><th class="n">Total put in so far</th></tr></thead><tbody id="rep-months">${mrows}</tbody></table></div></details>
     <p class="note">Built from Groww's reports downloaded up to ${esc(asof)}; money added since then is picked up from the change in your holdings. Groww's order history starts in March 2021.</p>`;
+
+  const toggleFy = row => { const open = row.getAttribute("aria-expanded") !== "true"; row.setAttribute("aria-expanded", open);
+    row.querySelector(".fyarrow").textContent = open ? "▾" : "▸";
+    document.querySelectorAll(`#rep-months tr.fymonth[data-fy="${row.dataset.fy}"]`).forEach(x => x.hidden = !open); };
+  document.querySelectorAll("#rep-months tr.fyrow").forEach(row => { row.addEventListener("click", () => toggleFy(row));
+    row.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleFy(row); } }); });
 
   // ---- 2. sources
   const grows = r.groups.map(g => `<tr><td>${esc(g.group)}</td><td class="n narrow">${g.count}</td><td class="n">${money(g.invested)}</td><td class="n">${money(g.value)}</td><td class="n">${g.weight != null ? g.weight.toFixed(1) + "%" : "—"}</td>${cell(g.pnl)}${pcell(g.pct)}<td class="n ${cls(g.share_of_profit)}">${g.share_of_profit != null ? g.share_of_profit.toFixed(0) + "%" : "—"}</td></tr>`).join("");
