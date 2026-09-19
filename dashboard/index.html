@@ -298,7 +298,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-reports" hidden>
-  <div class="tools"><span class="modeswitch" role="group" aria-label="Report"><button class="on" data-rep="returns">Returns on my money</button><button data-rep="sources">Where the profit comes from</button><button data-rep="costs">Costs, income and cash</button></span></div>
+  <div class="tools"><span class="modeswitch subswitch" role="group" aria-label="Report"><button class="on" data-rep="returns">Returns on my money</button><button data-rep="sources">Where the profit comes from</button><button data-rep="costs">Costs, income and cash</button></span></div>
   <p class="note" id="rep-empty" hidden></p>
   <div id="rep-returns" class="rep"></div>
   <div id="rep-sources" class="rep" hidden></div>
@@ -363,13 +363,13 @@ const esc = s => String(s??"").replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">
 let STATE = null, FILTER = "", REG_SORT = {key:"sid", dir:1}, MODE = "paper";
 let TAPE_PAGE = 1, TAPE_PAGE_SIZE = 50, TAPE_LAST_SIG = null;
 try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } catch(e){}
-document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
+document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEventListener("click", () => {
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
-  document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
+  document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
   syncLongTermTab();
   load();
 }));
-document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
+document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
 
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
@@ -985,7 +985,7 @@ function renderReports(s){
     <p class="note">"Return per year" is the annualised return on your money, counting when each rupee went in (so the ₹9 lakh added this year weighs less than money invested for years). Nifty 50 uses the same purchases and sales, in the Nifty ETF on the same days.</p>
     <h2>Year by year</h2>
     <div class="tblwrap"><table><thead><tr><th>Year</th><th class="n">Worth at start</th><th class="n">Money added</th><th class="n">Worth at end</th><th class="n">Gain</th><th class="n">Your return</th><th class="n">Nifty 50, same money</th></tr></thead><tbody>${yrows}</tbody></table></div>
-    <p class="note">Yearly return = gain ÷ money at work that year (new money counts only for the part of the year it was invested). Year-end values are rebuilt from your orders and market prices, so they are close but not exact: shares you received free in demergers are left out before today (about 3% of today's value).</p>
+    <p class="note">Selling shares or withdrawing money is never counted as a loss: money you take out is added back, so only price changes and charges show up as gain or loss. Yearly return = gain ÷ money at work that year (new money counts only for the part of the year it was invested). Year-end values are rebuilt from your orders and market prices, so they are close but not exact: shares you received free in demergers are left out before today (about 3% of today's value).</p>
     <details><summary><b>Month by month: what you put in</b></summary>
       <div class="tblwrap"><table><thead><tr><th>Month</th><th class="n">Bought</th><th class="n">Sold</th><th class="n">Net put in</th><th class="n">Total put in so far</th></tr></thead><tbody>${mrows}</tbody></table></div></details>
     <p class="note">Built from Groww's reports downloaded up to ${esc(asof)}; money added since then is picked up from the change in your holdings. Groww's order history starts in March 2021.</p>`;
