@@ -364,7 +364,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           roadmap=self.roadmap_cache.get(), mode=mode,
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                                          groww=load_groww_snapshot(STATE_DIR))
+                                          groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

@@ -247,7 +247,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
-  <button role="tab" aria-selected="false" data-tab="mine">My Portfolio</button>
+  <button role="tab" aria-selected="false" data-tab="mine" id="tab-btn-mine" hidden>Long-term</button>
   <span class="todaybar" id="todaybar" hidden></span>
 </nav>
 <p id="error" class="err" hidden></p>
@@ -355,6 +355,7 @@ try { MODE = localStorage.getItem("desk.mode") === "live" ? "live" : "paper"; } 
 document.querySelectorAll(".modeswitch button").forEach(b => b.addEventListener("click", () => {
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
   document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
+  syncLongTermTab();
   load();
 }));
 document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
@@ -365,7 +366,14 @@ document.querySelectorAll("nav button").forEach(b => b.addEventListener("click",
   document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
   try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
 }));
-try { const t = localStorage.getItem("desk.tab"); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch(e){}
+// The Long-term tab is the real Groww portfolio, so it exists only in Live mode.
+function syncLongTermTab(){
+  const btn = document.getElementById("tab-btn-mine");
+  btn.hidden = MODE !== "live";
+  if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('nav button[data-tab="team"]').click();
+}
+try { const t = localStorage.getItem("desk.tab"); if (t && !(t === "mine" && MODE !== "live")) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch(e){}
+syncLongTermTab();
 
 async function load(){
   try{
@@ -389,7 +397,7 @@ function render(){
   const note = document.getElementById("modenote");
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
   note.hidden = !liveEmpty;
-  note.textContent = liveEmpty ? "Live mode: no real-money books exist yet — every strategy currently runs as paper trading. Switch back to Paper to see them." : "";
+  note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are on the Long-term tab." : "";
   renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s); renderMine(s);
   animateChanges();
 }
