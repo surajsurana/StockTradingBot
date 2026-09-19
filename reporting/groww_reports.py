@@ -16,12 +16,12 @@ KNOWN LIMITS (shown on the Reports tab too):
     leave them out (about 3% of today's value).
   * Reports are as of their download date; the dashboard treats any later change in your holdings'
     cost as new money added.
-  * Dividends: Groww's reports only give a total per financial year, so each dividend is rebuilt as
-    (dividend per share on the ex-date, from Yahoo) x (shares you held the day before). Checked against
-    Groww's own totals (FY24-25 Rs 1,885 vs 1,888; FY25-26 Rs 4,270 vs 4,270) and against the company
-    dividend e-mails in the inbox (Tata Motors, Tata Motors Passenger Vehicles, Vedanta Aluminium: exact).
-    Free demerger shares count from the demerger onwards. The date shown is the ex-date; the money
-    arrives two to four weeks later.
+  * Dividends: Groww's Dividend_Report_*.pdf (Profile -> Reports -> Dividend report) is the source for
+    everything it covers (it starts April 2023). Before that, and for any payout whose ex-date has passed
+    but Groww has not listed yet, each dividend is rebuilt as (dividend per share on the ex-date, from
+    Yahoo) x (shares held the day before). That rebuild matched 66 of Groww's 67 payouts to the rupee
+    and the yearly totals in Groww's tax reports, so the estimates are reliable. The date shown is the
+    ex-date; the money arrives two to four weeks later.
 """
 
 import glob
@@ -95,7 +95,7 @@ def read_orders(folder: str) -> List[dict]:
             d = dict(zip(header, r))
             if d.get("Order status") != "Executed":
                 continue
-            out.append({"symbol": d["Symbol"], "name": str(d.get("Stock name") or d["Symbol"]), "type": d["Type"], "qty": _num(d["Quantity"]), "value": _num(d["Value"]),
+            out.append({"symbol": d["Symbol"], "isin": d.get("ISIN"), "name": str(d.get("Stock name") or d["Symbol"]), "type": d["Type"], "qty": _num(d["Quantity"]), "value": _num(d["Value"]),
                         "ts": datetime.strptime(d["Execution date and time"], "%d-%m-%Y %I:%M %p")})
     return sorted(out, key=lambda x: x["ts"])
 
@@ -167,6 +167,37 @@ def read_ledger(folder: str) -> dict:
     return {"years": [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in y.items()} for _, y in sorted(years.items())],
             "months": [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in m.items()} for _, m in sorted(months.items())],
             "first_date": first.isoformat() if first else None}
+
+
+_DIV_LINE = re.compile(r"^(.+?) (INE\w{9}) (\d{2}-\d{2}-\d{4}) (\d+(?:\.\d+)?) Rs\. ([\d.]+) Rs\. ([\d,.]+)$")
+
+
+def parse_dividend_lines(lines: List[str], isin_map: Dict[str, str]) -> List[dict]:
+    """Rows of Groww's dividend report: company, ISIN, ex-date, shares, dividend per share, amount."""
+    rows = []
+    for line in lines:
+        m = _DIV_LINE.match(line.strip())
+        if not m:
+            continue
+        rows.append({"symbol": isin_map.get(m.group(2), m.group(1)), "name": m.group(1), "ex": datetime.strptime(m.group(3), "%d-%m-%Y").date().isoformat(),
+                     "qty": float(m.group(4)), "dps": float(m.group(5)), "gross": float(m.group(6).replace(",", ""))})
+    return rows
+
+
+def read_dividend_report(folder: str, isin_map: Dict[str, str]) -> Tuple[List[dict], Optional[str]]:
+    """Groww's dividend report (PDF) as rows, plus the first day it covers; ([], None) if it is absent or
+    the PDF reader is not installed."""
+    path = (glob.glob(os.path.join(folder, "Dividend_Report*.pdf")) or [None])[0]
+    if not path:
+        return [], None
+    try:
+        import pypdf
+    except ImportError:
+        return [], None
+    lines = [ln for page in pypdf.PdfReader(path).pages for ln in (page.extract_text() or "").splitlines()]
+    m = re.search(r"(\d{2})-(\d{2})-(\d{4})_\d{2}-\d{2}-\d{4}\.pdf$", os.path.basename(path))
+    start = f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else "2023-04-01"
+    return parse_dividend_lines(lines, isin_map), start
 
 
 def _price_history(symbols: List[str]) -> Tuple[dict, dict, dict]:
@@ -245,9 +276,25 @@ def dividend_rows(orders: List[dict], dividends: dict, splits: dict, holdings: O
     return sorted(rows, key=lambda r: (r["ex"], r["symbol"]))
 
 
-def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]] = None) -> dict:
+def merged_dividends(folder: str, orders: List[dict], estimated: List[dict], isins: Optional[Dict[str, str]]) -> List[dict]:
+    """Groww's own dividend report wherever it covers, the rebuild before it and for payouts it has not
+    listed yet. Each row says which it is: groww, estimated or due."""
+    isin_map = {o["isin"]: o["symbol"] for o in orders if o.get("isin")}
+    isin_map.update(isins or {})
+    groww, start = read_dividend_report(folder, isin_map)
+    if not groww:
+        return [{**r, "source": "estimated"} for r in estimated]
+    last = max(r["ex"] for r in groww)
+    rows = [{**r, "source": "estimated"} for r in estimated if r["ex"] < start]
+    rows += [{"symbol": r["symbol"], "ex": r["ex"], "dps": r["dps"], "qty": r["qty"], "gross": r["gross"], "source": "groww"} for r in groww]
+    rows += [{**r, "source": "due"} for r in estimated if r["ex"] > last]
+    return sorted(rows, key=lambda r: (r["ex"], r["symbol"]))
+
+
+def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]] = None, isins: Optional[Dict[str, str]] = None) -> dict:
     """`prices` = (px, spl, divs) from _price_history, injectable for tests. `holdings` = {symbol: quantity}
-    from the live Groww holdings, used for shares that arrived without an order (demergers)."""
+    from the live Groww holdings, used for shares that arrived without an order (demergers). `isins` =
+    {isin: symbol} for holdings that have no orders, to match rows of Groww's dividend report."""
     orders = read_orders(folder)
     holdings = holdings or {}
     symbols = sorted({o["symbol"] for o in orders} | set(holdings))
@@ -321,7 +368,7 @@ def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]]
     return {
         "names": names,
         "net_qty": {sym: round(_qty_in_todays_shares(orders, sym, datetime(9999, 12, 31), spl.get(sym)), 4) for sym in sorted({o["symbol"] for o in orders})},
-        "dividends": dividend_rows(orders, divs, spl, holdings),
+        "dividends": merged_dividends(folder, orders, dividend_rows(orders, divs, spl, holdings), isins),
         "company_flows": {k: [[d, round(a, 2)] for d, a in sorted(v.items())] for k, v in company_flows.items()},
         "as_of": end.isoformat(), "benchmark": BENCHMARK, "benchmark_price_at_report": bench_px,
         "flows": [[d, round(a, 2)] for d, a in sorted(flows.items())],
@@ -336,10 +383,12 @@ def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]]
 
 if __name__ == "__main__":
     src, dst = sys.argv[1], sys.argv[2]
-    held = {}
+    held, isins = {}, {}
     if len(sys.argv) > 3:   # optional: a groww_holdings.json snapshot, for shares received free in demergers
-        held = {h["symbol"]: h["quantity"] for h in json.load(open(sys.argv[3], encoding="utf-8"))["holdings"]}
-    data = build_reports(src, holdings=held)
+        snap = json.load(open(sys.argv[3], encoding="utf-8"))["holdings"]
+        held = {h["symbol"]: h["quantity"] for h in snap}
+        isins = {h["isin"]: h["symbol"] for h in snap if h.get("isin")}
+    data = build_reports(src, holdings=held, isins=isins)
     with open(dst, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1)
     print("wrote", dst, "orders through", data["as_of"], "net invested", data["net_invested"])

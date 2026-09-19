@@ -576,7 +576,7 @@ def dividends_view(rep: dict, today: date) -> dict:
         f["total"] += r["gross"]
         f["payouts"] += 1
         out_rows.append({"date": r["ex"], "fy": fy_key, "symbol": r["symbol"], "name": _company_name(rep, r["symbol"]),
-                         "dps": r["dps"], "qty": r["qty"], "amount": r["gross"]})
+                         "dps": r["dps"], "qty": r["qty"], "amount": r["gross"], "source": r.get("source", "estimated")})
     companies = sorted(by_family.values(), key=lambda x: -x["total"])
     for c in companies:
         c["total"] = round(c["total"], 2)
@@ -590,7 +590,11 @@ def dividends_view(rep: dict, today: date) -> dict:
             "total": round(sum(r["gross"] for r in rows), 2),
             "this_fy": round(fy_est.get(f"FY{str(cur_fy)[2:]}-{str(cur_fy + 1)[2:]}", 0.0), 2),
             "last_12m": round(sum(r["gross"] for r in rows if r["ex"] >= year_ago), 2),
-            "first": min((r["ex"] for r in rows), default=None)}
+            "first": min((r["ex"] for r in rows), default=None),
+            "groww_count": sum(1 for r in rows if r.get("source") == "groww"),
+            "groww_total": round(sum(r["gross"] for r in rows if r.get("source") == "groww"), 2),
+            "estimated_total": round(sum(r["gross"] for r in rows if r.get("source") == "estimated"), 2),
+            "due_total": round(sum(r["gross"] for r in rows if r.get("source") == "due"), 2)}
 
 
 def company_returns_view(rep: dict, mine: dict, today: date) -> list:

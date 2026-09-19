@@ -245,5 +245,17 @@ class TestDividends(unittest.TestCase):
         self.assertEqual((d["total"], d["companies"][0]["pct_of_cost"], d["check"][0]["groww"]), (40.0, 4.0, 40.0))
 
 
+class TestDividendReport(unittest.TestCase):
+    def test_parse_groww_dividend_lines(self):
+        from reporting.groww_reports import parse_dividend_lines
+        lines = ["Company Name ISIN Ex Date Number of Shares Dividend per Share Net Dividend Amount",
+                 "EXIDE INDUSTRIES LTD INE302A01020 01-08-2023 5 Rs. 2.0 Rs. 10.00",
+                 "VEDANTA ALUMINIUM METAL LTD INE0VAML0101 05-08-2026 63 Rs. 8.0 Rs. 504.00",
+                 "Total dividend amount Rs. 514.00"]
+        rows = parse_dividend_lines(lines, {"INE302A01020": "EXIDEIND"})
+        self.assertEqual([(r["symbol"], r["ex"], r["qty"], r["dps"], r["gross"]) for r in rows],
+                         [("EXIDEIND", "2023-08-01", 5.0, 2.0, 10.0), ("VEDANTA ALUMINIUM METAL LTD", "2026-08-05", 63.0, 8.0, 504.0)])
+
+
 if __name__ == "__main__":
     unittest.main()
