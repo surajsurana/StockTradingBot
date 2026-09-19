@@ -57,7 +57,7 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 5px transparent}}
 @media (prefers-reduced-motion:reduce){.teamline .k,.teamline .pulse{animation:none}}
 .cards.two .grp{flex:1 1 320px}.tblwrap.flat{border:0;background:none}.cards .grp .tblwrap th,.cards .grp .tblwrap td{font-size:12.5px}
-.reptiles .tile{all:unset;box-sizing:border-box;cursor:pointer;flex:1 1 250px;max-width:340px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-height:120px}.reptiles .tile:hover{border-color:var(--accent)}.reptiles .tile:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.reptiles .tt{font-size:15px;font-weight:600;color:var(--ink)}.reptiles .td{font-size:12.5px;color:var(--muted);line-height:1.4}.reptiles .ts{margin-top:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:14px;color:var(--accent)}.repbar{display:flex;align-items:center;gap:14px;margin-bottom:12px}.repback{all:unset;cursor:pointer;padding:5px 12px;border:1px solid var(--rule);border-radius:4px;background:var(--card);font-size:12.5px;font-weight:600;color:var(--ink)}.repback:hover{border-color:var(--accent)}.repback:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.repbar b{font-size:16px}.rep summary{cursor:pointer;margin:6px 0}.indwrap{display:flex;flex-wrap:wrap;gap:22px;align-items:center;margin-bottom:14px}.donut{width:220px;height:220px;border-radius:50%;position:relative;flex:none}.donutc{position:absolute;inset:34px;border-radius:50%;background:var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}.donutc b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:baseline}.fyrow{cursor:pointer;background:var(--band)}.fyrow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}.fymonth td.mname{padding-left:28px}.fyarrow{display:inline-block;width:12px;color:var(--muted)}.rep details{margin:10px 0}
+.reptiles .tile{all:unset;box-sizing:border-box;cursor:pointer;flex:1 1 250px;max-width:340px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-height:120px}.reptiles .tile:hover{border-color:var(--accent)}.reptiles .tile:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.reptiles .tt{font-size:15px;font-weight:600;color:var(--ink)}.reptiles .td{font-size:12.5px;color:var(--muted);line-height:1.4}.reptiles .ts{margin-top:auto;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:14px;color:var(--accent)}.repbar{display:flex;align-items:center;gap:14px;margin-bottom:12px}.repback{all:unset;cursor:pointer;padding:5px 12px;border:1px solid var(--rule);border-radius:4px;background:var(--card);font-size:12.5px;font-weight:600;color:var(--ink)}.repback:hover{border-color:var(--accent)}.repback:focus-visible{outline:2px solid var(--focus);outline-offset:1px}.repbar b{font-size:16px}.rep summary{cursor:pointer;margin:6px 0}.indwrap{display:flex;flex-wrap:wrap;gap:22px;align-items:center;margin-bottom:14px}.pie{width:min(440px,100%);aspect-ratio:1;border-radius:50%;flex:none}.pielegend{flex:1 1 380px;min-width:300px}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:baseline}.fyrow{cursor:pointer;background:var(--band)}.fyrow:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}.fymonth td.mname{padding-left:28px}.fyarrow{display:inline-block;width:12px;color:var(--muted)}.rep details{margin:10px 0}
 .tblwrap{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:6px}
 table{border-collapse:collapse;width:100%;min-width:640px}
 th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);background:var(--band)}
@@ -305,6 +305,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div id="rep-money" class="rep" hidden></div>
   <div id="rep-sources" class="rep" hidden></div>
   <div id="rep-industries" class="rep" hidden></div>
+  <div id="rep-dividends" class="rep" hidden></div>
+  <div id="rep-companies" class="rep" hidden></div>
   <div id="rep-costs" class="rep" hidden></div>
 </section>
 
@@ -962,19 +964,28 @@ document.getElementById("rep-grid").addEventListener("click", e => {
   if(t){ REP_SUB = t.dataset.rep; if(STATE) renderReports(STATE); }
 });
 document.getElementById("rep-back").addEventListener("click", () => { REP_SUB = null; if(STATE) renderReports(STATE); });
+function bindFyToggles(id, openFirst){
+  const body = document.getElementById(id);
+  const toggle = (row, want) => { const open = want === undefined ? row.getAttribute("aria-expanded") !== "true" : want; row.setAttribute("aria-expanded", open);
+    row.querySelector(".fyarrow").textContent = open ? "▾" : "▸";
+    body.querySelectorAll(`tr.fymonth[data-fy="${row.dataset.fy}"]`).forEach(x => x.hidden = !open); };
+  body.querySelectorAll("tr.fyrow").forEach((row, i) => { row.addEventListener("click", () => toggle(row));
+    row.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(row); } });
+    if(openFirst && i === 0) toggle(row, true); });
+}
 function renderIndustries(s){
   const el = document.getElementById("rep-industries"), ind = s.industries;
   el.hidden = REP_SUB !== "industries" || !ind;
   if(!ind) return;
-  const hue = i => `hsl(${(i * 47) % 360} ${i % 2 ? 48 : 62}% ${i % 3 === 0 ? 46 : 56}%)`;
+  const hues = [212, 38, 152, 340, 268, 18, 190, 96, 300];
+  const col = i => `hsl(${hues[i % hues.length]} ${i % 2 ? 52 : 64}% ${i % 3 === 0 ? 48 : 58}%)`;
   let acc = 0;
-  const stops = ind.slices.map((sl, i) => { const a = acc, b = acc + (sl.weight || 0); acc = b; return `${hue(i)} ${a}% ${b}%`; }).join(",");
-  const legend = ind.slices.map((sl, i) => `<tr><td><span class="sw" style="background:${hue(i)}"></span>${esc(sl.name)} <span class="note">${sl.kind === "Fund" ? "fund" : ""}</span></td><td class="n">${money(sl.value)}</td><td class="n"><b>${sl.weight != null ? sl.weight.toFixed(1) + "%" : "—"}</b></td><td class="l note">${sl.holdings.slice(0, 6).map(h => esc(h.symbol)).join(", ")}${sl.holdings.length > 6 ? " +" + (sl.holdings.length - 6) : ""}</td></tr>`).join("");
+  const stops = ind.slices.map((sl, i) => { const a = acc, b = acc + (sl.weight || 0); acc = b; return `${col(i)} ${a}% ${b}%`; }).join(",");
+  const legend = ind.slices.map((sl, i) => `<tr><td><span class="sw" style="background:${col(i)}"></span><b>${esc(sl.name)}</b></td><td class="n">${money(sl.value)}</td><td class="n"><b>${sl.weight != null ? sl.weight.toFixed(1) + "%" : "—"}</b></td><td class="l note">${sl.holdings.slice(0, 7).map(h => esc(h.symbol)).join(", ")}${sl.holdings.length > 7 ? " +" + (sl.holdings.length - 7) : ""}</td></tr>`).join("");
   el.innerHTML = `
-    <div class="indwrap"><div class="donut" style="background:conic-gradient(${stops})" role="img" aria-label="Portfolio split by industry"><div class="donutc"><b>${money(ind.total)}</b><span class="note">${ind.slices.length} slices</span></div></div>
-      <div class="cards" style="flex:1 1 300px"><div class="grp"><div class="gt">Stocks vs funds</div><div class="gi"><span><b>${ind.stocks_pct.toFixed(1)}%</b><i>In individual stocks</i></span><span><b>${ind.funds_pct.toFixed(1)}%</b><i>In funds (gold, silver, index)</i></span></div></div></div></div>
-    <div class="tblwrap"><table><thead><tr><th>Industry or fund type</th><th class="n">Worth now</th><th class="n">Share of portfolio</th><th class="l">Holdings</th></tr></thead><tbody>${legend}</tbody></table></div>
-    <p class="note">Stocks are grouped by their NSE industry. Funds are shown as their own slice because an index fund already holds many industries inside it (for example the Nifty 50 fund holds banks, IT and energy). Demerged Tata Motors and Vedanta units are placed by what the business does.</p>`;
+    <div class="indwrap"><div class="pie" style="background:conic-gradient(${stops})" role="img" aria-label="Portfolio split by industry"></div>
+      <div class="pielegend"><div class="tblwrap"><table><thead><tr><th>Segment</th><th class="n">Worth now</th><th class="n">Share</th><th class="l">Main holdings</th></tr></thead><tbody>${legend}</tbody></table></div></div></div>
+    <p class="note">Total ${money(ind.total)}: ${ind.stocks_pct.toFixed(0)}% in individual stocks, ${ind.funds_pct.toFixed(0)}% in funds. Stocks are placed by their NSE industry. Index funds are their own segment because each already holds many industries; the IT and Nasdaq-100 funds are counted under Technology and the defence fund under Industrials.</p>`;
 }
 function renderReports(s){
   const r = s.reports, ind = s.industries;
@@ -982,14 +993,16 @@ function renderReports(s){
     ["returns", "Returns on my money", "What your money has earned, per year, against simply holding the Nifty 50", r ? `${r.headline.xirr_pct != null ? (r.headline.xirr_pct > 0 ? "+" : "") + r.headline.xirr_pct.toFixed(1) + "% a year" : "—"}` : ""],
     ["money", "Deposits and withdrawals", "Money you put into Groww and took out, by financial year and month", r ? `${money((r.ledger.years || []).reduce((t, y) => t + y.deposits + y.sip - y.withdrawals, 0))} net since ${r.ledger.first_date ? new Date(r.ledger.first_date).toLocaleDateString("en-IN", {month:"short", year:"numeric"}) : ""}` : ""],
     ["sources", "Where the profit comes from", "Which types of holding and which companies made or lost you money", r && r.groups.length ? `${r.groups[0].group} lead` : ""],
-    ["industries", "Industry spread", "How much of your money sits in each industry and fund type", ind ? `${ind.stocks_pct.toFixed(0)}% in stocks, ${ind.funds_pct.toFixed(0)}% in funds` : ""],
+    ["dividends", "Dividends received", "Every dividend, date by date, and which companies pay you most", r && r.dividends ? `${money(r.dividends.total)} received` : ""],
+    ["companies", "Return by company", "Price gain plus dividends for each company, including ones you have sold", r && r.companies ? `${r.companies.length} companies` : ""],
+    ["industries", "Industry spread", "How much of your money sits in each industry and fund type", ind ? `${ind.slices.length} segments, ${ind.stocks_pct.toFixed(0)}% in stocks` : ""],
     ["costs", "Costs, income and cash", "Charges paid, dividends received, profit booked on sales, and cash balance", r ? `${money(r.totals.charges)} charges paid` : ""],
   ];
   document.getElementById("rep-grid").innerHTML = REPORTS.map(([k, title, desc, stat]) => `<button class="grp tile" data-rep="${k}"><span class="tt">${title}</span><span class="td">${desc}</span><b class="ts">${stat}</b></button>`).join("");
   document.getElementById("rep-grid").hidden = REP_SUB !== null;
   document.getElementById("rep-bar").hidden = REP_SUB === null;
   document.getElementById("rep-title").textContent = (REPORTS.find(x => x[0] === REP_SUB) || [])[1] || "";
-  ["returns","money","sources","costs"].forEach(k => { document.getElementById("rep-"+k).hidden = k !== REP_SUB || !r; });
+  ["returns","money","sources","costs","dividends","companies"].forEach(k => { document.getElementById("rep-"+k).hidden = k !== REP_SUB || !r; });
   renderIndustries(s);
   const empty = document.getElementById("rep-empty");
   empty.hidden = !(REP_SUB !== null && REP_SUB !== "industries" && !r);
@@ -1019,38 +1032,53 @@ function renderReports(s){
   // ---- 1b. deposits and withdrawals
   const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const fys = {};
-  r.monthly.forEach(m => { const [yy, mm] = m.month.split("-").map(Number); const start = mm >= 4 ? yy : yy - 1;
+  r.monthly.forEach(m => { if(m.deposited == null) return; const [yy, mm] = m.month.split("-").map(Number); const start = mm >= 4 ? yy : yy - 1;
     (fys[start] = fys[start] || {start, months: []}).months.push({...m, name: MONTHS[mm-1]}); });
-  const amt = v => v == null ? `<td class="n note">—</td>` : `<td class="n">${v ? money(v) : "—"}</td>`;
+  const amt = v => `<td class="n">${v ? money(v) : "—"}</td>`;
+  const fyLabel = f => `FY${String(f.start).slice(2)}-${String(f.start+1).slice(2)}`;
+  let dtot = 0, wtot = 0;
   const mrows = Object.values(fys).sort((a, b) => b.start - a.start).map(f => {
-    const known = f.months.filter(m => m.deposited != null);
-    const dep = known.reduce((t, m) => t + m.deposited, 0), wd = known.reduce((t, m) => t + m.withdrawn, 0), last = f.months[f.months.length-1];
-    const label = `FY${String(f.start).slice(2)}-${String(f.start+1).slice(2)}`;
-    const partial = known.length && known.length < f.months.length ? ` <span class="note" title="Groww's fund statement starts part-way through this year">(part year)</span>` : "";
-    return `<tr class="fyrow" data-fy="${f.start}" tabindex="0" role="button" aria-expanded="false"><td><b><span class="fyarrow">▸</span> ${label}</b>${partial}</td>${known.length ? `<td class="n"><b>${money(dep)}</b></td><td class="n"><b>${wd ? money(wd) : "—"}</b></td><td class="n"><b>${money(dep - wd, true)}</b></td>` : `<td class="n note">—</td><td class="n note">—</td><td class="n note">—</td>`}<td class="n"><b>${money(last.cum)}</b></td></tr>`
-      + [...f.months].reverse().map(m => `<tr class="fymonth" data-fy="${f.start}" hidden><td class="mname">${m.name}</td>${amt(m.deposited)}${amt(m.withdrawn)}${m.net == null ? `<td class="n note">—</td>` : `<td class="n">${m.net ? money(m.net, true) : "—"}</td>`}<td class="n">${money(m.cum)}</td></tr>`).join("");
+    const dep = f.months.reduce((t, m) => t + m.deposited, 0), wd = f.months.reduce((t, m) => t + m.withdrawn, 0);
+    dtot += dep; wtot += wd;
+    const partial = f.months.length < 12 && f.months[0].month.slice(5) !== "04" ? ` <span class="note" title="Groww's fund statement starts part-way through this year">(part year)</span>` : "";
+    return `<tr class="fyrow" data-fy="${f.start}" tabindex="0" role="button" aria-expanded="false"><td><b><span class="fyarrow">▸</span> ${fyLabel(f)}</b>${partial}</td><td class="n"><b>${money(dep)}</b></td><td class="n"><b>${wd ? money(wd) : "—"}</b></td><td class="n"><b>${money(dep - wd, true)}</b></td></tr>`
+      + [...f.months].reverse().map(m => `<tr class="fymonth" data-fy="${f.start}" hidden><td class="mname">${m.name}</td>${amt(m.deposited)}${amt(m.withdrawn)}<td class="n">${m.net ? money(m.net, true) : "—"}</td></tr>`).join("");
   }).join("");
-  const L = r.ledger, lyears = L.years || [];
-  const lfirst = L.first_date ? new Date(L.first_date).toLocaleDateString("en-IN", {month:"short", year:"numeric"}) : "";
-  const lrows = lyears.map(y => `<tr><td>${y.year}</td><td class="n">${money(y.deposits)}</td><td class="n">${money(y.sip)}</td><td class="n">${money(y.deposits + y.sip)}</td><td class="n">${money(y.withdrawals)}</td><td class="n ${cls(y.deposits + y.sip - y.withdrawals)}">${money(y.deposits + y.sip - y.withdrawals, true)}</td></tr>`).join("");
-  const bank = lyears.reduce((t, y) => t + y.deposits, 0), sip = lyears.reduce((t, y) => t + y.sip, 0), wdt = lyears.reduce((t, y) => t + y.withdrawals, 0);
+  const lfirst = r.ledger.first_date ? new Date(r.ledger.first_date).toLocaleDateString("en-IN", {month:"short", year:"numeric"}) : "";
   document.getElementById("rep-money").innerHTML = `
+    <div class="cards">${box("Since " + lfirst, [["Deposited", `<b>${money(dtot)}</b>`], ["Withdrawn", `<b>${money(wtot)}</b>`], ["Net deposited", sg(dtot - wtot)]])}</div>
+    <div class="tblwrap"><table><thead><tr><th>Financial year (click for months)</th><th class="n">Deposited</th><th class="n">Withdrawn</th><th class="n">Net deposited</th></tr></thead><tbody id="rep-months">${mrows}</tbody></table></div>
+    <p class="note">Deposits include bank transfers and SIPs. Groww's fund statement only goes back to ${esc(lfirst)}, so earlier years are not shown.</p>`;
+  bindFyToggles("rep-months");
+
+  // ---- 1c. dividends
+  const dv = r.dividends, dpct = n => n == null ? "—" : n.toFixed(2) + "%";
+  const dfys = {};
+  dv.rows.forEach(x => { (dfys[x.fy] = dfys[x.fy] || {fy: x.fy, start: 2000 + Number(x.fy.slice(2, 4)), rows: []}).rows.push(x); });
+  const drows = Object.values(dfys).sort((a, b) => b.start - a.start).map(f => `<tr class="fyrow" data-fy="${f.start}" tabindex="0" role="button" aria-expanded="false"><td><b><span class="fyarrow">▸</span> ${f.fy}</b></td><td class="note">${f.rows.length} payouts</td><td></td><td></td><td class="n"><b>${money(f.rows.reduce((t, x) => t + x.amount, 0))}</b></td></tr>`
+    + f.rows.map(x => `<tr class="fymonth" data-fy="${f.start}" hidden><td class="mname">${new Date(x.date).toLocaleDateString("en-IN", {day:"numeric", month:"short", year:"numeric"})}</td><td>${esc(x.name)}</td><td class="n">₹${x.dps.toFixed(2)}</td><td class="n">${x.qty}</td><td class="n">${money(x.amount)}</td></tr>`).join("")).join("");
+  const crows = dv.companies.map((c, i) => `<tr><td class="n narrow">${i + 1}</td><td>${esc(c.name)}</td><td class="n"><b>${money(c.total)}</b></td><td class="n">${c.payouts}</td><td class="n">${new Date(c.last).toLocaleDateString("en-IN", {month:"short", year:"numeric"})}</td><td class="n">${dpct(c.pct_of_cost)}</td></tr>`).join("");
+  const chk = dv.check.map(c => `${esc(c.fy)}: ${money(c.rebuilt)} vs Groww ${c.groww ? money(c.groww) : "not reported"}`).join(" · ");
+  document.getElementById("rep-dividends").innerHTML = `
     <div class="cards">
-      ${box("Put into Groww", [["By bank transfer", `<b>${money(bank)}</b>`], ["By SIP (auto-debit)", `<b>${money(sip)}</b>`], ["Total deposited", `<b>${money(bank + sip)}</b>`]])}
-      ${box("Taken out", [["Withdrawn to your bank", `<b>${money(wdt)}</b>`], ["Net deposited (in minus out)", sg(bank + sip - wdt)]])}
+      ${box("Dividends received", [["Since " + new Date(dv.first).toLocaleDateString("en-IN", {month:"short", year:"numeric"}), `<b class="gain">${money(dv.total)}</b>`], ["Last 12 months", `<b>${money(dv.last_12m)}</b>`], ["This financial year", `<b>${money(dv.this_fy)}</b>`]])}
+      ${dv.companies.length ? box("Highest payer", [[esc(dv.companies[0].name), `<b>${money(dv.companies[0].total)}</b>`], ["Share of all dividends", `<b>${(dv.companies[0].total / dv.total * 100).toFixed(0)}%</b>`]]) : ""}
     </div>
-    <h2>By calendar year</h2>
-    <div class="tblwrap"><table><thead><tr><th>Year</th><th class="n">Bank transfer</th><th class="n">SIP</th><th class="n">Total deposited</th><th class="n">Withdrawn</th><th class="n">Net</th></tr></thead><tbody>${lrows}</tbody></table></div>
-    <h2>By financial year (click a year to see its months)</h2>
-    <div class="tblwrap"><table><thead><tr><th>Financial year / month</th><th class="n">Deposited</th><th class="n">Withdrawn</th><th class="n">Net deposited</th><th class="n">Invested in stocks so far</th></tr></thead><tbody id="rep-months">${mrows}</tbody></table></div>
-    <p class="note">Groww's fund statement (deposits, SIPs and withdrawals) only goes back to ${esc(lfirst)}, so earlier years show a dash. "Invested in stocks so far" is what you have bought minus what you have sold, from your orders, and starts in March 2021. Money left in the account as cash is why deposits can exceed what you invested.</p>`;
-  const toggleFy = row => { const open = row.getAttribute("aria-expanded") !== "true"; row.setAttribute("aria-expanded", open);
-    row.querySelector(".fyarrow").textContent = open ? "▾" : "▸";
-    document.querySelectorAll(`#rep-months tr.fymonth[data-fy="${row.dataset.fy}"]`).forEach(x => x.hidden = !open); };
-  document.querySelectorAll("#rep-months tr.fyrow").forEach(row => { row.addEventListener("click", () => toggleFy(row));
-    row.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); toggleFy(row); } }); });
+    <h2>Which companies pay you most</h2>
+    <div class="tblwrap"><table><thead><tr><th class="n narrow">#</th><th>Company</th><th class="n">Total received</th><th class="n">Payouts</th><th class="n">Last paid</th><th class="n">% of money you put in</th></tr></thead><tbody>${crows}</tbody></table></div>
+    <h2>Date by date (click a year)</h2>
+    <div class="tblwrap"><table><thead><tr><th>Date</th><th>Company</th><th class="n">Per share</th><th class="n">Shares held</th><th class="n">Amount</th></tr></thead><tbody id="rep-divrows">${drows}</tbody></table></div>
+    <p class="note">Groww's reports only give a total per year, so each dividend is rebuilt from the company's dividend record: dividend per share × shares you held the day before the ex-date. The date shown is that ex-date; the money reaches your account two to four weeks later. Amounts are before any tax deducted at source. Checked against Groww's own totals (${chk}) and against the company dividend e-mails in your inbox (Tata Motors, Tata Motors Passenger Vehicles and Vedanta Aluminium match to the rupee). Free demerger shares count from the demerger date.</p>`;
+  bindFyToggles("rep-divrows", true);
 
-
+  // ---- 1d. return by company
+  const co = r.companies, pcs = n => n == null ? `<td class="n note">—</td>` : `<td class="n ${cls(n)}">${n > 0 ? "+" : ""}${n.toFixed(1)}%</td>`;
+  const corows = co.map(c => c.unknown
+    ? `<tr><td>${esc(c.name)} <span class="note">merged or delisted</span></td><td class="n">${money(c.bought)}</td><td class="n">${c.sold ? money(c.sold) : "—"}</td><td class="n note" colspan="6" title="Your orders show shares still held that are no longer in the account, so the outcome cannot be worked out.">result unknown</td></tr>`
+    : `<tr><td>${esc(c.name)}${c.held ? "" : ' <span class="note">sold</span>'}</td><td class="n">${money(c.bought)}</td><td class="n">${c.sold ? money(c.sold) : "—"}</td><td class="n">${c.held ? money(c.value) : "—"}</td><td class="n">${c.dividends ? money(c.dividends) : "—"}</td>${cell(c.profit)}${pcs(c.price_pct)}<td class="n">${c.div_pct ? c.div_pct.toFixed(1) + "%" : "—"}</td>${pcs(c.total_pct)}${pcs(c.annual_pct)}</tr>`).join("");
+  document.getElementById("rep-companies").innerHTML = `
+    <div class="tblwrap"><table><thead><tr><th>Company</th><th class="n">Bought</th><th class="n">Sold for</th><th class="n">Worth now</th><th class="n">Dividends</th><th class="n">Total profit</th><th class="n">Price gain</th><th class="n">Dividend gain</th><th class="n">Total return</th><th class="n">Per year, compounded</th></tr></thead><tbody>${corows}</tbody></table></div>
+    <p class="note">Total return = (price gain + dividends) ÷ money bought. "Per year, compounded" counts when each purchase, sale and dividend happened and is shown only where you have been in for a year or more; a shorter stay would make the yearly figure meaningless. Tata Motors and Vedanta include the shares handed out when they demerged, since the parent's price fell at the same time. Funds are included; they pay no dividends.</p>`;
 
   // ---- 2. sources
   const grows = r.groups.map(g => `<tr><td>${esc(g.group)}</td><td class="n narrow">${g.count}</td><td class="n">${money(g.invested)}</td><td class="n">${money(g.value)}</td><td class="n">${g.weight != null ? g.weight.toFixed(1) + "%" : "—"}</td>${cell(g.pnl)}${pcell(g.pct)}<td class="n ${cls(g.share_of_profit)}">${g.share_of_profit != null ? g.share_of_profit.toFixed(0) + "%" : "—"}</td></tr>`).join("");

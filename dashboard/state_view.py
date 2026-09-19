@@ -458,13 +458,25 @@ LONG_TERM_GROUPS = {
 SPIN_OFF_SHARES = {"VAML", "VOGL", "VEDPOWER", "VISL"}   # demerger shares: Groww's cost for them is an allocation, not a purchase
 
 
-# What each fund holds, for the industry chart. Index funds are shown as their own slice (they hold many
-# industries inside); a look-through would need each fund's monthly portfolio file.
-FUND_CATEGORY = {
-    "GOLDBEES": "Gold (fund)", "SILVERBEES": "Silver (fund)",
-    "NIFTYBEES": "Nifty 50 index fund", "MID150BEES": "Midcap 150 index fund", "HDFCSML250": "Smallcap 250 index fund",
-    "ITBEES": "IT sector fund", "MON100": "US tech (Nasdaq-100 fund)", "GROWWDEFNC": "Defence sector fund",
+# Broad segments for the industry pie. Index funds are their own slice (they already hold many industries);
+# sector funds join the sector they track. Each NSE industry maps to one broad segment.
+FUND_SEGMENT = {
+    "GOLDBEES": "Gold and silver", "SILVERBEES": "Gold and silver",
+    "NIFTYBEES": "India index funds", "MID150BEES": "India index funds", "HDFCSML250": "India index funds",
+    "ITBEES": "Technology (incl. US tech fund)", "MON100": "Technology (incl. US tech fund)",
+    "GROWWDEFNC": "Industrials and infrastructure",
 }
+INDUSTRY_SEGMENT = {
+    "Financial Services": "Financial services",
+    "Automobile and Auto Components": "Automobiles",
+    "Consumer Services": "Consumer", "Fast Moving Consumer Goods": "Consumer", "Consumer Durables": "Consumer",
+    "Textiles": "Consumer", "Media Entertainment & Publication": "Consumer",
+    "Capital Goods": "Industrials and infrastructure", "Construction": "Industrials and infrastructure",
+    "Construction Materials": "Industrials and infrastructure", "Services": "Industrials and infrastructure",
+    "Metals & Mining": "Metals and chemicals", "Chemicals": "Metals and chemicals",
+    "Information Technology": "Technology (incl. US tech fund)",
+}
+FALLBACK_SEGMENT = "Realty, energy and other"
 # Companies missing from the Nifty 500 list (demerged or newly listed): NSE industry by what the business does.
 INDUSTRY_OVERRIDES = {
     "TMPV": "Automobile and Auto Components", "TMCV": "Automobile and Auto Components",
@@ -487,31 +499,139 @@ def _industry_map() -> dict:
 
 
 def industry_view(mine: Optional[dict]) -> Optional[dict]:
-    """Where the money in the real Groww account sits, by industry (individual stocks) and by fund type.
-    A holding that cannot be priced counts at cost."""
+    """Where the money in the real Groww account sits, in a handful of broad segments. A holding that
+    cannot be priced counts at cost."""
     if not mine or not mine.get("holdings"):
         return None
     inds = _industry_map()
     slices: dict = {}
+    fund_value = 0.0
     for h in mine["holdings"]:
         value = h["value"] if h.get("value") is not None else h["invested"]
-        if h["symbol"] in FUND_CATEGORY:
-            name, kind = FUND_CATEGORY[h["symbol"]], "Fund"
+        is_fund = h["symbol"] in FUND_SEGMENT
+        if is_fund:
+            name, fund_value = FUND_SEGMENT[h["symbol"]], fund_value + value
         else:
-            name, kind = INDUSTRY_OVERRIDES.get(h["symbol"]) or inds.get(h["symbol"]) or "Other", "Stocks"
-        s = slices.setdefault((name, kind), {"name": name, "kind": kind, "value": 0.0, "invested": 0.0, "holdings": []})
-        s["value"] += value
-        s["invested"] += h["invested"]
-        s["holdings"].append({"symbol": h["symbol"], "value": round(value, 2)})
-    total = sum(s["value"] for s in slices.values())
+            industry = INDUSTRY_OVERRIDES.get(h["symbol"]) or inds.get(h["symbol"])
+            name = INDUSTRY_SEGMENT.get(industry, FALLBACK_SEGMENT)
+        sl = slices.setdefault(name, {"name": name, "value": 0.0, "invested": 0.0, "holdings": []})
+        sl["value"] += value
+        sl["invested"] += h["invested"]
+        sl["holdings"].append({"symbol": h["symbol"], "value": round(value, 2), "fund": is_fund})
+    total = sum(sl["value"] for sl in slices.values())
     rows = []
-    for s in sorted(slices.values(), key=lambda s: -s["value"]):
-        s["holdings"].sort(key=lambda x: -x["value"])
-        rows.append({**s, "value": round(s["value"], 2), "invested": round(s["invested"], 2),
-                     "weight": round(s["value"] / total * 100, 1) if total else None})
-    stocks = sum(r["value"] for r in rows if r["kind"] == "Stocks")
-    return {"total": round(total, 2), "slices": rows, "stocks_pct": round(stocks / total * 100, 1) if total else None,
-            "funds_pct": round((total - stocks) / total * 100, 1) if total else None}
+    for sl in sorted(slices.values(), key=lambda x: -x["value"]):
+        sl["holdings"].sort(key=lambda x: -x["value"])
+        rows.append({**sl, "value": round(sl["value"], 2), "invested": round(sl["invested"], 2),
+                     "weight": round(sl["value"] / total * 100, 1) if total else None})
+    return {"total": round(total, 2), "slices": rows,
+            "funds_pct": round(fund_value / total * 100, 1) if total else None,
+            "stocks_pct": round((total - fund_value) / total * 100, 1) if total else None}
+
+
+# Demerged companies are reported with their parent: the parent's price fell when the new shares were handed out.
+FAMILY = {"TMCV": "TMPV", "VAML": "VEDL", "VOGL": "VEDL", "VEDPOWER": "VEDL", "VISL": "VEDL", "NETWORK18": "TV18BRDCST"}
+FAMILY_NAME = {"TMPV": "Tata Motors (with demerged TMCV)", "VEDL": "Vedanta (with demerged units)", "TV18BRDCST": "TV18 Broadcast / Network18 (merged)"}
+COMPANY_NAMES = {
+    "VAML": "Vedanta Aluminium Metal", "VOGL": "Vedanta Oil & Gas", "VEDPOWER": "Vedanta Power", "VISL": "Vedanta Iron & Steel",
+    "TMCV": "Tata Motors (commercial vehicles)", "TMPV": "Tata Motors Passenger Vehicles", "VEDL": "Vedanta",
+    "NIFTYBEES": "Nifty 50 ETF (Nippon)", "MID150BEES": "Midcap 150 ETF (Nippon)", "SILVERBEES": "Silver ETF (Nippon)", "GOLDBEES": "Gold ETF (Nippon)",
+    "HDFCSML250": "Smallcap 250 ETF (HDFC)", "ITBEES": "IT ETF (Nippon)", "MON100": "Nasdaq-100 ETF (Motilal Oswal)", "GROWWDEFNC": "Defence ETF (Groww)",
+    "BANKBEES": "Bank ETF (Nippon)", "JUNIORBEES": "Nifty Next 50 ETF (Nippon)", "PSUBNKBEES": "PSU Bank ETF (Nippon)", "PHARMABEES": "Pharma ETF (Nippon)",
+    "CPSEETF": "CPSE ETF", "SETFNIFBK": "Nifty Bank ETF (SBI)",
+    "ITC": "ITC", "NTPC": "NTPC", "NTPCGREEN": "NTPC Green Energy", "DLF": "DLF", "TCS": "TCS", "INFY": "Infosys", "LICHSGFIN": "LIC Housing Finance",
+    "TVSMOTOR": "TVS Motor", "GROWW": "Groww (Billionbrains Garage)", "IRFC": "Indian Railway Finance Corp", "IRCTC": "IRCTC", "RVNL": "Rail Vikas Nigam",
+    "HSCL": "Himadri Speciality Chemical", "UNIECOM": "Unicommerce eSolutions", "TV18BRDCST": "TV18 Broadcast", "NETWORK18": "Network18 Media", "PAYTM": "Paytm (One 97)",
+    "NYKAA": "Nykaa (FSN E-Commerce)", "DMART": "DMart (Avenue Supermarts)", "BAJAJHFL": "Bajaj Housing Finance", "OLAELEC": "Ola Electric", "HIGHENE$": "High Energy Batteries",
+    "ELECON": "Elecon Engineering", "FINOPB": "Fino Payments Bank", "GOKEX": "Gokaldas Exports", "GPIL": "Godawari Power & Ispat", "ZEEL": "Zee Entertainment",
+    "RAMASTEEL": "Rama Steel Tubes", "HDFCLIFE": "HDFC Life", "JIOFIN": "Jio Financial Services", "JINDALSTEL": "Jindal Steel", "TATAPOWER": "Tata Power",
+    "TATACONSUM": "Tata Consumer", "TORNTPOWER": "Torrent Power", "WAAREEENER": "Waaree Energies", "OBEROIRLTY": "Oberoi Realty", "EXIDEIND": "Exide Industries",
+    "OLECTRA": "Olectra Greentech", "ETERNAL": "Eternal (Zomato)", "HONASA": "Honasa Consumer", "WIPRO": "Wipro", "LUPIN": "Lupin", "SUZLON": "Suzlon Energy",
+    "COCHINSHIP": "Cochin Shipyard", "CASTROLIND": "Castrol India", "BHARTIARTL": "Bharti Airtel", "RELIANCE": "Reliance Industries", "TITAN": "Titan",
+    "LT": "Larsen & Toubro", "NHPC": "NHPC", "IDEA": "Vodafone Idea", "RPOWER": "Reliance Power",
+}
+
+
+def _company_name(rep: dict, symbol: str) -> str:
+    return COMPANY_NAMES.get(symbol) or (rep.get("names") or {}).get(symbol, symbol).title()
+
+
+def dividends_view(rep: dict, today: date) -> dict:
+    """Every dividend received, date by date, the best payers, and a check against Groww's own yearly totals."""
+    rows = sorted(rep.get("dividends", []), key=lambda r: (r["ex"], r["symbol"]), reverse=True)
+    by_family: dict = {}
+    cost: dict = {}
+    for sym, flows in (rep.get("company_flows") or {}).items():
+        fam = FAMILY.get(sym, sym)
+        cost[fam] = cost.get(fam, 0.0) + sum(-a for _, a in flows if a < 0)
+    fy_est: dict = {}
+    out_rows = []
+    for r in rows:
+        d = date.fromisoformat(r["ex"])
+        fy = d.year if d.month >= 4 else d.year - 1
+        fy_key = f"FY{str(fy)[2:]}-{str(fy + 1)[2:]}"
+        fy_est[fy_key] = fy_est.get(fy_key, 0.0) + r["gross"]
+        fam = FAMILY.get(r["symbol"], r["symbol"])
+        f = by_family.setdefault(fam, {"key": fam, "name": FAMILY_NAME.get(fam) or _company_name(rep, fam), "total": 0.0, "payouts": 0, "last": r["ex"]})
+        f["total"] += r["gross"]
+        f["payouts"] += 1
+        out_rows.append({"date": r["ex"], "fy": fy_key, "symbol": r["symbol"], "name": _company_name(rep, r["symbol"]),
+                         "dps": r["dps"], "qty": r["qty"], "amount": r["gross"]})
+    companies = sorted(by_family.values(), key=lambda x: -x["total"])
+    for c in companies:
+        c["total"] = round(c["total"], 2)
+        c["cost"] = round(cost.get(c["key"], 0.0), 2)
+        c["pct_of_cost"] = round(c["total"] / c["cost"] * 100, 2) if c["cost"] else None
+    groww = {f["fy"]: f["dividends"] for f in rep.get("fy", [])}
+    check = [{"fy": k, "rebuilt": round(v, 2), "groww": groww.get(k)} for k, v in sorted(fy_est.items())]
+    cur_fy = today.year if today.month >= 4 else today.year - 1
+    year_ago = date(today.year - 1, today.month, min(today.day, 28)).isoformat()
+    return {"rows": out_rows, "companies": companies, "check": check,
+            "total": round(sum(r["gross"] for r in rows), 2),
+            "this_fy": round(fy_est.get(f"FY{str(cur_fy)[2:]}-{str(cur_fy + 1)[2:]}", 0.0), 2),
+            "last_12m": round(sum(r["gross"] for r in rows if r["ex"] >= year_ago), 2),
+            "first": min((r["ex"] for r in rows), default=None)}
+
+
+def company_returns_view(rep: dict, mine: dict, today: date) -> list:
+    """Return per company, including ones already sold: price gain, dividends, total, and the compounded
+    yearly return (only where the money has been in for a year or more, otherwise annualising misleads)."""
+    from reporting.groww_reports import xirr
+    live: dict = {}
+    for h in mine["holdings"]:
+        live[FAMILY.get(h["symbol"], h["symbol"])] = live.get(FAMILY.get(h["symbol"], h["symbol"]), 0.0) + (h["value"] if h.get("value") is not None else h["invested"])
+    flows: dict = {}
+    for sym, fl in (rep.get("company_flows") or {}).items():
+        flows.setdefault(FAMILY.get(sym, sym), []).extend((date.fromisoformat(d), a) for d, a in fl)
+    net_qty: dict = {}
+    for sym, q in (rep.get("net_qty") or {}).items():
+        net_qty[FAMILY.get(sym, sym)] = net_qty.get(FAMILY.get(sym, sym), 0.0) + q
+    divs: dict = {}
+    for r in rep.get("dividends", []):
+        divs.setdefault(FAMILY.get(r["symbol"], r["symbol"]), []).append((date.fromisoformat(r["ex"]), r["gross"]))
+    out = []
+    for fam, fl in flows.items():
+        bought = sum(-a for _, a in fl if a < 0)
+        if bought <= 0:
+            continue
+        sold = sum(a for _, a in fl if a > 0)
+        value = live.get(fam, 0.0)
+        dv = sum(a for _, a in divs.get(fam, []))
+        price_gain = value + sold - bought
+        first = min(d for d, _ in fl)
+        last = today if value > 0 else max(d for d, _ in fl)
+        cash = list(fl) + divs.get(fam, []) + ([(today, value)] if value > 0 else [])
+        yrs = (last - first).days / 365.0
+        x = xirr(cash) if yrs >= 1 else None
+        # shares the orders say you still own that are no longer in the account (merger, delisting): the outcome is unknown
+        unknown = value == 0 and net_qty.get(fam, 0.0) > 0.5
+        out.append({"key": fam, "name": FAMILY_NAME.get(fam) or _company_name(rep, fam), "held": value > 0, "unknown": unknown,
+                    "bought": round(bought, 2), "sold": round(sold, 2), "value": round(value, 2), "dividends": round(dv, 2),
+                    "profit": round(price_gain + dv, 2),
+                    "price_pct": round(price_gain / bought * 100, 1), "div_pct": round(dv / bought * 100, 1),
+                    "total_pct": round((price_gain + dv) / bought * 100, 1),
+                    "annual_pct": round(x * 100, 1) if x is not None else None, "years": round(yrs, 1)})
+    return sorted(out, key=lambda r: (r["unknown"], -r["profit"]))
 
 
 def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: date) -> Optional[dict]:
@@ -587,6 +707,7 @@ def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: 
     rows.sort(key=lambda r: -r["pnl"])
     fy = rep["fy"]
     return {
+        "dividends": dividends_view(rep, today), "companies": company_returns_view(rep, mine, today),
         "as_of_reports": rep["as_of"], "benchmark": rep["benchmark"], "cash": cash,
         "headline": {"invested": round(net_in, 2), "value": round(value, 2), "gain": round(value - net_in, 2),
                      "gain_pct": round((value / net_in - 1) * 100, 2) if net_in else None,

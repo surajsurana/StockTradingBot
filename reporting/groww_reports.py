@@ -16,6 +16,12 @@ KNOWN LIMITS (shown on the Reports tab too):
     leave them out (about 3% of today's value).
   * Reports are as of their download date; the dashboard treats any later change in your holdings'
     cost as new money added.
+  * Dividends: Groww's reports only give a total per financial year, so each dividend is rebuilt as
+    (dividend per share on the ex-date, from Yahoo) x (shares you held the day before). Checked against
+    Groww's own totals (FY24-25 Rs 1,885 vs 1,888; FY25-26 Rs 4,270 vs 4,270) and against the company
+    dividend e-mails in the inbox (Tata Motors, Tata Motors Passenger Vehicles, Vedanta Aluminium: exact).
+    Free demerger shares count from the demerger onwards. The date shown is the ex-date; the money
+    arrives two to four weeks later.
 """
 
 import glob
@@ -89,7 +95,7 @@ def read_orders(folder: str) -> List[dict]:
             d = dict(zip(header, r))
             if d.get("Order status") != "Executed":
                 continue
-            out.append({"symbol": d["Symbol"], "type": d["Type"], "qty": _num(d["Quantity"]), "value": _num(d["Value"]),
+            out.append({"symbol": d["Symbol"], "name": str(d.get("Stock name") or d["Symbol"]), "type": d["Type"], "qty": _num(d["Quantity"]), "value": _num(d["Value"]),
                         "ts": datetime.strptime(d["Execution date and time"], "%d-%m-%Y %I:%M %p")})
     return sorted(out, key=lambda x: x["ts"])
 
@@ -163,10 +169,10 @@ def read_ledger(folder: str) -> dict:
             "first_date": first.isoformat() if first else None}
 
 
-def _price_history(symbols: List[str]) -> Tuple[dict, dict]:
-    """Split-adjusted Yahoo closes and split events for each symbol (NSE, else BSE)."""
+def _price_history(symbols: List[str]) -> Tuple[dict, dict, dict]:
+    """Split-adjusted Yahoo closes, split events and dividends for each symbol (NSE, else BSE)."""
     import yfinance as yf
-    px, spl = {}, {}
+    px, spl, divs = {}, {}, {}
     for s in symbols:
         for suffix in (".NS", ".BO"):
             t = yf.Ticker(s.replace("$", "") + suffix)
@@ -181,8 +187,12 @@ def _price_history(symbols: List[str]) -> Tuple[dict, dict]:
                 if len(sp):
                     sp.index = sp.index.tz_localize(None) if sp.index.tz is not None else sp.index
                 spl[s] = sp
+                dv = t.dividends
+                if dv is not None and len(dv):
+                    dv.index = dv.index.tz_localize(None) if dv.index.tz is not None else dv.index
+                    divs[s] = dv
                 break
-    return px, spl
+    return px, spl, divs
 
 
 def _qty_in_todays_shares(orders, symbol, cutoff, splits) -> float:
@@ -199,11 +209,50 @@ def _qty_in_todays_shares(orders, symbol, cutoff, splits) -> float:
     return total
 
 
-def build_reports(folder: str, prices=None) -> dict:
-    """`prices` = (px, spl) from _price_history, injectable for tests."""
+FREE_SHARES_FROM = date(2025, 10, 1)   # demergers (Tata Motors, Vedanta) that put extra shares in the account
+
+
+def dividend_rows(orders: List[dict], dividends: dict, splits: dict, holdings: Optional[Dict[str, float]] = None) -> List[dict]:
+    """Every dividend that fell due on shares held: dividend per share on the ex-date x shares held the
+    day before. Shares that arrived free in a demerger (holdings above what the orders explain) count
+    from FREE_SHARES_FROM; a company with no orders at all (a demerged unit) uses the current holding."""
+    holdings = holdings or {}
+    rows = []
+    for sym, series in dividends.items():
+        own = [o for o in orders if o["symbol"] == sym]
+        sp = splits.get(sym)
+
+        def qty_before(day):
+            q = 0.0
+            for o in own:
+                if o["ts"].date() < day:
+                    f = 1.0
+                    if sp is not None and len(sp):
+                        later = sp[sp.index > o["ts"]]
+                        f = float(later.prod()) if len(later) else 1.0
+                    q += (o["qty"] if o["type"] == "BUY" else -o["qty"]) * f
+            return q
+        extra = 0.0
+        if own and sym in holdings:
+            extra = max(0.0, holdings[sym] - qty_before(date(9999, 12, 31)))
+        for ex, dps in series.items():
+            day = ex.date()
+            if day < date(2021, 3, 1):
+                continue
+            q = holdings.get(sym, 0.0) if not own else qty_before(day) + (extra if day >= FREE_SHARES_FROM else 0.0)
+            if q > 0.0001 and dps > 0:
+                rows.append({"symbol": sym, "ex": day.isoformat(), "dps": round(float(dps), 4), "qty": round(q, 2), "gross": round(q * float(dps), 2)})
+    return sorted(rows, key=lambda r: (r["ex"], r["symbol"]))
+
+
+def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]] = None) -> dict:
+    """`prices` = (px, spl, divs) from _price_history, injectable for tests. `holdings` = {symbol: quantity}
+    from the live Groww holdings, used for shares that arrived without an order (demergers)."""
     orders = read_orders(folder)
-    symbols = sorted({o["symbol"] for o in orders})
-    px, spl = prices if prices is not None else _price_history(symbols)
+    holdings = holdings or {}
+    symbols = sorted({o["symbol"] for o in orders} | set(holdings))
+    px, spl, *rest = prices if prices is not None else _price_history(symbols)
+    divs = rest[0] if rest else {}
     end = orders[-1]["ts"].date()
 
     def last_price(sym, day):
@@ -261,7 +310,19 @@ def build_reports(folder: str, prices=None) -> dict:
                             "bench_units_added": round(sum(u for d, u in bench_units_by_day.items() if start <= date.fromisoformat(d) <= stop), 6)})
 
     bench_px = last_price(BENCHMARK, end)
+    names = {}
+    for o in orders:
+        names[o["symbol"]] = o["name"]
+    company_flows: Dict[str, Dict[str, float]] = {}
+    for o in orders:
+        company_flows.setdefault(o["symbol"], {})
+        d = o["ts"].date().isoformat()
+        company_flows[o["symbol"]][d] = company_flows[o["symbol"]].get(d, 0.0) + (-o["value"] if o["type"] == "BUY" else o["value"])
     return {
+        "names": names,
+        "net_qty": {sym: round(_qty_in_todays_shares(orders, sym, datetime(9999, 12, 31), spl.get(sym)), 4) for sym in sorted({o["symbol"] for o in orders})},
+        "dividends": dividend_rows(orders, divs, spl, holdings),
+        "company_flows": {k: [[d, round(a, 2)] for d, a in sorted(v.items())] for k, v in company_flows.items()},
         "as_of": end.isoformat(), "benchmark": BENCHMARK, "benchmark_price_at_report": bench_px,
         "flows": [[d, round(a, 2)] for d, a in sorted(flows.items())],
         "bench_units": [[d, round(u, 6)] for d, u in sorted(bench_units_by_day.items())],
@@ -275,7 +336,10 @@ def build_reports(folder: str, prices=None) -> dict:
 
 if __name__ == "__main__":
     src, dst = sys.argv[1], sys.argv[2]
-    data = build_reports(src)
+    held = {}
+    if len(sys.argv) > 3:   # optional: a groww_holdings.json snapshot, for shares received free in demergers
+        held = {h["symbol"]: h["quantity"] for h in json.load(open(sys.argv[3], encoding="utf-8"))["holdings"]}
+    data = build_reports(src, holdings=held)
     with open(dst, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1)
     print("wrote", dst, "orders through", data["as_of"], "net invested", data["net_invested"])

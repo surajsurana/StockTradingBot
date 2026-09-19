@@ -207,5 +207,43 @@ class TestReports(unittest.TestCase):
         self.assertEqual((snap["status"], snap["cash"]), ("connected", 123.0))
 
 
+class TestDividends(unittest.TestCase):
+    def _orders(self):
+        from datetime import datetime as dt
+        return [{"symbol": "AAA", "name": "AAA LTD", "type": "BUY", "qty": 10.0, "value": 1000.0, "ts": dt(2025, 1, 10, 10, 0)},
+                {"symbol": "AAA", "name": "AAA LTD", "type": "BUY", "qty": 5.0, "value": 600.0, "ts": dt(2025, 3, 10, 10, 0)},
+                {"symbol": "AAA", "name": "AAA LTD", "type": "SELL", "qty": 3.0, "value": 400.0, "ts": dt(2025, 8, 1, 10, 0)}]
+
+    def test_dividend_uses_shares_held_the_day_before_the_ex_date_and_free_shares_after_a_demerger(self):
+        import pandas as pd
+        from reporting.groww_reports import dividend_rows
+        divs = {"AAA": pd.Series([2.0, 3.0, 4.0], index=pd.to_datetime(["2025-03-10", "2025-06-01", "2025-12-01"])),
+                "NEW": pd.Series([8.0], index=pd.to_datetime(["2026-08-05"]))}
+        rows = dividend_rows(self._orders(), divs, {}, {"AAA": 20.0, "NEW": 63.0})
+        got = {(r["symbol"], r["ex"]): (r["qty"], r["gross"]) for r in rows}
+        self.assertEqual(got[("AAA", "2025-03-10")], (10.0, 20.0))     # the 5 bought on the ex-date do not count
+        self.assertEqual(got[("AAA", "2025-06-01")], (15.0, 45.0))
+        self.assertEqual(got[("AAA", "2025-12-01")], (20.0, 80.0))     # 12 from orders + 8 free shares (holding is 20)
+        self.assertEqual(got[("NEW", "2026-08-05")], (63.0, 504.0))    # demerged unit, no orders: current holding
+
+    def test_company_returns_include_dividends_and_only_annualise_after_a_year(self):
+        from datetime import date
+        from dashboard.state_view import company_returns_view, dividends_view
+        rep = {"company_flows": {"AAA": [["2024-01-01", -1000.0], ["2024-07-01", 200.0]], "BBB": [["2026-08-01", -500.0]], "GONE": [["2025-01-01", -300.0]]},
+               "net_qty": {"AAA": 8.0, "BBB": 5.0, "GONE": 10.0}, "names": {"AAA": "AAA LTD"},
+               "dividends": [{"symbol": "AAA", "ex": "2025-06-01", "dps": 5.0, "qty": 8.0, "gross": 40.0}],
+               "fy": [{"fy": "FY25-26", "dividends": 40.0}]}
+        mine = {"holdings": [{"symbol": "AAA", "value": 1100.0, "invested": 800.0}, {"symbol": "BBB", "value": 510.0, "invested": 500.0}]}
+        rows = {r["key"]: r for r in company_returns_view(rep, mine, date(2026, 9, 19))}
+        a = rows["AAA"]
+        self.assertEqual((a["bought"], a["sold"], a["value"], a["dividends"], a["profit"]), (1000.0, 200.0, 1100.0, 40.0, 340.0))
+        self.assertEqual((a["price_pct"], a["div_pct"], a["total_pct"]), (30.0, 4.0, 34.0))
+        self.assertIsNotNone(a["annual_pct"])
+        self.assertIsNone(rows["BBB"]["annual_pct"])                   # held for weeks: no yearly figure
+        self.assertTrue(rows["GONE"]["unknown"])                       # orders say 10 shares left but none are in the account
+        d = dividends_view(rep, date(2026, 9, 19))
+        self.assertEqual((d["total"], d["companies"][0]["pct_of_cost"], d["check"][0]["groww"]), (40.0, 4.0, 40.0))
+
+
 if __name__ == "__main__":
     unittest.main()
