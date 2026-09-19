@@ -84,10 +84,10 @@ tr.clickable{cursor:pointer}
 .taxbtn:hover{color:var(--ink)}
 .lifebtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
 .lifebtn:hover{color:var(--ink)}
-#life{border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
+#life{overflow-x:hidden;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
 #life::backdrop{background:rgba(0,0,0,.35)}
 #life h3{margin:0 0 2px;font-size:16px}#life .sub{color:var(--muted);font-size:12.5px;margin:0 0 10px}
-#life table{min-width:0;width:100%;font-size:12.5px}#life th,#life td{padding:5px 6px}
+#life table{min-width:0;width:100%;font-size:12.5px;table-layout:auto}#life td,#life th{white-space:normal}#life td.n,#life th.n{white-space:nowrap}#life tr.subt td{font-weight:600;border-top:1px solid var(--rule)}#life th,#life td{padding:5px 6px}
 #life .sum{margin:10px 0 0;font-size:12.5px;color:var(--muted)}#life .sum b{color:var(--ink)}
 #life .x{float:right}
 .expand-toggle{all:unset;cursor:pointer;color:var(--muted);font-size:10px;padding:0 3px;vertical-align:middle}
@@ -541,31 +541,35 @@ function showLife(id){
 document.addEventListener("click", e => { const b = e.target.closest(".lifebtn"); if(b){ e.stopPropagation(); showLife(b.dataset.life); } });
 document.getElementById("life-close").addEventListener("click", () => document.getElementById("life").close());
 document.getElementById("life").addEventListener("click", e => { if(e.target.id === "life") e.target.close(); });
-const TAX_ITEMS = [
-  ["brokerage", "Brokerage", "Intraday: 0.03% or ₹20 a leg, whichever is lower; delivery: none"],
-  ["stt", "STT", "Delivery 0.1% on buy and sell; intraday 0.025% on sell"],
-  ["exchange", "NSE transaction charge", "0.00297% of trade value"],
-  ["sebi", "SEBI fee", "₹10 per crore"],
-  ["stamp", "Stamp duty", "Buy side: delivery 0.015%, intraday 0.003%"],
-  ["dp", "DP charge", "₹13.5 per scrip sold from demat"],
-  ["crypto_fee", "Exchange fee and spread", "0.30% plus 10 bps, each side"],
-];
+const TAX_ITEMS = {
+  brokerage: ["Brokerage", "Intraday: 0.03% or ₹20 a leg, whichever is lower; delivery: none"],
+  exchange: ["NSE transaction charge", "0.00297% of trade value"],
+  sebi: ["SEBI fee", "₹10 per crore"],
+  dp: ["DP charge", "₹13.5 per scrip sold from demat"],
+  stt: ["STT", "Delivery 0.1% on buy and sell; intraday 0.025% on sell"],
+  stamp: ["Stamp duty", "Buy side: delivery 0.015%, intraday 0.003%"],
+  crypto_fee: ["Exchange fee and spread", "0.30% plus 10 bps, each side"],
+};
 function showTax(idx){
   const set = idx === "all" ? ST_VIEW : [ST_VIEW[+idx]].filter(Boolean); if(!set.length) return;
   const sumK = k => set.reduce((t, l) => t + (+l[k] || 0), 0), comp = k => set.reduce((t, l) => t + ((l.detail || {})[k] || 0), 0);
-  const gross = set.reduce((t, l) => t + l.realised + l.unrealised, 0);
-  const rows = TAX_ITEMS.filter(([k]) => comp(k) > 0).map(([k, label, basis]) => `<tr><td>${label}</td><td class="note">${basis}</td><td class="n">${money(comp(k))}</td></tr>`);
-  if(sumK("gst") > 0) rows.push(`<tr><td>GST</td><td class="note">18% on brokerage, exchange, SEBI and DP charges</td><td class="n">${money(sumK("gst"))}</td></tr>`);
+  const line = ([label, basis], amount, cls2="") => `<tr class="${cls2}"><td>${label}</td><td class="note">${basis}</td><td class="n">${money(amount)}</td></tr>`;
+  const rows = [];
+  // GST is charged on these four, so they come first with a subtotal to check the 18% against.
+  const gstBase = ["brokerage", "exchange", "sebi", "dp"];
+  gstBase.filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
+  if(sumK("gst") > 0){
+    const sub = gstBase.reduce((t, k) => t + comp(k), 0);
+    rows.push(line(["Subtotal", "GST is charged on the charges above"], sub, "subt"));
+    rows.push(line(["GST", "18% of the subtotal"], sumK("gst")));
+  }
+  ["stt", "stamp", "crypto_fee"].filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
   const rates = [...new Set(set.filter(l => l.tax_rate).map(l => l.tax_rate))].map(r => (r * 100).toFixed(1) + "%").join(" / ");
-  const kinds = new Set(set.map(l => l.type));
   const taxBasis = set.length === 1
     ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
     : `${rates} of the net gain after charges (crypto: per profitable trade)`;
-  rows.push(`<tr><td>Income tax</td><td class="note">${taxBasis}</td><td class="n">${money(sumK("tax"))}</td></tr>`);
-  const total = sumK("charges") + sumK("gst") + sumK("tax");
-  rows.push(`<tr class="total"><td>Total tax and charges</td><td></td><td class="n">${money(total)}</td></tr>`);
-  rows.push(`<tr><td>Net P&amp;L</td><td class="note">Gross ${money(gross, true)} less the total</td><td class="n ${cls(gross - total)}">${money(gross - total, true)}</td></tr>`);
-  if(set.some(l => l.tds != null)) rows.push(`<tr><td>TDS withheld</td><td class="note">Crypto 1% of sales; memo, refundable, not deducted above</td><td class="n">${money(sumK("tds"))}</td></tr>`);
+  rows.push(line(["Income tax", taxBasis], sumK("tax")));
+  rows.push(line(["Total tax and charges", ""], sumK("charges") + sumK("gst") + sumK("tax"), "total"));
   const title = set.length === 1 ? `${esc(set[0].pool)} · ${esc(set[0].name)}` : `Selection (${set.length} books)`;
   document.getElementById("life-body").innerHTML = `<h3>Tax and charges <span class="note">${title}</span></h3><table><thead><tr><th>Item</th><th>Basis</th><th class="n">Amount</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
   document.getElementById("life").showModal();
