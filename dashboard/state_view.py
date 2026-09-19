@@ -458,6 +458,62 @@ LONG_TERM_GROUPS = {
 SPIN_OFF_SHARES = {"VAML", "VOGL", "VEDPOWER", "VISL"}   # demerger shares: Groww's cost for them is an allocation, not a purchase
 
 
+# What each fund holds, for the industry chart. Index funds are shown as their own slice (they hold many
+# industries inside); a look-through would need each fund's monthly portfolio file.
+FUND_CATEGORY = {
+    "GOLDBEES": "Gold (fund)", "SILVERBEES": "Silver (fund)",
+    "NIFTYBEES": "Nifty 50 index fund", "MID150BEES": "Midcap 150 index fund", "HDFCSML250": "Smallcap 250 index fund",
+    "ITBEES": "IT sector fund", "MON100": "US tech (Nasdaq-100 fund)", "GROWWDEFNC": "Defence sector fund",
+}
+# Companies missing from the Nifty 500 list (demerged or newly listed): NSE industry by what the business does.
+INDUSTRY_OVERRIDES = {
+    "TMPV": "Automobile and Auto Components", "TMCV": "Automobile and Auto Components",
+    "VAML": "Metals & Mining", "VISL": "Metals & Mining", "VOGL": "Oil, Gas & Consumable Fuels", "VEDPOWER": "Power",
+    "UNIECOM": "Information Technology",
+}
+
+
+def _industry_map() -> dict:
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "nifty500_constituents.csv")
+    out = {}
+    try:
+        import csv
+        with open(path, encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                out[r["Symbol"]] = r["Industry"]
+    except OSError:
+        pass
+    return out
+
+
+def industry_view(mine: Optional[dict]) -> Optional[dict]:
+    """Where the money in the real Groww account sits, by industry (individual stocks) and by fund type.
+    A holding that cannot be priced counts at cost."""
+    if not mine or not mine.get("holdings"):
+        return None
+    inds = _industry_map()
+    slices: dict = {}
+    for h in mine["holdings"]:
+        value = h["value"] if h.get("value") is not None else h["invested"]
+        if h["symbol"] in FUND_CATEGORY:
+            name, kind = FUND_CATEGORY[h["symbol"]], "Fund"
+        else:
+            name, kind = INDUSTRY_OVERRIDES.get(h["symbol"]) or inds.get(h["symbol"]) or "Other", "Stocks"
+        s = slices.setdefault((name, kind), {"name": name, "kind": kind, "value": 0.0, "invested": 0.0, "holdings": []})
+        s["value"] += value
+        s["invested"] += h["invested"]
+        s["holdings"].append({"symbol": h["symbol"], "value": round(value, 2)})
+    total = sum(s["value"] for s in slices.values())
+    rows = []
+    for s in sorted(slices.values(), key=lambda s: -s["value"]):
+        s["holdings"].sort(key=lambda x: -x["value"])
+        rows.append({**s, "value": round(s["value"], 2), "invested": round(s["invested"], 2),
+                     "weight": round(s["value"] / total * 100, 1) if total else None})
+    stocks = sum(r["value"] for r in rows if r["kind"] == "Stocks")
+    return {"total": round(total, 2), "slices": rows, "stocks_pct": round(stocks / total * 100, 1) if total else None,
+            "funds_pct": round((total - stocks) / total * 100, 1) if total else None}
+
+
 def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: date) -> Optional[dict]:
     """The Reports tab: returns on the money put into the real Groww account, what drives the profit,
     and what it costs. `rep` is the file built by reporting/groww_reports.py from Groww's downloaded
@@ -496,10 +552,19 @@ def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: 
                       "end": _round(end_own), "gain": _round(end_own - y["start_own"] - net),
                       "return_pct": _round(own_ret * 100, 1) if own_ret is not None else None,
                       "bench_return_pct": _round(bench_ret * 100, 1) if bench_ret is not None else None})
+    # Month table: what went in and out of the Groww account (from its fund statement, which only starts in the
+    # month of ledger["first_date"]) beside the running total invested in stocks (from the orders).
+    ledger = rep.get("ledger") or {}
+    led = {m["month"]: m for m in ledger.get("months", [])}
+    led_start = (ledger.get("first_date") or "9999-99")[:7]
+    ordered = {m["month"]: m for m in rep["monthly"]}
     monthly, cum = [], 0.0
-    for m in rep["monthly"]:
-        cum += m["buys"] - m["sells"]
-        monthly.append({**m, "net": round(m["buys"] - m["sells"], 2), "cum": round(cum, 2)})
+    for month in sorted(set(ordered) | set(led)):
+        if month in ordered:
+            cum += ordered[month]["buys"] - ordered[month]["sells"]
+        known = month >= led_start
+        dep, wd = (led.get(month, {}).get("deposited", 0.0), led.get(month, {}).get("withdrawn", 0.0)) if known else (None, None)
+        monthly.append({"month": month, "deposited": dep, "withdrawn": wd, "net": round(dep - wd, 2) if known else None, "cum": round(cum, 2)})
 
     groups: dict = {}
     rows = []
@@ -520,7 +585,6 @@ def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: 
                            "weight": round(s["value"] / value * 100, 1) if value else None,
                            "share_of_profit": round(pnl / total_pnl * 100, 1) if total_pnl else None})
     rows.sort(key=lambda r: -r["pnl"])
-    ledger = rep.get("ledger") or {}
     fy = rep["fy"]
     return {
         "as_of_reports": rep["as_of"], "benchmark": rep["benchmark"], "cash": cash,
@@ -794,7 +858,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date()), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date()), "industries": industry_view(my_portfolio), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,

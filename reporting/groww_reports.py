@@ -132,9 +132,10 @@ def read_fy_reports(folder: str) -> List[dict]:
 def read_ledger(folder: str) -> dict:
     path = (glob.glob(os.path.join(folder, "Groww_Balance_Statement*.xlsx")) or [None])[0]
     years: Dict[int, dict] = {}
+    months: Dict[str, dict] = {}
     first = None
     if not path:
-        return {"years": [], "first_date": None}
+        return {"years": [], "months": [], "first_date": None}
     header = None
     for r in _read_rows(path):
         if r and r[0] == "Transaction Date":
@@ -149,12 +150,16 @@ def read_ledger(folder: str) -> dict:
         row = dict(zip(header, r))
         seg = row.get("Segment Type")
         y = years.setdefault(d.year, {"year": d.year, "deposits": 0.0, "sip": 0.0, "withdrawals": 0.0})
+        mo = months.setdefault(d.strftime("%Y-%m"), {"month": d.strftime("%Y-%m"), "deposited": 0.0, "withdrawn": 0.0})
         if seg in DEPOSIT_SEGMENTS:
             y["sip" if seg == "STOCKS_SIP" else "deposits"] += _num(row.get("Credit (Rs.)"))
+            mo["deposited"] += _num(row.get("Credit (Rs.)"))
         elif seg in WITHDRAW_SEGMENTS:
             y["withdrawals"] += _num(row.get("Debit (Rs.)"))
+            mo["withdrawn"] += _num(row.get("Debit (Rs.)"))
         first = d if first is None or d < first else first
     return {"years": [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in y.items()} for _, y in sorted(years.items())],
+            "months": [{k: (round(v, 2) if isinstance(v, float) else v) for k, v in m.items()} for _, m in sorted(months.items())],
             "first_date": first.isoformat() if first else None}
 
 
