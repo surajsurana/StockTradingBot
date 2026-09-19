@@ -148,6 +148,12 @@ class TestPortfolioView(unittest.TestCase):
         self.assertEqual((t["invested"], t["unpriced"], t["pnl"], t["today"]), (2000.0, 1, 100.0, 20.0))
         self.assertEqual(t["value"], 2100.0)          # priced holding at market, unpriced at cost
 
+    def test_today_is_zero_when_there_is_no_trading_session(self):
+        snap = {"status": "connected", "fetched_at": "x", "holdings": [{"symbol": "AAA", "quantity": 10, "avg_price": 100.0}]}
+        v = portfolio_view(snap, {"AAA.NS": 110.0}, {"AAA.NS": 108.0}, session_today=False)
+        self.assertEqual((v["holdings"][0]["today"], v["totals"]["today"]), (0.0, 0.0))
+        self.assertEqual(v["holdings"][0]["pnl"], 100.0)          # overall P&L unaffected
+
     def test_no_snapshot_is_simply_not_connected(self):
         v = portfolio_view(None, {})
         self.assertEqual((v["status"], v["holdings"], v["totals"]["holdings"]), ("not_connected", [], 0))

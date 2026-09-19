@@ -416,11 +416,11 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
     return out
 
 
-def portfolio_view(snap: Optional[dict], prices: dict, prev_close: Optional[dict] = None) -> dict:
+def portfolio_view(snap: Optional[dict], prices: dict, prev_close: Optional[dict] = None, session_today: bool = True) -> dict:
     """Your real Groww holdings for the My Portfolio tab. Groww supplies quantity and average cost;
     the latest price comes from the same feed as the paper pools (symbol + ".NS"), so a holding it
     cannot price is shown at cost with no P&L rather than guessed. `today` is the move since the
-    last close before today."""
+    last close before today, and is 0 on a day with no trading session (weekend, or before the open)."""
     snap = snap or {}
     prev_close = prev_close or {}
     rows = []
@@ -436,7 +436,7 @@ def portfolio_view(snap: Optional[dict], prices: dict, prev_close: Optional[dict
                      "value": round(value, 2) if value is not None else None,
                      "pnl": round(value - invested, 2) if value is not None else None,
                      "pct": round((value / invested - 1) * 100, 2) if value is not None and invested else None,
-                     "today": round((float(price) - float(prev)) * qty, 2) if price is not None and prev is not None else None})
+                     "today": (round((float(price) - float(prev)) * qty, 2) if session_today else 0.0) if price is not None and prev is not None else None})
     priced = [r for r in rows if r["value"] is not None]
     invested_priced = sum(r["invested"] for r in priced)
     totals = {"holdings": len(rows), "unpriced": len(rows) - len(priced),
@@ -704,7 +704,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": portfolio_view(groww, prices, prev_close), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": portfolio_view(groww, prices, prev_close, session_today=now.weekday() < 5 and now.time() >= dtime(9, 15)), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
