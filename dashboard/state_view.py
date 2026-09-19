@@ -352,32 +352,54 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
     return out
 
 
-def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, registry_records: list) -> list:
-    """One line per book (strategy x pool) for the P&L tab, all in rupees and all GROSS -- the
-    dashboard's other tabs show the same gross numbers. Crypto books also carry the fees and India
-    31.2% tax that reporting/pool_e.py already computes per trade (open positions as if sold now);
-    equity books carry None there because brokerage and capital-gains tax are not modeled in paper
-    trading. capital + realised + unrealised == cash + deployed + unrealised by construction (capital
-    is defined as cash + deployed - realised), so the balance sheet always balances."""
+def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, registry_records: list,
+                    state_dir: str = "", d_trades: Optional[list] = None) -> list:
+    """One line per book (strategy x pool) for the P&L tab, all in rupees. realised / unrealised are
+    GROSS (the dashboard's other tabs show the same numbers); each line also carries `charges`
+    (brokerage, STT, exchange, SEBI, stamp duty, DP -- everything except GST), `gst`, `tax` and a
+    `tds` memo, plus `detail` (charges by component) for the hover text.
+
+    Stock pools (A, B, C, F, D) use reporting/equity_costs.py, worked out from each book's own
+    trades and open positions; crypto (E, G) uses the fee and 31.2% tax arithmetic in
+    reporting/pool_e.py. Open positions are treated as if sold today throughout.
+    capital + realised + unrealised == cash + deployed + unrealised by construction (capital is
+    defined as cash + deployed - realised), so the balance sheet always balances."""
+    from reporting.equity_costs import book_costs
     sid_of = {r.strategy_key: getattr(r, "strategy_id", "") for r in registry_records}
+    d_trades = d_trades or []
     out = []
+
+    def equity_line(pool, key, sid, name, kind, capital, cash, deployed, realised, unrealised, trades, open_positions, intraday):
+        c = book_costs(trades, open_positions, intraday, realised + unrealised)
+        return {"pool": pool, "key": key, "sid": sid, "name": name, "type": kind, "capital": capital, "cash": cash,
+                "deployed": deployed, "realised": realised, "unrealised": unrealised, "charges": c["charges"], "gst": c["gst"],
+                "tax": c["tax"], "tds": None, "tax_rate": c["tax_rate"], "detail": c["detail"], "taxable": True}
+
     for b in books:
-        out.append({"pool": POOL_LABELS.get(b["pool"], "Pool " + b["pool"]), "key": b["key"], "sid": b.get("sid", "") or sid_of.get(b["key"], ""),
-                    "name": b["display_name"], "type": "AI" if b["pool"] in ("B", "C") else "Swing",
-                    "capital": b.get("capital", 0) or 0, "cash": b.get("cash", 0) or 0, "deployed": b.get("deployed", 0) or 0,
-                    "realised": b.get("realised", 0) or 0, "unrealised": b.get("unrealised", 0) or 0,
-                    "fees": None, "tax": None, "taxable": False})
+        pool_letter = b["pool"]
+        book_dir = os.path.join(state_dir, POOL_DIRS[pool_letter], b["key"]) if pool_letter in ("A", "F") \
+            else os.path.join(state_dir, POOL_DIRS[pool_letter])
+        trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl")) if state_dir else []
+        opens = [{"entry_price": p["entry"], "price": p["price"], "quantity": p["qty"]} for p in b.get("positions_detail", [])]
+        out.append(equity_line(POOL_LABELS.get(pool_letter, "Pool " + pool_letter), b["key"], b.get("sid", "") or sid_of.get(b["key"], ""),
+                               b["display_name"], "AI" if pool_letter in ("B", "C") else "Swing",
+                               b.get("capital", 0) or 0, b.get("cash", 0) or 0, b.get("deployed", 0) or 0,
+                               b.get("realised", 0) or 0, b.get("unrealised", 0) or 0, trades, opens, False))
     if pool_d.get("capital") is not None:
-        out.append({"pool": "Pool D", "key": "pool_d_vwap_fade", "sid": sid_of.get("pool_d_vwap_fade", ""), "name": "Intraday (VWAP fade)", "type": "Intraday",
-                    "capital": pool_d["capital"], "cash": pool_d.get("cash", 0) or 0, "deployed": pool_d.get("deployed", 0) or 0,
-                    "realised": pool_d.get("realised", 0) or 0, "unrealised": pool_d.get("unrealised", 0) or 0,
-                    "fees": None, "tax": None, "taxable": False})
+        opens = [{"entry_price": p.get("entry_price"), "price": p.get("price"), "quantity": p.get("quantity"), "direction": p.get("direction")}
+                 for p in pool_d.get("open_positions", [])]
+        out.append(equity_line("Pool D", "pool_d_vwap_fade", sid_of.get("pool_d_vwap_fade", ""), "Intraday (VWAP fade)", "Intraday",
+                               pool_d["capital"], pool_d.get("cash", 0) or 0, pool_d.get("deployed", 0) or 0,
+                               pool_d.get("realised", 0) or 0, pool_d.get("unrealised", 0) or 0, d_trades, opens, True))
 
     def crypto_line(pool, key, sid, name, capital, cash, deployed, booked, unbooked, rate):
+        fees = (booked["fees"] + unbooked["fees"]) * rate
         return {"pool": pool, "key": key, "sid": sid, "name": name, "type": "Crypto",
                 "capital": capital * rate, "cash": cash * rate, "deployed": deployed * rate,
                 "realised": booked["raw"] * rate, "unrealised": unbooked["raw"] * rate,
-                "fees": (booked["fees"] + unbooked["fees"]) * rate, "tax": (booked["tax"] + unbooked["tax"]) * rate, "taxable": True}
+                # the 0.30% exchange fee is treated as GST-inclusive, so GST is shown as zero
+                "charges": fees, "gst": 0.0, "tax": (booked["tax"] + unbooked["tax"]) * rate,
+                "tds": (booked["tds"] + unbooked["tds"]) * rate, "tax_rate": 0.312, "detail": {"crypto_fee": fees}, "taxable": True}
     if pool_e.get("exists"):
         rate = pool_e.get("usdinr") or 0
         for eb in pool_e["books"]:
@@ -387,9 +409,10 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
         out.append(crypto_line("Pool G", "portfolio_g", sid_of.get("portfolio_g", ""), "AI judgment", pool_g["capital"], pool_g["cash"],
                                pool_g["deployed"], pool_g["booked"], pool_g["unbooked"], pool_g.get("usdinr") or 0))
     for l in out:
-        for k in ("capital", "cash", "deployed", "realised", "unrealised", "fees", "tax"):
+        for k in ("capital", "cash", "deployed", "realised", "unrealised", "charges", "gst", "tax", "tds"):
             if l[k] is not None:
                 l[k] = round(l[k], 2)
+        l["detail"] = {k: round(v, 2) for k, v in l["detail"].items()}
     return out
 
 
@@ -647,7 +670,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,

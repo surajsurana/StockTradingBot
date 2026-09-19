@@ -177,24 +177,30 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(_book_started(book_dir, []), "2026-09-16")
         self.assertIsNone(_book_started(os.path.join(root, "nonexistent"), []))
 
-    def test_statement_lines_carry_gross_fees_and_tax_per_book(self):
+    def test_statement_lines_carry_gross_charges_gst_tax_and_tds_per_book(self):
         lines = {(l["pool"], l["key"]): l for l in self.s["statement"]}
         alpha = lines[("Pool A", "alpha")]
-        # equity: no fees or tax modeled -> None, not zero
-        self.assertEqual((alpha["fees"], alpha["tax"], alpha["taxable"]), (None, None, False))
         self.assertAlmostEqual(alpha["realised"], -1000.0)
         self.assertAlmostEqual(alpha["unrealised"], 2000.0)
+        self.assertGreater(alpha["charges"], 0)
+        self.assertGreater(alpha["gst"], 0)
+        # book gain is +1,000 gross; tax is 20.8% of what is left after charges and GST
+        self.assertAlmostEqual(alpha["tax"], round(max(0.0, 1000.0 - alpha["charges"] - alpha["gst"]) * 0.208, 2), places=1)
+        self.assertIsNone(alpha["tds"])          # no TDS on a resident's equity gains
         self.assertAlmostEqual(alpha["capital"] + alpha["realised"] + alpha["unrealised"],
                                alpha["cash"] + alpha["deployed"] + alpha["unrealised"])   # the balance sheet balances
         crypto = lines[("Pool E", "crypto_trend_timing")]
-        # 10 USDT gross on the open BTC position x 100; tax 31.2% of the gain, fees both sides
+        # 10 USDT gross on the open BTC position x 100; tax 31.2% of the gain, fees both sides, 1% TDS on the sale
         self.assertAlmostEqual(crypto["unrealised"], 1000.0)
-        self.assertTrue(crypto["taxable"])
         self.assertAlmostEqual(crypto["tax"], 312.0)
-        self.assertGreater(crypto["fees"], 0)
+        self.assertGreater(crypto["charges"], 0)
+        self.assertEqual(crypto["gst"], 0.0)
+        self.assertAlmostEqual(crypto["tds"], 210.0)   # 1% of the Rs.21,000 sale value (0.0025 BTC at 84,000 USDT x 100)
         self.assertAlmostEqual(crypto["capital"] + crypto["realised"] + crypto["unrealised"],
                                crypto["cash"] + crypto["deployed"] + crypto["unrealised"])
-        self.assertEqual(lines[("Pool D", "pool_d_vwap_fade")]["type"], "Intraday")
+        d = lines[("Pool D", "pool_d_vwap_fade")]
+        self.assertEqual(d["type"], "Intraday")
+        self.assertAlmostEqual(d["tax_rate"], 0.312)
 
     def test_partly_sold_position_links_its_legs_and_is_flagged_partial(self):
         from dashboard.state_view import _attach_lifecycles
