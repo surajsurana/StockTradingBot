@@ -34,10 +34,10 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .teamline .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--live);margin-right:6px;vertical-align:middle;animation:pulse 1.6s ease-in-out infinite}
 .teamline .pulse.off{background:var(--muted);animation:none}
 .teamline.big .k{padding:10px 16px;font-size:13.5px;gap:4px}.teamline.big b{font-size:19px}
-.todaybar{display:flex;justify-content:flex-end;margin:0 0 8px}
-.todaybar > span{display:inline-flex;align-items:baseline;gap:10px;padding:6px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
+.todaybar{margin-left:auto;display:inline-flex;align-items:center;gap:10px;padding:7px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
+.todaybar[hidden]{display:none}
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:20px}
+.todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
@@ -245,11 +245,11 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
+  <span class="todaybar" id="todaybar" hidden></span>
 </nav>
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live" hidden>
-  <div class="todaybar" id="todaybar"></div>
   <div class="cards" id="livecards"></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -353,6 +353,7 @@ document.querySelectorAll(".modeswitch button").forEach(x => x.classList.toggle(
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
+  document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
   try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
 }));
 try { const t = localStorage.getItem("desk.tab"); if (t) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch(e){}
@@ -681,7 +682,9 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
   const todayTotal = today + openMove;
-  document.getElementById("todaybar").innerHTML = `<span title="${esc(`${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`)}"><i>Today's P&L</i> ${val("live.today", todayTotal, true)}</span>`;
+  const tb = document.getElementById("todaybar");
+  tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
+  tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
