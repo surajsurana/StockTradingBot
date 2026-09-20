@@ -51,6 +51,19 @@ from dashboard.state_view import build_dashboard_state             # noqa: E402
 from data.fetch_groww import load_snapshot as load_groww_snapshot   # noqa: E402
 
 
+def _advice_params(query: dict) -> dict:
+    """What-if inputs from the Advice tab (monthly amount, yearly step-up, this month's deposit, return overrides)."""
+    out = {}
+    for key, lo, hi in (("monthly", 0, 10_000_000), ("deposit", 0, 10_000_000), ("stepup", 0, 50), ("low", -10, 40), ("base", -10, 40), ("high", -10, 40)):
+        try:
+            v = float(query.get(key, [""])[0])
+        except ValueError:
+            continue
+        if lo <= v <= hi:
+            out[key] = v
+    return out
+
+
 def _load_reports(state_dir: str):
     """The return-report data built from the downloaded Groww reports, or None if it has not been built."""
     try:
@@ -375,7 +388,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
-                                          reports=_load_reports(STATE_DIR) if mode == "live" else None)
+                                          reports=_load_reports(STATE_DIR) if mode == "live" else None,
+                                          advice_params=_advice_params(query) if mode == "live" else None)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

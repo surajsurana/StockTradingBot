@@ -9,6 +9,7 @@ filesystem + an injectable price_fn / clock, so it is unit-testable
 without the network.
 """
 
+import functools
 import glob
 import json
 import os
@@ -485,6 +486,7 @@ INDUSTRY_OVERRIDES = {
 }
 
 
+@functools.lru_cache(maxsize=1)
 def _industry_map() -> dict:
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "nifty500_constituents.csv")
     out = {}
@@ -496,6 +498,11 @@ def _industry_map() -> dict:
     except OSError:
         pass
     return out
+
+
+def _segment_of(symbol: str) -> str:
+    industry = INDUSTRY_OVERRIDES.get(symbol) or _industry_map().get(symbol)
+    return INDUSTRY_SEGMENT.get(industry, FALLBACK_SEGMENT)
 
 
 def industry_view(mine: Optional[dict]) -> Optional[dict]:
@@ -890,7 +897,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           roadmap: Optional[dict] = None, mode: str = "paper",
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
-                          groww: Optional[dict] = None, reports: Optional[dict] = None) -> dict:
+                          groww: Optional[dict] = None, reports: Optional[dict] = None,
+                          advice_params: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -955,6 +963,9 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
 
     market_open = now.weekday() < 5 and dtime(9, 15) <= now.time() <= dtime(15, 30)
     my_portfolio = portfolio_view(groww, prices, prev_close, session_today=now.weekday() < 5 and now.time() >= dtime(9, 15))
+    reports_out = reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date())
+    from advice.view import build_advice
+    advice_out = build_advice(my_portfolio, reports_out, now.date(), advice_params, lambda s: FAMILY.get(s, s), _segment_of, state_dir) if reports is not None else None
     pools = {k: _with_capital(dict(v)) for k, v in summary["pools"].items() if k != "A1"}
     pool_d = _with_capital(pool_d)
     for b in books:
@@ -983,7 +994,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date()), "industries": industry_view(my_portfolio), "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
