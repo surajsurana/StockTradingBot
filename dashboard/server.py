@@ -51,6 +51,11 @@ from dashboard.state_view import build_dashboard_state             # noqa: E402
 from data.fetch_groww import load_snapshot as load_groww_snapshot   # noqa: E402
 
 
+def _advice_done():
+    from advice.tasks import load_done
+    return load_done(STATE_DIR)
+
+
 def _advice_params(query: dict) -> dict:
     """What-if inputs from the Advice tab (monthly amount, yearly step-up, this month's deposit, return overrides)."""
     out = {}
@@ -332,6 +337,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not is_authorized(parse_qs(parsed.query), self.headers.get("Cookie", ""), self.access_key):
             self._send(HTTPStatus.FORBIDDEN, b'{"error": "forbidden"}', "application/json")
             return
+        if parsed.path == "/api/advice/done":     # the Advice page's "Done" button: remember a task was completed
+            from advice.tasks import mark_done
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                mark_done(STATE_DIR, str(json.loads(self.rfile.read(length) or b"{}").get("id", "")))
+                self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
         if parsed.path not in ("/api/manual_exit", "/api/manual_entry"):
             self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
             return
@@ -389,7 +403,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
                                           reports=_load_reports(STATE_DIR) if mode == "live" else None,
-                                          advice_params=_advice_params(query) if mode == "live" else None)
+                                          advice_params=_advice_params(query) if mode == "live" else None,
+                                          advice_done=_advice_done() if mode == "live" else None)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):

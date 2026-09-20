@@ -13,6 +13,7 @@ from typing import Callable, Optional
 
 from advice.notes import NOTES, NOTES_AS_OF
 from advice.rules import FUND_BUCKET, load_rules
+from advice.tasks import build_tasks
 
 HORIZONS = (1, 2, 3, 5, 10)
 STOCKS = "Individual stocks"
@@ -290,6 +291,7 @@ def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, t
         weight = g["value"] / total * 100
         note = notes.get(key) or {}
         why = list(note.get("why", []))
+        sell_limit = trim_value = None
         action = note.get("stance", "Hold")
         headline = note.get("headline", "Hold.")
         source = ("Research note, " + _day(notes_as_of)) if note else "Rules"
@@ -321,23 +323,27 @@ def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, t
             if action != "Sell" and bucket == STOCKS and weight > st["trim_above"]:
                 action, source = "Trim", "Rules"
                 excess = g["value"] - st["max_at_buy"] / 100 * total
-                headline = f"Trim by about ₹{excess:,.0f} to bring it back to {st['max_at_buy']}%."
+                trim_value = excess
+                headline = f"Sell about ₹{excess:,.0f} of it (part of the holding) to bring it back to {st['max_at_buy']}%."
                 why.insert(0, f"It is {weight:.1f}% of the portfolio; your trim point is {st['trim_above']}%.")
             if action == "Sell" and note.get("sell_limit_up_pct") and g.get("price") and len(g["symbols"]) == 1 and g["qty"]:
-                lim = round(g["price"] * (1 + note["sell_limit_up_pct"] / 100), 1)
+                lim = sell_limit = round(g["price"] * (1 + note["sell_limit_up_pct"] / 100), 1)
                 headline = (f"Sell all {g['qty']:g} shares. Limit ₹{lim:,.1f} (about {note['sell_limit_up_pct']}% above today's ₹{g['price']:,.1f}); "
                             f"if it has not filled by {_day(note.get('review'))}, sell at market.")
             if action == "Watch" and note.get("exit_below") and g.get("price"):
                 why.append(f"Today's price is ₹{g['price']:,.1f}, so the exit line is {abs(g['price'] / note['exit_below'] - 1) * 100:.0f}% {'below' if g['price'] > note['exit_below'] else 'above'} it.")
         items.append({"key": key, "symbols": g["symbols"], "name": name_of(key), "action": action, "headline": headline, "why": why,
-                      "source": source, "review": note.get("review"), "value": round(g["value"], 2), "weight": round(weight, 1)})
+                      "source": source, "review": note.get("review"), "trigger": note.get("trigger"), "exit_below": note.get("exit_below"),
+                      "sell_limit": sell_limit, "trim_value": trim_value, "qty": g["qty"], "price": g.get("price"),
+                      "value": round(g["value"], 2), "weight": round(weight, 1)})
     items.sort(key=lambda i: (ACTION_ORDER[i["action"]], -i["value"]))
     return items
 
 
 def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, params: Optional[dict],
                  family_of: Callable[[str], str], segment_of: Callable[[str], str], state_dir: Optional[str] = None,
-                 name_of: Optional[Callable[[str], str]] = None) -> Optional[dict]:
+                 name_of: Optional[Callable[[str], str]] = None, cash: Optional[float] = None,
+                 done: Optional[list] = None) -> Optional[dict]:
     if not mine or not mine.get("holdings"):
         return None
     rules = load_rules(state_dir)
@@ -346,7 +352,9 @@ def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, par
     hist = invest_history(reports, today)
     monthly = float(params["monthly"]) if params.get("monthly") is not None else float(hist["default_monthly"])
     stepup = float(params["stepup"]) if params.get("stepup") is not None else 0.0
-    deposit = float(params["deposit"]) if params.get("deposit") is not None else monthly
+    # money that has actually arrived in the account is what gets invested; a typed amount plans ahead instead
+    arrived = float(cash) if cash and cash >= rules["orders"]["min_order"] else 0.0
+    deposit = float(params["deposit"]) if params.get("deposit") is not None else arrived
     returns = blended_returns(rules)
     for k in ("low", "base", "high"):
         if params.get(k) is not None:
@@ -362,8 +370,10 @@ def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, par
     actual_years = [{"label": y["label"], "return_pct": y["return_pct"], "bench_pct": y["bench_return_pct"]} for y in (reports or {}).get("years", []) if y["label"] >= "2023"]
     check = check_rules(shape, mine, rules, segment_of)
     plan = deposit_plan(shape, mine, deposit, rules)
+    items = build_items(mine, shape, rules, plan, check, today, family_of, name_of or (lambda k: k))
     return {
-        "items": build_items(mine, shape, rules, plan, check, today, family_of, name_of or (lambda k: k)),
+        **build_tasks(items, plan, today, done or []),
+        "cash": cash,
         "rules": {"buckets": rules["buckets"], "groups": rules["groups"], "stocks": rules["stocks"], "orders": {k: v for k, v in rules["orders"].items() if k != "fund_split"}},
         "params": {"monthly": round(monthly), "stepup": stepup, "deposit": round(deposit), "returns": returns, "inflation": infl},
         "check": check,

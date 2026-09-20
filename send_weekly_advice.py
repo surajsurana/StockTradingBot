@@ -39,32 +39,35 @@ def _lakh(v: float) -> str:
     return f"Rs {v / 1e7:.2f} Cr" if abs(v) >= 1e7 else f"Rs {v / 1e5:.1f} L"
 
 
-def build_message(state_dir: str, today: date) -> str:
+def load_advice(state_dir: str, today: date):
+    """(advice, reports, snapshot) for the live Groww holdings, or (None, None, snapshot) if not connected."""
+    from advice.tasks import load_done
     snap = load_snapshot(state_dir)
     if snap.get("status") != "connected" or not snap.get("holdings"):
-        return f"Weekly portfolio advice: Groww is not connected right now (status {snap.get('status')}). Nothing to report."
+        return None, None, snap
     mine = portfolio_view(snap, _prices([h["symbol"] for h in snap["holdings"]]), {}, session_today=False)
     path = os.path.join(state_dir, "groww_reports.json")
     rep = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
     reports = reports_view(rep, mine, snap.get("cash"), today) if rep else None
     a = build_advice(mine, reports, today, None, lambda s: FAMILY.get(s, s), _segment_of, state_dir,
-                     lambda fam: FAMILY_NAME.get(fam) or _company_name(rep or {}, fam))
-    if not a:
-        return "Weekly portfolio advice: no holdings to analyse."
+                     lambda fam: FAMILY_NAME.get(fam) or _company_name(rep or {}, fam), cash=snap.get("cash"), done=load_done(state_dir))
+    return a, reports, snap
+
+
+def build_message(state_dir: str, today: date) -> str:
+    """A once-a-week overview (optional): the numbers, the tasks, and where the money could be."""
+    a, reports, snap = load_advice(state_dir, today)
+    if a is None:
+        return f"Weekly portfolio advice: Groww is not connected right now (status {snap.get('status')}). Nothing to report."
     t, h = a["targets"], (reports or {}).get("headline") or {}
     lines = [f"Weekly portfolio advice, {today.strftime('%d %b %Y')}", ""]
     if h:
         lines.append(f"Worth {_lakh(h['value'])}. Gain {_lakh(h['gain'])} ({h['gain_pct']:+.1f}%). Per year since 2021: {h['xirr_pct']}% against Nifty 50 {h['bench_xirr_pct']}%.")
     lines.append(f"Aim: about {t['yearly']['base']}% a year (range {t['yearly']['low']} to {t['yearly']['high']}%), about {t['quarterly']['base']}% a quarter.")
-    todo = [i for i in a["items"] if i["action"] != "Hold"]
-    hold = [i for i in a["items"] if i["action"] == "Hold"]
-    lines += ["", "Advice:"] + [f"- {i['name']}: {i['action'].upper()}. {i['headline']}" for i in todo]
-    lines.append(f"- {len(hold)} other holdings: hold, nothing to do.")
-    d = a["deposit_plan"]
-    lines += ["", f"Deposit plan for {_lakh(d['deposit'])}: split each buy in two, about two weeks apart."]
+    lines += ["", f"To do on {a['when_label']}:"] + ([f"- {x['name']}: {x['title']}" for x in a["tasks"]] or ["- Nothing. The system is watching everything."])
     p = a["projection"]["horizons"]
     lines += ["", "If you keep adding Rs {:,} a month, middling case: ".format(a["params"]["monthly"]) + ", ".join(f"{x['years']}y {_lakh(x['base'])}" for x in p)]
-    lines += ["", "Advice only. Nothing has been ordered. Open the dashboard's Advice tab for the full picture."]
+    lines += ["", "Advice only. Nothing has been ordered."]
     return "\n".join(lines).replace("_", " ").replace("*", "")
 
 

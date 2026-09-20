@@ -125,5 +125,64 @@ class TestItems(unittest.TestCase):
         self.assertTrue(any("days old" in w for w in next(i for i in items if i["key"] == "BBB")["why"]))
 
 
+class TestTasks(unittest.TestCase):
+    def _advice(self, cash, done=None, today=date(2026, 9, 20)):
+        import advice.view as v
+        notes = {
+            "BBB": {"stance": "Watch", "headline": "Hold.", "why": [], "exit_below": 100, "trigger": "Sell below 100.", "review": "2026-11-05"},
+            "CCC": {"stance": "Sell", "headline": "Sell.", "why": [], "sell_limit_up_pct": 5, "review": "2026-10-01"}}
+        mine = {"holdings": [dict(h, quantity=10, price=h.get("price") or (120.0 if h["symbol"] == "BBB" else 50.0)) for h in MINE["holdings"]]}
+        old = v.NOTES
+        try:
+            v.NOTES = notes
+            return v.build_advice(mine, None, today, None, FAMILY, SEGMENT, None, lambda k: k, cash=cash, done=done or [])
+        finally:
+            v.NOTES = old
+
+    def test_no_cash_means_no_buys_but_price_lines_become_stop_loss_orders(self):
+        a = self._advice(500)
+        kinds = {t["key"]: t["kind"] for t in a["tasks"]}
+        self.assertNotIn("Buy", kinds.values())
+        self.assertEqual(kinds["BBB"], "Stop-loss")
+        self.assertEqual(kinds["CCC"], "Sell")
+        self.assertEqual(a["when"], "2026-09-21")          # the next trading day after Sunday 20 Sep is Monday
+        self.assertEqual(a["watching"], [])
+
+    def test_done_tasks_drop_out_and_a_stop_loss_stays_quiet_afterwards(self):
+        a = self._advice(500, [{"id": "gtt:BBB:100", "ts": "2026-09-21T10:00:00"}], date(2026, 9, 22))
+        self.assertNotIn("BBB", [t["key"] for t in a["tasks"]])
+        self.assertEqual([w["name"] for w in a["watching"]], ["BBB"])
+
+    def test_a_sell_that_did_not_fill_by_the_review_date_becomes_a_market_sell(self):
+        a = self._advice(500, [], date(2026, 10, 2))
+        self.assertIn("market", next(t for t in a["tasks"] if t["key"] == "CCC")["title"])
+
+    def test_arrived_cash_creates_buys_in_two_parts_fourteen_days_apart(self):
+        buys = [t for t in self._advice(100000)["tasks"] if t["kind"] == "Buy"]
+        self.assertTrue(buys and all("first part" in t["title"] for t in buys))
+        sym = buys[0]["symbols"][0]
+        rec = [{"id": f"buy:{sym}", "ts": "2026-09-21T10:00:00"}]
+        cooling = self._advice(100000, rec, date(2026, 9, 25))
+        self.assertNotIn(sym, [t["symbols"][0] for t in cooling["tasks"] if t["kind"] == "Buy"])
+        later = self._advice(100000, rec, date(2026, 10, 6))
+        self.assertTrue(any("second part" in t["title"] and t["symbols"][0] == sym for t in later["tasks"]))
+
+    def test_done_records_are_saved_and_bad_ids_refused(self):
+        import tempfile
+        from advice.tasks import load_done, mark_done
+        d = tempfile.mkdtemp()
+        mark_done(d, "gtt:BBB:100")
+        self.assertEqual([r["id"] for r in load_done(d)], ["gtt:BBB:100"])
+        with self.assertRaises(ValueError):
+            mark_done(d, "../../etc/passwd")
+
+    def test_alert_is_only_for_tasks_not_already_sent_for_that_day(self):
+        from send_advice_alerts import fresh_tasks
+        tasks = [{"id": "a"}, {"id": "b"}]
+        self.assertEqual(len(fresh_tasks(tasks, "2026-09-21", {})), 2)
+        self.assertEqual([t["id"] for t in fresh_tasks(tasks, "2026-09-21", {"when": "2026-09-21", "ids": ["a"]})], ["b"])
+        self.assertEqual(len(fresh_tasks(tasks, "2026-09-22", {"when": "2026-09-21", "ids": ["a", "b"]})), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

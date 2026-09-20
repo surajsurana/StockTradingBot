@@ -25,6 +25,7 @@ NOTES = {
     },
     "RVNL": {
         "stance": "Watch", "exit_below": 205, "review": "2026-11-05",
+        "trigger": "Sell if the price falls below \u20b9205 (its September low).",
         "headline": "Hold. Sell if it closes clearly below ₹205. Don't add.",
         "why": ["Q1 profit rose 18%, operating margin improved to 4.4%, and the order book is about ₹93,000 crore.",
                 "But it is still about 50 times earnings on a thin margin, and payments from railways are slow.",
@@ -33,6 +34,7 @@ NOTES = {
     },
     "OLECTRA": {
         "stance": "Watch", "review": "2026-11-10",
+        "trigger": "Sell if next quarter's margin is still near 12% (results due around 10 Nov).",
         "headline": "Hold. Sell if next quarter's margin is still near 12%.",
         "why": ["Q1 revenue rose 66% but profit only 3%, and margin fell to 12% from 13.6%.",
                 "Its customers are state bus operators, so cash comes in slowly.",
@@ -40,6 +42,7 @@ NOTES = {
     },
     "TMPV": {
         "stance": "Watch", "review": "2026-11-12",
+        "trigger": "Sell part if Jaguar Land Rover has not improved at the November results (around 12 Nov).",
         "headline": "Hold. Reduce if Jaguar Land Rover has not improved by the November results.",
         "why": ["Q1 profit fell 78% on weakness at Jaguar Land Rover; Jefferies flags competition, discounts and ageing models.",
                 "The India car business is growing strongly and the commercial-vehicle unit (TMCV) looks healthier.",
@@ -47,6 +50,7 @@ NOTES = {
     },
     "ELECON": {
         "stance": "Watch", "review": "2026-11-10",
+        "trigger": "Sell if margins have not recovered at the November results (around 10 Nov).",
         "headline": "Hold. Review after the November results.",
         "why": ["Q1 profit fell 60% and operating margin dropped from 26.6% to 21%.",
                 "Over four years revenue grew about 16% a year, debt is low and free cash flow has been positive every year.",
