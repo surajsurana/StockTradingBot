@@ -4,8 +4,9 @@ Turn the advice into things YOU do: the concrete orders to place in Groww on the
 The system watches everything silently. It only speaks when there is an order to place, such as
   * a limit buy for money that has arrived in your account,
   * a limit sell,
-  * a stop-loss GTT (a standing sell order that Groww triggers by itself if the price falls to a line,
-    so nobody has to keep watching that price),
+  * a stop-loss sell order placed as a GTT ("good till triggered": a standing order that stays active for months and
+    fires by itself when the price reaches the trigger, whether that is a fall (stop-loss) or a rise (a higher sell
+    price), so nobody has to keep watching that price),
   * a sell at market once a limit sell has had its chance and did not fill.
 ADVICE ONLY: nothing here places an order.
 
@@ -111,8 +112,8 @@ def build_tasks(items: list, plan: dict, today: date, done: list) -> dict:
             elif not _is_done(done, tid):
                 until = f" Keep it open until {review.day} {review.strftime('%b')}." if review else ""
                 tasks.append({**base, "id": tid, "kind": "Sell", "order": 1,
-                              "title": f"Place a GTT sell order (or a limit order valid for several days): sell {qty:g} shares at ₹{lim:,.1f}.{until}",
-                              "detail": f"Today's price ₹{price:,.1f}; the limit is a little above it so a bounce can fill it." if price else ""})
+                              "title": f"Place a sell order at a higher price (as a GTT): sell {qty:g} shares when the price rises to ₹{lim:,.1f}.{until}",
+                              "detail": f"Today's price ₹{price:,.1f}; the price is a little above it so a bounce can fill it. A GTT stays active for months; a normal limit order lapses at the end of the day." if price else ""})
             continue
         if it["action"] == "Trim" and single and price:
             tid = f"trim:{key}:{int(round(it.get('trim_value', 0), -3))}"
@@ -136,8 +137,8 @@ def build_tasks(items: list, plan: dict, today: date, done: list) -> dict:
                 tid = f"gtt:{key}:{eb:g}"
                 if not _is_done(done, tid):
                     tasks.append({**base, "id": tid, "kind": "Stop-loss", "order": 1,
-                                  "title": f"Place a stop-loss GTT: sell all {qty:g} shares if the price falls to ₹{eb:,.0f}.",
-                                  "detail": f"Trigger ₹{eb:,.0f}, limit about ₹{eb * 0.975:,.0f} so it can fill. Today's price ₹{price:,.1f}. Once it is placed, Groww watches the price for you."})
+                                  "title": f"Place a stop-loss sell order (as a GTT): sell all {qty:g} shares if the price falls to ₹{eb:,.0f}.",
+                                  "detail": f"Trigger ₹{eb:,.0f}, limit about ₹{eb * 0.975:,.0f} so it can fill. Today's price ₹{price:,.1f}. A GTT stays active for months, while an ordinary stop-loss lapses at the end of the day; once it is placed, Groww watches the price for you."})
                     continue
             watching.append({"name": it["name"], "symbols": it["symbols"], "trigger": it.get("trigger") or it["headline"], "review": it["review"]})
     tasks.sort(key=lambda t: (t["order"], t["name"]))
