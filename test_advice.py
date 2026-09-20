@@ -182,6 +182,8 @@ class TestTasks(unittest.TestCase):
         self.assertTrue(m.startswith("*Long term advice*"))
         self.assertIn("*Rail Vikas Nigam*", m)
         self.assertIn("*183 shares*", m)
+        self.assertIn("*sell*", m)
+        self.assertIn("*buy*", message([{"name": "N", "title": "Place a limit buy order: 5 units at \u20b91."}], "d"))
         self.assertIn("*\u20b9205*", m)
         self.assertIn("A\\_B", message([{"name": "A_B", "title": "x"}], "d"))      # underscores are escaped so Telegram does not italicise
 

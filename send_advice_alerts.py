@@ -30,7 +30,7 @@ def fresh_tasks(tasks: list, when: str, sent: dict) -> list:
 
 
 _SPECIAL = re.compile(r"([_*`\[])")
-_BOLD = re.compile(r"(\u20b9[\d,]+(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)? (?:units|shares)\b)")
+_BOLD = re.compile(r"(\u20b9[\d,]+(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)? (?:units|shares)\b|\b(?:buy|sell)\b)", re.IGNORECASE)
 
 
 def esc(text: str) -> str:
@@ -39,7 +39,7 @@ def esc(text: str) -> str:
 
 
 def md(text: str) -> str:
-    """Telegram Markdown text with the prices and quantities in bold."""
+    """Telegram Markdown text with the buy/sell words, prices and quantities in bold."""
     return _BOLD.sub(lambda m: "*" + m.group(1) + "*", esc(text))
 
 
