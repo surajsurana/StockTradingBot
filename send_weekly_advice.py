@@ -60,7 +60,7 @@ def build_message(state_dir: str, today: date) -> str:
     if a is None:
         return f"Weekly portfolio advice: Groww is not connected right now (status {snap.get('status')}). Nothing to report."
     t, h = a["targets"], (reports or {}).get("headline") or {}
-    lines = [f"Weekly portfolio advice, {today.strftime('%d %b %Y')}", ""]
+    lines = ["Long term advice", f"Weekly overview, {today.strftime('%d %b %Y')}", ""]
     if h:
         lines.append(f"Worth {_lakh(h['value'])}. Gain {_lakh(h['gain'])} ({h['gain_pct']:+.1f}%). Per year since 2021: {h['xirr_pct']}% against Nifty 50 {h['bench_xirr_pct']}%.")
     lines.append(f"Aim: about {t['yearly']['base']}% a year (range {t['yearly']['low']} to {t['yearly']['high']}%), about {t['quarterly']['base']}% a quarter.")

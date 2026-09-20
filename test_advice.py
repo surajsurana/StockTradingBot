@@ -176,6 +176,15 @@ class TestTasks(unittest.TestCase):
         with self.assertRaises(ValueError):
             mark_done(d, "../../etc/passwd")
 
+    def test_telegram_message_has_a_heading_and_bold_names_prices_and_quantities(self):
+        from send_advice_alerts import message
+        m = message([{"name": "Rail Vikas Nigam", "title": "Place a stop-loss GTT: sell all 183 shares if the price falls to \u20b9205."}], "Monday 21 Sep")
+        self.assertTrue(m.startswith("*Long term advice*"))
+        self.assertIn("*Rail Vikas Nigam*", m)
+        self.assertIn("*183 shares*", m)
+        self.assertIn("*\u20b9205*", m)
+        self.assertIn("A\\_B", message([{"name": "A_B", "title": "x"}], "d"))      # underscores are escaped so Telegram does not italicise
+
     def test_alert_is_only_for_tasks_not_already_sent_for_that_day(self):
         from send_advice_alerts import fresh_tasks
         tasks = [{"id": "a"}, {"id": "b"}]

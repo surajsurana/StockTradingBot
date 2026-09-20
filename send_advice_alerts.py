@@ -17,6 +17,7 @@ The same task is never sent twice for the same day; a task you mark Done on the 
 import argparse
 import json
 import os
+import re
 from datetime import date
 
 from send_weekly_advice import load_advice
@@ -28,10 +29,25 @@ def fresh_tasks(tasks: list, when: str, sent: dict) -> list:
     return [t for t in tasks if t["id"] not in already]
 
 
+_SPECIAL = re.compile(r"([_*`\[])")
+_BOLD = re.compile(r"(\u20b9[\d,]+(?:\.\d+)?|\b\d[\d,]*(?:\.\d+)? (?:units|shares)\b)")
+
+
+def esc(text: str) -> str:
+    """Backslash-escape the characters Telegram's Markdown would treat as formatting."""
+    return _SPECIAL.sub(lambda m: "\\" + m.group(1), text)
+
+
+def md(text: str) -> str:
+    """Telegram Markdown text with the prices and quantities in bold."""
+    return _BOLD.sub(lambda m: "*" + m.group(1) + "*", esc(text))
+
+
 def message(tasks: list, when_label: str) -> str:
-    lines = [f"To do on {when_label}:"] + [f"- {t['name']}: {t['title']}" for t in tasks]
+    lines = ["*Long term advice*", f"To do on {when_label}:", ""]
+    lines += ["\u2022 *" + esc(t["name"]) + "*: " + md(t["title"]) for t in tasks]
     lines += ["", "Advice only. Nothing has been ordered. Press Done on the dashboard's Advice page once you have placed an order."]
-    return "\n".join(lines).replace("_", " ").replace("*", "")
+    return "\n".join(lines)
 
 
 def main() -> None:
