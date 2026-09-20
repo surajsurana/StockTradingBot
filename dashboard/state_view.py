@@ -965,7 +965,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     my_portfolio = portfolio_view(groww, prices, prev_close, session_today=now.weekday() < 5 and now.time() >= dtime(9, 15))
     reports_out = reports_view(reports, my_portfolio, (groww or {}).get("cash"), now.date())
     from advice.view import build_advice
-    advice_out = build_advice(my_portfolio, reports_out, now.date(), advice_params, lambda s: FAMILY.get(s, s), _segment_of, state_dir) if reports is not None else None
+    advice_out = build_advice(my_portfolio, reports_out, now.date(), advice_params, lambda s: FAMILY.get(s, s), _segment_of, state_dir,
+                             lambda fam: FAMILY_NAME.get(fam) or _company_name(reports or {}, fam)) if reports is not None else None
     pools = {k: _with_capital(dict(v)) for k, v in summary["pools"].items() if k != "A1"}
     pool_d = _with_capital(pool_d)
     for b in books:

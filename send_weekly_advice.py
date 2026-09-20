@@ -17,7 +17,7 @@ import os
 from datetime import date
 
 from advice.view import build_advice
-from dashboard.state_view import FAMILY, _segment_of, portfolio_view, reports_view
+from dashboard.state_view import FAMILY, FAMILY_NAME, _company_name, _segment_of, portfolio_view, reports_view
 from data.fetch_groww import load_snapshot
 
 
@@ -47,7 +47,8 @@ def build_message(state_dir: str, today: date) -> str:
     path = os.path.join(state_dir, "groww_reports.json")
     rep = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
     reports = reports_view(rep, mine, snap.get("cash"), today) if rep else None
-    a = build_advice(mine, reports, today, None, lambda s: FAMILY.get(s, s), _segment_of, state_dir)
+    a = build_advice(mine, reports, today, None, lambda s: FAMILY.get(s, s), _segment_of, state_dir,
+                     lambda fam: FAMILY_NAME.get(fam) or _company_name(rep or {}, fam))
     if not a:
         return "Weekly portfolio advice: no holdings to analyse."
     t, h = a["targets"], (reports or {}).get("headline") or {}
@@ -55,15 +56,12 @@ def build_message(state_dir: str, today: date) -> str:
     if h:
         lines.append(f"Worth {_lakh(h['value'])}. Gain {_lakh(h['gain'])} ({h['gain_pct']:+.1f}%). Per year since 2021: {h['xirr_pct']}% against Nifty 50 {h['bench_xirr_pct']}%.")
     lines.append(f"Aim: about {t['yearly']['base']}% a year (range {t['yearly']['low']} to {t['yearly']['high']}%), about {t['quarterly']['base']}% a quarter.")
-    flags = [f for f in a["check"]["flags"] if f["severity"] != "info"][:5]
-    lines += ["", "Needs attention:"] + [f"- {f['title']}. {f['detail']}" for f in flags] if flags else ["", "Everything is within your rules."]
+    todo = [i for i in a["items"] if i["action"] != "Hold"]
+    hold = [i for i in a["items"] if i["action"] == "Hold"]
+    lines += ["", "Advice:"] + [f"- {i['name']}: {i['action'].upper()}. {i['headline']}" for i in todo]
+    lines.append(f"- {len(hold)} other holdings: hold, nothing to do.")
     d = a["deposit_plan"]
-    lines += ["", f"This month's deposit ({_lakh(d['deposit'])}):"]
-    for r in d["rows"]:
-        for f in r["funds"]:
-            if f["qty"]:
-                lines.append(f"- {f['symbol']}: {f['qty']} units, limit Rs {f['limit']:.2f} (last Rs {f['price']:.2f}), split {', '.join(str(q) for q in f['part_qty'])} two weeks apart")
-    lines += [""] + [n for n in d["notes"]]
+    lines += ["", f"Deposit plan for {_lakh(d['deposit'])}: split each buy in two, about two weeks apart."]
     p = a["projection"]["horizons"]
     lines += ["", "If you keep adding Rs {:,} a month, middling case: ".format(a["params"]["monthly"]) + ", ".join(f"{x['years']}y {_lakh(x['base'])}" for x in p)]
     lines += ["", "Advice only. Nothing has been ordered. Open the dashboard's Advice tab for the full picture."]

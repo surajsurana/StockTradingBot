@@ -94,5 +94,36 @@ class TestHistoryAndAdvice(unittest.TestCase):
         self.assertIsNone(build_advice(None, self.REPORTS, date(2026, 9, 20), None, FAMILY, SEGMENT))
 
 
+class TestItems(unittest.TestCase):
+    def test_one_line_per_holding_with_buy_sell_watch_and_no_fund_trims(self):
+        from advice.view import build_items, check_rules, deposit_plan, portfolio_shape
+        shape = portfolio_shape(MINE, FAMILY)
+        check = check_rules(shape, MINE, DEFAULT_RULES, SEGMENT)
+        plan = deposit_plan(shape, MINE, 100000, DEFAULT_RULES)
+        notes = {"BBB": {"stance": "Sell", "headline": "Sell.", "why": ["weak"]}, "CCC": {"stance": "Watch", "headline": "Watch it.", "why": []}}
+        mine = {"holdings": [dict(h, quantity=10) for h in MINE["holdings"]]}
+        items = build_items(mine, shape, DEFAULT_RULES, plan, check, date(2026, 9, 20), FAMILY, lambda k: k.title(), notes, "2026-09-01")
+        by = {i["key"]: i for i in items}
+        self.assertEqual(len(items), len(MINE["holdings"]))
+        self.assertEqual(by["BBB"]["action"], "Sell")
+        self.assertEqual(by["CCC"]["action"], "Watch")
+        self.assertEqual(by["NIFTYBEES"]["action"], "Buy")
+        self.assertIn("units", by["NIFTYBEES"]["headline"])
+        self.assertEqual(by["SILVERBEES"]["action"], "Hold")                     # over its limit: don't add, but never a forced trim
+        self.assertIn("Don't add", by["SILVERBEES"]["headline"])
+        self.assertEqual(by["AAA"]["action"], "Trim")                            # a single stock above the 7% trim point
+        order = {"Sell": 0, "Trim": 1, "Buy": 2, "Watch": 3, "Hold": 4}
+        self.assertEqual([i["action"] for i in items], sorted((i["action"] for i in items), key=lambda a: order[a]))
+
+    def test_old_notes_are_flagged(self):
+        from advice.view import build_items, check_rules, deposit_plan, portfolio_shape
+        shape = portfolio_shape(MINE, FAMILY)
+        check = check_rules(shape, MINE, DEFAULT_RULES, SEGMENT)
+        plan = deposit_plan(shape, MINE, 0, DEFAULT_RULES)
+        items = build_items({"holdings": MINE["holdings"]}, shape, DEFAULT_RULES, plan, check, date(2026, 12, 31), FAMILY, lambda k: k,
+                            {"BBB": {"stance": "Hold", "headline": "Hold.", "why": []}}, "2026-09-01")
+        self.assertTrue(any("days old" in w for w in next(i for i in items if i["key"] == "BBB")["why"]))
+
+
 if __name__ == "__main__":
     unittest.main()

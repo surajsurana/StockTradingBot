@@ -11,6 +11,7 @@ import math
 from datetime import date
 from typing import Callable, Optional
 
+from advice.notes import NOTES, NOTES_AS_OF
 from advice.rules import FUND_BUCKET, load_rules
 
 HORIZONS = (1, 2, 3, 5, 10)
@@ -234,8 +235,109 @@ def invest_history(reports: Optional[dict], today: date) -> dict:
             "avg3": round(a3), "avg6": round(a6), "avg12": round(a12), "default_monthly": default, "trend": trend}
 
 
+ACTION_ORDER = {"Sell": 0, "Trim": 1, "Buy": 2, "Watch": 3, "Hold": 4}
+
+
+def _day(iso: Optional[str]) -> str:
+    if not iso:
+        return "the review date"
+    d = date.fromisoformat(iso)
+    return f"{d.day} {d.strftime('%b')}"
+
+
+def _stocks_over(check: dict) -> Optional[float]:
+    row = next((r for r in check["buckets"] if r["bucket"] == STOCKS and r["status"] == "over"), None)
+    return row["weight"] if row else None
+
+
+def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, today: date,
+                family_of: Callable[[str], str], name_of: Callable[[str], str], notes: Optional[dict] = None,
+                notes_as_of: str = NOTES_AS_OF) -> list:
+    """One line of advice per holding (a demerged unit is folded into its parent): Sell, Trim, Buy, Watch or Hold,
+    with a one-sentence instruction and the reasons behind it. Buys come from the deposit plan; Sell and Watch
+    come from the dated research notes; Trim and the "don't add" reasons come from your rules."""
+    notes = NOTES if notes is None else notes
+    total = shape["total"] or 1.0
+    age = (today - date.fromisoformat(notes_as_of)).days
+    stale = f"This research note is {age} days old and needs a fresh look." if age > 90 else None
+    over_bucket = {r["bucket"]: r for r in check["buckets"] if r["status"] == "over"}
+    plan_by_symbol = {f["symbol"]: (r["bucket"], f) for r in plan["rows"] for f in r["funds"] if f.get("qty")}
+    st = rules["stocks"]
+    cluster_over = {}
+    for cname, c in st.get("clusters", {}).items():
+        v = sum(_value(h) for h in mine["holdings"] if h["symbol"] in c["members"])
+        if v / total * 100 > c["max"]:
+            for m in c["members"]:
+                cluster_over[m] = f"{cname} together are {v / total * 100:.1f}% of the portfolio (limit {c['max']}%)"
+    group_over = {}
+    for gname, g in rules.get("groups", {}).items():
+        v = sum(shape["buckets"].get(m, 0.0) for m in g["members"])
+        if g.get("max") is not None and v / total * 100 > g["max"]:
+            for m in g["members"]:
+                group_over[m] = f"{gname} together are {v / total * 100:.1f}% of the portfolio (limit {g['max']}%)"
+    groups: dict = {}
+    for h in mine["holdings"]:
+        key = family_of(h["symbol"])
+        g = groups.setdefault(key, {"key": key, "symbols": [], "value": 0.0, "qty": 0.0, "price": h.get("price")})
+        g["symbols"].append(h["symbol"])
+        g["value"] += _value(h)
+        g["qty"] += float(h["quantity"]) if h.get("quantity") is not None else 0.0
+    stocks_w = _stocks_over(check)
+    items = []
+    for key, g in groups.items():
+        sym = g["symbols"][0]
+        bucket = bucket_of(sym)
+        weight = g["value"] / total * 100
+        note = notes.get(key) or {}
+        why = list(note.get("why", []))
+        action = note.get("stance", "Hold")
+        headline = note.get("headline", "Hold.")
+        source = ("Research note, " + _day(notes_as_of)) if note else "Rules"
+        if note and stale:
+            why.append(stale)
+        if sym in plan_by_symbol:
+            b, f = plan_by_symbol[sym]
+            action, source = "Buy", "Deposit plan"
+            headline = f"Buy {f['qty']} units at ₹{f['limit']:,.2f} or lower."
+            parts = f["part_qty"]
+            why = [f"₹{f['amount']:,.0f} of this month's ₹{plan['deposit']:,.0f} deposit.",
+                   f"Split the order: {parts[0]} now" + (f", {parts[1]} in two weeks" if len(parts) > 1 else "") + f" (last price ₹{f['price']:,.2f}).",
+                   next((x["detail"] for x in check["flags"] if x["severity"] == "under" and b in x["title"]), f"{b} are below their target share of the portfolio.")]
+        else:
+            reason = None
+            if bucket in over_bucket and bucket != STOCKS:
+                reason = f"{bucket} is {over_bucket[bucket]['weight']:.1f}% of the portfolio (limit {over_bucket[bucket]['max']}%)"
+            elif bucket in group_over:
+                reason = group_over[bucket]
+            elif sym in cluster_over:
+                reason = cluster_over[sym]
+            if reason and action == "Hold":
+                headline = "Hold. Don't add."
+                why = [reason[0].upper() + reason[1:] + ", so no new money here."] + why
+            elif reason:
+                why.append(reason[0].upper() + reason[1:] + ".")
+            if bucket == STOCKS and stocks_w:
+                why.append(f"Individual stocks are {stocks_w}% of the portfolio (limit {rules['buckets'][STOCKS]['max']}%), so no new stock money for now.")
+            if action != "Sell" and bucket == STOCKS and weight > st["trim_above"]:
+                action, source = "Trim", "Rules"
+                excess = g["value"] - st["max_at_buy"] / 100 * total
+                headline = f"Trim by about ₹{excess:,.0f} to bring it back to {st['max_at_buy']}%."
+                why.insert(0, f"It is {weight:.1f}% of the portfolio; your trim point is {st['trim_above']}%.")
+            if action == "Sell" and note.get("sell_limit_up_pct") and g.get("price") and len(g["symbols"]) == 1 and g["qty"]:
+                lim = round(g["price"] * (1 + note["sell_limit_up_pct"] / 100), 1)
+                headline = (f"Sell all {g['qty']:g} shares. Limit ₹{lim:,.1f} (about {note['sell_limit_up_pct']}% above today's ₹{g['price']:,.1f}); "
+                            f"if it has not filled by {_day(note.get('review'))}, sell at market.")
+            if action == "Watch" and note.get("exit_below") and g.get("price"):
+                why.append(f"Today's price is ₹{g['price']:,.1f}, so the exit line is {abs(g['price'] / note['exit_below'] - 1) * 100:.0f}% {'below' if g['price'] > note['exit_below'] else 'above'} it.")
+        items.append({"key": key, "symbols": g["symbols"], "name": name_of(key), "action": action, "headline": headline, "why": why,
+                      "source": source, "review": note.get("review"), "value": round(g["value"], 2), "weight": round(weight, 1)})
+    items.sort(key=lambda i: (ACTION_ORDER[i["action"]], -i["value"]))
+    return items
+
+
 def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, params: Optional[dict],
-                 family_of: Callable[[str], str], segment_of: Callable[[str], str], state_dir: Optional[str] = None) -> Optional[dict]:
+                 family_of: Callable[[str], str], segment_of: Callable[[str], str], state_dir: Optional[str] = None,
+                 name_of: Optional[Callable[[str], str]] = None) -> Optional[dict]:
     if not mine or not mine.get("holdings"):
         return None
     rules = load_rules(state_dir)
@@ -258,11 +360,14 @@ def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, par
     base1 = series["base"][1] - contrib[1]
     head = (reports or {}).get("headline") or {}
     actual_years = [{"label": y["label"], "return_pct": y["return_pct"], "bench_pct": y["bench_return_pct"]} for y in (reports or {}).get("years", []) if y["label"] >= "2023"]
+    check = check_rules(shape, mine, rules, segment_of)
+    plan = deposit_plan(shape, mine, deposit, rules)
     return {
+        "items": build_items(mine, shape, rules, plan, check, today, family_of, name_of or (lambda k: k)),
         "rules": {"buckets": rules["buckets"], "groups": rules["groups"], "stocks": rules["stocks"], "orders": {k: v for k, v in rules["orders"].items() if k != "fund_split"}},
         "params": {"monthly": round(monthly), "stepup": stepup, "deposit": round(deposit), "returns": returns, "inflation": infl},
-        "check": check_rules(shape, mine, rules, segment_of),
-        "deposit_plan": deposit_plan(shape, mine, deposit, rules),
+        "check": check,
+        "deposit_plan": plan,
         "history": hist,
         "targets": {"yearly": returns, "quarterly": {k: round(((1 + v / 100) ** 0.25 - 1) * 100, 2) for k, v in returns.items()},
                     "next_year_gain_base": round(base1), "total": round(start), "actual_xirr": head.get("xirr_pct"), "bench_xirr": head.get("bench_xirr_pct"),
