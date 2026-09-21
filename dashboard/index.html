@@ -23,6 +23,15 @@ nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
 .todaybar[hidden]{display:none}
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
+.tickerrow{display:flex;justify-content:flex-end;margin:-10px 0 12px}
+.tickerrow[hidden]{display:none}
+.tickerrow .ticker{overflow:hidden;white-space:nowrap;font-size:11.5px;color:var(--muted);width:230px}
+.tickerrow .run{display:inline-block;animation:tick 26s linear infinite;will-change:transform}
+.tickerrow .ticker:hover .run{animation-play-state:paused}
+.tickerrow .tk{display:inline-block;padding:0 14px 0 0}
+.tickerrow .tk b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600;font-size:12px;margin-left:3px}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-12.5%)}}
+@media (prefers-reduced-motion:reduce){.tickerrow .run{animation:none}}
 nav button{font:inherit;font-weight:500;padding:7px 14px;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:4px;cursor:pointer}
 nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 nav button:focus-visible,input:focus-visible,th button:focus-visible,.agent:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
@@ -259,6 +268,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
   <span class="todaybar" id="todaybar" hidden></span>
 </nav>
+<div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live" hidden>
@@ -421,10 +431,17 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEve
 }));
 document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
 
+function syncTicker(){
+  const tb = document.getElementById("todaybar"), row = document.getElementById("tickerrow"), t = document.getElementById("ticker");
+  row.hidden = tb.hidden || !t.innerHTML;
+  if(!tb.hidden && tb.offsetWidth) t.style.width = tb.offsetWidth + "px";
+}
+window.addEventListener("resize", syncTicker);
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
   document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
+  syncTicker();
   try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
 }));
 // Advice is about the real Groww money, so it exists only in Live mode; Reports exists in both, with different reports.
@@ -773,6 +790,11 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
+  // A stock-ticker strip of the per-type numbers, in its own row under the chip and exactly as wide as the chip.
+  const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "Other"].filter(kd => kd in todayByKind);
+  const run = kinds.map(kd => `<span class="tk">${kd} <b class="${cls(todayByKind[kd])}">${money(todayByKind[kd], true)}</b></span>`).join("");
+  document.getElementById("ticker").innerHTML = kinds.length ? `<span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span>` : "";
+  syncTicker();
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
 }
