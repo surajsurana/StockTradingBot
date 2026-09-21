@@ -52,13 +52,13 @@ class TestBuild(unittest.TestCase):
 class TestAddToState(unittest.TestCase):
     def test_pool_h_is_added_everywhere_the_other_pools_appear(self):
         state = {"pools": {"A": {"positions": 0}}, "overall": {"deployed": 0.0, "cash": 0.0, "unrealised": 0.0, "realised": 0.0, "capital": 0.0, "positions": 0},
-                 "pools_info": [{"pool": "A"}], "strategies": [], "statement": [], "ledger": [{"date": "2026-09-01", "time": "", "pool": "Pool A"}]}
+                 "pools_info": [{"pool": "A"}], "strategies": [], "statement": [{"pool": "Pool A", "capital": 0, "deployed": 0, "cash": 0}], "ledger": [{"date": "2026-09-01", "time": "", "pool": "Pool A"}]}
         self.assertTrue(add_pool_h(state, MINE, RAW, 500.0, date(2026, 9, 21), None))
         self.assertIn("H", state["pools"])
         self.assertEqual(state["overall"]["positions"], 2)
         self.assertEqual([p["pool"] for p in state["pools_info"]], ["A", "H"])
         self.assertEqual(len(state["strategies"]), 1)
-        self.assertEqual(state["statement"][0]["pool"], "Pool H")
+        self.assertEqual([l["pool"] for l in state["statement"]], ["Pool H"])                 # the empty paper line is dropped
         dates = [a["date"] for a in state["ledger"]]
         self.assertEqual(dates, sorted(dates, reverse=True))                        # newest first
         self.assertFalse(add_pool_h({"pools": {}}, {"holdings": []}, RAW, 0, date(2026, 9, 21), None))

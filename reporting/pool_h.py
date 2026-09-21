@@ -145,6 +145,7 @@ def add_pool_h(state: dict, mine: dict, raw: Optional[dict], cash: Optional[floa
     state["overall"] = o
     state["pools_info"] = list(state["pools_info"]) + [h["info"]]
     state["strategies"] = list(state["strategies"]) + [h["strategy"]]
-    state["statement"] = list(state["statement"]) + [h["line"]]
+    # In Live mode the P&L statement is real money only: drop the empty lines the paper books would show
+    state["statement"] = [l for l in state["statement"] if l.get("capital") or l.get("deployed") or l.get("cash")] + [h["line"]]
     state["ledger"] = sorted(list(state["ledger"]) + h["ledger"], key=lambda a: (a["date"], a.get("time") or ""), reverse=True)
     return True
