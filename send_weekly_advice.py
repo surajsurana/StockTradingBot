@@ -14,7 +14,7 @@ It reads the same files the dashboard's Advice tab uses: the Groww holdings snap
 import argparse
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 
 from advice.view import build_advice
 from dashboard.state_view import FAMILY, FAMILY_NAME, _company_name, _segment_of, portfolio_view, reports_view
@@ -39,12 +39,22 @@ def _lakh(v: float) -> str:
     return f"Rs {v / 1e7:.2f} Cr" if abs(v) >= 1e7 else f"Rs {v / 1e5:.1f} L"
 
 
+def _usable(snap: dict, today: date) -> bool:
+    """Connected, or a temporary Groww error while the last holdings are recent (up to 3 days old)."""
+    if snap.get("status") == "connected":
+        return True
+    try:
+        return snap.get("status") == "error" and (today - datetime.fromisoformat(snap["fetched_at"]).date()).days <= 3
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def load_advice(state_dir: str, today: date):
     """(advice, reports, snapshot) for the live Groww holdings, or (None, None, snapshot) if not connected."""
     from advice.results import load_results
     from advice.tasks import load_done
     snap = load_snapshot(state_dir)
-    if snap.get("status") != "connected" or not snap.get("holdings"):
+    if not snap.get("holdings") or not _usable(snap, today):
         return None, None, snap
     mine = portfolio_view(snap, _prices([h["symbol"] for h in snap["holdings"]]), {}, session_today=False)
     path = os.path.join(state_dir, "groww_reports.json")

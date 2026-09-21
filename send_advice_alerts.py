@@ -58,9 +58,11 @@ def _extra_prices(log: list, have: dict) -> dict:
     return {k[:-3]: v for k, v in _prices(missing).items()} if missing else {}
 
 
-def message(tasks: list, when_label: str) -> str:
+def message(tasks: list, when_label: str, note: str = "") -> str:
     lines = ["*Long term advice*", f"To do on {when_label}:", ""]
     lines += ["\u2022 *" + esc(t["name"]) + "*: " + md(t["title"]) for t in tasks]
+    if note:
+        lines += ["", esc(note)]
     lines += ["", "Advice only. Nothing has been ordered. Press Done on the dashboard's Advice page once you have placed an order."]
     return "\n".join(lines)
 
@@ -96,7 +98,8 @@ def main() -> None:
     if not todo:
         print(f"Nothing new to do on {a['when_label']}; staying quiet.")
         return
-    msg = message(todo, a["when_label"])
+    note = "" if snap.get("status") == "connected" else f"Groww could not be reached, so this uses your holdings as of {snap.get('fetched_at', 'an earlier time')}."
+    msg = message(todo, a["when_label"], note)
     print(msg)
     if args.send:
         from reporting.telegram_notifier import send_telegram_message
