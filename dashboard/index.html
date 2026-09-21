@@ -750,7 +750,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
     grp("Today's P&L", [
-      item(val("live.today", today + openMove, true), "Today, all types", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
+      item(val("live.today", today + openMove, true), "Today", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
       ...["Swing", "Intraday", "Crypto", "Long-term", "Other"].filter(kd => kd in todayByKind).map(kd =>
         item(val("live.today." + kd, todayByKind[kd], true), kd, `${kd}: booked today plus today's move on open positions`)),
     ], 1),
