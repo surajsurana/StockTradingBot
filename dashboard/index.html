@@ -41,6 +41,7 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+#livecards{flex-wrap:nowrap}#livecards .grp{flex:1 1 0;min-width:0;padding:10px 9px}#livecards .gi > span{gap:6px;padding:6px 7px}#livecards .gi b{font-size:14px}#livecards .gi > span.posrow{grid-template-columns:1fr repeat(4,auto);gap:6px}
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
 .cards .gi{display:flex;flex-direction:column;gap:6px}
@@ -252,7 +253,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
   <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
   <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
-  <span class="todaybar" id="todaybar" hidden></span>
 </nav>
 <p id="error" class="err" hidden></p>
 
@@ -419,7 +419,6 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classL
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
-  document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
   try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
 }));
 // Advice is about the real Groww money, so it exists only in Live mode; Reports exists in both, with different reports.
@@ -670,6 +669,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F","G","H"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
+  const kindOfPool = Object.fromEntries(Object.entries(poolsOf).flatMap(([kd, ps]) => ps.map(x => [x, kd])));
+  const todayByKind = {};                                   // type -> booked today (open-position move is added below)
   const live = s.mode === "live";
   const booksIn = live
     ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: s.pool_g.exists ? 1 : 0}
@@ -703,6 +704,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
     keys = bookOne.pools;
     capital = +bookOne.capital || 0; deployed = +bookOne.deployed || 0; cash = +bookOne.cash || 0;
     booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; today = +bookOne.realised_today || 0; open = +bookOne.positions || 0;
+    todayByKind[kindOfPool[keys[0]] || "Other"] = today;
   } else {
     for(const k of keys){
       let p = null;
@@ -712,12 +714,19 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       else p = s.pools[k];
       if(!p) continue;
       capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
+      const kd = kindOfPool[k] || "Other";
+      if(+p.capital || +p.positions) todayByKind[kd] = (todayByKind[kd] || 0) + (+p.realised_today || 0);   // a type with no money in it stays out of the breakdown
     }
   }
   const scope = bookF || poolF || kindF ? [poolF, kindF, bookF].filter(Boolean).join(" · ") : "all pools";
   const poolLetters = new Set(keys.map(k => "Pool " + k));
   const inBook = a => !bookF || a.book === bookF;
   const openMove = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a) && a.pnl_today != null).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  for(const a of s.ledger){
+    if(a.status !== "Open" || !poolLetters.has(a.pool) || !inBook(a) || a.pnl_today == null) continue;
+    const kd = kindOfPool[String(a.pool).replace("Pool ", "")] || "Other";
+    todayByKind[kd] = (todayByKind[kd] || 0) + (+a.pnl_today || 0);
+  }
   const openRows = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a));
   const inProfit = openRows.filter(a => (+a.pnl || 0) > 0).length, inLoss = openRows.filter(a => (+a.pnl || 0) < 0).length;
   const val = (key, n, signed) => lv(key, n, `<b class="${signed ? cls(n) : ""}">${money(n, signed)}</b>`);
@@ -740,25 +749,26 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       item(val("live.total", booked + unbooked, true), "Total P&L", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today`),
       item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
     ], 0),
+    grp("Today's P&L", [
+      item(val("live.today", today + openMove, true), "Today, all types", `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`),
+      ...["Swing", "Intraday", "Crypto", "Long-term", "Other"].filter(kd => kd in todayByKind).map(kd =>
+        item(val("live.today." + kd, todayByKind[kd], true), kd, `${kd}: booked today plus today's move on open positions`)),
+    ], 1),
     grp("Deployed", [
       item(val("live.deployed", deployed, false), "Deployed", `open positions at cost · ${scope}`),
       item(val("live.cash", cash, false), "Cash available", scope),
-    ], 1),
+    ], 2),
     grp("Positions", [
       posrow("Open", inProfit, inLoss, flat, open, `green in profit, red in loss, grey at zero, then the total · ${scope}`),
       posrow("Closed", closedWin, closedLoss, closedFlat, closedRowsAll.length, `green in profit, red in loss, grey at zero, then the total · all closed trades on record · ${scope}`),
-    ], 2),
+    ], 3),
     grp("Strategies", [
       link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": "PAPER_TRADING", "reg-pool": poolF || ""}),
       link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
-    ], 3),
+    ], 4),
   ].join("");
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
-  const todayTotal = today + openMove;
-  const tb = document.getElementById("todaybar");
-  tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
-  tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
