@@ -18,19 +18,11 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;mar
 .status{color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-left:auto;font-size:13px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .dot.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
-nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start}
-.todaybar{margin-left:auto;display:flex;flex-direction:column;gap:3px}
+nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
+.todaybar{margin-left:auto;display:inline-flex;align-items:center;gap:10px;padding:7px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
 .todaybar[hidden]{display:none}
-.todaybar .chip{display:inline-flex;align-items:center;gap:10px;padding:7px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
-.todaybar .ticker{display:block;width:0;min-width:100%;overflow:hidden;white-space:nowrap;font-size:11.5px;color:var(--muted)}
-.todaybar .run{display:inline-block;animation:tick 26s linear infinite;will-change:transform}
-.todaybar .ticker:hover .run{animation-play-state:paused}
-.todaybar .tk{display:inline-block;padding:0 14px 0 0}
-.todaybar .tk b{font-size:12px;margin-left:3px}
-@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-12.5%)}}
-@media (prefers-reduced-motion:reduce){.todaybar .run{animation:none}}
 nav button{font:inherit;font-weight:500;padding:7px 14px;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:4px;cursor:pointer}
 nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 nav button:focus-visible,input:focus-visible,th button:focus-visible,.agent:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
@@ -776,14 +768,11 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
     ], 3),
   ].join("");
-  // Today's P&L chip, top right, with a stock-ticker strip of the per-type numbers running along its bottom.
+  // Today's P&L chip, top right; follows the same filters as the cards.
   const todayTotal = today + openMove;
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
-  const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "Other"].filter(kd => kd in todayByKind);
-  const run = kinds.map(kd => `<span class="tk">${kd} <b class="${cls(todayByKind[kd])}">${money(todayByKind[kd], true)}</b></span>`).join("");
-  tb.innerHTML = `<span class="chip"><i>Today's P&L</i> ${val("live.today", todayTotal, true)}</span>` +
-                 (kinds.length ? `<span class="ticker"><span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span></span>` : "");
+  tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
 }
