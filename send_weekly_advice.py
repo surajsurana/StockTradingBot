@@ -41,6 +41,7 @@ def _lakh(v: float) -> str:
 
 def load_advice(state_dir: str, today: date):
     """(advice, reports, snapshot) for the live Groww holdings, or (None, None, snapshot) if not connected."""
+    from advice.results import load_results
     from advice.tasks import load_done
     snap = load_snapshot(state_dir)
     if snap.get("status") != "connected" or not snap.get("holdings"):
@@ -49,8 +50,11 @@ def load_advice(state_dir: str, today: date):
     path = os.path.join(state_dir, "groww_reports.json")
     rep = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else None
     reports = reports_view(rep, mine, snap.get("cash"), today) if rep else None
+    from advice.screener import load_screener
+    from advice.track import load_log
     a = build_advice(mine, reports, today, None, lambda s: FAMILY.get(s, s), _segment_of, state_dir,
-                     lambda fam: FAMILY_NAME.get(fam) or _company_name(rep or {}, fam), cash=snap.get("cash"), done=load_done(state_dir))
+                     lambda fam: FAMILY_NAME.get(fam) or _company_name(rep or {}, fam), cash=snap.get("cash"), done=load_done(state_dir),
+                     results=load_results(state_dir), raw=rep, screener=load_screener(state_dir), log=load_log(state_dir))
     return a, reports, snap
 
 

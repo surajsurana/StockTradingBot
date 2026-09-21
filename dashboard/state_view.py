@@ -898,7 +898,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
-                          advice_params: Optional[dict] = None, advice_done: Optional[list] = None) -> dict:
+                          advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
+                          advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -967,7 +968,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     from advice.view import build_advice
     advice_out = build_advice(my_portfolio, reports_out, now.date(), advice_params, lambda s: FAMILY.get(s, s), _segment_of, state_dir,
                              lambda fam: FAMILY_NAME.get(fam) or _company_name(reports or {}, fam),
-                             cash=(groww or {}).get("cash"), done=advice_done) if reports is not None else None
+                             cash=(groww or {}).get("cash"), done=advice_done, results=advice_results, raw=reports,
+                             screener=(advice_extra or {}).get("screener"), log=(advice_extra or {}).get("log")) if reports is not None else None
     pools = {k: _with_capital(dict(v)) for k, v in summary["pools"].items() if k != "A1"}
     pool_d = _with_capital(pool_d)
     for b in books:

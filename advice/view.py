@@ -13,7 +13,10 @@ from typing import Callable, Optional
 
 from advice.notes import NOTES, NOTES_AS_OF
 from advice.rules import FUND_BUCKET, load_rules
+from advice.screener import MIN_MCAP_CR, pick
 from advice.tasks import build_tasks
+from advice.tax import tax_tasks, tax_view
+from advice.track import track_view
 
 HORIZONS = (1, 2, 3, 5, 10)
 STOCKS = "Individual stocks"
@@ -253,7 +256,7 @@ def _stocks_over(check: dict) -> Optional[float]:
 
 def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, today: date,
                 family_of: Callable[[str], str], name_of: Callable[[str], str], notes: Optional[dict] = None,
-                notes_as_of: str = NOTES_AS_OF) -> list:
+                notes_as_of: str = NOTES_AS_OF, results: Optional[dict] = None) -> list:
     """One line of advice per holding (a demerged unit is folded into its parent): Sell, Trim, Buy, Watch or Hold,
     with a one-sentence instruction and the reasons behind it. Buys come from the deposit plan; Sell and Watch
     come from the dated research notes; Trim and the "don't add" reasons come from your rules."""
@@ -332,7 +335,22 @@ def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, t
                             f"if it has not filled by {_day(note.get('review'))}, sell at market.")
             if action == "Watch" and note.get("exit_below") and g.get("price"):
                 why.append(f"Today's price is ₹{g['price']:,.1f}, so the exit line is {abs(g['price'] / note['exit_below'] - 1) * 100:.0f}% {'below' if g['price'] > note['exit_below'] else 'above'} it.")
+        result, results_action, rule_qty, rule_symbol = None, None, None, None
+        rule, res = note.get("results_rule"), (results or {}).get(key)
+        if rule and res and res.get("status") in ("ok", "fail") and action == "Watch":
+            result = res
+            rule_symbol = rule["symbol"]
+            rule_qty = next((float(h["quantity"]) for h in mine["holdings"] if h["symbol"] == rule_symbol and h.get("quantity") is not None), None)
+            if res["status"] == "ok":
+                action, headline = "Hold", "Hold."
+                why.insert(0, f"Results checked: {res['label']} rose from {res['baseline']}% to {res['new']}% (quarter ending {_day(res['period'])}), so the watch is cleared.")
+            else:
+                results_action = rule["if_fail"]
+                action = "Trim" if results_action == "trim_half" else "Sell"
+                headline = f"{res['label'].capitalize()} did not improve ({res['baseline']}% to {res['new']}%), so the sell condition is met."
+                why.insert(0, f"Results for the quarter ending {_day(res['period'])}: {res['label']} {res['baseline']}% to {res['new']}%; you needed at least {res['need']} points better.")
         items.append({"key": key, "symbols": g["symbols"], "name": name_of(key), "action": action, "headline": headline, "why": why,
+                      "result": result, "results_action": results_action, "rule_qty": rule_qty, "rule_symbol": rule_symbol,
                       "source": source, "review": note.get("review"), "trigger": note.get("trigger"), "exit_below": note.get("exit_below"),
                       "sell_limit": sell_limit, "trim_value": trim_value, "qty": g["qty"], "price": g.get("price"),
                       "value": round(g["value"], 2), "weight": round(weight, 1)})
@@ -343,7 +361,8 @@ def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, t
 def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, params: Optional[dict],
                  family_of: Callable[[str], str], segment_of: Callable[[str], str], state_dir: Optional[str] = None,
                  name_of: Optional[Callable[[str], str]] = None, cash: Optional[float] = None,
-                 done: Optional[list] = None) -> Optional[dict]:
+                 done: Optional[list] = None, results: Optional[dict] = None, raw: Optional[dict] = None,
+                 screener: Optional[dict] = None, log: Optional[list] = None) -> Optional[dict]:
     if not mine or not mine.get("holdings"):
         return None
     rules = load_rules(state_dir)
@@ -370,9 +389,40 @@ def build_advice(mine: Optional[dict], reports: Optional[dict], today: date, par
     actual_years = [{"label": y["label"], "return_pct": y["return_pct"], "bench_pct": y["bench_return_pct"]} for y in (reports or {}).get("years", []) if y["label"] >= "2023"]
     check = check_rules(shape, mine, rules, segment_of)
     plan = deposit_plan(shape, mine, deposit, rules)
-    items = build_items(mine, shape, rules, plan, check, today, family_of, name_of or (lambda k: k))
+    name_of = name_of or (lambda k: k)
+    items = build_items(mine, shape, rules, plan, check, today, family_of, name_of, results=results)
+
+    # new stocks: only when the rules leave room for individual stocks (a share of an arrived deposit is set aside for them)
+    held = {h["symbol"] for h in mine["holdings"]}
+    over_segments = {seg for seg, v in check["industries"].items() if v > rules["stocks"]["industry_max"]}
+    ideas = pick(screener or {}, held, segment_of, over_segments)
+    o = rules["orders"]
+    if plan["stock_room"] >= o["min_order"] and ideas:
+        c = ideas[0]
+        amount = min(plan["stock_room"], rules["stocks"]["max_at_buy"] / 100 * (shape["total"] + deposit))
+        limit = math.floor(c["price"] * (1 - o["limit_below_pct"] / 100) * 100) / 100
+        qty = int(amount // limit)
+        if qty > 0:
+            n = max(1, o["parts"])
+            base_q, extra = divmod(qty, n)
+            fund = {"symbol": c["symbol"], "amount": round(qty * limit, 2), "price": c["price"], "limit": limit, "qty": qty, "spend": round(qty * limit, 2),
+                    "part_qty": [base_q + (1 if i < extra else 0) for i in range(n)]}
+            plan["rows"].append({"bucket": "Individual stocks", "amount": fund["amount"], "funds": [fund]})
+            items.append({"key": c["symbol"], "symbols": [c["symbol"]], "name": c["name"], "action": "Buy", "headline": "New stock idea.", "source": "Screener",
+                          "why": [f"Screener score {c['score']}/100: " + "; ".join(c["why"][:4]) + ".", "This is a screened idea, not a tested recommendation: read up on the company before buying."],
+                          "review": None, "trigger": None, "exit_below": None, "sell_limit": None, "trim_value": None, "qty": 0, "price": c["price"],
+                          "result": None, "results_action": None, "rule_qty": None, "rule_symbol": None, "value": 0, "weight": 0})
+    built = build_tasks(items, plan, today, done or [])
+    tax = tax_view(raw, mine, today, name_of)
+    built["tasks"] += tax_tasks(tax, done or [], built["when"], {t["symbols"][0] for t in built["tasks"]})
+    built["tasks"].sort(key=lambda t: (t["order"], t["name"]))
+    stocks_w = _stocks_over(check)
+    ideas_out = {"as_of": (screener or {}).get("as_of"), "screened": (screener or {}).get("screened"), "list": ideas,
+                 "buyable": plan["stock_room"] >= o["min_order"],
+                 "why_not": (f"Individual stocks are {stocks_w}% of the portfolio (limit {rules['buckets'][STOCKS]['max']}%), so no new stock money yet." if stocks_w else None)}
     return {
-        **build_tasks(items, plan, today, done or []),
+        **built,
+        "tax": tax, "ideas": ideas_out, "track": track_view(log or [], today),
         "cash": cash,
         "rules": {"buckets": rules["buckets"], "groups": rules["groups"], "stocks": rules["stocks"], "orders": {k: v for k, v in rules["orders"].items() if k != "fund_split"}},
         "params": {"monthly": round(monthly), "stepup": stepup, "deposit": round(deposit), "returns": returns, "inflation": infl},

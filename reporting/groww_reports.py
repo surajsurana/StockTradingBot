@@ -367,6 +367,7 @@ def build_reports(folder: str, prices=None, holdings: Optional[Dict[str, float]]
         company_flows[o["symbol"]][d] = company_flows[o["symbol"]].get(d, 0.0) + (-o["value"] if o["type"] == "BUY" else o["value"])
     return {
         "names": names,
+        "orders": [[o["ts"].date().isoformat(), o["symbol"], "B" if o["type"] == "BUY" else "S", o["qty"], round(o["value"], 2)] for o in orders],
         "net_qty": {sym: round(_qty_in_todays_shares(orders, sym, datetime(9999, 12, 31), spl.get(sym)), 4) for sym in sorted({o["symbol"] for o in orders})},
         "dividends": merged_dividends(folder, orders, dividend_rows(orders, divs, spl, holdings), isins),
         "company_flows": {k: [[d, round(a, 2)] for d, a in sorted(v.items())] for k, v in company_flows.items()},

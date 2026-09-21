@@ -43,6 +43,21 @@ def md(text: str) -> str:
     return _BOLD.sub(lambda m: "*" + m.group(1) + "*", esc(text))
 
 
+def _live_prices(state_dir: str) -> list:
+    from data.fetch_groww import load_snapshot
+    from send_weekly_advice import _prices
+    snap = load_snapshot(state_dir)
+    px = _prices([h["symbol"] for h in snap.get("holdings", [])])
+    return [{"symbol": k[:-3], "price": v} for k, v in px.items()]
+
+
+def _extra_prices(log: list, have: dict) -> dict:
+    """Latest prices for logged stocks that are no longer held (for example after a sell)."""
+    from send_weekly_advice import _prices
+    missing = sorted({e["symbol"] for e in log if e["symbol"] not in have})
+    return {k[:-3]: v for k, v in _prices(missing).items()} if missing else {}
+
+
 def message(tasks: list, when_label: str) -> str:
     lines = ["*Long term advice*", f"To do on {when_label}:", ""]
     lines += ["\u2022 *" + esc(t["name"]) + "*: " + md(t["title"]) for t in tasks]
@@ -57,10 +72,24 @@ def main() -> None:
     args = ap.parse_args()
     from deployment.settings import STATE_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
     state_dir = args.state_dir or STATE_DIR
+    try:    # look for newly reported quarters first, so a result that trips a rule is in tonight's message
+        from advice.notes import NOTES
+        from advice.results import refresh
+        refresh(state_dir, NOTES, date.today())
+    except Exception as e:
+        print(f"results check skipped: {type(e).__name__}: {e}")
     a, _, snap = load_advice(state_dir, date.today())
     if a is None:
         print(f"Groww not connected (status {snap.get('status')}); nothing to send.")
         return
+    try:    # keep the track record: log what was asked tonight and refresh the latest prices of everything logged
+        from advice.track import load_log, log_tasks, update_last
+        px = {h["symbol"]: h["price"] for h in _live_prices(state_dir)}
+        nifty = px.get("NIFTYBEES")
+        log_tasks(state_dir, a["tasks"], px, nifty, date.today())
+        update_last(state_dir, {**px, **_extra_prices(load_log(state_dir), px)}, nifty, date.today())
+    except Exception as e:
+        print(f"track record skipped: {type(e).__name__}: {e}")
     path = os.path.join(state_dir, "advice_alert_state.json")
     sent = json.load(open(path, encoding="utf-8")) if os.path.exists(path) else {}
     todo = fresh_tasks(a["tasks"], a["when"], sent)

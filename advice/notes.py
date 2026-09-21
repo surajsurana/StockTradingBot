@@ -35,6 +35,7 @@ NOTES = {
     "OLECTRA": {
         "stance": "Watch", "review": "2026-11-10",
         "trigger": "Sell if next quarter's margin is still near 12% (results due around 10 Nov).",
+        "results_rule": {"symbol": "OLECTRA", "metric": "ebitda_margin", "baseline_period": "2026-06-30", "need_gain_pts": 1.0, "if_fail": "sell", "label": "EBITDA margin"},
         "headline": "Hold. Sell if next quarter's margin is still near 12%.",
         "why": ["Q1 revenue rose 66% but profit only 3%, and margin fell to 12% from 13.6%.",
                 "Its customers are state bus operators, so cash comes in slowly.",
@@ -43,6 +44,7 @@ NOTES = {
     "TMPV": {
         "stance": "Watch", "review": "2026-11-12",
         "trigger": "Sell part if Jaguar Land Rover has not improved at the November results (around 12 Nov).",
+        "results_rule": {"symbol": "TMPV", "metric": "ebitda_margin", "baseline_period": "2026-06-30", "need_gain_pts": 1.0, "if_fail": "trim_half", "label": "EBITDA margin"},
         "headline": "Hold. Reduce if Jaguar Land Rover has not improved by the November results.",
         "why": ["Q1 profit fell 78% on weakness at Jaguar Land Rover; Jefferies flags competition, discounts and ageing models.",
                 "The India car business is growing strongly and the commercial-vehicle unit (TMCV) looks healthier.",
@@ -51,6 +53,7 @@ NOTES = {
     "ELECON": {
         "stance": "Watch", "review": "2026-11-10",
         "trigger": "Sell if margins have not recovered at the November results (around 10 Nov).",
+        "results_rule": {"symbol": "ELECON", "metric": "op_margin", "baseline_period": "2026-06-30", "need_gain_pts": 1.0, "if_fail": "sell", "label": "operating margin"},
         "headline": "Hold. Review after the November results.",
         "why": ["Q1 profit fell 60% and operating margin dropped from 26.6% to 21%.",
                 "Over four years revenue grew about 16% a year, debt is low and free cash flow has been positive every year.",

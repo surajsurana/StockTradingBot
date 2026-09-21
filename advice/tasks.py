@@ -67,6 +67,11 @@ def _is_done(done: list, task_id: str) -> bool:
     return any(r["id"] == task_id for r in done)
 
 
+def _day_short(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{d.day} {d.strftime('%b %Y')}"
+
+
 def _day_label(d: date) -> str:
     return f"{d.strftime('%A')} {d.day} {d.strftime('%b')}"
 
@@ -80,7 +85,17 @@ def build_tasks(items: list, plan: dict, today: date, done: list) -> dict:
     for it in items:
         key, sym, qty, price = it["key"], it["symbols"][0], it.get("qty") or 0.0, it.get("price")
         single = len(it["symbols"]) == 1 and qty
-        base = {"key": key, "name": it["name"], "symbols": it["symbols"], "due": when.isoformat(), "why": it["why"]}
+        base = {"key": key, "name": it["name"], "symbols": it["symbols"], "due": when.isoformat(), "why": it["why"], "price": price}
+        if it.get("results_action") and it.get("rule_qty") and it.get("result"):
+            res, rq, rsym = it["result"], it["rule_qty"], it["rule_symbol"]
+            tid = f"res:{key}:{res['period']}"
+            if not _is_done(done, tid):
+                q = rq if it["results_action"] == "sell" else int(rq // 2)
+                what = f"Sell all {rq:g} shares of {rsym}" if it["results_action"] == "sell" else f"Sell {q} of your {rq:g} {rsym} shares (half)"
+                tasks.append({**base, "id": tid, "kind": "Sell", "order": 0,
+                              "title": f"{what}: {res['label']} did not improve ({res['baseline']}% to {res['new']}%) in the quarter ending {_day_short(res['period'])}.",
+                              "detail": "Place a limit sell order at or just below the live price."})
+            continue
         if it["action"] == "Buy" and sym in plan_funds:
             f = plan_funds[sym]
             tid = f"buy:{sym}"

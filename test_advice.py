@@ -195,5 +195,145 @@ class TestTasks(unittest.TestCase):
         self.assertEqual(len(fresh_tasks(tasks, "2026-09-22", {"when": "2026-09-21", "ids": ["a", "b"]})), 2)
 
 
+class TestResultsReader(unittest.TestCase):
+    RULE = {"symbol": "BBB", "metric": "ebitda_margin", "baseline_period": "2026-06-30", "need_gain_pts": 1.0, "if_fail": "sell", "label": "EBITDA margin"}
+
+    def test_pending_until_a_new_quarter_appears_then_ok_or_fail(self):
+        from advice.results import evaluate
+        base = {"2026-06-30": {"ebitda_margin": 12.0}}
+        self.assertEqual(evaluate(self.RULE, base)["status"], "pending")
+        self.assertEqual(evaluate(self.RULE, {**base, "2026-09-30": {"ebitda_margin": 13.5}})["status"], "ok")
+        bad = evaluate(self.RULE, {**base, "2026-09-30": {"ebitda_margin": 12.4}})
+        self.assertEqual((bad["status"], bad["delta"], bad["period"]), ("fail", 0.4, "2026-09-30"))
+        self.assertEqual(evaluate(self.RULE, {})["status"], "error")
+
+    def test_refresh_keeps_a_final_decision_and_survives_a_failed_fetch(self):
+        import tempfile
+        from advice.results import load_results, refresh
+        d = tempfile.mkdtemp()
+        notes = {"BBB": {"results_rule": self.RULE}}
+        data = {"2026-06-30": {"ebitda_margin": 12.0}, "2026-09-30": {"ebitda_margin": 12.2}}
+        refresh(d, notes, date(2026, 11, 10), lambda s: data)
+        self.assertEqual(load_results(d)["BBB"]["status"], "fail")
+        refresh(d, notes, date(2026, 11, 11), lambda s: (_ for _ in ()).throw(RuntimeError("down")))     # not asked again: the decision stands
+        self.assertEqual(load_results(d)["BBB"]["status"], "fail")
+        d2 = tempfile.mkdtemp()
+        refresh(d2, notes, date(2026, 11, 10), lambda s: (_ for _ in ()).throw(RuntimeError("down")))
+        self.assertEqual(load_results(d2)["BBB"]["status"], "error")
+
+    def _advice(self, results):
+        import advice.view as v
+        notes = {"BBB": {"stance": "Watch", "headline": "Hold.", "why": [], "trigger": "x", "review": "2026-11-10", "results_rule": self.RULE}}
+        mine = {"holdings": [dict(h, quantity=10, price=h.get("price") or 50.0) for h in MINE["holdings"]]}
+        old = v.NOTES
+        try:
+            v.NOTES = notes
+            return v.build_advice(mine, None, date(2026, 11, 12), None, FAMILY, SEGMENT, None, lambda k: k, cash=0, done=[], results=results)
+        finally:
+            v.NOTES = old
+
+    def test_a_failed_check_becomes_a_sell_task_and_a_pass_clears_the_watch(self):
+        fail = {"BBB": {"status": "fail", "period": "2026-09-30", "baseline": 12.0, "new": 12.2, "delta": 0.2, "label": "EBITDA margin", "need": 1.0, "if_fail": "sell", "symbol": "BBB"}}
+        a = self._advice(fail)
+        t = next(t for t in a["tasks"] if t["key"] == "BBB")
+        self.assertEqual((t["kind"], t["id"]), ("Sell", "res:BBB:2026-09-30"))
+        self.assertIn("did not improve", t["title"])
+        ok = self._advice({"BBB": dict(fail["BBB"], status="ok", new=14.0, delta=2.0)})
+        self.assertNotIn("BBB", [t["key"] for t in ok["tasks"]])
+        self.assertEqual(ok["watching"], [])
+        self.assertEqual(self._advice({})["watching"][0]["name"], "BBB")                # still pending
+
+
+class TestTax(unittest.TestCase):
+    ORDERS = [["2024-01-10", "AAA", "B", 10, 1000.0], ["2025-11-10", "AAA", "B", 10, 1500.0], ["2026-01-05", "AAA", "S", 5, 700.0],
+              ["2024-02-01", "BBB", "B", 10, 2000.0], ["2025-06-01", "ZZZ", "B", 3, 300.0]]
+
+    def test_first_in_first_out_lots_and_symbols_that_do_not_reconcile_are_left_out(self):
+        from advice.tax import open_lots
+        lots = open_lots(self.ORDERS, {"AAA": 15.0, "BBB": 10.0, "ZZZ": 99.0})
+        self.assertEqual([(l["date"], l["qty"]) for l in lots["AAA"]], [("2024-01-10", 5.0), ("2025-11-10", 10.0)])    # the sale used the oldest shares
+        self.assertNotIn("ZZZ", lots)
+
+    def _view(self, today):
+        from advice.tax import tax_view
+        mine = {"holdings": [{"symbol": "AAA", "quantity": 15, "price": 200.0, "value": 3000, "invested": 2500}, {"symbol": "BBB", "quantity": 10, "price": 150.0, "value": 1500, "invested": 2000}]}
+        raw = {"orders": self.ORDERS, "fy": [{"fy": "FY26-27", "short_term": 500.0, "long_term": 20000.0, "intraday": 0.0}]}
+        return tax_view(raw, mine, today, lambda s: s)
+
+    def test_lt_st_split_exemption_left_and_year_end_tasks_only_in_season(self):
+        from advice.tax import tax_tasks
+        v = self._view(date(2026, 9, 21))
+        row = next(r for r in v["rows"] if r["symbol"] == "AAA")
+        self.assertAlmostEqual(row["lt_gain"], 5 * (200 - 100), places=1)               # 5 shares bought Jan 2024 at 100
+        self.assertAlmostEqual(row["st_gain"], 10 * (200 - 150), places=1)              # 10 bought Nov 2025 at 150, held under a year
+        self.assertEqual(v["exemption_left"], 125000 - 20000)
+        self.assertTrue(v["losses"] == [] and v["in_season"] is False)
+        self.assertEqual(tax_tasks(v, [], "2026-09-22", set()), [])
+        march = self._view(date(2027, 3, 5))
+        self.assertTrue(march["in_season"])
+        tasks = tax_tasks(march, [], "2027-03-08", set())
+        self.assertTrue(tasks and all(t["kind"] == "Tax" for t in tasks))
+        self.assertEqual(tax_tasks(march, [{"id": tasks[0]["id"]}], "2027-03-08", set())[:1] == [tasks[0]], False)      # done ones drop out
+
+
+class TestScreenerAndTrack(unittest.TestCase):
+    GOOD = {"symbol": "GOOD", "roe": 20.0, "de": 0.2, "fcf_pos": 4, "fcf_n": 4, "rev_cagr": 15.0, "ni_cagr": 18.0, "pe": 22.0, "vs200": 3.0, "price": 100.0, "mcap_cr": 9000.0}
+
+    def test_scoring_rewards_quality_and_flags_expensive_or_leveraged_names(self):
+        from advice.screener import score
+        good = score(self.GOOD)
+        self.assertGreaterEqual(good["score"], 90)
+        weak = score({**self.GOOD, "roe": 5.0, "de": 2.5, "fcf_pos": 0, "rev_cagr": 2.0, "ni_cagr": 3.0, "pe": 80.0, "vs200": -12.0})
+        self.assertLess(weak["score"], 30)
+        self.assertTrue(any("debt" in w for w in weak["warn"]))
+
+    def test_refresh_saves_only_names_that_clear_the_bar_and_pick_skips_held_or_crowded(self):
+        import tempfile
+        from advice.screener import load_screener, pick, refresh
+        universe = [{"symbol": s, "name": s, "industry": "Capital Goods"} for s in ("GOOD", "WEAK", "HELD", "TINY")]
+        data = {"GOOD": self.GOOD, "WEAK": {**self.GOOD, "symbol": "WEAK", "roe": 3.0, "de": 3.0, "ni_cagr": 1.0, "rev_cagr": 1.0, "pe": 90.0, "fcf_pos": 0},
+                "HELD": {**self.GOOD, "symbol": "HELD"}, "TINY": {**self.GOOD, "symbol": "TINY", "mcap_cr": 300.0}}
+        d = tempfile.mkdtemp()
+        out = refresh(d, date(2026, 9, 20), universe, lambda s: data[s], pause=0)
+        self.assertEqual(sorted(c["symbol"] for c in out["candidates"]), ["GOOD", "HELD"])
+        scr = load_screener(d)
+        self.assertEqual([c["symbol"] for c in pick(scr, {"HELD"}, lambda s: "X", set())], ["GOOD"])
+        self.assertEqual(pick(scr, set(), lambda s: "Crowded", {"Crowded"}), [])
+
+    def test_a_new_stock_buy_appears_only_when_the_rules_leave_room(self):
+        import advice.view as v
+        mine = {"holdings": [dict(_h(s, val, price=50.0), quantity=10) for s, val in
+                             (("NIFTYBEES", 100000), ("MON100", 40000), ("GOLDBEES", 40000), ("SILVERBEES", 20000), ("AAA", 20000))]}
+        scr = {"as_of": "2026-09-20", "screened": 10, "candidates": [{"symbol": "IDEA", "name": "Idea Ltd", "industry": "Capital Goods", "price": 1000.0, "score": 80,
+                                                                      "why": ["low debt"], "warn": []}]}
+        old = v.NOTES
+        try:
+            v.NOTES = {}
+            a = v.build_advice(mine, None, date(2026, 9, 21), None, FAMILY, SEGMENT, None, lambda k: k, cash=200000, done=[], results={}, screener=scr)
+            none = v.build_advice(mine, None, date(2026, 9, 21), None, FAMILY, SEGMENT, None, lambda k: k, cash=0, done=[], results={}, screener=scr)
+        finally:
+            v.NOTES = old
+        idea = [t for t in a["tasks"] if t["symbols"] == ["IDEA"]]
+        self.assertTrue(idea and "first part" in idea[0]["title"] and idea[0]["price"] == 1000.0)
+        self.assertEqual([t for t in none["tasks"] if t["symbols"] == ["IDEA"]], [])                # no arrived money, no new stock
+        self.assertEqual(a["ideas"]["list"][0]["symbol"], "IDEA")
+
+    def test_track_record_logs_once_and_scores_only_after_enough_days(self):
+        import tempfile
+        from advice.track import load_log, log_tasks, track_view, update_last
+        d = tempfile.mkdtemp()
+        tasks = [{"id": "buy:XXX", "kind": "Buy", "name": "X", "symbols": ["XXX"], "price": 100.0},
+                 {"id": "sell:YYY:9", "kind": "Sell", "name": "Y", "symbols": ["YYY"], "price": 100.0},
+                 {"id": "gtt:ZZZ:5", "kind": "Stop-loss", "name": "Z", "symbols": ["ZZZ"], "price": 100.0},
+                 {"id": "taxgain:Q", "kind": "Tax", "name": "Q", "symbols": ["Q"], "price": 1.0}]
+        self.assertEqual(len(log_tasks(d, tasks, {}, 200.0, date(2026, 9, 1))), 3)                  # the tax task is not a call
+        self.assertEqual(log_tasks(d, tasks, {}, 200.0, date(2026, 9, 5)), [])                      # already logged
+        v = track_view(load_log(d), date(2026, 9, 5))
+        self.assertTrue(all(r["verdict"] in ("too early", "not scored (protective order)") for r in v["rows"]))
+        update_last(d, {"XXX": 130.0, "YYY": 80.0}, 210.0, date(2026, 10, 10))
+        v = {r["name"]: r["verdict"] for r in track_view(load_log(d), date(2026, 10, 10))["rows"]}
+        self.assertEqual((v["X"], v["Y"]), ("right call", "right call"))                            # X beat Nifty (+30% vs +5%); Y fell while Nifty rose
+
+
 if __name__ == "__main__":
     unittest.main()

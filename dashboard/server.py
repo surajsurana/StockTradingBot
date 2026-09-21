@@ -51,6 +51,17 @@ from dashboard.state_view import build_dashboard_state             # noqa: E402
 from data.fetch_groww import load_snapshot as load_groww_snapshot   # noqa: E402
 
 
+def _advice_extra():
+    from advice.screener import load_screener
+    from advice.track import load_log
+    return {"screener": load_screener(STATE_DIR), "log": load_log(STATE_DIR)}
+
+
+def _advice_results():
+    from advice.results import load_results
+    return load_results(STATE_DIR)
+
+
 def _advice_done():
     from advice.tasks import load_done
     return load_done(STATE_DIR)
@@ -404,7 +415,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
                                           reports=_load_reports(STATE_DIR) if mode == "live" else None,
                                           advice_params=_advice_params(query) if mode == "live" else None,
-                                          advice_done=_advice_done() if mode == "live" else None)
+                                          advice_done=_advice_done() if mode == "live" else None,
+                                          advice_results=_advice_results() if mode == "live" else None,
+                                          advice_extra=_advice_extra() if mode == "live" else None)
             self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):
