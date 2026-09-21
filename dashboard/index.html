@@ -19,15 +19,15 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;mar
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .dot.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
 nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start}
-.todaybar{margin-left:auto;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;overflow:hidden;min-width:230px;max-width:340px}
+.todaybar{margin-left:auto;display:flex;flex-direction:column;gap:3px}
 .todaybar[hidden]{display:none}
-.todaybar .chip{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 14px}
+.todaybar .chip{display:inline-flex;align-items:center;gap:10px;padding:7px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
-.todaybar .ticker{display:block;overflow:hidden;white-space:nowrap;background:var(--band);border-top:1px solid var(--rule);padding:3px 0;font-size:11.5px;color:var(--muted)}
+.todaybar .ticker{display:block;width:0;min-width:100%;overflow:hidden;white-space:nowrap;font-size:11.5px;color:var(--muted)}
 .todaybar .run{display:inline-block;animation:tick 26s linear infinite;will-change:transform}
 .todaybar .ticker:hover .run{animation-play-state:paused}
-.todaybar .tk{display:inline-block;padding:0 14px}
+.todaybar .tk{display:inline-block;padding:0 14px 0 0}
 .todaybar .tk b{font-size:12px;margin-left:3px}
 @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-12.5%)}}
 @media (prefers-reduced-motion:reduce){.todaybar .run{animation:none}}
