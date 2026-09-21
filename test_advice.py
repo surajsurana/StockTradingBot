@@ -167,6 +167,22 @@ class TestTasks(unittest.TestCase):
         later = self._advice(100000, rec, date(2026, 10, 6))
         self.assertTrue(any("second part" in t["title"] and t["symbols"][0] == sym for t in later["tasks"]))
 
+    def test_a_fixed_sell_limit_does_not_move_with_the_price_so_done_sticks(self):
+        import advice.view as v
+        notes = {"CCC": {"stance": "Sell", "headline": "Sell.", "why": [], "sell_limit": 60.0, "review": "2026-11-05"}}
+        ids = []
+        for px in (50.0, 47.0):
+            mine = {"holdings": [dict(h, quantity=10, price=px if h["symbol"] == "CCC" else (h.get("price") or 50.0)) for h in MINE["holdings"]]}
+            old = v.NOTES
+            try:
+                v.NOTES = notes
+                a = v.build_advice(mine, None, date(2026, 9, 21), None, FAMILY, SEGMENT, None, lambda k: k, cash=0, done=[])
+            finally:
+                v.NOTES = old
+            ids.append(next(t["id"] for t in a["tasks"] if t["key"] == "CCC"))
+        self.assertEqual(ids[0], ids[1])
+        self.assertEqual(ids[0], "sell:CCC:60.0")
+
     def test_done_records_are_saved_and_bad_ids_refused(self):
         import tempfile
         from advice.tasks import load_done, mark_done

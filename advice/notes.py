@@ -17,8 +17,8 @@ NOTES_AS_OF = "2026-09-19"
 
 NOTES = {
     "UNIECOM": {
-        "stance": "Sell", "sell_limit_up_pct": 7, "review": "2026-11-05",
-        "headline": "Sell. Place a limit order about 7% above today's price; if it has not filled by 5 Nov, sell at market.",
+        "stance": "Sell", "sell_limit": 89.0, "review": "2026-11-05",   # fixed on 19 Sep (about 7% above the price then) so the order does not move every day
+        "headline": "Sell. Place a limit order at ₹89; if it has not filled by 5 Nov, sell at market.",
         "why": ["Q1 revenue grew 14% but operating profit fell 14.5% as spending rose.",
                 "About 45 times earnings for a company worth about ₹1,000 crore that few analysts follow.",
                 "Trading below its 200-day average, with no clear reason for a turnaround."],

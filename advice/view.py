@@ -329,9 +329,9 @@ def build_items(mine: dict, shape: dict, rules: dict, plan: dict, check: dict, t
                 trim_value = excess
                 headline = f"Sell about ₹{excess:,.0f} of it (part of the holding) to bring it back to {st['max_at_buy']}%."
                 why.insert(0, f"It is {weight:.1f}% of the portfolio; your trim point is {st['trim_above']}%.")
-            if action == "Sell" and note.get("sell_limit_up_pct") and g.get("price") and len(g["symbols"]) == 1 and g["qty"]:
-                lim = sell_limit = round(g["price"] * (1 + note["sell_limit_up_pct"] / 100), 1)
-                headline = (f"Sell all {g['qty']:g} shares. Limit ₹{lim:,.1f} (about {note['sell_limit_up_pct']}% above today's ₹{g['price']:,.1f}); "
+            if action == "Sell" and (note.get("sell_limit") or note.get("sell_limit_up_pct")) and g.get("price") and len(g["symbols"]) == 1 and g["qty"]:
+                lim = sell_limit = note.get("sell_limit") or round(g["price"] * (1 + note["sell_limit_up_pct"] / 100), 1)
+                headline = (f"Sell all {g['qty']:g} shares. Limit ₹{lim:,.1f} (today's price is ₹{g['price']:,.1f}); "
                             f"if it has not filled by {_day(note.get('review'))}, sell at market.")
             if action == "Watch" and note.get("exit_below") and g.get("price"):
                 why.append(f"Today's price is ₹{g['price']:,.1f}, so the exit line is {abs(g['price'] / note['exit_below'] - 1) * 100:.0f}% {'below' if g['price'] > note['exit_below'] else 'above'} it.")
