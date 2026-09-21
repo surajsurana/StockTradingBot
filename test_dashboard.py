@@ -227,8 +227,13 @@ class TestBuildDashboardState(unittest.TestCase):
     def test_strategies_tab_shows_when_paper_trading_started(self):
         from datetime import date
         rows = {r["key"]: r for r in self.s["strategies"]}
-        expected = date.fromtimestamp(self.alpha_paper_trading_since).isoformat()
-        self.assertEqual(rows["alpha"]["started"], expected)
+        # a strategy "started" when its first book did (its earliest trade or position), not when it was approved:
+        # alpha was approved for paper trading on the registry date but its book's first entry (X.NS) is on 2026-09-01
+        approved = date.fromtimestamp(self.alpha_paper_trading_since).isoformat()
+        book_start = min(p["started"] for p in rows["alpha"]["pools_breakdown"] if p["started"])
+        self.assertEqual(rows["alpha"]["started"], book_start)
+        self.assertEqual(book_start, "2026-09-01")
+        self.assertLess(approved, book_start)
         # crypto_trend_timing's fixture record never went through set_deployment_status --
         # no history entry means no known start date, not a guessed one.
         self.assertIsNone(rows["crypto_trend_timing"]["started"])

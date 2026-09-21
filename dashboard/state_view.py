@@ -760,11 +760,14 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         capital = round(sum(p["capital"] for p in pools_breakdown), 2) if pools_breakdown else None
         pnl = round(sum(p["pnl"] for p in pools_breakdown), 2) if pools_breakdown else None
         closed_trades = sum(p["closed_trades"] for p in pools_breakdown) if pools_breakdown else None
+        # the strategy "started" when its first book did (the registry date is when it was approved, which can be weeks earlier)
+        book_starts = [p["started"] for p in pools_breakdown if p.get("started")]
+        started = min(book_starts) if book_starts else _paper_trading_started(r)
         wins = sum(p["wins"] for p in pools_breakdown) if pools_breakdown else None
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
-                     "started": _paper_trading_started(r), "closed_trades": closed_trades, "wins": wins,
+                     "started": started, "closed_trades": closed_trades, "wins": wins,
                      "pools_breakdown": pools_breakdown,
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
