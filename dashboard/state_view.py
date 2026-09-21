@@ -1001,7 +1001,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                + pool_e["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     lifecycles = {}
-    return {
+    state = {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},
@@ -1017,6 +1017,10 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       state_dir=state_dir, d_trades=d_trades),
         "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
+    if mode == "live" and reports is not None:    # your real Groww portfolio is Pool H, shown only in Live mode
+        from reporting.pool_h import add_pool_h
+        add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))
+    return state
 
 
 def _days_between(start_iso, end_iso) -> Optional[int]:

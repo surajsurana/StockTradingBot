@@ -450,9 +450,9 @@ function render(){
   document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,19)}`;
   document.getElementById("prices").textContent = s.prices_as_of ? `quotes ${s.prices_as_of.slice(11,19)}` : "prices loading…";
   const note = document.getElementById("modenote");
-  const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists;
+  const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
-  note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are on the Long-term tab." : "";
+  note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
   renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
@@ -518,8 +518,8 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option></select>`,
-    kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
+    kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
   head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
@@ -543,7 +543,7 @@ function renderTape(s){
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool G"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool G"], "Long-term": ["Pool H"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
   // jumps straight to it via the browser's own select typeahead, which matches the visible text).
@@ -644,7 +644,7 @@ function showTax(idx){
   ["stt", "stamp", "crypto_fee"].filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
   const rates = [...new Set(set.filter(l => l.tax_rate).map(l => l.tax_rate))].map(r => (r * 100).toFixed(1) + "%").join(" / ");
   const taxBasis = set.length === 1
-    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
+    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Long-term" ? "Estimated as if everything were sold today: 12.5% on long-term gains above ₹1.25 lakh a year, 20% on short-term gains. Charges are the real ones Groww has taken" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
     : `${rates} of the net gain after charges (crypto: per profitable trade)`;
   rows.push(line(["Income tax", taxBasis], sumK("tax")));
   rows.push(line(["Total tax and charges", ""], sumK("charges") + sumK("gst") + sumK("tax"), "total"));
@@ -665,14 +665,15 @@ function wireTapePager(){
 function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","G"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F","G"];
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","G"], "Long-term": ["H"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F","G","H"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const live = s.mode === "live";
   const booksIn = live
     ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: s.pool_g.exists ? 1 : 0}
     : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: 1};
+  if(s.pools && s.pools.H) booksIn.H = 1;
   // A single strategy/book picked from the "Strategy" filter -- the cards should show THAT
   // book's own numbers, not the whole pool's. Look it up directly rather than summing `keys`.
   const e_rate = s.pool_e.usdinr || 0, g_rate = s.pool_g.usdinr || 0;
@@ -881,8 +882,8 @@ function buildRegHead(){
   head.dataset.built = "1";
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option value="-">Not trading</option></select>`,
-    type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option value="-">Not trading</option></select>`,
+    type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
   })[k] || "";

@@ -105,7 +105,7 @@ def read_fy_reports(folder: str) -> List[dict]:
     for path in sorted(glob.glob(os.path.join(folder, "Stocks_Capital_Gains_Report*.xlsx"))):
         m = re.search(r"(\d{2})-(\d{2})-(\d{4})_(\d{2})-(\d{2})-(\d{4})", os.path.basename(path))
         fy = f"FY{m.group(3)[2:]}-{m.group(6)[2:]}" if m else os.path.basename(path)
-        rec = {"fy": fy, "charges": 0.0, "dividends": 0.0, "intraday": 0.0, "short_term": 0.0, "long_term": 0.0, "brokerage": 0.0, "gst": 0.0, "stt": 0.0, "dp": 0.0}
+        rec = {"fy": fy, "charges": 0.0, "dividends": 0.0, "intraday": 0.0, "short_term": 0.0, "long_term": 0.0, "brokerage": 0.0, "gst": 0.0, "stt": 0.0, "dp": 0.0, "exchange": 0.0, "sebi": 0.0, "stamp": 0.0}
         in_charges = False
         for r in _read_rows(path):
             label = str(r[0]) if r and r[0] is not None else ""
@@ -123,6 +123,12 @@ def read_fy_reports(folder: str) -> List[dict]:
                 rec["stt"] = _num(r[1])
             elif label == "DP Charges":
                 rec["dp"] = _num(r[1])
+            elif label == "Exchange Transaction Charges" and in_charges:
+                rec["exchange"] = _num(r[1])
+            elif label == "SEBI Charges" and in_charges:
+                rec["sebi"] = _num(r[1])
+            elif label == "Stamp Duty" and in_charges:
+                rec["stamp"] = _num(r[1])
             elif label == "Dividends":
                 rec["dividends"] = _num(r[1])
             elif label == "Intraday P&L":
