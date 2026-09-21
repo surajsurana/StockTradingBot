@@ -132,6 +132,46 @@ class PriceCache:
         self.prev_close = {}          # symbol -> last close BEFORE today (for "today's move" on open positions)
         self.crypto_prev_close = {}   # coin -> last completed UTC daily close
         self._lock = threading.Lock()
+        self._saved_at = 0.0
+        self._load_disk()
+
+    # The quotes are also kept on disk so a restart of the dashboard starts from the last good prices. With an
+    # empty cache every open position is valued at cost until the first refresh finishes (about a minute), which
+    # showed unrealised P&L as 0 and totals that jumped for a minute after every restart.
+    CACHE_FILE = "price_cache.json"
+    CACHE_MAX_AGE_HOURS = 72
+
+    def _load_disk(self) -> None:
+        import json
+        path = os.path.join(self.state_dir, self.CACHE_FILE)
+        try:
+            if time.time() - os.path.getmtime(path) > self.CACHE_MAX_AGE_HOURS * 3600:
+                return
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+            self.prices, self.prev_close = dict(d.get("prices", {})), dict(d.get("prev_close", {}))
+            self.crypto_prices, self.crypto_prev_close = dict(d.get("crypto_prices", {})), dict(d.get("crypto_prev_close", {}))
+            self.usdinr, self.as_of = d.get("usdinr"), d.get("as_of")
+        except (OSError, ValueError):
+            pass
+
+    def _save_disk(self, force: bool = False) -> None:
+        import json
+        if not force and time.monotonic() - self._saved_at < 15:
+            return
+        self._saved_at = time.monotonic()
+        with self._lock:
+            payload = {"as_of": self.as_of, "prices": self.prices, "prev_close": self.prev_close, "crypto_prices": self.crypto_prices,
+                       "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr}
+            text = json.dumps(payload)
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            tmp = os.path.join(self.state_dir, self.CACHE_FILE + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, os.path.join(self.state_dir, self.CACHE_FILE))
+        except OSError:
+            pass
 
     def _held_symbols(self) -> list:
         from reporting.pool_summary import _held_symbols
@@ -190,12 +230,13 @@ class PriceCache:
                 except Exception:
                     pass
         with self._lock:
-            if symbols:
-                self.crypto_prices = quotes
+            if symbols and quotes:
+                self.crypto_prices = {**{k: v for k, v in self.crypto_prices.items() if k in symbols}, **quotes}
             if rate:
                 self.usdinr = rate
             if prev:
-                self.crypto_prev_close = prev
+                self.crypto_prev_close = {**{k: v for k, v in self.crypto_prev_close.items() if k in symbols}, **prev}
+        self._save_disk()
 
     _kite_headers = None
     _kite_headers_day = None
@@ -232,9 +273,11 @@ class PriceCache:
                     if not before_today.empty:
                         prev[symbol] = float(before_today["Close"].iloc[-1])
         with self._lock:
-            self.prices = fresh
-            self.prev_close = prev
-            self.as_of = datetime.now().isoformat(timespec="seconds")
+            held = set(symbols)
+            self.prices = {**{k: v for k, v in self.prices.items() if k in held}, **fresh}
+            self.prev_close = {**{k: v for k, v in self.prev_close.items() if k in held}, **prev}
+            if fresh:
+                self.as_of = datetime.now().isoformat(timespec="seconds")
         self.refresh_live()
         try:
             self.refresh_crypto(with_rate=True)
@@ -260,6 +303,7 @@ class PriceCache:
                 if b in quotes:
                     self.prices[s] = quotes[b]
             self.as_of = datetime.now().isoformat(timespec="seconds")
+        self._save_disk()
 
     def snapshot(self) -> tuple:
         with self._lock:

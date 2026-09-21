@@ -53,3 +53,4 @@ deployment/state/groww_totp.json
 deployment/state/groww_access.json
 deployment/state/groww_reports.json
 Groww Portfolio/
+deployment/state/price_cache.json
