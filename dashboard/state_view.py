@@ -293,13 +293,22 @@ def _wins(trades: list) -> int:
 
 
 def _book_started(book_dir: str, trades: list) -> Optional[str]:
-    """The earliest date THIS BOOK has any recorded activity -- the
-    smaller of its earliest closed trade's entry_date and its earliest
-    still-open position's entry_date, read straight from its own
-    portfolio.json. None if the book has never entered anything."""
+    """The day THIS BOOK began running, i.e. began looking for trades: the first line of its own daily_equity.jsonl
+    (written on every run, trade or no trade). A strategy can go days without finding its first trade, so the
+    earliest closed trade / open position is only the fallback for a book that has no equity log. None if neither
+    exists."""
     dates = [t.get("entry_date") for t in trades if t.get("entry_date")]
     pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
     dates += [p.get("entry_date") for p in (pf.get("positions") or {}).values() if p.get("entry_date")]
+    try:
+        with open(os.path.join(book_dir, "daily_equity.jsonl"), encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    dates.append(json.loads(line).get("date"))
+                    break
+    except (OSError, ValueError):
+        pass
+    dates = [d for d in dates if d]
     return min(dates) if dates else None
 
 
@@ -760,7 +769,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         capital = round(sum(p["capital"] for p in pools_breakdown), 2) if pools_breakdown else None
         pnl = round(sum(p["pnl"] for p in pools_breakdown), 2) if pools_breakdown else None
         closed_trades = sum(p["closed_trades"] for p in pools_breakdown) if pools_breakdown else None
-        # the strategy "started" when its first book did (the registry date is when it was approved, which can be weeks earlier)
+        # the strategy "started" when its first book began running (the registry date is when it was approved, which can be weeks earlier)
         book_starts = [p["started"] for p in pools_breakdown if p.get("started")]
         started = min(book_starts) if book_starts else _paper_trading_started(r)
         wins = sum(p["wins"] for p in pools_breakdown) if pools_breakdown else None

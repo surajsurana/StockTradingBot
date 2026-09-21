@@ -238,6 +238,19 @@ class TestBuildDashboardState(unittest.TestCase):
         # book has a position entered on 2026-09-10, and that is when it started.
         self.assertEqual(rows["crypto_trend_timing"]["started"], "2026-09-10")
 
+    def test_a_book_started_when_it_began_looking_not_when_it_found_its_first_trade(self):
+        import json
+        import tempfile
+        from dashboard.state_view import _book_started
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "portfolio.json"), "w") as f:
+            json.dump({"positions": {"X.NS": {"entry_date": "2026-09-09"}}}, f)
+        with open(os.path.join(d, "daily_equity.jsonl"), "w") as f:
+            f.write(json.dumps({"date": "2026-09-01", "cash": 1, "equity": 1}) + "\n" + json.dumps({"date": "2026-09-02", "cash": 1, "equity": 1}) + "\n")
+        self.assertEqual(_book_started(d, [{"entry_date": "2026-09-12"}]), "2026-09-01")       # first run on the 1st, first trade on the 9th
+        os.remove(os.path.join(d, "daily_equity.jsonl"))
+        self.assertEqual(_book_started(d, []), "2026-09-09")                                      # no equity log: fall back to the first trade
+
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
         self.assertEqual(keys, ["alpha"])
