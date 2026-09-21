@@ -234,9 +234,9 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["alpha"]["started"], book_start)
         self.assertEqual(book_start, "2026-09-01")
         self.assertLess(approved, book_start)
-        # crypto_trend_timing's fixture record never went through set_deployment_status --
-        # no history entry means no known start date, not a guessed one.
-        self.assertIsNone(rows["crypto_trend_timing"]["started"])
+        # crypto_trend_timing's fixture record never went through set_deployment_status (no approval date), but its
+        # book has a position entered on 2026-09-10, and that is when it started.
+        self.assertEqual(rows["crypto_trend_timing"]["started"], "2026-09-10")
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
