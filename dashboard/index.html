@@ -94,6 +94,8 @@ tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
 tr.clickable{cursor:pointer}
+.pool-link,.pnl-link{cursor:pointer}
+.pool-link:hover,.pnl-link:hover{text-decoration:underline}
 .gain{color:var(--gain)}.loss{color:var(--loss)}.warn{color:var(--warn)}
 .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--accent);margin-left:6px;vertical-align:middle}
 .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--rule);color:var(--muted)}
@@ -939,6 +941,15 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"]) document.getElementById(id).value = filters[id] || "";
   document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
 }
+function goLive(pool, kind, book){   // from a Strategies row: open Live day filtered to that pool and strategy
+  buildTapeHead();
+  document.getElementById("tape-pool").value = pool || "";
+  document.getElementById("tape-kind").value = kind || "";
+  document.querySelector('nav button[data-tab="live"]').click();
+  if(STATE) renderTape(STATE);        // rebuilds the Strategy dropdown for this pool/type scope...
+  document.getElementById("tape-book").value = book || "";
+  if(STATE) renderTape(STATE);        // ...then this pass can select the book and apply it
+}
 let ST_SORT = {key:"pool", dir:1};
 const ST_COLS = [["pool","Pool",""],["type","Type",""],["name","Strategy",""],["realised","Realised","n"],["unrealised","Unrealised","n"],["gross","Gross P&L","n"],
                  ["deduct","Tax & charges","n"],["net","Net P&L","n"]];
@@ -1414,9 +1425,9 @@ function renderRegistry(s){
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
-      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
+      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("");
   const toggleExpand = key => {
@@ -1427,6 +1438,11 @@ function renderRegistry(s){
   };
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
     e.stopPropagation(); toggleExpand(btn.dataset.key);
+  }));
+  document.querySelectorAll("#registry .pool-link, #registry .pnl-link").forEach(td => td.addEventListener("click", e => {
+    e.stopPropagation();
+    const tr = td.closest("tr"), r = all.find(x => x.key === tr.dataset.key || x.key === tr.dataset.parent); if(!r) return;
+    goLive(td.dataset.pool || "", r.type, r.name);
   }));
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", e => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
