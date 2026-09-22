@@ -796,7 +796,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       posrow("Closed", closedWin, closedLoss, closedFlat, closedRowsAll.length, `green in profit, red in loss, grey at zero, then the total · all closed trades on record · ${scope}`),
     ], 2),
     grp("Strategies", [
-      link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": "PAPER_TRADING", "reg-pool": poolF || ""}),
+      link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": live ? "Live" : "Paper", "reg-pool": poolF || ""}),
       link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
     ], 3),
   ].join("");
@@ -939,7 +939,7 @@ function buildRegHead(){
     pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
-    status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,
+    status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option></select>`,
   })[k] || "";
   // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
   // sort arrow and column text sit at opposite ends of the column from the numbers under them.
@@ -1427,7 +1427,7 @@ function renderRegistry(s){
   const all = s.strategies || [];
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || r.status === statusF))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF))
     .sort((a,b) => { const k=REG_SORT.key;
       if(k==="capital"||k==="pnl"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="win_pct"){ const nx=winOf(a.wins,a.closed_trades), ny=winOf(b.wins,b.closed_trades); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
