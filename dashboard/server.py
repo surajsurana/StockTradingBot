@@ -191,9 +191,10 @@ class PriceCache:
         import glob
         import json
         held = set()
-        for path in glob.glob(os.path.join(self.state_dir, "pool_e", "*", "portfolio.json")):
-            with open(path, encoding="utf-8") as f:
-                held |= set((json.load(f).get("positions") or {}).keys())
+        for pool_dir in ("pool_e", "pool_e1"):   # pool_e1 (2026-09-22): Pool E's partial-booking twin
+            for path in glob.glob(os.path.join(self.state_dir, pool_dir, "*", "portfolio.json")):
+                with open(path, encoding="utf-8") as f:
+                    held |= set((json.load(f).get("positions") or {}).keys())
         pool_g_path = os.path.join(self.state_dir, "pool_g", "portfolio.json")
         if os.path.exists(pool_g_path):
             with open(pool_g_path, encoding="utf-8") as f:

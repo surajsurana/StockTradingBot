@@ -120,7 +120,7 @@ class TestPoolFReporting(unittest.TestCase):
         self.assertAlmostEqual(s["overall"]["unrealised"], 2000.0)      # A + F
         text = format_pool_summary(s)
         self.assertIn("*Pool F (Pool A twin, partial profit booking)*", text)
-        self.assertIn("A, B, C, D, F, E post-tax", text)
+        self.assertIn("A, B, C, D, F, E, E1 post-tax", text)
 
 
 if __name__ == "__main__":

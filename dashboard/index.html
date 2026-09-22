@@ -550,7 +550,7 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -575,7 +575,7 @@ function renderTape(s){
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool G"], "Long-term": ["Pool H"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
   // jumps straight to it via the browser's own select typeahead, which matches the visible text).
@@ -697,35 +697,40 @@ function wireTapePager(){
 function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","G"], "Long-term": ["H"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","F","G","H"];
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const kindOfPool = Object.fromEntries(Object.entries(poolsOf).flatMap(([kd, ps]) => ps.map(x => [x, kd])));
   const todayByKind = {};                                   // type -> booked today (open-position move is added below)
   const live = s.mode === "live";
   const booksIn = live
-    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: s.pool_g.exists ? 1 : 0}
-    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, G: 1};
+    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: s.pool_g.exists ? 1 : 0}
+    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: 1};
   if(s.pools && s.pools.H) booksIn.H = 1;
   // A single strategy/book picked from the "Strategy" filter -- the cards should show THAT
   // book's own numbers, not the whole pool's. Look it up directly rather than summing `keys`.
-  const e_rate = s.pool_e.usdinr || 0, g_rate = s.pool_g.usdinr || 0;
+  const e_rate = s.pool_e.usdinr || 0, e1_rate = s.pool_e1.usdinr || 0, g_rate = s.pool_g.usdinr || 0;
   let bookOne = null;
   if(bookF){
-    // A Pool A strategy with a Pool F twin shares the SAME display_name across both books
-    // (that's how the dropdown collapses them into one option) -- sum every matching book,
-    // not just the first, or the twin's numbers silently go missing from the cards.
+    // A Pool A strategy with a Pool F twin, or a Pool E strategy with a Pool E1 twin, shares the
+    // SAME display_name across both books (that's how the dropdown collapses them into one option)
+    // -- sum every matching book, not just the first, or the twin's numbers silently go missing.
     const abMatches = s.books.filter(b => b.display_name === bookF);
-    const eb = s.pool_e.exists ? s.pool_e.books.find(b => b.display_name === bookF) : null;
+    const ebMatches = [
+      s.pool_e.exists ? {b: s.pool_e.books.find(b => b.display_name === bookF), rate: e_rate, pool: "E"} : null,
+      s.pool_e1.exists ? {b: s.pool_e1.books.find(b => b.display_name === bookF), rate: e1_rate, pool: "E1"} : null,
+    ].filter(m => m && m.b);
     if(abMatches.length) bookOne = {pools: abMatches.map(b => b.pool),
                       capital: abMatches.reduce((t,b) => t+(+b.capital||0), 0), deployed: abMatches.reduce((t,b) => t+(+b.deployed||0), 0),
                       cash: abMatches.reduce((t,b) => t+(+b.cash||0), 0), realised: abMatches.reduce((t,b) => t+(+b.realised||0), 0),
                       unrealised: abMatches.reduce((t,b) => t+(+b.unrealised||0), 0), realised_today: abMatches.reduce((t,b) => t+(+b.realised_today||0), 0),
                       positions: abMatches.reduce((t,b) => t+(+b.positions||0), 0)};
-    else if(eb) bookOne = {pools: ["E"], capital: eb.capital*e_rate, deployed: eb.deployed*e_rate, cash: eb.cash*e_rate,
-                          realised: eb.booked.raw*e_rate, unrealised: eb.unbooked.raw*e_rate,
-                          realised_today: eb.booked_today.raw*e_rate, positions: eb.positions};
+    else if(ebMatches.length) bookOne = {pools: ebMatches.map(m => m.pool),
+                      capital: ebMatches.reduce((t,m) => t+m.b.capital*m.rate, 0), deployed: ebMatches.reduce((t,m) => t+m.b.deployed*m.rate, 0),
+                      cash: ebMatches.reduce((t,m) => t+m.b.cash*m.rate, 0), realised: ebMatches.reduce((t,m) => t+m.b.booked.raw*m.rate, 0),
+                      unrealised: ebMatches.reduce((t,m) => t+m.b.unbooked.raw*m.rate, 0), realised_today: ebMatches.reduce((t,m) => t+m.b.booked_today.raw*m.rate, 0),
+                      positions: ebMatches.reduce((t,m) => t+(+m.b.positions||0), 0)};
     else if(bookF === "Intraday") bookOne = {pools: ["D"], capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash,
                                              realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
     else if(bookF === "AI judgment" && s.pool_g.exists) bookOne = {pools: ["G"], capital: s.pool_g.capital*g_rate, deployed: s.pool_g.deployed*g_rate, cash: s.pool_g.cash*g_rate,
@@ -742,6 +747,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       let p = null;
       if(k === "D") p = {capital: s.pool_d.capital, deployed: s.pool_d.deployed, cash: s.pool_d.cash, realised: s.pool_d.realised, unrealised: s.pool_d.unrealised, realised_today: s.pool_d.realised_today, positions: s.pool_d.positions};
       else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.raw, unrealised: s.pool_e.inr.unbooked.raw, realised_today: s.pool_e.inr.booked_today.raw, positions: s.pool_e.usdt.positions}; }
+      else if(k === "E1"){ if(s.pool_e1.exists) p = {capital: s.pool_e1.inr.capital, deployed: s.pool_e1.inr.deployed, cash: s.pool_e1.inr.cash, realised: s.pool_e1.inr.booked.raw, unrealised: s.pool_e1.inr.unbooked.raw, realised_today: s.pool_e1.inr.booked_today.raw, positions: s.pool_e1.usdt.positions}; }
       else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.raw*r, unrealised: g.unbooked.raw*r, realised_today: g.booked_today.raw*r, positions: g.positions}; }
       else p = s.pools[k];
       if(!p) continue;
@@ -930,7 +936,7 @@ function buildRegHead(){
   head.dataset.built = "1";
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option value="-">Not trading</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="PAPER_TRADING">Paper trading</option><option value="RESEARCH">Research</option><option value="ARCHIVED">Archived</option></select>`,

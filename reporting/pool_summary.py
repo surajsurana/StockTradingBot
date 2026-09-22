@@ -118,6 +118,9 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     from reporting.pool_g import build_pool_g
     today = today or date.today()
     pool_e = build_pool_e(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
+    # Pool E1 (2026-09-22): Pool E's twin with partial profit booking, exactly Pool F's relationship
+    # to Pool A -- same builder, its own folder (deployment/state/pool_e1/).
+    pool_e1 = build_pool_e(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today, dirname="pool_e1")
     pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
     prices = price_fn(sorted(_held_symbols(state_dir))) if callable(price_fn) else {}
 
@@ -159,6 +162,7 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     # taken out), at the usdinr rate -- the only figure an Indian resident
     # would actually keep. Its own block shows the pre-tax side too.
     f = pool_e["inr"]
+    f1 = pool_e1["inr"]
     g_rate = pool_g.get("usdinr") or 0
     g_deployed_inr = round(pool_g.get("deployed", 0) * g_rate, 2)
     g_cash_inr = round(pool_g.get("cash", 0) * g_rate, 2)
@@ -166,15 +170,15 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     g_booked_inr = round(pool_g.get("booked", {}).get("post_tax", 0) * g_rate, 2)
     g_booked_today_inr = round(pool_g.get("booked_today", {}).get("post_tax", 0) * g_rate, 2)
     overall = {
-        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"] + f["deployed"] + g_deployed_inr, 2),
-        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"] + f["cash"] + g_cash_inr, 2),
-        "unrealised": round(sum(p["unrealised"] for p in counted) + f["unbooked"]["post_tax"] + g_unbooked_inr, 2),
-        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"] + f["booked"]["post_tax"] + g_booked_inr, 2),
+        "deployed": round(sum(p["deployed"] for p in counted) + pool_d["deployed"] + f["deployed"] + f1["deployed"] + g_deployed_inr, 2),
+        "cash": round(sum(p["cash"] for p in counted) + pool_d["cash"] + f["cash"] + f1["cash"] + g_cash_inr, 2),
+        "unrealised": round(sum(p["unrealised"] for p in counted) + f["unbooked"]["post_tax"] + f1["unbooked"]["post_tax"] + g_unbooked_inr, 2),
+        "realised": round(sum(p["realised"] for p in counted) + pool_d["realised"] + f["booked"]["post_tax"] + f1["booked"]["post_tax"] + g_booked_inr, 2),
         "realised_today": round(sum(p["realised_today"] for p in counted) + pool_d["realised_today"]
-                                + f["booked_today"]["post_tax"] + g_booked_today_inr, 2),
-        "positions": sum(p["positions"] for p in counted) + pool_e["usdt"]["positions"] + pool_g.get("positions", 0),
+                                + f["booked_today"]["post_tax"] + f1["booked_today"]["post_tax"] + g_booked_today_inr, 2),
+        "positions": sum(p["positions"] for p in counted) + pool_e["usdt"]["positions"] + pool_e1["usdt"]["positions"] + pool_g.get("positions", 0),
     }
-    return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "pool_e": pool_e, "overall": overall,
+    return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "pool_e": pool_e, "pool_e1": pool_e1, "overall": overall,
             "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c, "F": pool_f}, "pool_g": pool_g}
 
 
@@ -242,8 +246,9 @@ def format_pool_summary(summary: dict) -> str:
     ]
     from reporting.pool_e import format_pool_e_block
     lines += format_pool_e_block(summary.get("pool_e") or {"exists": False})
+    lines += format_pool_e_block(summary.get("pool_e1") or {"exists": False}, label="Pool E1")
     lines += [
-        f"*All pools (A, B, C, D, F, E post-tax -- A1 not counted)* -- {o['positions']} positions",
+        f"*All pools (A, B, C, D, F, E, E1 post-tax -- A1 not counted)* -- {o['positions']} positions",
         f"Deployed {inr(o['deployed'])} | Cash {inr(o['cash'])}",
         f"Unrealised {inr(o['unrealised'], signed=True)} | Realised {inr(o['realised'], signed=True)} "
         f"(today {inr(o['realised_today'], signed=True)})",
@@ -252,6 +257,7 @@ def format_pool_summary(summary: dict) -> str:
     if not d["updated_today"]:
         missing.append("Pool D")
     missing += (summary.get("pool_e") or {}).get("not_updated", [])
+    missing += [f"E1 {n}" for n in (summary.get("pool_e1") or {}).get("not_updated", [])]
     if missing:
         lines += ["", "Not updated today: " + ", ".join(m.replace("_", " ") for m in missing)]
     return "\n".join(lines)
@@ -266,5 +272,6 @@ def format_weekend_summary(summary: dict) -> str:
     day = date.fromisoformat(summary["as_of"]).strftime("%a %d %b %Y")
     lines = [f"*Paper Trading -- {day} (weekend: crypto only)*", ""]
     lines += format_pool_e_block(summary.get("pool_e") or {"exists": False})
+    lines += format_pool_e_block(summary.get("pool_e1") or {"exists": False}, label="Pool E1")
     lines += ["Equity pools (A, B, C, D) are closed at the weekend -- full summary on Monday."]
     return "\n".join(lines)

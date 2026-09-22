@@ -104,11 +104,15 @@ def _inr(usdt: dict, rate: float) -> dict:
 
 
 def build_pool_e(state_dir: str, crypto_prices: Optional[dict], usdinr: float, today: Optional[date] = None,
-                 model: CryptoCostModel = CryptoCostModel(), tax_rate: float = INDIA_VDA_TAX_RATE) -> dict:
+                 model: CryptoCostModel = CryptoCostModel(), tax_rate: float = INDIA_VDA_TAX_RATE,
+                 dirname: str = POOL_E_DIRNAME) -> dict:
+    """`dirname` lets the same builder read Pool E1 (deployment/state/pool_e1/) -- Pool E's twin with
+    partial profit booking, 2026-09-22, exactly Pool F's relationship to Pool A -- without a second,
+    near-identical copy of this whole module."""
     today = today or date.today()
     prices = crypto_prices or {}
     books = [_book(d, os.path.basename(d.rstrip("/\\")), today, prices, model, tax_rate)
-             for d in sorted(glob.glob(os.path.join(state_dir, POOL_E_DIRNAME, "*/")))]
+             for d in sorted(glob.glob(os.path.join(state_dir, dirname, "*/")))]
     books = [b for b in books if b["exists"]]
     totals = {
         "positions": sum(b["positions"] for b in books),
@@ -137,15 +141,16 @@ def usdt(amount: float, signed: bool = False) -> str:
     return f"{sign}{abs(amount):,.2f} USDT"
 
 
-def format_pool_e_block(f: dict) -> list:
-    """Telegram lines (legacy Markdown -- no underscores)."""
+def format_pool_e_block(f: dict, label: str = "Pool E") -> list:
+    """Telegram lines (legacy Markdown -- no underscores). `label` lets the same formatter render
+    Pool E1's block too (2026-09-22)."""
     from reporting.pool_summary import inr
     u, r, rate = f["usdt"], f["inr"], f["usdinr"]
     if not f["exists"]:
-        return ["*Pool E (crypto)* -- no book yet", ""]
+        return [f"*{label} (crypto)* -- no book yet", ""]
     ub, bk, td = u["unbooked"], u["booked"], u["booked_today"]
     return [
-        f"*Pool E (crypto, USDT; Rs. at {rate:.1f}/USD)* -- {u['positions']} positions, {u['trades_total']} trades",
+        f"*{label} (crypto, USDT; Rs. at {rate:.1f}/USD)* -- {u['positions']} positions, {u['trades_total']} trades",
         f"Deployed {usdt(u['deployed'])} ({inr(r['deployed'])}) | Cash {usdt(u['cash'])} ({inr(r['cash'])})",
         f"Unbooked pre-tax {usdt(ub['pre_tax'], True)} / post-tax {usdt(ub['post_tax'], True)} "
         f"({inr(r['unbooked']['post_tax'], True)})",

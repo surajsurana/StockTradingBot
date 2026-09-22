@@ -44,6 +44,18 @@ def _tree():
     return root
 
 
+class TestBuildPoolEDirname(unittest.TestCase):
+    def test_dirname_reads_pool_e1_the_partial_booking_twin(self):
+        # Pool E1 (2026-09-22): same builder, a different folder -- exactly Pool F's relationship to Pool A.
+        root = tempfile.mkdtemp()
+        _write(os.path.join(root, "pool_e1", "crypto_trend_timing", "portfolio.json"),
+              {"cash": 500.0, "starting_capital": 1000.0, "last_processed_date": "2026-09-13", "positions": {}})
+        f = build_pool_e(root, {}, usdinr=100.0, today=TODAY, dirname="pool_e1")
+        self.assertTrue(f["exists"])
+        self.assertEqual(f["books"][0]["cash"], 500.0)
+        self.assertFalse(build_pool_e(root, {}, usdinr=100.0, today=TODAY)["exists"])   # pool_e/ itself is empty
+
+
 class TestBuildPoolE(unittest.TestCase):
     def setUp(self):
         self.f = build_pool_e(_tree(), {"BTC": 84000.0}, usdinr=100.0, today=TODAY)
@@ -109,7 +121,7 @@ class TestPoolEInSummary(unittest.TestCase):
                        "Deployed 200.00 USDT (Rs.20,000)", "Unbooked pre-tax +8.36 USDT / post-tax +5.24 USDT (+Rs.524)",
                        "Booked raw 0.00 USDT | fees 3.60 USDT | tax 9.36 USDT",
                        "Booked pre-tax -3.60 USDT / post-tax -12.96 USDT (-Rs.1,296; today post-tax +18.12 USDT)",
-                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, F, E post-tax -- A1 not counted)*"):
+                       "TDS withheld, refundable 4.50 USDT", "*All pools (A, B, C, D, F, E, E1 post-tax -- A1 not counted)*"):
             self.assertIn(needle, text)
         self.assertNotIn("_", text)
 

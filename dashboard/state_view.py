@@ -23,7 +23,7 @@ from reporting.pool_summary import _book, _read_json, _read_jsonl, build_pool_su
 # dashboard, per explicit direction 2026-09-11 -- it stays in the daily
 # Telegram summary only.
 POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "F": "pool_f"}
-POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": "Pool E", "F": "Pool F"}
+POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": "Pool E", "F": "Pool F", "E1": "Pool E1"}
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -36,6 +36,7 @@ POOLS_INFO = [
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
     {"pool": "E", "name": "Crypto trends", "text": "Rule-based trend following on BTC, ETH, BNB, XRP and SOL, one 1,000 USDT book per strategy. Profit on Live day and Strategies is gross, before fees and tax, like every pool; the P&L tab shows fees, tax and net."},
+    {"pool": "E1", "name": "Pool E with partial profit booking", "text": "The same crypto strategies as Pool E on fresh 1,000 USDT books, but at +5% half is sold and the stop on the rest moves to entry."},
     {"pool": "F", "name": "Pool A with partial profit booking", "text": "The same strategies as Pool A on fresh books, but at +5% half is sold and the stop on the rest moves to entry."},
     {"pool": "G", "name": "AI crypto judgment", "text": "The AI calls buy, sell or hold on the same five coins twice a day, with a fixed 18% stop; no backtest, judged live. Profit on Live day and Strategies is gross, before fees and tax; the P&L tab shows fees, tax and net."},
 ]
@@ -57,9 +58,10 @@ DESKS = [
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
-    {"id": "crypto_desk", "name": "Crypto Desk (Pools E and G)", "icon": "\u20BF",
+    {"id": "crypto_desk", "name": "Crypto Desk (Pools E, E1 and G)", "icon": "\u20BF",
      "blurb": "Tests published crypto rules on Binance history, judged only after fees and India's 31.2% tax, "
-              "and runs the survivors as a 1,000 USDT paper book."},
+              "and runs the survivors as a 1,000 USDT paper book -- Pool E1 runs the same books again with "
+              "partial profit booking, exactly Pool F's relationship to Pool A."},
     {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
      "blurb": "Keeps the books and sends the one message a day."},
 ]
@@ -141,9 +143,10 @@ AGENTS = [
                "losers and fees not deductible; 1% TDS on sales shown as withheld and refundable. The Auditor "
                "only ever sees the post-tax trades; pre-tax is recorded alongside."},
     {"id": "crypto_trader", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#4CC383", "shape": "square"}, "name": "Crypto Trader", "icon": "\u20BF", "desk": "crypto_desk", "kind": "Mechanical",
-     "job": "Runs Pool E after the 00:00 UTC close", "status_from": "pool_e",
+     "job": "Runs Pool E and Pool E1 after the 00:00 UTC close", "status_from": "pool_e",
      "detail": "Same paper engine as Pool A on a 1,000 USDT book: month-end decisions from the strategy, 20% "
-               "stops checked daily, fractional coins, fills at the close it just saw (crypto never closes)."},
+               "stops checked daily, fractional coins, fills at the close it just saw (crypto never closes) -- "
+               "Pool E1 runs the same books again on their own fresh capital, with partial profit booking on top."},
     {"id": "crypto_judge", "avatar": {"type": "robot", "body": "#8A5A9E", "eye": "#F2C14E", "shape": "round"}, "name": "Crypto Judge", "icon": "\U0001F52E", "desk": "crypto_desk", "kind": "AI",
      "job": "Calls BUY/SELL/HOLD on the majors, twice a day", "status_from": "pool_g",
      "detail": "No backtest behind this one -- a live judgment call on BTC, ETH, BNB, XRP and SOL each run. A "
@@ -182,6 +185,7 @@ FLOWS = {
         "title": "A trading day",
         "steps": [
             {"id": "pool_e", "icon": "\u20BF", "label": "05:45", "text": "Crypto Trader marks Pool E after the UTC close (every day)"},
+            {"id": "pool_e1", "icon": "\u20BF", "label": "05:50", "text": "Pool E1 -- Pool E's partial-booking twin -- marks its own book"},
             {"id": "pool_g", "icon": "\U0001F52E", "label": "08:30 & 20:30", "text": "Crypto Judge calls BUY/SELL/HOLD on the majors, twice a day"},
             {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
@@ -244,6 +248,7 @@ STRATEGY_BRIEFS = {
     "portfolio_b": ("AI", "Pool B: your watchlist. The AI team (fundamentals, news, research analyst, portfolio manager, risk manager) debates each stock you add and decides whether and how much to buy."),
     "portfolio_c": ("AI", "Pool C: the AI team reviews the signals Pool A's strategies produce each day and picks the ones it agrees with, sized by the risk manager."),
     "pool_f": ("Swing", "Pool F: the same strategies as Pool A on their own books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool A so the two can be compared."),
+    "pool_e1": ("Crypto", "Pool E1: the same crypto strategies as Pool E on their own 1,000 USDT books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool E so the two can be compared."),
     "portfolio_g": ("Crypto", "Pool G: an AI judgment call on Bitcoin, Ethereum, BNB, XRP and Solana, twice a day. No backtest -- it is judged on its live paper record. A mechanical stop protects every position; the model decides entries and exits itself, and is told to avoid flipping a winning position just to bank a small taxable gain."),
     "pool_d_vwap_fade": ("Intraday", "Pool D: when a stock stretches unusually far from its day's average price and then stalls, bets on it snapping back; everything is squared off by 15:25. A known-reject rule kept running to test the intraday machinery."),
 }
@@ -282,6 +287,7 @@ STRATEGY_HOW = {
     "portfolio_b": {"entry": "You add a stock to the watchlist on Telegram; the Fundamentals, News and Research analysts each grade it; the Portfolio Manager decides whether to buy and how much; the Risk Manager sizes it against its stop.", "exit": "The team reviews holdings daily and sells on an unfavourable verdict, or at the stop.", "risk": "Risk Manager: 1% risk per position, book-level limits.", "source": "This program's own AI team; no published paper."},
     "portfolio_c": {"entry": "Each day the AI team looks at every entry signal Pool A's strategies produced and buys the ones it agrees with.", "exit": "Follows the originating strategy's exit, the team's verdict, or the stop.", "risk": "Risk Manager sizing, 1% per position.", "source": "This program's own AI team; no published paper."},
     "pool_f": {"entry": "Exactly as the Pool A strategy it mirrors: same signals, same universe, same data, same fills.", "exit": "The moment a position is up 5% during the day, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same 1% risk sizing and 8% initial stop as Pool A; the raised stop applies from the next day.", "source": "This program's own experiment (2026-09-16); the 5% / half / stop-to-entry numbers are a disclosed a-priori choice."},
+    "pool_e1": {"entry": "Exactly as the Pool E strategy it mirrors: same coins, same signal, same fill timing.", "exit": "The moment a position's day High is up 5%, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same sizing as Pool E, on its own fresh 1,000 USDT book.", "source": "This program's own experiment (2026-09-22), the same disclosed a-priori 5% / half / stop-to-entry numbers as Pool F."},
     "portfolio_g": {"entry": "The model is shown price, 1/7/30-day change and distance from the 300-day average for each coin, twice a day, and calls BUY/SELL/HOLD/AVOID with a one-line reason each time.", "exit": "The model can say SELL any time its view changes; independently, a mechanical 18% stop (set at entry, never moved by the model) closes a position immediately if it is touched, before the model is even consulted.", "risk": "At most 25% of the 1,000 USDT book per coin; no minimum holding period, but the model is told each realised gain costs 31.2% tax with no relief for losses, so it is instructed against flipping a winner just to bank it.", "source": "This program's own live experiment (2026-09-17) -- no published paper; a real-time test of whether an LLM's judgment beats the researched trend rules."},
     "pool_d_vwap_fade": {"entry": "During the day, when a stock has stretched unusually far from its volume-weighted average price and stalls, sell (or buy) it expecting a snap back.", "exit": "Target at the average price, tight stop, or the 15:25 square-off.", "risk": "1% risk per trade on one shared Rs.1,00,000 book, at most 25% of the book per name, 3 trades a day per stock, 2% daily loss limit.", "source": "Proposed by the Quant Researcher; rejected in EXP-008 and kept as a framework test."},
 }
@@ -346,7 +352,7 @@ def _book_started(book_dir: str, trades: list) -> Optional[str]:
 
 
 def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: list, pool_d: dict,
-                             pool_e: dict, pool_g: dict) -> list:
+                             pool_e: dict, pool_g: dict, pool_e1: Optional[dict] = None) -> list:
     """One entry per pool this strategy actually runs in -- {"pool":
     "Pool A", "capital", "pnl", "closed_trades", "started"}, all in
     rupees. Usually a single entry; a strategy with both a Pool A and a
@@ -392,11 +398,20 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
             out.append({"pool": "Pool E", "capital": round(eb["capital"] * rate, 2),
                         "pnl": round((eb["booked"]["raw"] + eb["unbooked"]["raw"]) * rate, 2),
                         "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
+    if (pool_e1 or {}).get("exists"):
+        eb = next((b for b in pool_e1["books"] if b.get("key") == key), None)
+        if eb:
+            rate = pool_e1.get("usdinr") or 0
+            book_dir = os.path.join(state_dir, "pool_e1", key)
+            trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
+            out.append({"pool": "Pool E1", "capital": round(eb["capital"] * rate, 2),
+                        "pnl": round((eb["booked"]["raw"] + eb["unbooked"]["raw"]) * rate, 2),
+                        "closed_trades": len(trades), "wins": _wins(trades), "started": _book_started(book_dir, trades)})
     return out
 
 
 def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, registry_records: list,
-                    state_dir: str = "", d_trades: Optional[list] = None) -> list:
+                    state_dir: str = "", d_trades: Optional[list] = None, pool_e1: Optional[dict] = None) -> list:
     """One line per book (strategy x pool) for the P&L tab, all in rupees. realised / unrealised are
     GROSS (the dashboard's other tabs show the same numbers); each line also carries `charges`
     (brokerage, STT, exchange, SEBI, stamp duty, DP -- everything except GST), `gst`, `tax` and a
@@ -447,6 +462,11 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
         rate = pool_e.get("usdinr") or 0
         for eb in pool_e["books"]:
             out.append(crypto_line("Pool E", eb["key"], eb.get("sid", "") or sid_of.get(eb["key"], ""), eb["display_name"],
+                                   eb["capital"], eb["cash"], eb["deployed"], eb["booked"], eb["unbooked"], rate))
+    if (pool_e1 or {}).get("exists"):
+        rate = pool_e1.get("usdinr") or 0
+        for eb in pool_e1["books"]:
+            out.append(crypto_line("Pool E1", eb["key"], eb.get("sid", "") or sid_of.get(eb["key"], ""), eb["display_name"],
                                    eb["capital"], eb["cash"], eb["deployed"], eb["booked"], eb["unbooked"], rate))
     if pool_g.get("exists"):
         out.append(crypto_line("Pool G", "portfolio_g", sid_of.get("portfolio_g", ""), "AI judgment", pool_g["capital"], pool_g["cash"],
@@ -779,12 +799,15 @@ def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: 
 def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None,
                     books: Optional[list] = None, pool_d: Optional[dict] = None,
                     pool_e: Optional[dict] = None, pool_g: Optional[dict] = None,
-                    state_dir: str = "", d_trades: Optional[list] = None) -> list:
+                    state_dir: str = "", d_trades: Optional[list] = None,
+                    pool_e1: Optional[dict] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
     brief, capital allocated, total P&L to date, closed-trade count,
     reward:risk ratio, and the registry's verdict/status -- Pools B, C
     and D included even though they are not registry strategies."""
     books, pool_d, pool_e, pool_g, d_trades = books or [], pool_d or {}, pool_e or {}, pool_g or {}, d_trades or []
+    pool_e1 = pool_e1 or {}
+    e1_keys = {b["key"] for b in pool_e1.get("books", [])}
     rows = []
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
@@ -797,8 +820,10 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
             pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
         if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
             pool = "Pool A, F"
+        if pool == "Pool E" and r.strategy_key in e1_keys:
+            pool = "Pool E, E1"
         exp = getattr(r, "primary_experiment_id", "") or ""
-        pools_breakdown = _strategy_pool_breakdown(r.strategy_key, books, state_dir, d_trades, pool_d, pool_e, pool_g)
+        pools_breakdown = _strategy_pool_breakdown(r.strategy_key, books, state_dir, d_trades, pool_d, pool_e, pool_g, pool_e1)
         capital = round(sum(p["capital"] for p in pools_breakdown), 2) if pools_breakdown else None
         pnl = round(sum(p["pnl"] for p in pools_breakdown), 2) if pools_breakdown else None
         closed_trades = sum(p["closed_trades"] for p in pools_breakdown) if pools_breakdown else None
@@ -816,7 +841,11 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
                      "variants": ([{"pool": "Pool A", "diff": False},
                                    {"pool": "Pool F", "diff": True, "title": "What Pool F does differently",
                                     "brief": STRATEGY_BRIEFS["pool_f"][1], "how": STRATEGY_HOW["pool_f"]}]
-                                  if pool == "Pool A, F" else [])})
+                                  if pool == "Pool A, F" else
+                                  [{"pool": "Pool E", "diff": False},
+                                   {"pool": "Pool E1", "diff": True, "title": "What Pool E1 does differently",
+                                    "brief": STRATEGY_BRIEFS["pool_e1"][1], "how": STRATEGY_HOW["pool_e1"]}]
+                                  if pool == "Pool E, E1" else [])})
     keys = {r["key"] for r in rows}
     # Before 2026-09-16 these three were not registry entries; keep the synthetic rows only if they are still missing.
     if "portfolio_b" not in keys:
@@ -841,6 +870,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
 # Cron jobs as the page's schedule strip. (hour, minute) in IST; "every5" spans a window.
 SCHEDULE = [
     {"id": "pool_e", "label": "Pool E crypto (after the 00:00 UTC close)", "at": "05:45", "log": "pool_e.log"},
+    {"id": "pool_e1", "label": "Pool E1 crypto (partial booking twin)", "at": "05:50", "log": "pool_e1.log"},
     {"id": "pool_g", "label": "Pool G crypto AI judgment", "at": "08:30 & 20:30", "log": "pool_g.log"},
     {"id": "prep", "label": "Pool D prepare", "at": "09:00", "log": "pool_d.log"},
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
@@ -1054,9 +1084,13 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     for b in books:
         _with_capital(b)
     pool_e = summary["pool_e"]
+    pool_e1 = summary["pool_e1"]   # Pool E's partial-booking twin, 2026-09-22 -- exactly Pool F's relationship to Pool A
     for r in registry_records:
         if is_crypto_record(r):
             for b in pool_e["books"]:
+                if b["key"] == r.strategy_key:
+                    b["sid"] = getattr(r, "strategy_id", "")
+            for b in pool_e1["books"]:
                 if b["key"] == r.strategy_key:
                     b["sid"] = getattr(r, "strategy_id", "")
     from reporting.pool_g import build_pool_g
@@ -1065,23 +1099,23 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
-                               + pool_e["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
+                               + pool_e["inr"]["capital"] + pool_e1["inr"]["capital"] + pool_g.get("capital", 0) * g_rate, 2)
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     lifecycles = {}
     state = {
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},
-        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e, "pool_g": pool_g,
+        "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e, "pool_e1": pool_e1, "pool_g": pool_g,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                          prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
+                          prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles, pool_e1=pool_e1),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": agents_view(research_queue), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": agents_view(research_queue), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades, pool_e1=pool_e1),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
-                                      state_dir=state_dir, d_trades=d_trades),
+                                      state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1),
         "roadmap": roadmap_view(roadmap, registry_records, research_queue) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
     if mode == "live" and reports is not None:    # your real Groww portfolio is Pool H, shown only in Live mode
@@ -1141,7 +1175,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
             pool_e: Optional[dict] = None, d_open: Optional[list] = None,
             prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
             prices: Optional[dict] = None, crypto_prices: Optional[dict] = None,
-            pool_g: Optional[dict] = None, lifecycles: Optional[dict] = None) -> list:
+            pool_g: Optional[dict] = None, lifecycles: Optional[dict] = None,
+            pool_e1: Optional[dict] = None) -> list:
     """One list for the Live day tab: EVERY open position (whenever it was
     bought, with its current P&L) plus EVERY closed trade on record, across
     Pools A, B, C, D and E. Each row carries `date` (the exit date for a
@@ -1221,34 +1256,38 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
     for r in rows:
         r["amount"] = round(float(r["price"] or 0) * int(r["qty"] or 0), 2)
         r["kind"] = "Intraday" if r["pool"] == "Pool D" else "Swing"
-    # Pool E: the UTC daily close is 05:30 IST; prices in USDT, amounts and P&L in rupees (gross, before fees and tax).
-    rate = float((pool_e or {}).get("usdinr") or 0)
-    for b in (pool_e or {}).get("books", []):
-        for p in b["open_positions"]:
-            entered_today = p.get("entry_date") == today_iso
-            move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
-                            crypto_prices.get(p["symbol"]), crypto_prev_close.get(p["symbol"]))
-            rows.append({"date": p.get("entry_date"), "time": "05:30" if entered_today else "", "action": "BUY",
-                         "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": b["key"],
-                         "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool E",
-                         "book": b["display_name"], "status": "Open", "fill_today": entered_today,
-                         "pnl": round(p["unbooked_raw"] * rate, 2),
-                         "pnl_today": round(move * rate, 2) if move is not None else None,
-                         "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
-                         "cost": p["entry_price"] * p["quantity"] * rate,
-                         "note": "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
-                         "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
-        for t in _read_jsonl(os.path.join(state_dir, "pool_e", b["key"], "trades.jsonl")):
-            qty = float(t.get("quantity", 0) or 0)
-            rows.append({"date": t.get("exit_date"), "time": "05:30", "action": "SELL", "symbol": t.get("symbol"),
-                         "qty": qty, "symbol_key": t.get("symbol"), "book_key": b["key"],
-                         "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": "Pool E",
-                         "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
-                         "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
-                         "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
-                         "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
-                         "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (price in USDT)",
-                         "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
+    # Pool E (and its partial-booking twin, Pool E1, 2026-09-22): the UTC daily close is 05:30 IST;
+    # prices in USDT, amounts and P&L in rupees (gross, before fees and tax).
+    def crypto_rows(pool_dict, pool_label, dirname):
+        rate = float((pool_dict or {}).get("usdinr") or 0)
+        for b in (pool_dict or {}).get("books", []):
+            for p in b["open_positions"]:
+                entered_today = p.get("entry_date") == today_iso
+                move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
+                                crypto_prices.get(p["symbol"]), crypto_prev_close.get(p["symbol"]))
+                rows.append({"date": p.get("entry_date"), "time": "05:30" if entered_today else "", "action": "BUY",
+                             "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": b["key"],
+                             "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": pool_label,
+                             "book": b["display_name"], "status": "Open", "fill_today": entered_today,
+                             "pnl": round(p["unbooked_raw"] * rate, 2),
+                             "pnl_today": round(move * rate, 2) if move is not None else None,
+                             "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
+                             "cost": p["entry_price"] * p["quantity"] * rate,
+                             "note": "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
+                             "amount": round(p["entry_price"] * p["quantity"] * rate, 2)})
+            for t in _read_jsonl(os.path.join(state_dir, dirname, b["key"], "trades.jsonl")):
+                qty = float(t.get("quantity", 0) or 0)
+                rows.append({"date": t.get("exit_date"), "time": "05:30", "action": "SELL", "symbol": t.get("symbol"),
+                             "qty": qty, "symbol_key": t.get("symbol"), "book_key": b["key"],
+                             "price": round(float(t.get("exit_price", 0) or 0), 2), "pool": pool_label,
+                             "book": b["display_name"], "status": "Closed", "fill_today": t.get("exit_date") == today_iso,
+                             "bought_on": t.get("entry_date"), "held_days": _days_between(t.get("entry_date"), t.get("exit_date")),
+                             "entry_price": float(t.get("entry_price", 0) or 0), "cost": float(t.get("entry_price", 0) or 0) * qty * rate,
+                             "pnl": round(float(t.get("pnl", 0) or 0) * rate, 2),
+                             "note": f"{str(t.get('exit_reason') or 'exit').replace('_', ' ')} (price in USDT)",
+                             "kind": "Crypto", "amount": round(float(t.get("exit_price", 0) or 0) * qty * rate, 2)})
+    crypto_rows(pool_e, "Pool E", "pool_e")
+    crypto_rows(pool_e1, "Pool E1", "pool_e1")
     # Pool G: a single shared book, twice-daily live-price fills, prices/P&L in USDT converted to rupees.
     g_rate = float((pool_g or {}).get("usdinr") or 0)
     for p in (pool_g or {}).get("open_positions", []):
