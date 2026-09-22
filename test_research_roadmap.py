@@ -171,10 +171,28 @@ class TestScoringAndRoadmap(unittest.TestCase):
                         "Deferred Pending Better Data", "Permanently Excluded", "Future Dataset Recommendations"]:
             self.assertIn(heading, markdown)
 
+    # The 31 candidates that predate horizon_lane (2026-09-22) -- these are what the "still reads as
+    # swing without being touched by hand" test below checks BY KEY, not "every candidate in the list":
+    # the whole point of horizon_lane is that a later addition (Discovery Scout's monthly pass, or a
+    # human) can genuinely set "intraday"/"medium"/"long_term"/"crypto" -- asserting the whole list
+    # would silently forbid that.
+    _PRE_HORIZON_LANE_KEYS = {
+        "nifty_momentum_30_style", "nifty_alpha_jensens", "nifty_low_volatility_30", "nifty_alpha_low_volatility_30",
+        "nifty_quality_30", "nifty_value_20", "sehgal_long_term_contrarian_india", "volume_weighted_momentum_india",
+        "nifty_index_inclusion_effect", "promoter_pledge_governance_signal", "fii_dii_flow_market_timing",
+        "bonus_issue_announcement_drift", "coffee_can_quality_growth", "india_vix_regime_overlay",
+        "long_term_reversal", "turnover_liquidity", "downside_beta", "industry_momentum", "turn_of_year",
+        "day_of_week", "value_earnings_yield", "quality_composite", "accruals_anomaly", "asset_growth_anomaly",
+        "analyst_revision_momentum", "short_interest_anomaly", "net_issuance_buybacks", "insider_trading_anomaly",
+        "pairs_trading_stat_arb", "post_ipo_underperformance", "options_volatility_premia",
+    }
+
     def test_every_existing_candidate_defaults_to_the_swing_india_lane(self):
         # this module is now the shared candidate roadmap for every research lane (2026-09-22) --
         # every candidate written before that still needs to read as "swing" without being touched by hand.
-        self.assertTrue(all(c.horizon_lane == "swing" and c.market == "India" for c in CANDIDATES))
+        pre_existing = [c for c in CANDIDATES if c.key in self._PRE_HORIZON_LANE_KEYS]
+        self.assertEqual(len(pre_existing), len(self._PRE_HORIZON_LANE_KEYS))   # none of them got renamed/removed
+        self.assertTrue(all(c.horizon_lane == "swing" and c.market == "India" for c in pre_existing))
 
     def test_holding_days_range_is_hand_classified_and_internally_consistent(self):
         # holding_days_min/max are a numeric SUMMARY of typical_holding_period's free text, hand-classified
