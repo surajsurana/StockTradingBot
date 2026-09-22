@@ -756,7 +756,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
         crypto = is_crypto_record(r)
-        fixed_pool = {"portfolio_b": "Pool B", "portfolio_c": "Pool C", "pool_d_vwap_fade": "Pool D"}.get(r.strategy_key)
+        fixed_pool = {"portfolio_b": "Pool B", "portfolio_c": "Pool C", "pool_d_vwap_fade": "Pool D", "portfolio_g": "Pool G"}.get(r.strategy_key)
         kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("Crypto" if crypto else "Swing", ""))
         if fixed_pool:
             pool = fixed_pool if status == "PAPER_TRADING" else "-"

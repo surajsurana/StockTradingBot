@@ -83,7 +83,9 @@ class TestBuildDashboardState(unittest.TestCase):
                             {"from_status": "RESEARCH", "to_status": "PAPER_TRADING", "timestamp": self.alpha_paper_trading_since, "reason": "test"}]),
                         _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT"),
                         _record("crypto_trend_timing", "Crypto Trend Timing", "SW-020",
-                                family="crypto research published strategy")]
+                                family="crypto research published strategy"),
+                        _record("portfolio_g", "Portfolio G (AI judgment book, crypto)", "SW-030",
+                                family="AI judgment book (crypto, Pool G)")]   # the real registry's family string -- doesn't start with "crypto" or "swing_research"
         self.now = datetime(2026, 9, 10, 11, 0)
         self.s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {"X.NS": 104.0, "LT": 3890.0},
                                        "2026-09-10T10:55", now=self.now, crypto_prices={"BTC": 84000.0}, usdinr=100.0,
@@ -112,6 +114,9 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["alpha"]["pool"], "Pool A")
         self.assertEqual(rows["crypto_trend_timing"]["pool"], "Pool E")
         self.assertEqual(rows["old"]["pool"], "-")
+        # portfolio_g is a registry strategy like B, C and D's, not a generic Pool A/E one --
+        # it must show as Pool G even though it comes through the registry, not the synthetic fallback row.
+        self.assertEqual(rows["portfolio_g"]["pool"], "Pool G")
         self.assertEqual((rows["portfolio_b"]["type"], rows["portfolio_c"]["pool"], rows["pool_d_vwap_fade"]["verdict"]), ("AI", "Pool C", "REJECT"))
         self.assertTrue(all(str(rows[k]["sid"]) for k in ("portfolio_b", "portfolio_c", "pool_d_vwap_fade")))
         self.assertTrue(rows["crypto_trend_timing"]["brief"])
@@ -253,7 +258,7 @@ class TestBuildDashboardState(unittest.TestCase):
 
     def test_only_paper_trading_strategies_become_pool_a_books_and_a1_is_absent(self):
         keys = [b["key"] for b in self.s["books"] if b["pool"] == "A"]
-        self.assertEqual(keys, ["alpha"])
+        self.assertEqual(keys, ["alpha"])          # portfolio_g's family doesn't start with "swing_research" -- no phantom Pool A book for it
         self.assertEqual({b["pool"] for b in self.s["books"]}, {"A", "B", "C"})
         self.assertNotIn("A1", self.s["pools"])
         self.assertEqual(self.s["overall"]["positions"], 2)   # X.NS + Pool E's BTC; the legacy L.NS position is not counted
@@ -331,7 +336,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(sched["eod_a"]["last_log_write"].startswith(datetime.now().date().isoformat()))
         self.assertIsNone(sched["summary"]["last_log_write"])
         self.assertEqual(sched["eod_a"]["tail"], ["[alpha] processed"])
-        self.assertEqual([r["sid"] for r in self.s["registry"]], ["SW-001", "SW-000", "SW-020"])
+        self.assertEqual([r["sid"] for r in self.s["registry"]], ["SW-001", "SW-000", "SW-020", "SW-030"])
         self.assertEqual(self.s["agents"], AGENTS)
         self.assertEqual(self.s["flows"], FLOWS)
         self.assertEqual(len(SCHEDULE), len(self.s["schedule"]))
