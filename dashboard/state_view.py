@@ -959,33 +959,41 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
 
     def queue_status(key):
         if key == current_key:
-            return {"state": "current", "in_progress": bool(current.get("in_progress"))}
+            return {"state": "current", "in_progress": bool(current.get("in_progress")), "mode": current.get("mode", "backtest")}
         if key in resolved:
             h = resolved[key]
             return {"state": "resolved", "outcome": h["outcome"], "experiment_id": h.get("experiment_id")}
         return None
 
-    def row(s, rank=None):
+    def row(s, mode, rank=None):
         c = s.candidate
         return {"rank": rank, "key": c.key, "name": c.name, "family": c.factor_family, "year": c.year,
                 "authors": c.authors, "holding": c.typical_holding_period,
                 "holding_days_min": c.holding_days_min, "holding_days_max": c.holding_days_max, "direction": c.direction,
-                "horizon_lane": c.horizon_lane, "market": c.market,
+                "horizon_lane": c.horizon_lane, "market": c.market, "mode": mode,
                 "score": s.total_score, "axes": {k: round(v, 1) for k, v in s.axis_scores.items()},
                 "feasibility": s.feasibility_classification,
                 "blockers": list(s.feasibility_reasons)[:2], "strengths": c.known_strengths,
                 "weaknesses": c.known_weaknesses, "queue": queue_status(c.key)}
 
     from swing_research.research_roadmap import DEFERRED_BY_DIRECTION
-    ready = [s for s in roadmap["researchable_now"] if s.candidate.key not in taken]
-    deferred = [s for s in roadmap["deferred_pending_data"] if s.candidate.key not in taken]
+    # paper_direct_eligible (2026-09-22): a blocked candidate that scores as well as the worst
+    # backtestable one -- genuinely eligible for the SAME queue, just mode="paper_direct" instead of
+    # "backtest" (see research_queue.py). Shown in "ready", not "deferred", and excluded from
+    # deferred/by_direction below so nothing appears in two tables at once.
+    paper_direct_keys = {s.candidate.key for s in roadmap.get("paper_direct_eligible", [])}
+    ready_pool = ([(s, "backtest") for s in roadmap["researchable_now"] if s.candidate.key not in taken]
+                  + [(s, "paper_direct") for s in roadmap.get("paper_direct_eligible", []) if s.candidate.key not in taken])
+    ready_pool.sort(key=lambda pair: -pair[0].total_score)
+    deferred = [s for s in roadmap["deferred_pending_data"]
+                if s.candidate.key not in taken and s.candidate.key not in paper_direct_keys]
     by_direction = [s for s in roadmap.get("deferred_by_direction", []) if s.candidate.key not in taken]
-    rows = [row(s) for s in deferred]
+    rows = [row(s, "backtest") for s in deferred]
     for s in by_direction:
-        r = row(s)
+        r = row(s, "backtest")
         r["blockers"] = [DEFERRED_BY_DIRECTION[s.candidate.key]]
         rows.append(r)
-    return {"ready": [row(s, i + 1) for i, s in enumerate(ready)], "deferred": rows,
+    return {"ready": [row(s, mode, i + 1) for i, (s, mode) in enumerate(ready_pool)], "deferred": rows,
             "weights": roadmap.get("weights", {})}
 
 

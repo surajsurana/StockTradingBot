@@ -16,11 +16,19 @@ class _FakeCandidate:
 @dataclass
 class _FakeScored:
     candidate: _FakeCandidate
+    total_score: float = 5.0
+    feasibility_classification: str = "IMPLEMENTABLE"
 
 
-def _roadmap(keys):
-    scored = [_FakeScored(_FakeCandidate(k, k.upper())) for k in keys]
-    return {"researchable_now": scored, "all_scored": scored}
+def _roadmap(keys, paper_direct_keys=()):
+    """`keys` rank in the given order (first = highest score) as normal backtestable candidates;
+    `paper_direct_keys` are blocked-but-good-enough candidates, ranked below every backtestable one
+    unless given an explicit score via _scored()."""
+    n = len(keys)
+    backtestable = [_FakeScored(_FakeCandidate(k, k.upper()), total_score=n - i) for i, k in enumerate(keys)]
+    blocked = [_FakeScored(_FakeCandidate(k, k.upper()), total_score=0.5, feasibility_classification="NOT_CURRENTLY_IMPLEMENTABLE")
+               for k in paper_direct_keys]
+    return {"researchable_now": backtestable, "paper_direct_eligible": blocked, "all_scored": backtestable + blocked}
 
 
 class TestAdvance(unittest.TestCase):
@@ -77,6 +85,49 @@ class TestAdvance(unittest.TestCase):
         advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 22))
         resolve(d, "alpha", "researched", now=datetime(2026, 9, 23))
         self.assertIsNone(advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 29)))
+
+
+class TestPaperDirectMode(unittest.TestCase):
+    def test_advance_picks_mode_backtest_for_a_normal_candidate(self):
+        d = tempfile.mkdtemp()
+        entry = advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 22))
+        self.assertEqual(entry["mode"], "backtest")
+        self.assertEqual(load(d)["history"][0]["mode"], "backtest")
+
+    def test_advance_picks_a_paper_direct_candidate_when_it_outranks_every_backtestable_one(self):
+        d = tempfile.mkdtemp()
+        roadmap = _roadmap(["alpha"], paper_direct_keys=["blocked_good"])
+        # give the blocked candidate the highest score in the whole pool
+        roadmap["paper_direct_eligible"][0].total_score = 99.0
+        entry = advance(d, roadmap, now=datetime(2026, 9, 22))
+        self.assertEqual((entry["key"], entry["mode"]), ("blocked_good", "paper_direct"))
+
+    def test_advance_falls_back_to_paper_direct_when_researchable_now_is_exhausted(self):
+        d = tempfile.mkdtemp()
+        roadmap = _roadmap(["alpha"], paper_direct_keys=["blocked_good"])
+        advance(d, roadmap, now=datetime(2026, 9, 22))
+        resolve(d, "alpha", "researched", now=datetime(2026, 9, 23))
+        entry = advance(d, roadmap, now=datetime(2026, 9, 24))
+        self.assertEqual((entry["key"], entry["mode"]), ("blocked_good", "paper_direct"))
+
+    def test_start_now_sets_paper_direct_mode_for_a_blocked_candidate_chosen_by_hand(self):
+        d = tempfile.mkdtemp()
+        roadmap = _roadmap(["alpha"], paper_direct_keys=["blocked_good"])
+        entry = start_now(d, "blocked_good", roadmap, now=datetime(2026, 9, 22))
+        self.assertEqual(entry["mode"], "paper_direct")
+
+    def test_start_now_sets_backtest_mode_for_an_implementable_candidate_chosen_by_hand(self):
+        d = tempfile.mkdtemp()
+        entry = start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        self.assertEqual(entry["mode"], "backtest")
+
+    def test_resolve_accepts_paper_trading_proposed_as_an_outcome(self):
+        d = tempfile.mkdtemp()
+        roadmap = _roadmap([], paper_direct_keys=["blocked_good"])
+        advance(d, roadmap, now=datetime(2026, 9, 22))
+        resolve(d, "blocked_good", "paper_trading_proposed", branch="research/blocked_good", now=datetime(2026, 9, 23))
+        row = load(d)["history"][0]
+        self.assertEqual((row["outcome"], row["branch"]), ("paper_trading_proposed", "research/blocked_good"))
 
 
 class TestStartNow(unittest.TestCase):

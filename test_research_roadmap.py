@@ -132,6 +132,42 @@ class TestScoringAndRoadmap(unittest.TestCase):
     def tearDown(self):
         os.remove(self.registry_path)
 
+    def test_paper_direct_eligible_is_a_blocked_candidate_that_scores_as_well_as_the_backtestable_floor(self):
+        # 2026-09-22, per explicit direction: a candidate that can't get a real backtest but scores as
+        # well as the worst candidate that CAN shouldn't just sit inert -- it's eligible for
+        # research_queue.py to propose paper trading directly instead.
+        from types import SimpleNamespace
+        from unittest import mock
+
+        def fake(key, score, available):
+            return SimpleNamespace(key=key, name=key, factor_tags={key}, mechanism="m",
+                                   data_requirements=(["daily_ohlcv_history"] if available else ["options_data"]),
+                                   academic_evidence_score=score, expected_robustness_score=score,
+                                   operational_simplicity_score=score, research_value_score=score,
+                                   data_availability_score=score, implementation_feasibility_score=score,
+                                   horizon_lane="swing", market="India")
+
+        fakes = [fake("backtestable_weak", 6.0, True), fake("backtestable_strong", 9.0, True),
+                fake("blocked_good", 7.0, False), fake("blocked_poor", 2.0, False)]
+        with mock.patch("swing_research.research_roadmap.CANDIDATES", fakes):
+            roadmap = build_roadmap(registry_path=self.registry_path)
+        self.assertEqual({s.candidate.key for s in roadmap["researchable_now"]}, {"backtestable_weak", "backtestable_strong"})
+        self.assertEqual({s.candidate.key for s in roadmap["paper_direct_eligible"]}, {"blocked_good"})
+        self.assertIn("blocked_good", {s.candidate.key for s in roadmap["deferred_pending_data"]})   # still listed there too
+
+    def test_paper_direct_eligible_is_empty_when_nothing_is_backtestable_at_all(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        fake = SimpleNamespace(key="only_one", name="only_one", factor_tags=set(), mechanism="m",
+                               data_requirements=["options_data"], academic_evidence_score=9,
+                               expected_robustness_score=9, operational_simplicity_score=9,
+                               research_value_score=9, data_availability_score=9, implementation_feasibility_score=9,
+                               horizon_lane="swing", market="India")
+        with mock.patch("swing_research.research_roadmap.CANDIDATES", [fake]):
+            roadmap = build_roadmap(registry_path=self.registry_path)
+        self.assertEqual(roadmap["researchable_now"], [])
+        self.assertEqual(roadmap["paper_direct_eligible"], [])   # no floor to clear -- nothing to compare against
+
     def test_score_candidate_weights_sum_to_total(self):
         from deployment.deployment_manager import list_strategies
         portfolio = list_strategies(self.registry_path)

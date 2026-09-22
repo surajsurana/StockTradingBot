@@ -30,8 +30,13 @@ from research_queue import advance
 
 
 def message(entry: dict, name: str, horizon_lane: str, mechanism: str) -> str:
-    return (f"*Research queue*\nNext up: *{name}* ({horizon_lane})\n{mechanism}\n\n"
-            "This is queued for research. See the Strategies tab's \"Next up for research\" list to start a different one instead.")
+    if entry.get("mode") == "paper_direct":
+        how = ("This one can't get a real historical backtest (a genuine data gap), but scores as well as "
+               "the strategies that can -- queued to go straight to a paper-trading proposal instead.")
+    else:
+        how = "This is queued for research."
+    return (f"*Research queue*\nNext up: *{name}* ({horizon_lane})\n{mechanism}\n\n{how} "
+            "See the Strategies tab's \"Next up for research\" list to start a different one instead.")
 
 
 def main() -> None:

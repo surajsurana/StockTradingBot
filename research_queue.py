@@ -17,6 +17,19 @@ candidate; from that moment `current` is locked until resolve() clears it.
 A bumped candidate's history row is closed out with outcome "superseded",
 same append-only audit trail as a real "researched"/"skipped" resolution.
 
+A candidate that can never get a real historical backtest (a genuine data gap, not a scope choice)
+but scores as well as the worst candidate that CAN is still queued -- just with mode="paper_direct"
+instead of mode="backtest" (2026-09-22, per explicit direction: "paper trading is also part of
+research and not real money... with the results of paper trading we can decide whether to give real
+money" -- a good-but-untestable candidate shouldn't just sit inert in "waiting on data we don't have"
+forever). Which candidates qualify is decided by research_roadmap.build_roadmap()'s
+paper_direct_eligible list (deterministic, reviewable code, not the research routine's own
+judgement) -- this module just carries the mode through. In paper_direct mode the research routine
+implements the strategy's decision logic from today's data and proposes registering it straight as a
+new paper-trading pool (no backtest verdict possible), same PR-only, human-merges-it governance as
+every other candidate; a human manually starting a blocked candidate via start_now() also gets
+paper_direct mode, on their own judgement, regardless of whether it clears the automatic floor.
+
 This module is deliberately dumb -- it only tracks state, in
 deployment/state/research_queue.json, the same atomic-write-over-a-tmp-file
 convention advice/tasks.py already uses for advice_done.json. It never
@@ -65,11 +78,11 @@ def _resolved_keys(data: dict) -> set:
     return {r["key"] for r in data["history"] if r.get("resolved") is not None}
 
 
-def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, now: datetime) -> dict:
-    entry = {"key": key, "started": now.date().isoformat(), "started_by": started_by, "in_progress": False}
+def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, mode: str, now: datetime) -> dict:
+    entry = {"key": key, "started": now.date().isoformat(), "started_by": started_by, "in_progress": False, "mode": mode}
     data["current"] = entry
     data["history"] = list(data["history"]) + [{"key": key, "name": name, "queued": now.date().isoformat(),
-                                                 "started": entry["started"], "started_by": started_by,
+                                                 "started": entry["started"], "started_by": started_by, "mode": mode,
                                                  "resolved": None, "outcome": None, "experiment_id": None, "branch": None}]
     _save(state_dir, data)
     return entry
@@ -99,14 +112,18 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None) -> Op
     if data["current"] and data["current"].get("started_by") == "manual":
         return None
     resolved = _resolved_keys(data)
-    top = next((s.candidate for s in roadmap.get("researchable_now", []) if s.candidate.key not in resolved), None)
-    if top is None:
+    pool = ([(s, "backtest") for s in roadmap.get("researchable_now", [])]
+            + [(s, "paper_direct") for s in roadmap.get("paper_direct_eligible", [])])
+    pool.sort(key=lambda pair: -pair[0].total_score)
+    picked = next(((s, mode) for s, mode in pool if s.candidate.key not in resolved), None)
+    if picked is None:
         return None
+    top, mode = picked[0].candidate, picked[1]
     if data["current"] is not None and data["current"]["key"] == top.key:
         return None   # already the best available pick
     if data["current"] is not None:
         _close_open_row(data, data["current"]["key"], "superseded", now)
-    return _set_current(state_dir, data, top.key, top.name, "auto", now)
+    return _set_current(state_dir, data, top.key, top.name, "auto", mode, now)
 
 
 def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] = None) -> dict:
@@ -118,7 +135,7 @@ def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] =
     data = load(state_dir)
     if data["current"] and data["current"].get("in_progress"):
         raise ValueError(f"already researching {data['current']['key']}")
-    match = next((s.candidate for s in roadmap.get("all_scored", []) if s.candidate.key == key), None)
+    match = next((s for s in roadmap.get("all_scored", []) if s.candidate.key == key), None)
     if match is None:
         raise ValueError(f"unknown candidate {key!r}")
     if key in _resolved_keys(data):
@@ -127,7 +144,10 @@ def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] =
         return data["current"]   # already this one
     if data["current"] is not None:
         _close_open_row(data, data["current"]["key"], "superseded", now)
-    return _set_current(state_dir, data, match.key, match.name, "manual", now)
+    # A human choosing a blocked candidate by hand is that human's own judgement call, independent of
+    # whether it clears the automatic paper_direct_eligible floor.
+    mode = "paper_direct" if match.feasibility_classification == "NOT_CURRENTLY_IMPLEMENTABLE" else "backtest"
+    return _set_current(state_dir, data, match.candidate.key, match.candidate.name, "manual", mode, now)
 
 
 def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None) -> None:
@@ -144,11 +164,13 @@ def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None) -
 
 def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str] = None,
             branch: Optional[str] = None, now: Optional[datetime] = None) -> None:
-    """Called once the research routine finishes with `key` (whatever its verdict): clears `current`
-    and fills in its history row. outcome is "researched" (a real backtest ran, PASS or REJECT --
-    experiment_id/branch identify it) or "skipped" (nobody got to it / it was abandoned)."""
-    if outcome not in ("researched", "skipped"):
-        raise ValueError("outcome must be 'researched' or 'skipped'")
+    """Called once the research routine finishes with `key` (whatever the result): clears `current`
+    and fills in its history row. outcome is "researched" (mode="backtest" -- a real backtest ran,
+    PASS or REJECT, experiment_id/branch identify it), "paper_trading_proposed" (mode="paper_direct" --
+    no backtest was possible, but a paper-trading pool was implemented and proposed in a PR, branch
+    identifies it) or "skipped" (nobody got to it / it was abandoned, either mode)."""
+    if outcome not in ("researched", "paper_trading_proposed", "skipped"):
+        raise ValueError("outcome must be 'researched', 'paper_trading_proposed' or 'skipped'")
     now = now or datetime.now()
     data = load(state_dir)
     if not data["current"] or data["current"]["key"] != key:

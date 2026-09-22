@@ -379,7 +379,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <h2>Next up for research</h2>
   <p class="note">One ranked queue across every research lane (swing, intraday, medium, long-term, crypto) -- ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value). One strategy is researched at a time; a new one is picked up automatically once a week, or start a specific one now.</p>
   <p class="note" id="queue-current" hidden></p>
-  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
+  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th>Route</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
   <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
 </section>
 </div>
@@ -1511,7 +1511,10 @@ function renderResearch(s){
     : c.queue && c.queue.state === "resolved"
     ? `<span class="pill" title="${esc(c.queue.experiment_id||"")}">${esc(c.queue.outcome)}</span>`
     : `<button class="iconbtn startbtn" data-key="${esc(c.key)}">Start research</button>`;
-  document.getElementById("roadmap").innerHTML = rm.ready.length ? rm.ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td>${esc(c.horizon_lane)}</td><td class="holding" title="${esc(c.holding)}"><b>${esc(fmtHolding(c))}</b><div class="note">${esc(c.holding)}</div></td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td><td>${queueAction(c)}</td></tr>`).join("") : `<tr><td colspan="9" class="note">roadmap not available</td></tr>`;
+  const modeTag = c => c.mode === "paper_direct"
+    ? `<span class="pill" title="Can't get a real historical backtest (a genuine data gap), but scores as well as the backtestable candidates -- goes straight to a paper-trading proposal instead of being left out">Direct paper trading</span>`
+    : `<span class="note">Backtest</span>`;
+  document.getElementById("roadmap").innerHTML = rm.ready.length ? rm.ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td>${esc(c.horizon_lane)}</td><td class="holding" title="${esc(c.holding)}"><b>${esc(fmtHolding(c))}</b><div class="note">${esc(c.holding)}</div></td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td><td>${modeTag(c)}</td><td>${queueAction(c)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">roadmap not available</td></tr>`;
   document.querySelectorAll("#roadmap .startbtn").forEach(b => b.addEventListener("click", async () => {
     b.disabled = true; b.textContent = "Starting…";
     try {

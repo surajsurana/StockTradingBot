@@ -327,7 +327,7 @@ class TestBuildDashboardState(unittest.TestCase):
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                   roadmap=roadmap, research_queue=queue)
         rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
-        self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False})
+        self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False, "mode": "backtest"})
         self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
         self.assertIsNone(rows["untouched"])
 
@@ -337,7 +337,7 @@ class TestBuildDashboardState(unittest.TestCase):
         s2 = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                    roadmap=roadmap, research_queue=queue)
         rows2 = {c["key"]: c["queue"] for c in s2["roadmap"]["ready"]}
-        self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True})
+        self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True, "mode": "backtest"})
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")

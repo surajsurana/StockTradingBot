@@ -1789,6 +1789,23 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
       deferred_pending_data -- NOT_CURRENTLY_IMPLEMENTABLE candidates,
                            unranked (their score isn't a meaningful
                            priority signal since they can't be started).
+      paper_direct_eligible -- a SUBSET of deferred_pending_data (2026-09-22,
+                           per explicit direction: "paper trading is also
+                           part of research and not real money... with the
+                           results of paper trading we can decide whether
+                           to give real money"): candidates that can't get a
+                           real historical backtest, but whose score is AT
+                           LEAST as good as the worst backtestable candidate
+                           currently running -- i.e. would have made the cut
+                           on evidence alone if only the data existed. These
+                           are eligible for research_queue.py to route
+                           straight to a paper-trading proposal instead of a
+                           backtest, skipping neither evidence bar nor human
+                           review (still a PR, never auto-merged) -- just
+                           the backtest step that's genuinely impossible for
+                           them. The bar is the CURRENT researchable_now
+                           floor, not a fixed number, so it moves with the
+                           real portfolio rather than needing hand-tuning.
       all_scored -- every ScoredCandidate, for the full comparison table.
     """
     portfolio = load_portfolio(registry_path)
@@ -1801,9 +1818,15 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
     deferred_pending_data = [s for s in scored if s.feasibility_classification == "NOT_CURRENTLY_IMPLEMENTABLE"]
     deferred_by_direction = [s for s in scored if s.candidate.key in DEFERRED_BY_DIRECTION
                              and s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"]
+    floor = min((s.total_score for s in researchable_now), default=None)
+    paper_direct_eligible = sorted(
+        ([s for s in deferred_pending_data if s.total_score >= floor] if floor is not None else []),
+        key=lambda s: -s.total_score,
+    )
     return {
         "portfolio": portfolio, "researchable_now": researchable_now,
         "deferred_pending_data": deferred_pending_data, "deferred_by_direction": deferred_by_direction,
+        "paper_direct_eligible": paper_direct_eligible,
         "all_scored": scored, "weights": weights,
     }
 
