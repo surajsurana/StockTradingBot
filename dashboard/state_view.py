@@ -903,7 +903,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
     def row(s, rank=None):
         c = s.candidate
         return {"rank": rank, "key": c.key, "name": c.name, "family": c.factor_family, "year": c.year,
-                "authors": c.authors, "holding": c.typical_holding_period, "direction": c.direction,
+                "authors": c.authors, "holding": c.typical_holding_period,
+                "holding_days_min": c.holding_days_min, "holding_days_max": c.holding_days_max, "direction": c.direction,
                 "horizon_lane": c.horizon_lane, "market": c.market,
                 "score": s.total_score, "axes": {k: round(v, 1) for k, v in s.axis_scores.items()},
                 "feasibility": s.feasibility_classification,

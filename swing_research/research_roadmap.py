@@ -53,6 +53,7 @@ silently mis-classified by hand.
 
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from deployment.deployment_manager import list_strategies, REGISTRY_PATH
 
@@ -186,6 +187,14 @@ class CandidateProfile:
                                            # candidate here today predates this field and is swing, so that's
                                            # the default; new candidates in other lanes set it explicitly.
     market: str = "India"                 # future-proofed for a later non-Indian lane; nothing uses it yet.
+    holding_days_min: Optional[int] = None   # typical_holding_period as an actual range in calendar days, for
+    holding_days_max: Optional[int] = None   # display and sorting -- hand-classified from that same text, not
+                                              # parsed from it (the free text stays the source of truth for
+                                              # nuance; these are a best-effort numeric summary of it). Both
+                                              # None means genuinely not a position-holding-period concept
+                                              # (an avoidance rule, a portfolio-wide overlay) -- never guessed.
+                                              # holding_days_max=None with a min set means open-ended (e.g. a
+                                              # buy-and-hold screen with no fixed exit horizon).
     notes: str = ""
 
 
@@ -418,6 +427,7 @@ CANDIDATES = [
                   "score. Real, live product: multiple AMCs (SBI, HDFC, etc.) run index funds/ETFs "
                   "tracking this exact methodology.",
         typical_holding_period="Semi-annual reconstitution (per the index's own methodology)",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low-moderate -- twice-yearly rebalance is less frequent than every "
                                   "other cross-sectional strategy in this program",
         data_requirements=["daily_ohlcv_history"],
@@ -468,6 +478,7 @@ CANDIDATES = [
                   "economic claim ('this stock beats what its risk alone would predict') from BAB's "
                   "('this stock's risk itself is underpriced').",
         typical_holding_period="Semi-annual reconstitution",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low-moderate",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="A real, live, currently-tracked NSE methodology; distinct economic claim from "
@@ -503,6 +514,7 @@ CANDIDATES = [
                   "all, unlike BAB (beta) or the Alpha index above (regression intercept). The simplest, "
                   "most directly comparable candidate to Betting Against Beta on this roadmap.",
         typical_holding_period="Semi-annual reconstitution",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low-moderate",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Real, live, audited methodology; trivially simple to compute (a rolling standard "
@@ -535,6 +547,7 @@ CANDIDATES = [
                   "low-volatility screen/weighting overlay -- included for completeness since it is a "
                   "genuinely distinct, separately-tracked product, not merely 'the average of two rows above.'",
         typical_holding_period="Semi-annual reconstitution",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low-moderate",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Real, live, audited methodology; fully price-data-implementable.",
@@ -563,6 +576,7 @@ CANDIDATES = [
                   "window than Piotroski/QMJ's typical multi-year point-in-time comparisons, but still a "
                   "genuine historical (not snapshot) fundamentals requirement.",
         typical_holding_period="Semi-annual reconstitution",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="Real, live, currently-tracked NSE methodology (multiple AMC index funds track it) "
@@ -594,6 +608,7 @@ CANDIDATES = [
                   "return on capital -- the same broad value construction as the global roadmap's Basu/"
                   "Fama-French value candidate, applied to the Nifty 50 specifically.",
         typical_holding_period="Semi-annual reconstitution",
+        holding_days_min=150, holding_days_max=210,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="A real, live NSE product; India-specific evidence that a value tilt is considered "
@@ -632,6 +647,7 @@ CANDIDATES = [
                   "(SW-003, SW-006) explicitly do NOT use a skip period at all (a disclosed omission in "
                   "both).",
         typical_holding_period="Long-horizon (multi-year, consistent with the global De Bondt-Thaler entry)",
+        holding_days_min=1095, holding_days_max=1825,
         expected_trade_frequency="Very low",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Direct India-specific evidence for the long-term reversal effect already on the "
@@ -673,6 +689,7 @@ CANDIDATES = [
                   "(continuation/reversal) is related.",
         typical_holding_period="Not independently re-confirmed here (would need the full paper); assumed "
                                 "comparable to other Indian momentum studies (months, not years)",
+        holding_days_min=30, holding_days_max=180,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Genuinely different signal construction (volume-conditioned) from every existing "
@@ -711,6 +728,7 @@ CANDIDATES = [
                   "flows, not price pattern, fundamentals, or risk.",
         typical_holding_period="Short, event-window-based (days to ~60 days -- multiple studies found "
                                 "abnormal returns partially REVERSING within roughly 60 days of inclusion)",
+        holding_days_min=1, holding_days_max=60,
         expected_trade_frequency="Very low -- gated by how often the underlying index actually "
                                   "reconstitutes (semi-annual for most Nifty indices), a handful of "
                                   "genuine events per cycle",
@@ -760,6 +778,7 @@ CANDIDATES = [
         typical_holding_period="Not standardized in the literature -- would need to be defined as an "
                                 "implementation choice (e.g. quarterly, matching SEBI's own disclosure "
                                 "cadence) rather than taken directly from a single paper's holding period.",
+        holding_days_min=75, holding_days_max=105,
         expected_trade_frequency="Low -- pledge disclosures update quarterly, not daily",
         data_requirements=["daily_ohlcv_history", "promoter_pledge_disclosure_history"],
         known_strengths="The single most genuinely INDIA-SPECIFIC (not a replicated Western anomaly) "
@@ -809,6 +828,7 @@ CANDIDATES = [
         typical_holding_period="N/A in the per-symbol sense -- would operate as a portfolio-wide exposure "
                                 "adjustment, structurally closer to this platform's existing Macro "
                                 "Strategist (macro/macro_strategist.py) than to any swing_research Strategy.",
+        holding_days_min=None, holding_days_max=None,
         expected_trade_frequency="N/A -- not a per-symbol entry/exit signal",
         data_requirements=["daily_ohlcv_history", "fii_dii_flow_history"],
         known_strengths="A genuinely distinct MECHANISM TYPE, not just a distinct signal -- if implemented, "
@@ -855,6 +875,7 @@ CANDIDATES = [
                   "study concludes the Indian market shows semi-strong-form efficiency here (information "
                   "already priced in) and finds NO exploitable reaction at all.",
         typical_holding_period="Short, event-window (days around announcement, per the studies' own event-study design)",
+        holding_days_min=1, holding_days_max=14,
         expected_trade_frequency="Low -- gated by how often bonus issues actually occur in the universe",
         data_requirements=["daily_ohlcv_history", "bonus_issue_announcement_history"],
         known_strengths="A genuinely India-specific corporate-action pattern (bonus issues are far more "
@@ -895,6 +916,7 @@ CANDIDATES = [
                   "investors alike (Ambit Capital and the author's later firm, Marcellus, run real, "
                   "SEBI-registered PMS products on this philosophy).",
         typical_holding_period="Very long (multi-year buy-and-hold by explicit design)",
+        holding_days_min=1095, holding_days_max=None,
         expected_trade_frequency="Extremely low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="An exact, simple, widely-known, India-native screen with real institutional "
@@ -940,6 +962,7 @@ CANDIDATES = [
                   "signal, conceptually similar to this program's own live Macro Strategist, but "
                   "quantified from a real index series instead of Claude-read headlines.",
         typical_holding_period="N/A -- a regime overlay, not a position-holding rule",
+        holding_days_min=None, holding_days_max=None,
         expected_trade_frequency="N/A",
         data_requirements=["daily_ohlcv_history", "india_vix_history"],
         known_strengths="India VIX is a REAL, long-published (since 2008), NSE-native index -- if it turns "
@@ -980,6 +1003,7 @@ CANDIDATES = [
                   "the overreaction unwinds -- a genuinely different behavioral story from short-term "
                   "(1-month) reversal's microstructure/liquidity-provision explanation.",
         typical_holding_period="3-5 years (formation and holding both multi-year)",
+        holding_days_min=1095, holding_days_max=1825,
         expected_trade_frequency="Very low -- one of the lowest-turnover candidates in this roadmap",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="One of the foundational behavioral-finance papers; genuinely orthogonal "
@@ -1018,6 +1042,7 @@ CANDIDATES = [
                    "outstanding) rather than Amihud's price-impact ratio as the liquidity proxy -- a "
                    "different operationalization of the same broad liquidity-premium family.",
         typical_holding_period="Monthly rebalance",
+        holding_days_min=25, holding_days_max=35,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history", "volume", "shares_outstanding_snapshot"],
         known_strengths="Well-cited alternative liquidity measure; a useful cross-check against Amihud "
@@ -1055,6 +1080,7 @@ CANDIDATES = [
                    "(downside beta) command a return premium beyond what ordinary (unconditional) beta "
                    "explains -- investors dislike downside co-movement specifically.",
         typical_holding_period="Monthly rebalance",
+        holding_days_min=25, holding_days_max=35,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Reasonably well-cited risk-based refinement; purely price-data-based.",
@@ -1082,6 +1108,7 @@ CANDIDATES = [
                    "effect -- buying stocks in recently-strong industries, rather than recently-strong "
                    "individual stocks, captures most of the same premium with different turnover/risk.",
         typical_holding_period="Monthly rebalance",
+        holding_days_min=25, holding_days_max=35,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history", "sector_classification"],
         known_strengths="Well-cited; reuses the existing sector-map infrastructure already built for Turtle's correlation-group caps.",
@@ -1109,6 +1136,7 @@ CANDIDATES = [
         mechanism="Small-cap stocks show abnormally strong returns in the first days of January, "
                    "historically linked to December tax-loss-selling pressure unwinding.",
         typical_holding_period="A few days per year, in and out",
+        holding_days_min=1, holding_days_max=10,
         expected_trade_frequency="Very low -- once a year by construction",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Trivial to test, essentially free.",
@@ -1137,6 +1165,7 @@ CANDIDATES = [
         mechanism="Average returns differ systematically by day of the week (historically, negative "
                    "Monday returns) -- one of the earliest documented market-efficiency anomalies.",
         typical_holding_period="Single day",
+        holding_days_min=1, holding_days_max=1,
         expected_trade_frequency="Very high (daily), but with a very small expected per-trade edge",
         data_requirements=["daily_ohlcv_history"],
         known_strengths="Trivial, free to test.",
@@ -1171,6 +1200,7 @@ CANDIDATES = [
                    "premium -- one of the two original Fama-French factors, arguably the most famous "
                    "anomaly in all of empirical asset pricing.",
         typical_holding_period="Annual to semi-annual rebalance (fundamentals update slowly)",
+        holding_days_min=150, holding_days_max=395,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="The single most foundational, most-replicated anomaly in the academic literature.",
@@ -1199,6 +1229,7 @@ CANDIDATES = [
                    "earnings) are systematically underpriced relative to weaker peers -- 'quality' as a "
                    "return factor distinct from and complementary to value.",
         typical_holding_period="Annual rebalance",
+        holding_days_min=330, holding_days_max=395,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="Three independently well-cited formulations (F-Score, gross profitability, "
@@ -1225,6 +1256,7 @@ CANDIDATES = [
                    "flow) subsequently underperform -- investors naively over-weight reported earnings "
                    "without adjusting for their lower cash-flow backing.",
         typical_holding_period="Annual rebalance",
+        holding_days_min=330, holding_days_max=395,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="Foundational earnings-quality anomaly, extremely well cited in accounting/finance.",
@@ -1249,6 +1281,7 @@ CANDIDATES = [
                    "consistent with over-investment/empire-building or market over-extrapolation of "
                    "growth, and the basis of Fama-French's own later 'investment' (CMA) factor.",
         typical_holding_period="Annual rebalance",
+        holding_days_min=330, holding_days_max=395,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "point_in_time_fundamentals_history"],
         known_strengths="Well-cited, later formalized into the Fama-French 5-factor model's CMA factor.",
@@ -1272,6 +1305,7 @@ CANDIDATES = [
                    "drift in the direction of the revision -- conceptually adjacent to PEAD but driven "
                    "by analyst forecasts rather than the earnings announcement itself.",
         typical_holding_period="1-3 months",
+        holding_days_min=30, holding_days_max=90,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history", "analyst_estimates_history"],
         known_strengths="Well-cited; would complement PEAD (SW-007) if both became feasible together.",
@@ -1296,6 +1330,7 @@ CANDIDATES = [
         mechanism="Heavily shorted stocks subsequently underperform -- short sellers are, on average, "
                    "informed, so aggregate short interest is itself a predictive signal.",
         typical_holding_period="Monthly rebalance",
+        holding_days_min=25, holding_days_max=35,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history", "short_interest_borrow_availability"],
         known_strengths="Well-cited; a genuinely different information source (positioning, not price/fundamentals).",
@@ -1321,6 +1356,7 @@ CANDIDATES = [
                    "subsequently underperform -- interpreted as management exploiting private "
                    "information about relative mispricing via the issuance/buyback decision itself.",
         typical_holding_period="Multi-month to annual",
+        holding_days_min=60, holding_days_max=365,
         expected_trade_frequency="Low",
         data_requirements=["daily_ohlcv_history", "corporate_actions_buyback_history"],
         known_strengths="Well-cited, economically intuitive (management-information) mechanism.",
@@ -1345,6 +1381,7 @@ CANDIDATES = [
         mechanism="Corporate insiders' own trades predict subsequent returns in the same direction -- "
                    "insiders are informed about their own company's prospects.",
         typical_holding_period="1-6 months following a disclosed insider transaction",
+        holding_days_min=30, holding_days_max=180,
         expected_trade_frequency="Low, event-driven",
         data_requirements=["daily_ohlcv_history", "insider_transaction_data"],
         known_strengths="Well-cited, intuitive mechanism; unlike several other blocked candidates, the "
@@ -1375,6 +1412,7 @@ CANDIDATES = [
                    "construction, a structurally different approach from every cross-sectional-factor "
                    "candidate elsewhere in this roadmap.",
         typical_holding_period="Days to weeks per pair-divergence event",
+        holding_days_min=1, holding_days_max=21,
         expected_trade_frequency="Moderate, event-driven per pair",
         data_requirements=["daily_ohlcv_history", "short_interest_borrow_availability"],
         known_strengths="Structurally market-neutral -- would be a genuinely different RISK PROFILE "
@@ -1402,6 +1440,7 @@ CANDIDATES = [
                    "following their IPO, attributed to window-dressing at issuance and overoptimistic "
                    "initial pricing.",
         typical_holding_period="Avoid/underweight for 3-5 years post-listing",
+        holding_days_min=None, holding_days_max=None,
         expected_trade_frequency="Low, event-driven",
         data_requirements=["daily_ohlcv_history", "ipo_date_history", "index_membership_history"],
         known_strengths="Well-cited, intuitive mechanism.",
@@ -1428,6 +1467,7 @@ CANDIDATES = [
         mechanism="Implied volatility priced into options systematically exceeds subsequently realized "
                    "volatility, a persistent risk premium collectible by systematically selling options/variance.",
         typical_holding_period="Weekly to monthly (options expiry-driven)",
+        holding_days_min=5, holding_days_max=35,
         expected_trade_frequency="Moderate",
         data_requirements=["daily_ohlcv_history", "options_data"],
         known_strengths="A wholly distinct mechanism/instrument family from everything else in this roadmap.",

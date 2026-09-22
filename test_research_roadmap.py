@@ -176,6 +176,21 @@ class TestScoringAndRoadmap(unittest.TestCase):
         # every candidate written before that still needs to read as "swing" without being touched by hand.
         self.assertTrue(all(c.horizon_lane == "swing" and c.market == "India" for c in CANDIDATES))
 
+    def test_holding_days_range_is_hand_classified_and_internally_consistent(self):
+        # holding_days_min/max are a numeric SUMMARY of typical_holding_period's free text, hand-classified
+        # per candidate (2026-09-22) -- every candidate must have been looked at, not silently left at the
+        # dataclass default, and whichever ones DO have a range must have it the right way round.
+        untouched = [c.key for c in CANDIDATES if c.holding_days_min is None and c.holding_days_max is None
+                     and "N/A" not in c.typical_holding_period and "Avoid/underweight" not in c.typical_holding_period]
+        self.assertEqual(untouched, [])   # every non-N/A candidate has a real range classified
+        for c in CANDIDATES:
+            if c.holding_days_min is not None:
+                self.assertGreater(c.holding_days_min, 0, c.key)
+                if c.holding_days_max is not None:
+                    self.assertGreaterEqual(c.holding_days_max, c.holding_days_min, c.key)
+            else:
+                self.assertIsNone(c.holding_days_max, c.key)   # a min without a max is fine (open-ended); the reverse never is
+
 
 if __name__ == "__main__":
     unittest.main()

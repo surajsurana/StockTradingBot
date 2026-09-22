@@ -297,7 +297,7 @@ class TestBuildDashboardState(unittest.TestCase):
         cand = lambda key, name, lane="swing": SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
                                                  authors="A & B", typical_holding_period="1 month",
                                                  direction="Long only", known_strengths="s", known_weaknesses="w",
-                                                 horizon_lane=lane, market="India")
+                                                 horizon_lane=lane, market="India", holding_days_min=30, holding_days_max=30)
         scored = lambda key, name, score, feas="IMPLEMENTABLE", reasons=(), lane="swing": SimpleNamespace(
             candidate=cand(key, name, lane), total_score=score, axis_scores={"academic_evidence": 8.0},
             feasibility_classification=feas, feasibility_reasons=list(reasons))
@@ -308,6 +308,7 @@ class TestBuildDashboardState(unittest.TestCase):
                                   roadmap=roadmap)
         self.assertEqual([(c["rank"], c["key"]) for c in s["roadmap"]["ready"]], [(1, "new_idea")])
         self.assertEqual(s["roadmap"]["ready"][0]["horizon_lane"], "crypto")   # every research lane, not just swing
+        self.assertEqual((s["roadmap"]["ready"][0]["holding_days_min"], s["roadmap"]["ready"][0]["holding_days_max"]), (30, 30))
         self.assertEqual([c["key"] for c in s["roadmap"]["deferred"]], ["needs_data"])
         self.assertEqual(s["roadmap"]["deferred"][0]["blockers"], ["Requires 'x'"])
 
@@ -315,7 +316,7 @@ class TestBuildDashboardState(unittest.TestCase):
         cand = lambda key, name: SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
                                                  authors="A & B", typical_holding_period="1 month",
                                                  direction="Long only", known_strengths="s", known_weaknesses="w",
-                                                 horizon_lane="swing", market="India")
+                                                 horizon_lane="swing", market="India", holding_days_min=30, holding_days_max=30)
         scored = lambda key, name, score: SimpleNamespace(candidate=cand(key, name), total_score=score,
             axis_scores={"academic_evidence": 8.0}, feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])
         roadmap = {"researchable_now": [scored("current_one", "In research now", 9.0), scored("resolved_one", "Already tried", 8.0),
