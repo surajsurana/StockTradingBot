@@ -278,6 +278,11 @@ DEFAULT_WEIGHTS = {
 }
 assert abs(sum(DEFAULT_WEIGHTS.values()) - 1.0) < 1e-9
 
+# A data-blocked candidate needs a total_score strictly above this to qualify for build_roadmap()'s
+# paper_direct_eligible bucket. Fixed and absolute by explicit direction (2026-09-22) -- an earlier
+# version tied this to the current researchable_now floor, rejected as too permissive.
+PAPER_DIRECT_SCORE_THRESHOLD = 7.0
+
 
 def classify_data_feasibility(data_requirements: list) -> tuple:
     """
@@ -1794,18 +1799,19 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
                            part of research and not real money... with the
                            results of paper trading we can decide whether
                            to give real money"): candidates that can't get a
-                           real historical backtest, but whose score is AT
-                           LEAST as good as the worst backtestable candidate
-                           currently running -- i.e. would have made the cut
-                           on evidence alone if only the data existed. These
-                           are eligible for research_queue.py to route
-                           straight to a paper-trading proposal instead of a
-                           backtest, skipping neither evidence bar nor human
-                           review (still a PR, never auto-merged) -- just
-                           the backtest step that's genuinely impossible for
-                           them. The bar is the CURRENT researchable_now
-                           floor, not a fixed number, so it moves with the
-                           real portfolio rather than needing hand-tuning.
+                           real historical backtest, but whose score clears
+                           PAPER_DIRECT_SCORE_THRESHOLD -- a fixed absolute
+                           quality bar (2026-09-22: an earlier version tied
+                           this to "at least as good as the worst backtestable
+                           candidate running right now", which was rejected
+                           as too permissive since that floor just tracks
+                           whatever's currently in the roadmap rather than
+                           reflecting real quality). These are eligible for
+                           research_queue.py to route straight to a
+                           paper-trading proposal instead of a backtest,
+                           skipping neither the evidence bar nor human review
+                           (still a PR, never auto-merged) -- just the
+                           backtest step that's genuinely impossible for them.
       all_scored -- every ScoredCandidate, for the full comparison table.
     """
     portfolio = load_portfolio(registry_path)
@@ -1818,9 +1824,8 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
     deferred_pending_data = [s for s in scored if s.feasibility_classification == "NOT_CURRENTLY_IMPLEMENTABLE"]
     deferred_by_direction = [s for s in scored if s.candidate.key in DEFERRED_BY_DIRECTION
                              and s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"]
-    floor = min((s.total_score for s in researchable_now), default=None)
     paper_direct_eligible = sorted(
-        ([s for s in deferred_pending_data if s.total_score >= floor] if floor is not None else []),
+        (s for s in deferred_pending_data if s.total_score > PAPER_DIRECT_SCORE_THRESHOLD),
         key=lambda s: -s.total_score,
     )
     return {

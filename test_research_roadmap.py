@@ -132,41 +132,62 @@ class TestScoringAndRoadmap(unittest.TestCase):
     def tearDown(self):
         os.remove(self.registry_path)
 
-    def test_paper_direct_eligible_is_a_blocked_candidate_that_scores_as_well_as_the_backtestable_floor(self):
-        # 2026-09-22, per explicit direction: a candidate that can't get a real backtest but scores as
-        # well as the worst candidate that CAN shouldn't just sit inert -- it's eligible for
-        # research_queue.py to propose paper trading directly instead.
+    def _axis_value_for_total(self, total):
+        # score_candidate()'s total is a DEFAULT_WEIGHTS-weighted sum where the diversification axis
+        # is computed independently (fixed at 10.0 here -- a fresh, non-overlapping tag against an
+        # empty registry). Invert that so a fake candidate's uniform axis score lands on an exact,
+        # known total, instead of guessing values and hoping they land on the right side of the bar.
+        from deployment.deployment_manager import list_strategies
+        portfolio = list_strategies(self.registry_path)
+        div_score, _ = compute_diversification_score({"unique_probe_tag_zzz"}, portfolio)
+        other_weight = 1.0 - DEFAULT_WEIGHTS["diversification"]
+        return (total - DEFAULT_WEIGHTS["diversification"] * div_score) / other_weight
+
+    def test_paper_direct_eligible_is_a_blocked_candidate_scoring_above_the_fixed_threshold(self):
+        # 2026-09-22, per explicit direction: a candidate that can't get a real backtest but scores
+        # above PAPER_DIRECT_SCORE_THRESHOLD (a fixed absolute bar, not tied to whatever's currently
+        # backtestable) shouldn't just sit inert -- it's eligible for research_queue.py to propose
+        # paper trading directly instead. A candidate sitting exactly ON the threshold must NOT qualify
+        # (strictly greater than, not "at least").
         from types import SimpleNamespace
         from unittest import mock
+        from swing_research.research_roadmap import PAPER_DIRECT_SCORE_THRESHOLD
 
-        def fake(key, score, available):
+        def fake(key, axis_score, available):
             return SimpleNamespace(key=key, name=key, factor_tags={key}, mechanism="m",
                                    data_requirements=(["daily_ohlcv_history"] if available else ["options_data"]),
-                                   academic_evidence_score=score, expected_robustness_score=score,
-                                   operational_simplicity_score=score, research_value_score=score,
-                                   data_availability_score=score, implementation_feasibility_score=score,
+                                   academic_evidence_score=axis_score, expected_robustness_score=axis_score,
+                                   operational_simplicity_score=axis_score, research_value_score=axis_score,
+                                   data_availability_score=axis_score, implementation_feasibility_score=axis_score,
                                    horizon_lane="swing", market="India")
 
+        above = self._axis_value_for_total(PAPER_DIRECT_SCORE_THRESHOLD + 1.0)
+        at = self._axis_value_for_total(PAPER_DIRECT_SCORE_THRESHOLD)
+        below = self._axis_value_for_total(PAPER_DIRECT_SCORE_THRESHOLD - 4.0)
         fakes = [fake("backtestable_weak", 6.0, True), fake("backtestable_strong", 9.0, True),
-                fake("blocked_good", 7.0, False), fake("blocked_poor", 2.0, False)]
+                fake("blocked_good", above, False),
+                fake("blocked_at_threshold", at, False),
+                fake("blocked_poor", below, False)]
         with mock.patch("swing_research.research_roadmap.CANDIDATES", fakes):
             roadmap = build_roadmap(registry_path=self.registry_path)
         self.assertEqual({s.candidate.key for s in roadmap["researchable_now"]}, {"backtestable_weak", "backtestable_strong"})
         self.assertEqual({s.candidate.key for s in roadmap["paper_direct_eligible"]}, {"blocked_good"})
         self.assertIn("blocked_good", {s.candidate.key for s in roadmap["deferred_pending_data"]})   # still listed there too
 
-    def test_paper_direct_eligible_is_empty_when_nothing_is_backtestable_at_all(self):
+    def test_paper_direct_eligible_is_empty_when_no_blocked_candidate_clears_the_threshold(self):
         from types import SimpleNamespace
         from unittest import mock
+        from swing_research.research_roadmap import PAPER_DIRECT_SCORE_THRESHOLD
+        at = self._axis_value_for_total(PAPER_DIRECT_SCORE_THRESHOLD)
         fake = SimpleNamespace(key="only_one", name="only_one", factor_tags=set(), mechanism="m",
-                               data_requirements=["options_data"], academic_evidence_score=9,
-                               expected_robustness_score=9, operational_simplicity_score=9,
-                               research_value_score=9, data_availability_score=9, implementation_feasibility_score=9,
+                               data_requirements=["options_data"], academic_evidence_score=at,
+                               expected_robustness_score=at, operational_simplicity_score=at,
+                               research_value_score=at, data_availability_score=at, implementation_feasibility_score=at,
                                horizon_lane="swing", market="India")
         with mock.patch("swing_research.research_roadmap.CANDIDATES", [fake]):
             roadmap = build_roadmap(registry_path=self.registry_path)
         self.assertEqual(roadmap["researchable_now"], [])
-        self.assertEqual(roadmap["paper_direct_eligible"], [])   # no floor to clear -- nothing to compare against
+        self.assertEqual(roadmap["paper_direct_eligible"], [])   # blocked, but doesn't clear the fixed bar
 
     def test_score_candidate_weights_sum_to_total(self):
         from deployment.deployment_manager import list_strategies
