@@ -414,6 +414,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
             return
+        if parsed.path == "/api/research/resolve":   # the unattended research routine (Phase 2, a scheduled
+            # cloud agent with no VPS/SSH access) calls this over the internet once it finishes the current
+            # candidate, since it can't write deployment/state/research_queue.json directly.
+            import research_queue
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                research_queue.resolve(STATE_DIR, str(body.get("key", "")), str(body.get("outcome", "")),
+                                       experiment_id=body.get("experiment_id"), branch=body.get("branch"))
+                self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
         if parsed.path not in ("/api/manual_exit", "/api/manual_entry"):
             self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
             return
