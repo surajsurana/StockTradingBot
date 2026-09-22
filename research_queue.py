@@ -1,18 +1,27 @@
 """
 The research queue: turns swing_research.research_roadmap's ranked candidate
 list into "one strategy in research at a time, a new one picked up
-automatically once a week, or a specific one started early by hand"
-(2026-09-22, per explicit direction).
+automatically, or a specific one started early by hand" (2026-09-22, per
+explicit direction).
 
-This module is deliberately dumb -- it only tracks WHICH candidate is
-current and keeps an append-only history, in deployment/state/research_queue.json,
-the same atomic-write-over-a-tmp-file convention advice/tasks.py already uses
-for advice_done.json. It never scores anything itself (that's
-research_roadmap.build_roadmap(), unchanged) and never writes strategy code
-or runs a backtest -- advance_research_queue.py (the weekly, fully
-deterministic cron) and the unattended research routine (Phase 2, a
-scheduled Claude Code cloud agent, not Python in this repo) are what act on
-what this file records.
+The current pick is free to change right up until research actually starts
+on it (2026-09-22, per explicit direction: "interrupting and changing mid
+week or anytime is ok, only if a research is already ongoing then it should
+not interrupt"): a candidate sits as `current` with `in_progress=False` from
+the moment it's queued, and can be bumped for a better-ranked one, or a
+specific one picked by hand, any number of times -- reconsider() and
+start_now() both do this. The unattended research routine (Phase 2, a
+scheduled Claude Code cloud agent, not Python in this repo) calls
+mark_in_progress() as the very first thing it does once it commits to a
+candidate; from that moment `current` is locked until resolve() clears it.
+A bumped candidate's history row is closed out with outcome "superseded",
+same append-only audit trail as a real "researched"/"skipped" resolution.
+
+This module is deliberately dumb -- it only tracks state, in
+deployment/state/research_queue.json, the same atomic-write-over-a-tmp-file
+convention advice/tasks.py already uses for advice_done.json. It never
+scores anything itself (that's research_roadmap.build_roadmap(), unchanged)
+and never writes strategy code or runs a backtest.
 """
 
 import json
@@ -49,16 +58,15 @@ def _save(state_dir: str, data: dict) -> None:
     os.replace(tmp, os.path.join(state_dir, QUEUE_FILE))
 
 
-def _attempted_keys(data: dict) -> set:
-    """Candidates already current or somewhere in history -- never picked twice by advance()."""
-    keys = {r["key"] for r in data["history"]}
-    if data["current"]:
-        keys.add(data["current"]["key"])
-    return keys
+def _resolved_keys(data: dict) -> set:
+    """Keys with a CLOSED history row (researched, skipped or superseded) -- these are done, never
+    picked again. The current pick's own key is deliberately not in here -- it's still open to being
+    compared against, and swapped out for, a better-ranked candidate until research starts on it."""
+    return {r["key"] for r in data["history"] if r.get("resolved") is not None}
 
 
 def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, now: datetime) -> dict:
-    entry = {"key": key, "started": now.date().isoformat(), "started_by": started_by}
+    entry = {"key": key, "started": now.date().isoformat(), "started_by": started_by, "in_progress": False}
     data["current"] = entry
     data["history"] = list(data["history"]) + [{"key": key, "name": name, "queued": now.date().isoformat(),
                                                  "started": entry["started"], "started_by": started_by,
@@ -67,36 +75,71 @@ def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: st
     return entry
 
 
+def _close_open_row(data: dict, key: str, outcome: str, now: datetime,
+                     experiment_id: Optional[str] = None, branch: Optional[str] = None) -> None:
+    for row in reversed(data["history"]):
+        if row["key"] == key and row["resolved"] is None:
+            row["resolved"], row["outcome"] = now.date().isoformat(), outcome
+            row["experiment_id"], row["branch"] = experiment_id, branch
+            return
+
+
 def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None) -> Optional[dict]:
-    """The weekly, automatic path: if nothing is currently in research, pick the top-ranked
-    researchable_now candidate never attempted before. Does nothing (returns None) if something
-    is already current, or nothing eligible remains -- "one at a time" is enforced here, not by the caller."""
+    """Keeps `current` pointed at the best available candidate: picks the top-ranked one if nothing is
+    queued, swaps it for a better-ranked one if the current pick was itself auto-picked and hasn't
+    started yet, and does nothing once research is in_progress (locked until resolve()) -- "research
+    already ongoing" is the only thing this refuses to interrupt (2026-09-22, per explicit direction).
+    A candidate a human chose by hand (start_now, started_by="manual") is left alone here; only a
+    human picking something else, via start_now, moves it off a manual pick. Safe to call as often as
+    you like -- every no-op path just returns None."""
     now = now or datetime.now()
     data = load(state_dir)
-    if data["current"] is not None:
+    if data["current"] and data["current"].get("in_progress"):
         return None
-    attempted = _attempted_keys(data)
-    for scored in roadmap.get("researchable_now", []):
-        c = scored.candidate
-        if c.key not in attempted:
-            return _set_current(state_dir, data, c.key, c.name, "auto", now)
-    return None
+    if data["current"] and data["current"].get("started_by") == "manual":
+        return None
+    resolved = _resolved_keys(data)
+    top = next((s.candidate for s in roadmap.get("researchable_now", []) if s.candidate.key not in resolved), None)
+    if top is None:
+        return None
+    if data["current"] is not None and data["current"]["key"] == top.key:
+        return None   # already the best available pick
+    if data["current"] is not None:
+        _close_open_row(data, data["current"]["key"], "superseded", now)
+    return _set_current(state_dir, data, top.key, top.name, "auto", now)
 
 
 def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] = None) -> dict:
-    """The manual "start research" button: jump the queue to `key` regardless of rank.
-    Raises ValueError for an unknown key or one already current/resolved, same 400-on-bad-input
-    convention as advice.tasks.mark_done, so dashboard/server.py's POST handler can reuse it as-is."""
+    """The manual "start research" button: jump the queue to `key` regardless of rank, any time --
+    including bumping whatever's currently queued, auto-picked or manual, as long as research hasn't
+    actually started on it yet. Refuses only once research is in_progress, or for an unknown/already
+    resolved key, same 400-on-bad-input convention as advice.tasks.mark_done."""
     now = now or datetime.now()
     data = load(state_dir)
-    if data["current"] is not None:
+    if data["current"] and data["current"].get("in_progress"):
         raise ValueError(f"already researching {data['current']['key']}")
     match = next((s.candidate for s in roadmap.get("all_scored", []) if s.candidate.key == key), None)
     if match is None:
         raise ValueError(f"unknown candidate {key!r}")
-    if key in _attempted_keys(data):
-        raise ValueError(f"{key!r} was already queued or resolved")
+    if key in _resolved_keys(data):
+        raise ValueError(f"{key!r} was already resolved")
+    if data["current"] is not None and data["current"]["key"] == key:
+        return data["current"]   # already this one
+    if data["current"] is not None:
+        _close_open_row(data, data["current"]["key"], "superseded", now)
     return _set_current(state_dir, data, match.key, match.name, "manual", now)
+
+
+def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None) -> None:
+    """Called by the research routine the instant it commits to actually working on `key` -- locks
+    `current` so advance()/start_now() can no longer bump it. Raises if `key` is no longer the current
+    pick (it may have been superseded, or resolved, before the routine got to it)."""
+    now = now or datetime.now()
+    data = load(state_dir)
+    if not data["current"] or data["current"]["key"] != key:
+        raise ValueError(f"{key!r} is not the current candidate")
+    data["current"]["in_progress"] = True
+    _save(state_dir, data)
 
 
 def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str] = None,
@@ -111,11 +154,5 @@ def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str]
     if not data["current"] or data["current"]["key"] != key:
         raise ValueError(f"{key!r} is not the current candidate")
     data["current"] = None
-    for row in reversed(data["history"]):
-        if row["key"] == key and row["resolved"] is None:
-            row["resolved"] = now.date().isoformat()
-            row["outcome"] = outcome
-            row["experiment_id"] = experiment_id
-            row["branch"] = branch
-            break
+    _close_open_row(data, key, outcome, now, experiment_id, branch)
     _save(state_dir, data)

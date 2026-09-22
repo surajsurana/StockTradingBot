@@ -327,9 +327,17 @@ class TestBuildDashboardState(unittest.TestCase):
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                   roadmap=roadmap, research_queue=queue)
         rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
-        self.assertEqual(rows["current_one"], {"state": "current"})
+        self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False})
         self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
         self.assertIsNone(rows["untouched"])
+
+        # once the research routine has actually started, in_progress flips to True (2026-09-22: locked
+        # until resolved -- the only thing that stops the queue from being freely changed).
+        queue["current"]["in_progress"] = True
+        s2 = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                   roadmap=roadmap, research_queue=queue)
+        rows2 = {c["key"]: c["queue"] for c in s2["roadmap"]["ready"]}
+        self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True})
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")

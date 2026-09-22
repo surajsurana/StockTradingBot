@@ -55,6 +55,9 @@ DESKS = [
               "and runs the survivors as a 1,000 USDT paper book."},
     {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
      "blurb": "Keeps the books and sends the one message a day."},
+    {"id": "research_feeder", "name": "Research Feeder (every lane)", "icon": "\U0001F9ED",
+     "blurb": "One ranked queue across swing, intraday, medium, long-term and crypto: keeps one candidate "
+              "in research at a time, implements and backtests it, and goes looking for new ones every month."},
 ]
 
 # job = what a visitor sees on the card; detail = shown on click. status_from
@@ -146,6 +149,27 @@ AGENTS = [
      "job": "Sends the daily Telegram", "status_from": "summary",
      "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
                "message of the day at 16:05."},
+    {"id": "head_of_research", "avatar": {"type": "robot", "body": "#3B7A57", "eye": "#F2C14E", "shape": "square"}, "name": "Head of Research", "icon": "\U0001F4CA", "desk": "research_feeder", "kind": "Rules only",
+     "job": "Ranks candidates and keeps the queue", "status_from": "research_queue",
+     "detail": "Scores every candidate 0-10 on evidence, data available, feasibility, diversification vs. "
+               "what's already running, robustness, simplicity and research value, across every lane. Keeps "
+               "exactly one candidate queued at a time -- free to swap it for a better-ranked one, or one "
+               "picked by hand, right up until research actually starts; once it has, the queue is locked "
+               "until that candidate is resolved."},
+    {"id": "research_routine", "avatar": {"type": "robot", "body": "#8A5A9E", "eye": "#4CC383", "shape": "round"}, "name": "Strategy Implementer", "icon": "\U0001F9EA", "desk": "research_feeder", "kind": "AI",
+     "job": "Implements and backtests whatever's queued, every Sunday", "status_from": None,
+     "detail": "An unattended agent, not a local script: reads the queue, implements the candidate as real "
+               "code following the pattern of whichever existing strategies are closest to it, runs the real "
+               "backtest, and opens a pull request with the verdict -- pass or reject, whatever the numbers "
+               "say. Never merges anything itself, never touches the registry or a live pool; promotion is "
+               "always a separate, manual step. Swing, medium, long-term and crypto only -- intraday needs a "
+               "live broker session it doesn't have."},
+    {"id": "discovery_routine", "avatar": {"type": "robot", "body": "#B8860B", "eye": "#5FB7C0", "shape": "round"}, "name": "Discovery Scout", "icon": "\U0001F50D", "desk": "research_feeder", "kind": "AI",
+     "job": "Searches for new candidates, once a month", "status_from": None,
+     "detail": "Also unattended: reads what's already tracked, then searches for genuinely new strategies "
+               "with real, verifiable sources -- a peer-reviewed paper or a well-known trading book, never an "
+               "invented idea or a blog. Adds 1-5 a month, honestly scored, weaknesses included -- or none at "
+               "all, some months, rather than pad the list. Opens a pull request; never implements anything."},
 ]
 
 # Two stories told as strips of steps with icons; the page draws them.
@@ -818,6 +842,7 @@ SCHEDULE = [
     {"id": "eod_c", "label": "Portfolio C", "at": "15:45", "log": "portfolio_c.log"},
     {"id": "eod_b", "label": "Portfolio B", "at": "15:50", "log": "portfolio_b.log"},
     {"id": "summary", "label": "Telegram daily summary", "at": "16:05", "log": "daily_pool_summary.log"},
+    {"id": "research_queue", "label": "Research queue: rank and advance", "at": "every 6h", "log": "research_queue.log"},
 ]
 
 
@@ -889,12 +914,13 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
     no button), or None (still eligible to start)."""
     taken = {r.strategy_key for r in registry_records}
     queue = queue or {"current": None, "history": []}
-    current_key = (queue.get("current") or {}).get("key")
+    current = queue.get("current") or {}
+    current_key = current.get("key")
     resolved = {h["key"]: h for h in queue.get("history", []) if h.get("resolved")}
 
     def queue_status(key):
         if key == current_key:
-            return {"state": "current"}
+            return {"state": "current", "in_progress": bool(current.get("in_progress"))}
         if key in resolved:
             h = resolved[key]
             return {"state": "resolved", "outcome": h["outcome"], "experiment_id": h.get("experiment_id")}
@@ -922,6 +948,17 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
         rows.append(r)
     return {"ready": [row(s, i + 1) for i, s in enumerate(ready)], "deferred": rows,
             "weights": roadmap.get("weights", {})}
+
+
+def agents_view(queue: Optional[dict] = None) -> list:
+    """AGENTS, with the Strategy Implementer's status overridden to "working" while the research routine
+    (Phase 2, a scheduled cloud agent) actually has something in_progress -- the only agent on the whole
+    team tab whose status reflects something outside this VPS's own logs, since that's the only signal
+    the routine ever sends back (research_queue.mark_in_progress, called over the internet)."""
+    current = (queue or {}).get("current") or {}
+    if not current.get("in_progress"):
+        return AGENTS
+    return [{**a, "live_status": "working"} if a["id"] == "research_routine" else a for a in AGENTS]
 
 
 def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list, prices: dict,
@@ -1031,7 +1068,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": AGENTS, "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
+        "schedule": schedule, "registry": registry, "agents": agents_view(research_queue), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,

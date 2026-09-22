@@ -839,7 +839,7 @@ function renderTeam(s){
   strip("flow-daily", s.flows.daily, hot);
   strip("flow-research", s.flows.research, new Set());
 
-  const statusOf = a => a.status_from==="market" ? (s.market_open ? "working" : "done") : (a.status_from && hot.has(a.status_from) ? "done" : "");
+  const statusOf = a => a.live_status ? a.live_status : a.status_from==="market" ? (s.market_open ? "working" : "done") : (a.status_from && hot.has(a.status_from) ? "done" : "");
   const ai = s.agents.filter(a => /AI/.test(a.kind)).length, rules = s.agents.length - ai;
   const working = s.agents.filter(a => statusOf(a)==="working").length, done = s.agents.filter(a => statusOf(a)==="done").length;
   const st = r => String(r.status||"").split(".").pop();
@@ -1499,7 +1499,9 @@ function renderResearch(s){
     return a === b ? `~${a} ${u}${a===1?"":"s"}` : `${a}–${b} ${u}${b===1?"":"s"}`;
   };
   const queueAction = c => c.queue && c.queue.state === "current"
-    ? `<span class="pill ok">Researching now</span>`
+    ? c.queue.in_progress
+      ? `<span class="pill ok" title="Locked -- research is already under way, so this can no longer be bumped">Researching now</span>`
+      : `<span class="pill" title="Queued but not started yet -- still free to be bumped by a better-ranked candidate, or by picking a different one">Queued</span>`
     : c.queue && c.queue.state === "resolved"
     ? `<span class="pill" title="${esc(c.queue.experiment_id||"")}">${esc(c.queue.outcome)}</span>`
     : `<button class="iconbtn startbtn" data-key="${esc(c.key)}">Start research</button>`;
@@ -1516,7 +1518,9 @@ function renderResearch(s){
   const cur = rm.ready.find(c => c.queue && c.queue.state === "current");
   const curBanner = document.getElementById("queue-current");
   curBanner.hidden = !cur;
-  if(cur) curBanner.innerHTML = `Currently researching: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}).`;
+  if(cur) curBanner.innerHTML = cur.queue.in_progress
+    ? `Currently researching: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}).`
+    : `Queued next: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}) -- not started yet, still free to change.`;
   document.getElementById("deferred-summary").textContent = `Waiting on data we don't have (${rm.deferred.length})`;
   document.getElementById("deferred").innerHTML = rm.deferred.map(c => `<tr><td>${esc(short(c.name))}</td><td>${esc(short(c.family))}</td><td class="note">${esc((c.blockers[0]||"").replace(/'/g,"").replace("Requires ","").replace(", confirmed unavailable on this platform.",""))}</td></tr>`).join("");
 }

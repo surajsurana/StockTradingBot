@@ -4,7 +4,7 @@ import unittest
 from dataclasses import dataclass
 from datetime import datetime
 
-from research_queue import advance, load, resolve, start_now
+from research_queue import advance, load, mark_in_progress, resolve, start_now
 
 
 @dataclass
@@ -31,11 +31,39 @@ class TestAdvance(unittest.TestCase):
         self.assertEqual(load(d)["current"]["key"], "alpha")
         self.assertEqual(len(load(d)["history"]), 1)
 
-    def test_does_nothing_while_something_is_already_current(self):
+    def test_does_nothing_when_the_current_pick_is_still_the_best_available(self):
         d = tempfile.mkdtemp()
         advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
         self.assertIsNone(advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 23)))
-        self.assertEqual(load(d)["current"]["key"], "alpha")   # unchanged
+        self.assertEqual(load(d)["current"]["key"], "alpha")   # unchanged -- still the top pick
+        self.assertEqual(len(load(d)["history"]), 1)           # no superseded row added for a no-op
+
+    def test_swaps_an_auto_pick_for_a_better_ranked_candidate_before_research_starts(self):
+        # a new candidate (e.g. from the monthly discovery routine) now ranks above what's queued --
+        # "interrupting and changing mid week or anytime is ok" as long as nothing has started (2026-09-22).
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))   # picks alpha (top of the list)
+        entry = advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 24))   # beta now ranks first
+        self.assertEqual(entry["key"], "beta")
+        data = load(d)
+        self.assertEqual(data["current"]["key"], "beta")
+        alpha_row = next(r for r in data["history"] if r["key"] == "alpha")
+        self.assertEqual((alpha_row["resolved"], alpha_row["outcome"]), ("2026-09-24", "superseded"))
+        self.assertEqual(len(data["history"]), 2)               # alpha's row closed, beta's row opened
+
+    def test_never_swaps_a_pick_a_human_made_by_hand(self):
+        d = tempfile.mkdtemp()
+        start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        self.assertIsNone(advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 24)))
+        self.assertEqual(load(d)["current"]["key"], "alpha")   # a manual pick is only ever moved by a human
+
+    def test_locked_once_research_is_in_progress(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 23))
+        self.assertTrue(load(d)["current"]["in_progress"])
+        self.assertIsNone(advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 24)))
+        self.assertEqual(load(d)["current"]["key"], "alpha")   # locked -- research is already ongoing
 
     def test_skips_candidates_already_in_history_even_once_resolved(self):
         d = tempfile.mkdtemp()
@@ -62,11 +90,22 @@ class TestStartNow(unittest.TestCase):
         with self.assertRaises(ValueError):
             start_now(d, "nope", _roadmap(["alpha"]))
 
-    def test_refuses_while_something_is_already_current(self):
+    def test_jumps_to_a_different_candidate_even_while_one_is_already_queued(self):
         d = tempfile.mkdtemp()
         start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        entry = start_now(d, "beta", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 23))
+        self.assertEqual(entry["key"], "beta")
+        data = load(d)
+        self.assertEqual(data["current"]["key"], "beta")
+        alpha_row = next(r for r in data["history"] if r["key"] == "alpha")
+        self.assertEqual((alpha_row["resolved"], alpha_row["outcome"]), ("2026-09-23", "superseded"))
+
+    def test_refuses_once_research_is_in_progress(self):
+        d = tempfile.mkdtemp()
+        start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 23))
         with self.assertRaises(ValueError):
-            start_now(d, "beta", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 23))
+            start_now(d, "beta", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 24))
 
     def test_refuses_a_key_already_resolved(self):
         d = tempfile.mkdtemp()
@@ -74,6 +113,24 @@ class TestStartNow(unittest.TestCase):
         resolve(d, "alpha", "researched", now=datetime(2026, 9, 23))
         with self.assertRaises(ValueError):
             start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 29))
+
+
+class TestMarkInProgress(unittest.TestCase):
+    def test_locks_the_current_pick(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 23))
+        self.assertTrue(load(d)["current"]["in_progress"])
+
+    def test_refuses_a_key_that_is_not_current(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 22))
+        with self.assertRaises(ValueError):
+            mark_in_progress(d, "beta")
+
+    def test_refuses_when_nothing_is_queued(self):
+        with self.assertRaises(ValueError):
+            mark_in_progress(tempfile.mkdtemp(), "alpha")
 
 
 class TestResolve(unittest.TestCase):

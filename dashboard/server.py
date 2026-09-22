@@ -414,6 +414,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
             return
+        if parsed.path == "/api/research/started":   # the research routine calls this the instant it commits
+            # to a candidate -- locks the queue so advance()/start_now() can no longer bump it (2026-09-22:
+            # "interrupting and changing mid week or anytime is ok, only if a research is already ongoing
+            # then it should not interrupt").
+            import research_queue
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                key = str(json.loads(self.rfile.read(length) or b"{}").get("key", ""))
+                research_queue.mark_in_progress(STATE_DIR, key)
+                self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
         if parsed.path == "/api/research/resolve":   # the unattended research routine (Phase 2, a scheduled
             # cloud agent with no VPS/SSH access) calls this over the internet once it finishes the current
             # candidate, since it can't write deployment/state/research_queue.json directly.
