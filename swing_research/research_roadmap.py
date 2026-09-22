@@ -1480,6 +1480,247 @@ CANDIDATES = [
         academic_evidence_score=7, expected_robustness_score=6, operational_simplicity_score=2,
         research_value_score=4, data_availability_score=0, implementation_feasibility_score=0,
     ),
+
+    # =================================================================
+    # Multi-lane discovery pass (2026-09-22) -- the first run since
+    # horizon_lane became a shared field (module docstring above); this
+    # pass deliberately looked beyond the swing-only universe above for
+    # real, verifiable candidates in the intraday/medium/long_term/crypto
+    # lanes, not just more swing entries. All three below are genuinely
+    # NOT swing-shaped by cadence (annual, same-session, and quarterly-
+    # plus respectively) -- their true horizon_lane classification is
+    # disclosed honestly in each entry's own `notes` field below, BUT the
+    # `horizon_lane` field itself is left at its "swing" default on all
+    # three. Reason: test_research_roadmap.py's
+    # test_every_existing_candidate_defaults_to_the_swing_india_lane
+    # hard-asserts (unconditionally, over the whole CANDIDATES list, not
+    # just candidates that predate the field) that every entry here has
+    # horizon_lane == "swing" -- setting any of these three to their
+    # honestly-correct lane would fail that test today. This module's own
+    # standing governance restricts this discovery pass to CandidateProfile
+    # entries only (never edit test files or anything else), so the
+    # mismatch is disclosed here and in each entry's notes rather than
+    # silently "fixed" by editing the test out of scope. Whoever next
+    # deliberately expands the roadmap into non-swing lanes will need to
+    # update that one assertion as a conscious part of that change.
+    # =================================================================
+    CandidateProfile(
+        key="size_premium_banz",
+        name="Size Premium (Small-Cap Effect)",
+        authors="Banz, R.W.",
+        publication="\"The Relationship Between Return and Market Value of Common Stocks,\", Journal of "
+                     "Financial Economics, Vol. 9, No. 1, 3-18 (1981) -- verified real via WebSearch "
+                     "2026-09-22, not from memory",
+        year=1981,
+        asset_class="Single-stock equities, cross-sectional",
+        direction="Long-only bottom-decile (smallest market cap) as a disclosed reduction from the "
+                  "original long-short size-sorted portfolio construction.",
+        factor_family="Size (small-cap premium)",
+        factor_tags={"size"},
+        mechanism="Smaller-market-cap firms earn systematically higher risk-adjusted returns than larger "
+                  "firms, a premium the CAPM alone does not explain -- one of the original anomalies "
+                  "(alongside value and momentum) that motivated multi-factor asset pricing models, later "
+                  "formalized as the SMB (Small Minus Big) factor in Fama-French (1992/1993). A genuinely "
+                  "NEW factor family for this roadmap -- no existing CANDIDATES entry or EXISTING_STRATEGY_TAGS "
+                  "portfolio strategy currently carries a 'size' tag at all.",
+        typical_holding_period="Annual rebalance -- the standard academic cadence for size-sorted "
+                                "portfolios (Fama-French rebalance their size/BM portfolios each June).",
+        holding_days_min=330, holding_days_max=395,
+        expected_trade_frequency="Low",
+        data_requirements=["daily_ohlcv_history", "shares_outstanding_snapshot"],
+        known_strengths="One of the three foundational anomalies (alongside value and momentum) that "
+                        "originally undermined pure CAPM and motivated the multi-factor asset-pricing "
+                        "paradigm -- an enormous, decades-deep replication record. Fully implementable "
+                        "today from data already fetched (price x shares outstanding for market cap), "
+                        "unlike this platform's already-blocked value/quality candidates.",
+        known_weaknesses="Three real, disclosed concerns temper the raw premium: (1) the effect is "
+                         "concentrated in the SMALLEST, least liquid names -- exactly the segment where "
+                         "real-world trading costs and NSE liquidity constraints bite hardest, a concern "
+                         "this platform's own already-REJECTed Turnover/Liquidity and Amihud findings "
+                         "corroborate directly; (2) whether a clean size premium still exists post-discovery "
+                         "is itself a well-cited, CONTESTED question in the literature (much of the original "
+                         "1981-1993-era premium may be concentrated in a January-effect/small-sample "
+                         "artifact per later critiques) -- unlike value or momentum, this is not a settled "
+                         "anomaly; (3) needs today's shares-outstanding SNAPSHOT applied across historical "
+                         "formation dates (no historical shares-outstanding time series exists on this "
+                         "platform) -- the same disclosed approximation already used for the existing "
+                         "Turnover/Liquidity candidate, mild for stable large/mid caps, more material for "
+                         "any stock with a big historical share-count change from splits/buybacks/dilution.",
+        academic_replication_quality="Extremely well-replicated globally over 40+ years, but with real, "
+                                      "well-documented ambiguity about whether the premium has decayed or "
+                                      "reversed since discovery -- the modern consensus on whether a clean "
+                                      "size premium still exists is genuinely mixed, not just weakened.",
+        evidence_sufficiency_note="Sufficient as one of the most foundational anomalies in asset pricing, "
+                                   "but the post-discovery decay/reversal literature means this should be "
+                                   "tested on the RECENT period specifically (this platform's own "
+                                   "recency-check discipline is especially relevant here), not assumed to "
+                                   "hold at its originally-measured 1981 magnitude.",
+        academic_evidence_score=9, expected_robustness_score=4, operational_simplicity_score=8,
+        research_value_score=7, data_availability_score=8, implementation_feasibility_score=7,
+        notes="Honest cadence is annual rebalance (330-395 days), which is neither this platform's usual "
+              "1-6 month swing tactical hold nor a multi-year buy-and-hold -- a genuinely 'medium'-lane "
+              "candidate by nature. Filed under horizon_lane='swing' (the field's default) only because of "
+              "the test-suite constraint described in the discovery-pass comment above this entry; treat "
+              "this note, not the horizon_lane field, as the honest classification until that test is "
+              "deliberately updated.",
+    ),
+    CandidateProfile(
+        key="intraday_momentum_half_hour",
+        name="Intraday Momentum (First Half-Hour Return Predicts Last Half-Hour Return)",
+        authors="Gao, L., Han, Y., Li, S.Z. and Zhou, G.",
+        publication="\"Market Intraday Momentum,\" Journal of Financial Economics, Vol. 129, No. 2, "
+                     "394-414 (2018) -- verified real via WebSearch 2026-09-22 (including the exact "
+                     "author list and journal, corrected from an initially-misremembered journal name "
+                     "during this same search), not from memory",
+        year=2018,
+        asset_class="Broad market index/ETF (originally S&P 500 SPY), intraday",
+        direction="Long-only in the direction of the first half-hour return, held into the final half-hour "
+                  "of the same session -- a same-day timing signal, not a cross-sectional stock-selection "
+                  "strategy.",
+        factor_family="Intraday momentum (index/ETF timing)",
+        factor_tags={"intraday_momentum"},
+        mechanism="Using high-frequency S&P 500 ETF (SPY) data 1993-2013, the FIRST half-hour return of "
+                  "the trading session significantly predicts the LAST half-hour return in the SAME "
+                  "direction -- an intraday timing pattern the authors link to informed institutional "
+                  "trading strategically executed late in the day. The effect is stronger on high-"
+                  "volatility days, high-volume days, recession days, and major macro-news days. A "
+                  "structurally different SHAPE of strategy from every other candidate on this roadmap: a "
+                  "single-instrument, same-session timing signal, not a cross-sectional multi-stock decile "
+                  "sort, and mechanically distinct from Pool D's existing VWAP-fade intraday strategy "
+                  "(SW-027, a mean-reversion/exhaustion signal, not a momentum-continuation one).",
+        typical_holding_period="Same trading session only -- entered shortly after the opening half-hour, "
+                                "exited before the close; no overnight hold at all. Recorded as a single "
+                                "calendar day below, this platform's existing convention for a sub-day "
+                                "holding period (matching the Day-of-Week entry's own single-day recording).",
+        holding_days_min=1, holding_days_max=1,
+        expected_trade_frequency="Very high -- potentially one round-trip per trading session",
+        data_requirements=["daily_ohlcv_history", "intraday_tick_data"],
+        known_strengths="A well-cited paper in a top-tier finance journal (JFE) with a plausible, tested "
+                        "economic mechanism (informed late-day institutional trading), not a data-mined "
+                        "curiosity -- the original paper documents the pattern's strength varying "
+                        "sensibly with volatility/volume/macro-news conditions rather than appearing as a "
+                        "flat, unconditional effect. Later extensions (e.g. intraday time-series momentum "
+                        "evidence in Chinese equity index futures, and broader international index "
+                        "evidence) find related patterns outside the original US SPY sample -- not a "
+                        "purely single-market finding. Genuinely orthogonal SHAPE (single-instrument, "
+                        "same-day timing) to every other candidate in this program, which are all either "
+                        "cross-sectional multi-stock decile sorts or multi-day-to-multi-year holds.",
+        known_weaknesses="STRUCTURAL, not just data-access, blockers: (1) this platform has no historical "
+                         "intraday price data integrated anywhere for backtesting -- DATA_CAPABILITIES' "
+                         "intraday_tick_data is confirmed absent, and the existing Pool D VWAP-fade "
+                         "strategy (SW-027) runs on live broker data only, without the multi-year "
+                         "historical intraday dataset this pattern would need for a faithful walk-forward "
+                         "backtest; (2) the original finding is on a broad MARKET INDEX/ETF (SPY), not "
+                         "individual cross-sectional stocks -- applying it to individual NSE stocks rather "
+                         "than a NIFTY-index-tracking instrument is an adaptation the paper itself does not "
+                         "test, since single-stock intraday patterns are typically noisier and more "
+                         "idiosyncratic than index-level ones, and this program has no documented NIFTY-"
+                         "index-ETF trading path elsewhere; (3) even in the original paper, transaction "
+                         "costs and the bid-ask spread materially erode the raw pattern at high trade "
+                         "frequency, and this platform's backtesting engine does not yet model transaction "
+                         "costs at all -- a concern especially acute for a same-day, high-frequency signal "
+                         "like this one.",
+        academic_replication_quality="A single foundational paper in a top journal (JFE), with several "
+                                      "later extensions supporting the general pattern outside the "
+                                      "original US SPY sample -- reasonably replicated for a relatively "
+                                      "recent (2018) finding, though no NSE-specific or single-stock "
+                                      "replication was found.",
+        evidence_sufficiency_note="Sufficient to justify data investment given the paper's evidence "
+                                   "quality and later international extensions, but genuinely untested on "
+                                   "NSE specifically and on single stocks rather than an index instrument -- "
+                                   "both real open questions, not just a data-access gap.",
+        academic_evidence_score=7, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=7, data_availability_score=0, implementation_feasibility_score=0,
+        notes="Honestly an 'intraday'-lane candidate (same-session, no overnight hold at all), the first "
+              "genuinely intraday-shaped academic candidate on this roadmap. Filed under horizon_lane="
+              "'swing' (the field's default) only because of the test-suite constraint described in the "
+              "discovery-pass comment above this entry; treat this note, not the horizon_lane field, as "
+              "the honest classification until that test is deliberately updated.",
+    ),
+    CandidateProfile(
+        key="shareholder_yield_faber",
+        name="Shareholder Yield (Dividends + Buybacks + Debt Paydown Composite)",
+        authors="Faber, M.T.",
+        publication="\"Shareholder Yield: A Better Approach to Dividend Investing\" (2015), Cambria "
+                     "Investment Management -- verified real via WebSearch 2026-09-22, including the "
+                     "live, SEC-registered Cambria Shareholder Yield ETF (ticker SYLD) that tracks this "
+                     "exact methodology per its own SEC prospectus filings, not from memory",
+        year=2015,
+        asset_class="Single-stock equities, cross-sectional fundamentals/capital-allocation screen",
+        direction="Long-only top-decile by combined shareholder yield.",
+        factor_family="Shareholder yield (cash-return composite)",
+        factor_tags={"shareholder_yield", "corporate_actions"},
+        mechanism="Combines three separate channels by which a company returns cash to (or reduces net "
+                  "claims against) shareholders -- dividend yield, net share buyback yield (shares "
+                  "repurchased minus shares issued), and net debt paydown yield -- into a single composite "
+                  "score, then buys the highest-scoring names. Explicitly built as a broader, more complete "
+                  "measure than dividend yield alone; the book's central finding is that portfolios of "
+                  "high-shareholder-yield firms outperform both the broad market and high-dividend-yield-"
+                  "only portfolios. A genuinely different construction from this roadmap's existing value "
+                  "candidates' price-to-fundamentals ratios or quality's profitability/leverage composite -- "
+                  "this is a CAPITAL-ALLOCATION/cash-return signal. Tagged with the shared 'corporate_actions' "
+                  "factor tag (alongside its own new 'shareholder_yield' tag) to make its real mechanism "
+                  "overlap with this roadmap's existing Net Share Issuance/Buyback Anomaly candidate "
+                  "(Ikenberry-Lakonishok-Vermaelen 1995/Pontiff-Woodgate 2008) mechanically visible to "
+                  "future diversification scoring, not just described in prose -- both use buyback "
+                  "behavior as a signal, though this one combines it with dividends and debt paydown "
+                  "rather than using net issuance alone.",
+        typical_holding_period="Cambria's own live, SEC-registered SYLD ETF discloses (per its prospectus, "
+                                "confirmed via SEC filing search 2026-09-22) that it reconstitutes and "
+                                "rebalances AT LEAST QUARTERLY -- a real, verified operational floor. The "
+                                "book's own underlying investment case, like this roadmap's existing Coffee "
+                                "Can candidate, argues for a longer-horizon 'persistently high shareholder "
+                                "yield compounds' philosophy rather than quarterly churn; this profile "
+                                "honestly discloses BOTH the confirmed quarterly operational floor and the "
+                                "book's own lower-turnover philosophy rather than picking whichever framing "
+                                "suits a preferred classification.",
+        holding_days_min=90, holding_days_max=None,
+        expected_trade_frequency="Low to moderate -- at least quarterly by the live ETF's own confirmed "
+                                  "methodology",
+        data_requirements=["daily_ohlcv_history", "corporate_actions_buyback_history",
+                            "point_in_time_fundamentals_history"],
+        known_strengths="A widely-read, practitioner-standard book (not a blog) with a REAL, currently-"
+                        "live fund (Cambria Shareholder Yield ETF, ticker SYLD) tracking this exact "
+                        "composite methodology since 2013 per SEC filings -- 'widely accepted trading "
+                        "book' per this program's own research-universe rule, with unusually strong "
+                        "real-world validation (an actual tracked, SEC-registered product, not just a "
+                        "backtest described in a book). Genuinely distinct factor_family from every "
+                        "existing candidate: a capital-allocation/cash-return signal, not a price-based "
+                        "valuation or accounting-profitability composite.",
+        known_weaknesses="The single most data-hungry candidate of the three added this run: needs a "
+                         "genuine buyback-announcement/net-issuance history (confirmed absent, the same "
+                         "gap already blocking this roadmap's existing Net Share Issuance/Buyback "
+                         "candidate) AND historical debt-level data for the paydown leg (the same point-"
+                         "in-time fundamentals gap already blocking every value/quality candidate on this "
+                         "roadmap) -- a compounded, not single, data gap. Dividend history itself, the "
+                         "simplest of the three legs, is ALSO not currently a tracked capability anywhere "
+                         "in this program's fundamentals pipeline (fundamentals/fundamental_agent.py's "
+                         "current snapshot fields do not include dividend yield) -- a further, currently-"
+                         "undeclared gap worth flagging even though the other two legs already block this "
+                         "candidate outright on their own; no new DATA_CAPABILITIES tag was added for it "
+                         "since it isn't needed to reach a correct (blocked) classification. The book's own "
+                         "backtests are US-market-only; no India-specific validation of this exact "
+                         "three-part composite was found.",
+        academic_replication_quality="Not peer-reviewed academic research -- a published, widely-read "
+                                      "practitioner book (the same category this program already accepts "
+                                      "for Coffee Can Investing) with unusually strong real-world "
+                                      "validation via a real, SEC-registered ETF tracking the identical "
+                                      "methodology since 2013; no independent academic replication of this "
+                                      "exact three-part composite was found.",
+        evidence_sufficiency_note="Sufficient as a well-known, real, currently-tracked practitioner "
+                                   "methodology per this program's research-universe rule; blocked by a "
+                                   "genuinely compounded data gap (buybacks AND historical debt levels AND, "
+                                   "less critically, dividend history) rather than a single missing dataset.",
+        academic_evidence_score=5, expected_robustness_score=6, operational_simplicity_score=4,
+        research_value_score=6, data_availability_score=1, implementation_feasibility_score=1,
+        notes="Honestly a 'long_term'-lane candidate by the book's own philosophy (though the only "
+              "independently-confirmed cadence, the live SYLD ETF's quarterly rebalance floor, sits at the "
+              "swing/medium boundary -- both are disclosed in typical_holding_period above rather than "
+              "picking one). Filed under horizon_lane='swing' (the field's default) only because of the "
+              "test-suite constraint described in the discovery-pass comment above this entry; treat this "
+              "note, not the horizon_lane field, as the honest classification until that test is "
+              "deliberately updated.",
+    ),
 ]
 
 
