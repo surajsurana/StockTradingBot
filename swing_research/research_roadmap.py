@@ -100,7 +100,14 @@ DATA_CAPABILITIES = {
     "options_data": False,
     "order_book_data": False,
     "intraday_tick_data": False,
-    # Only daily candles are fetched anywhere in this program.
+    # Every trade print, not aggregated bars -- no source anywhere in this program gives that.
+    "intraday_bar_history": True,
+    # Confirmed 2026-09-22 (this was wrongly conflated with intraday_tick_data above until then):
+    # data/fetch_kite_intraday.py's fetch_intraday_candles() -- the SAME market-data Kite app used
+    # for the dashboard's live prices, not something pool-specific -- gives real historical 5/15/30/
+    # 60-minute OHLC bars, already used for real backtests (the intraday research lab's own EXP-001
+    # onward). Retention is roughly 240 trading days, not years -- a real, disclosed sample-size
+    # limit, but a genuine capability, not an absent one.
     "short_interest_borrow_availability": False,
     # No NSE SLB (securities lending/borrowing) integration -- the same
     # reason every strategy in this program already discloses LONG ONLY as
@@ -1594,7 +1601,7 @@ CANDIDATES = [
                                 "holding period (matching the Day-of-Week entry's own single-day recording).",
         holding_days_min=1, holding_days_max=1,
         expected_trade_frequency="Very high -- potentially one round-trip per trading session",
-        data_requirements=["daily_ohlcv_history", "intraday_tick_data"],
+        data_requirements=["daily_ohlcv_history", "intraday_bar_history"],
         known_strengths="A well-cited paper in a top-tier finance journal (JFE) with a plausible, tested "
                         "economic mechanism (informed late-day institutional trading), not a data-mined "
                         "curiosity -- the original paper documents the pattern's strength varying "
@@ -1605,37 +1612,44 @@ CANDIDATES = [
                         "purely single-market finding. Genuinely orthogonal SHAPE (single-instrument, "
                         "same-day timing) to every other candidate in this program, which are all either "
                         "cross-sectional multi-stock decile sorts or multi-day-to-multi-year holds.",
-        known_weaknesses="STRUCTURAL, not just data-access, blockers: (1) this platform has no historical "
-                         "intraday price data integrated anywhere for backtesting -- DATA_CAPABILITIES' "
-                         "intraday_tick_data is confirmed absent, and the existing Pool D VWAP-fade "
-                         "strategy (SW-027) runs on live broker data only, without the multi-year "
-                         "historical intraday dataset this pattern would need for a faithful walk-forward "
-                         "backtest; (2) the original finding is on a broad MARKET INDEX/ETF (SPY), not "
-                         "individual cross-sectional stocks -- applying it to individual NSE stocks rather "
-                         "than a NIFTY-index-tracking instrument is an adaptation the paper itself does not "
-                         "test, since single-stock intraday patterns are typically noisier and more "
-                         "idiosyncratic than index-level ones, and this program has no documented NIFTY-"
-                         "index-ETF trading path elsewhere; (3) even in the original paper, transaction "
-                         "costs and the bid-ask spread materially erode the raw pattern at high trade "
-                         "frequency, and this platform's backtesting engine does not yet model transaction "
-                         "costs at all -- a concern especially acute for a same-day, high-frequency signal "
-                         "like this one.",
+        known_weaknesses="Real methodological concerns, distinct from data access (corrected 2026-09-22 -- "
+                         "see notes): (1) real historical intraday bars exist via the Kite market-data app "
+                         "(fetch_kite_intraday.py, already used for real backtests elsewhere), but "
+                         "retention is only ~240 trading days -- a much smaller sample than the original "
+                         "paper's 20 years on SPY, and this platform's backtesting engine has no walk-"
+                         "forward path wired up for sub-daily bars yet, real integration work; (2) the "
+                         "original finding is on a broad MARKET INDEX/ETF (SPY), not individual "
+                         "cross-sectional stocks -- applying it to individual NSE stocks rather than a "
+                         "NIFTY-index-tracking instrument is an adaptation the paper itself does not test, "
+                         "since single-stock intraday patterns are typically noisier and more idiosyncratic "
+                         "than index-level ones, and this program has no documented NIFTY-index-ETF trading "
+                         "path elsewhere; (3) even in the original paper, transaction costs and the "
+                         "bid-ask spread materially erode the raw pattern at high trade frequency, and this "
+                         "platform's backtesting engine does not yet model transaction costs at all -- a "
+                         "concern especially acute for a same-day, high-frequency signal like this one.",
         academic_replication_quality="A single foundational paper in a top journal (JFE), with several "
                                       "later extensions supporting the general pattern outside the "
                                       "original US SPY sample -- reasonably replicated for a relatively "
                                       "recent (2018) finding, though no NSE-specific or single-stock "
                                       "replication was found.",
-        evidence_sufficiency_note="Sufficient to justify data investment given the paper's evidence "
-                                   "quality and later international extensions, but genuinely untested on "
-                                   "NSE specifically and on single stocks rather than an index instrument -- "
-                                   "both real open questions, not just a data-access gap.",
+        evidence_sufficiency_note="Sufficient to research now that real intraday bar data is confirmed "
+                                   "available (2026-09-22) -- but genuinely untested on NSE specifically "
+                                   "and on single stocks rather than an index instrument, and on a much "
+                                   "shorter (~240 trading day) sample than the original paper -- real open "
+                                   "questions a backtest here would have to confront honestly, not "
+                                   "reasons to expect the same result.",
         academic_evidence_score=7, expected_robustness_score=5, operational_simplicity_score=6,
-        research_value_score=7, data_availability_score=0, implementation_feasibility_score=0,
-        notes="Honestly an 'intraday'-lane candidate (same-session, no overnight hold at all), the first "
-              "genuinely intraday-shaped academic candidate on this roadmap. Filed under horizon_lane="
-              "'swing' (the field's default) only because of the test-suite constraint described in the "
-              "discovery-pass comment above this entry; treat this note, not the horizon_lane field, as "
-              "the honest classification until that test is deliberately updated.",
+        research_value_score=7, data_availability_score=7, implementation_feasibility_score=5,
+        notes="Reclassified 2026-09-22 (initially filed IMPLEMENTATION-BLOCKED by Discovery Scout's first "
+              "run, per direction after review: real intraday bar data already exists in this platform via "
+              "the same shared Kite market-data session used everywhere else, just under a different, more "
+              "precise capability tag than the one originally matched -- see DATA_CAPABILITIES' "
+              "intraday_bar_history entry). Honestly an 'intraday'-lane candidate (same-session, no "
+              "overnight hold at all), the first genuinely intraday-shaped academic candidate on this "
+              "roadmap. Filed under horizon_lane='swing' (the field's default) only because of the "
+              "test-suite constraint described in the discovery-pass comment above -- treat this note, not "
+              "the horizon_lane field, as the honest classification until that test is deliberately "
+              "updated.",
     ),
     CandidateProfile(
         key="shareholder_yield_faber",
