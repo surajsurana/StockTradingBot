@@ -401,6 +401,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
             return
+        if parsed.path == "/api/research/start":   # Strategies tab's "Start research" button: jump the queue
+            import research_queue
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                key = str(json.loads(self.rfile.read(length) or b"{}").get("key", ""))
+                roadmap = self.roadmap_cache.get()
+                if not roadmap:
+                    raise ValueError("the research roadmap isn't available right now")
+                research_queue.start_now(STATE_DIR, key, roadmap)
+                self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
         if parsed.path not in ("/api/manual_exit", "/api/manual_entry"):
             self._send(HTTPStatus.NOT_FOUND, b'{"error": "not found"}', "application/json")
             return
@@ -452,8 +465,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             crypto_prices, usdinr = self.price_cache.crypto_snapshot()
             prev_close, crypto_prev_close = self.price_cache.prev_close_snapshot()
             registry = list_strategies()
+            import research_queue
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
                                           roadmap=self.roadmap_cache.get(), mode=mode,
+                                          research_queue=research_queue.load(STATE_DIR),
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,

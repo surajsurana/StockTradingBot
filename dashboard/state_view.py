@@ -874,22 +874,41 @@ def _with_capital(p: dict) -> dict:
     return p
 
 
-def roadmap_view(roadmap: dict, registry_records: list) -> dict:
+def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = None) -> dict:
     """The Head-of-Research roadmap (swing_research/research_roadmap.py)
     reduced to what the Strategies tab shows: ranked candidates that
     could be researched now, and the ones waiting on data. Candidates
     whose key is already in the registry are dropped -- the roadmap's
-    own candidate list lags promotions."""
+    own candidate list lags promotions.
+
+    `queue` is research_queue.load()'s output (2026-09-22): one strategy
+    researched at a time, a new one picked up automatically once a week or
+    started early from the dashboard. Each row gets a `queue_status` --
+    "current" (being researched right now, no Start button), a completed
+    history row's outcome (e.g. "researched" with its experiment id, also
+    no button), or None (still eligible to start)."""
     taken = {r.strategy_key for r in registry_records}
+    queue = queue or {"current": None, "history": []}
+    current_key = (queue.get("current") or {}).get("key")
+    resolved = {h["key"]: h for h in queue.get("history", []) if h.get("resolved")}
+
+    def queue_status(key):
+        if key == current_key:
+            return {"state": "current"}
+        if key in resolved:
+            h = resolved[key]
+            return {"state": "resolved", "outcome": h["outcome"], "experiment_id": h.get("experiment_id")}
+        return None
 
     def row(s, rank=None):
         c = s.candidate
         return {"rank": rank, "key": c.key, "name": c.name, "family": c.factor_family, "year": c.year,
                 "authors": c.authors, "holding": c.typical_holding_period, "direction": c.direction,
+                "horizon_lane": c.horizon_lane, "market": c.market,
                 "score": s.total_score, "axes": {k: round(v, 1) for k, v in s.axis_scores.items()},
                 "feasibility": s.feasibility_classification,
                 "blockers": list(s.feasibility_reasons)[:2], "strengths": c.known_strengths,
-                "weaknesses": c.known_weaknesses}
+                "weaknesses": c.known_weaknesses, "queue": queue_status(c.key)}
 
     from swing_research.research_roadmap import DEFERRED_BY_DIRECTION
     ready = [s for s in roadmap["researchable_now"] if s.candidate.key not in taken]
@@ -911,7 +930,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
-                          advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None) -> dict:
+                          advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
+                          research_queue: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -1015,7 +1035,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades),
-        "roadmap": roadmap_view(roadmap, registry_records) if roadmap else {"ready": [], "deferred": [], "weights": {}},
+        "roadmap": roadmap_view(roadmap, registry_records, research_queue) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
     if mode == "live" and reports is not None:    # your real Groww portfolio is Pool H, shown only in Live mode
         from reporting.pool_h import add_pool_h

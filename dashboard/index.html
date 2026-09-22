@@ -371,8 +371,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <h2>Next up for research</h2>
-  <p class="note">Published strategies not yet built, ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value).</p>
-  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th></tr></thead><tbody id="roadmap"></tbody></table></div>
+  <p class="note">One ranked queue across every research lane (swing, intraday, medium, long-term, crypto) -- ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value). One strategy is researched at a time; a new one is picked up automatically once a week, or start a specific one now.</p>
+  <p class="note" id="queue-current" hidden></p>
+  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
   <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
 </section>
 </div>
@@ -1478,7 +1479,25 @@ function renderRegistry(s){
   const rm = s.roadmap || {ready:[], deferred:[]};
   const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };
   const bars = ax => `<span class="axes" title="${Object.entries(ax).map(([k,v])=>`${k.replace(/_/g," ")}: ${v}`).join(" · ")}">${Object.values(ax).map(v=>`<i style="height:${Math.max(3, Math.round(v*1.4))}px"></i>`).join("")}</span>`;
-  document.getElementById("roadmap").innerHTML = rm.ready.length ? rm.ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td>${esc(short(c.holding))}</td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td></tr>`).join("") : `<tr><td colspan="7" class="note">roadmap not available</td></tr>`;
+  const queueAction = c => c.queue && c.queue.state === "current"
+    ? `<span class="pill ok">Researching now</span>`
+    : c.queue && c.queue.state === "resolved"
+    ? `<span class="pill" title="${esc(c.queue.experiment_id||"")}">${esc(c.queue.outcome)}</span>`
+    : `<button class="iconbtn startbtn" data-key="${esc(c.key)}">Start research</button>`;
+  document.getElementById("roadmap").innerHTML = rm.ready.length ? rm.ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td>${esc(c.horizon_lane)}</td><td>${esc(short(c.holding))}</td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td><td>${queueAction(c)}</td></tr>`).join("") : `<tr><td colspan="9" class="note">roadmap not available</td></tr>`;
+  document.querySelectorAll("#roadmap .startbtn").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Starting…";
+    try {
+      const res = await fetch("/api/research/start", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({key: b.dataset.key})});
+      const body = await res.json();
+      if(!body.ok) throw new Error(body.error || "failed");
+    } catch(e){ alert("Couldn't start research: " + e.message); b.disabled = false; b.textContent = "Start research"; return; }
+    if(typeof load === "function") load();
+  }));
+  const cur = rm.ready.find(c => c.queue && c.queue.state === "current");
+  const curBanner = document.getElementById("queue-current");
+  curBanner.hidden = !cur;
+  if(cur) curBanner.innerHTML = `Currently researching: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}).`;
   document.getElementById("deferred-summary").textContent = `Waiting on data we don't have (${rm.deferred.length})`;
   document.getElementById("deferred").innerHTML = rm.deferred.map(c => `<tr><td>${esc(short(c.name))}</td><td>${esc(short(c.family))}</td><td class="note">${esc((c.blockers[0]||"").replace(/'/g,"").replace("Requires ","").replace(", confirmed unavailable on this platform.",""))}</td></tr>`).join("");
 }

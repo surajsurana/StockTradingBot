@@ -294,20 +294,41 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(self.s["mode"], "paper")
 
     def test_roadmap_view_drops_candidates_already_in_the_registry(self):
-        cand = lambda key, name: SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
+        cand = lambda key, name, lane="swing": SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
                                                  authors="A & B", typical_holding_period="1 month",
-                                                 direction="Long only", known_strengths="s", known_weaknesses="w")
-        scored = lambda key, name, score, feas="IMPLEMENTABLE", reasons=(): SimpleNamespace(
-            candidate=cand(key, name), total_score=score, axis_scores={"academic_evidence": 8.0},
+                                                 direction="Long only", known_strengths="s", known_weaknesses="w",
+                                                 horizon_lane=lane, market="India")
+        scored = lambda key, name, score, feas="IMPLEMENTABLE", reasons=(), lane="swing": SimpleNamespace(
+            candidate=cand(key, name, lane), total_score=score, axis_scores={"academic_evidence": 8.0},
             feasibility_classification=feas, feasibility_reasons=list(reasons))
-        roadmap = {"researchable_now": [scored("alpha", "Already built", 9.0), scored("new_idea", "New idea", 7.5)],
+        roadmap = {"researchable_now": [scored("alpha", "Already built", 9.0), scored("new_idea", "New idea", 7.5, lane="crypto")],
                    "deferred_pending_data": [scored("needs_data", "Needs data", 6.0, "NOT_CURRENTLY_IMPLEMENTABLE",
                                                     ["Requires 'x'"])], "weights": {}}
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                   roadmap=roadmap)
         self.assertEqual([(c["rank"], c["key"]) for c in s["roadmap"]["ready"]], [(1, "new_idea")])
+        self.assertEqual(s["roadmap"]["ready"][0]["horizon_lane"], "crypto")   # every research lane, not just swing
         self.assertEqual([c["key"] for c in s["roadmap"]["deferred"]], ["needs_data"])
         self.assertEqual(s["roadmap"]["deferred"][0]["blockers"], ["Requires 'x'"])
+
+    def test_roadmap_view_marks_the_currently_queued_and_resolved_candidates(self):
+        cand = lambda key, name: SimpleNamespace(key=key, name=name, factor_family="Reversal", year=2001,
+                                                 authors="A & B", typical_holding_period="1 month",
+                                                 direction="Long only", known_strengths="s", known_weaknesses="w",
+                                                 horizon_lane="swing", market="India")
+        scored = lambda key, name, score: SimpleNamespace(candidate=cand(key, name), total_score=score,
+            axis_scores={"academic_evidence": 8.0}, feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])
+        roadmap = {"researchable_now": [scored("current_one", "In research now", 9.0), scored("resolved_one", "Already tried", 8.0),
+                                        scored("untouched", "Not started", 7.0)],
+                   "deferred_pending_data": [], "weights": {}}
+        queue = {"current": {"key": "current_one"}, "history": [
+            {"key": "resolved_one", "resolved": "2026-09-20", "outcome": "researched", "experiment_id": "EXP-050"}]}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap, research_queue=queue)
+        rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
+        self.assertEqual(rows["current_one"], {"state": "current"})
+        self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
+        self.assertIsNone(rows["untouched"])
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")

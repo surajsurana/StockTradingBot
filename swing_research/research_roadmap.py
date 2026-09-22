@@ -5,6 +5,16 @@ strategy the user already picked" to "continuously maintain a ranked
 roadmap of CANDIDATE published strategies not yet implemented, and be able
 to explain why each one is or isn't next."
 
+Despite the module's name and location (swing_research/), this is now the
+ONE shared candidate roadmap for every research lane, not swing-only
+(2026-09-22, per explicit direction: "a single feeder agent irrespective of
+the type of trade"). CandidateProfile carries a horizon_lane ("swing",
+"intraday", "medium", "long_term" or "crypto") and a market (default
+"India"). It isn't renamed/moved because it's imported throughout this
+program; only its scope changed. research_queue.py is what actually turns
+this ranked list into a "one at a time, a new one weekly" queue -- this
+file only scores and ranks, exactly as it always has.
+
 Deliberately a NEW, separate module rather than an edit to
 published_research_analyst.py: that file's PublishedStrategy records are
 the permanent, faithful record of strategies this program has ALREADY
@@ -172,6 +182,10 @@ class CandidateProfile:
     research_value_score: float           # 0-10
     data_availability_score: float        # 0-10 (how much of what's needed we actually have)
     implementation_feasibility_score: float  # 0-10 (adaptation risk GIVEN available data)
+    horizon_lane: str = "swing"           # "swing" | "intraday" | "medium" | "long_term" | "crypto" -- every
+                                           # candidate here today predates this field and is swing, so that's
+                                           # the default; new candidates in other lanes set it explicitly.
+    market: str = "India"                 # future-proofed for a later non-Indian lane; nothing uses it yet.
     notes: str = ""
 
 

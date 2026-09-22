@@ -171,6 +171,11 @@ class TestScoringAndRoadmap(unittest.TestCase):
                         "Deferred Pending Better Data", "Permanently Excluded", "Future Dataset Recommendations"]:
             self.assertIn(heading, markdown)
 
+    def test_every_existing_candidate_defaults_to_the_swing_india_lane(self):
+        # this module is now the shared candidate roadmap for every research lane (2026-09-22) --
+        # every candidate written before that still needs to read as "swing" without being touched by hand.
+        self.assertTrue(all(c.horizon_lane == "swing" and c.market == "India" for c in CANDIDATES))
+
 
 if __name__ == "__main__":
     unittest.main()
