@@ -265,6 +265,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="true" data-tab="team">The team</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
+  <button role="tab" aria-selected="false" data-tab="research">Research</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
   <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
   <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
@@ -370,6 +371,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <h2>Strategies</h2>
   <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
+</section>
+
+<section id="tab-research" hidden>
   <h2>Next up for research</h2>
   <p class="note">One ranked queue across every research lane (swing, intraday, medium, long-term, crypto) -- ranked by the Head-of-Research score (0-10: evidence, data we have, feasibility, diversification vs. what already runs, robustness, simplicity, research value). One strategy is researched at a time; a new one is picked up automatically once a week, or start a specific one now.</p>
   <p class="note" id="queue-current" hidden></p>
@@ -479,7 +483,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); renderTeam(s); renderRegistry(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderLive(s); renderTeam(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -1475,7 +1479,10 @@ function renderRegistry(s){
     }
     document.getElementById("brief").showModal();
   }));
+}
 
+// The Research tab: the shared candidate roadmap across every horizon, and the one-at-a-time queue.
+function renderResearch(s){
   const rm = s.roadmap || {ready:[], deferred:[]};
   const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };
   const bars = ax => `<span class="axes" title="${Object.entries(ax).map(([k,v])=>`${k.replace(/_/g," ")}: ${v}`).join(" · ")}">${Object.values(ax).map(v=>`<i style="height:${Math.max(3, Math.round(v*1.4))}px"></i>`).join("")}</span>`;
