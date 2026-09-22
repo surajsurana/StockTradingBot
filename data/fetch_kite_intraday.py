@@ -178,6 +178,7 @@ def fetch_intraday_candles(instrument_token: int, interval: str, from_date: date
 
 
 LTP_URL = "https://api.kite.trade/quote/ltp"
+OHLC_URL = "https://api.kite.trade/quote/ohlc"
 
 
 def fetch_ltp(symbols: list, headers: dict, batch_size: int = 200) -> dict:
@@ -197,6 +198,33 @@ def fetch_ltp(symbols: list, headers: dict, batch_size: int = 200) -> dict:
             if row and row.get("last_price") is not None:
                 prices[key.split(":", 1)[1]] = float(row["last_price"])
     return prices
+
+
+def fetch_ohlc(symbols: list, headers: dict, batch_size: int = 200) -> dict:
+    """Last traded price AND the exchange's own previous close per bare NSE symbol, via Kite's
+    quote/ohlc endpoint (2026-09-22, added for the dashboard's "today's P&L" -- see the module note
+    below). {symbol: {"price": float, "prev_close": float}}; symbols Kite doesn't return are simply
+    absent, same convention as fetch_ltp.
+
+    Why this exists, not just fetch_ltp's last_price plus yfinance's own daily close for "prev_close"
+    (which is what the dashboard did before this): yfinance's daily-bar history can lag by a full
+    trading day right after the market reopens -- confirmed 2026-09-22, every held symbol's 5-day
+    fetch jumped straight from Friday 18 Sep to Tuesday 22 Sep, silently skipping Monday 21 Sep
+    entirely (a real trading day). Using that as "yesterday's close" against today's live price
+    doubled a full extra day's move into "today's P&L", real discrepancy against Groww's own app.
+    Kite's ohlc.close is the exchange's own previous-day close, sourced the same way the broker's own
+    app gets it -- never subject to yfinance's provider-side lag."""
+    out = {}
+    for i in range(0, len(symbols), batch_size):
+        batch = symbols[i:i + batch_size]
+        _rate_limiter.wait()
+        resp = requests.get(OHLC_URL, headers=headers, params=[("i", f"NSE:{s}") for s in batch], timeout=30)
+        if resp.status_code != 200:
+            raise ValueError(f"Kite OHLC API error: {resp.status_code} {resp.text[:200]}")
+        for key, row in (resp.json().get("data") or {}).items():
+            if row and row.get("last_price") is not None and (row.get("ohlc") or {}).get("close") is not None:
+                out[key.split(":", 1)[1]] = {"price": float(row["last_price"]), "prev_close": float(row["ohlc"]["close"])}
+    return out
 
 
 def _fetch_symbol(symbol: str, interval: str, from_date: date, to_date: date, headers: dict,

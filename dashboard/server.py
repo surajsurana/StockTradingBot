@@ -241,20 +241,24 @@ class PriceCache:
     _kite_headers = None
     _kite_headers_day = None
 
-    def _kite_ltp(self, symbols: list) -> dict:
-        """Real-time last traded prices for Pool D's bare symbols via Kite
-        (one login per day, cached; a 403 forces a re-login next time).
-        Falls back to {} so a Kite hiccup never blocks the swing prices."""
+    def _kite_ohlc(self, symbols: list) -> dict:
+        """Real-time last traded price AND the exchange's own previous close, for Pool D's bare
+        symbols and every held swing/Pool H symbol, via Kite (one login per day, cached; a 403
+        forces a re-login next time). Falls back to {} so a Kite hiccup never blocks the swing
+        prices -- prices and prev_close just keep whatever yfinance/the last refresh already had.
+        Was _kite_ltp (last_price only) until 2026-09-22: see fetch_kite_intraday.fetch_ohlc's
+        docstring for why yfinance's own daily close isn't trustworthy enough for "yesterday's close"
+        on its own."""
         from config import settings
-        from data.fetch_kite_intraday import fetch_ltp, get_market_data_session
+        from data.fetch_kite_intraday import fetch_ohlc, get_market_data_session
         today = datetime.now().date()
         try:
             if self._kite_headers is None or self._kite_headers_day != today:
                 self._kite_headers = get_market_data_session(settings)
                 self._kite_headers_day = today
-            return fetch_ltp(symbols, self._kite_headers)
+            return fetch_ohlc(symbols, self._kite_headers)
         except Exception as e:
-            print(f"Kite LTP failed ({type(e).__name__}: {e}) -- re-login on next refresh", flush=True)
+            print(f"Kite OHLC failed ({type(e).__name__}: {e}) -- re-login on next refresh", flush=True)
             self._kite_headers = None
             return {}
 
@@ -285,23 +289,26 @@ class PriceCache:
             print(f"crypto price refresh failed: {type(e).__name__}: {e}", flush=True)
 
     def refresh_live(self) -> None:
-        """Quote refresh: Kite last-traded prices for every held symbol
-        (swing books' 'X.NS' keys map to Kite's bare 'X') plus Pool D's
-        open names. During market hours this runs every LIVE_SECONDS, so
-        unbooked P&L moves with the tape; outside it, it just confirms
-        the close. Symbols Kite doesn't return keep their yfinance close."""
+        """Quote refresh: Kite last-traded price AND previous close for every held symbol (swing
+        books' 'X.NS' keys map to Kite's bare 'X') plus Pool D's open names. During market hours this
+        runs every LIVE_SECONDS, so unbooked P&L and "today's" move both track the live tape; outside
+        it, it just confirms the close. Symbols Kite doesn't return keep their yfinance price/close
+        (Kite's own OHLC is the authoritative previous-close source as of 2026-09-22 -- see
+        fetch_kite_intraday.fetch_ohlc's docstring -- so this is also what fixes "today's P&L" once
+        Kite has a symbol, not just the live price)."""
         held = self._held_symbols() + self._pool_d_symbols()
         if not held:
             return
         bare = sorted({s[:-3] if s.endswith(".NS") else s for s in held})
-        quotes = self._kite_ltp(bare)
+        quotes = self._kite_ohlc(bare)
         if not quotes:
             return
         with self._lock:
             for s in held:
                 b = s[:-3] if s.endswith(".NS") else s
                 if b in quotes:
-                    self.prices[s] = quotes[b]
+                    self.prices[s] = quotes[b]["price"]
+                    self.prev_close[s] = quotes[b]["prev_close"]
             self.as_of = datetime.now().isoformat(timespec="seconds")
         self._save_disk()
 

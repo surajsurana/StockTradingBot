@@ -23,7 +23,7 @@ class TestPriceCache(unittest.TestCase):
     def _cache(self, symbols=("AAA.NS", "BBB.NS")):
         c = PriceCache(self.dir)
         c._held_symbols = lambda: list(symbols)
-        c._kite_ltp = lambda syms: {}
+        c._kite_ohlc = lambda syms: {}
         c._pool_e_symbols = lambda: []
         return c
 
@@ -64,6 +64,31 @@ class TestPriceCache(unittest.TestCase):
                 mock.patch("data.fetch_crypto.fetch_usdinr_rate", return_value=None):
             c.refresh_once()
         self.assertEqual(c.prices, {"AAA.NS": 102.0})
+
+    def test_kite_ohlc_overrides_a_stale_yfinance_previous_close(self):
+        # 2026-09-22: yfinance's daily history can lag a full trading day (confirmed live -- every
+        # held symbol's fetch skipped Monday 21 Sep entirely, straight from Friday 18 Sep to Tuesday
+        # 22 Sep), doubling a day's move into "today's P&L" against Groww's own app. Kite's own OHLC
+        # quote (the exchange's real previous close) must win over that stale yfinance close.
+        c = self._cache(("AAA.NS",))
+        with mock.patch("data.fetch_historical.fetch_all", return_value={"AAA.NS": _frame(102.0)}), \
+                mock.patch("data.fetch_crypto.fetch_crypto_last_prices", return_value={}), \
+                mock.patch("data.fetch_crypto.fetch_usdinr_rate", return_value=None):
+            c.refresh_once()
+        self.assertEqual(c.prev_close["AAA.NS"], 102.0)    # yfinance's own close, from _frame -- the stale one we're about to override
+        c._kite_ohlc = lambda syms: {"AAA": {"price": 108.0, "prev_close": 105.0}}    # the exchange's real numbers
+        c.refresh_live()
+        self.assertEqual((c.prices["AAA.NS"], c.prev_close["AAA.NS"]), (108.0, 105.0))
+
+    def test_a_symbol_kite_does_not_return_keeps_its_yfinance_price_and_close(self):
+        c = self._cache(("AAA.NS", "BBB.NS"))
+        with mock.patch("data.fetch_historical.fetch_all", return_value={"AAA.NS": _frame(102.0), "BBB.NS": _frame(50.0)}), \
+                mock.patch("data.fetch_crypto.fetch_crypto_last_prices", return_value={}), \
+                mock.patch("data.fetch_crypto.fetch_usdinr_rate", return_value=None):
+            c.refresh_once()
+        c._kite_ohlc = lambda syms: {"AAA": {"price": 108.0, "prev_close": 105.0}}   # BBB absent -- Kite doesn't have it
+        c.refresh_live()
+        self.assertEqual((c.prices["BBB.NS"], c.prev_close["BBB.NS"]), (50.0, 50.0))   # unchanged, from _frame(50.0)
 
     def test_a_failed_crypto_fetch_keeps_the_last_coin_prices_and_rate(self):
         c = self._cache()
