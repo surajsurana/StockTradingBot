@@ -42,10 +42,17 @@ POOLS_INFO = [
 
 
 DESKS = [
+    {"id": "research_feeder", "name": "Research Feeder (every lane)", "icon": "\U0001F9ED",
+     "blurb": "Where every strategy starts, whatever pool it's headed for: one ranked queue across swing, "
+              "intraday, medium, long-term and crypto, one candidate in research at a time, implemented and "
+              "backtested for real, with new candidates found every month."},
     {"id": "research_lab", "name": "Intraday Research Lab (feeds Pool D)", "icon": "\U0001F52C",
-     "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data."},
+     "blurb": "Dreams up intraday ideas and tests them to destruction on real 5-minute data -- still where an "
+              "intraday candidate is actually built today, since the Feeder's cloud routine has no live "
+              "broker session to backtest against."},
     {"id": "swing_research", "name": "Swing Research (feeds Pool A)", "icon": "\U0001F4DA",
-     "blurb": "Takes strategies from the academic literature and proves them on years of NSE data."},
+     "blurb": "The backtest machinery every literature-sourced candidate runs through -- swing, medium or "
+              "long-term -- whether a human is at the keyboard or the Feeder's Strategy Implementer is."},
     {"id": "trading_desk", "name": "Trading Desk (Pools A, D and F)", "icon": "\U0001F4C8",
      "blurb": "Runs every approved strategy as a paper book, day after day."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
@@ -55,9 +62,6 @@ DESKS = [
               "and runs the survivors as a 1,000 USDT paper book."},
     {"id": "reporting", "name": "Reporting (all pools)", "icon": "\U0001F4E8",
      "blurb": "Keeps the books and sends the one message a day."},
-    {"id": "research_feeder", "name": "Research Feeder (every lane)", "icon": "\U0001F9ED",
-     "blurb": "One ranked queue across swing, intraday, medium, long-term and crypto: keeps one candidate "
-              "in research at a time, implements and backtests it, and goes looking for new ones every month."},
 ]
 
 # job = what a visitor sees on the card; detail = shown on click. status_from
@@ -183,19 +187,24 @@ FLOWS = {
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
             {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
             {"id": "eod_a", "icon": "\U0001F4BC", "label": "15:35", "text": "Swing Trader closes what needs closing, queues new entries"},
+            {"id": "eod_f", "icon": "\U0001F4BC", "label": "15:38", "text": "Pool F -- Pool A's partial-booking twin -- marks its own book"},
+            {"id": "eod_a1", "icon": "\U0001F4BC", "label": "15:40", "text": "Pool A1 (legacy) marks its own book"},
             {"id": "eod_c", "icon": "\U0001F9E0", "label": "15:45", "text": "Portfolio B & C team debates today's candidates"},
+            {"id": "eod_b", "icon": "\U0001F9E0", "label": "15:50", "text": "Portfolio B marks its own book"},
             {"id": "summary", "icon": "\U0001F4E8", "label": "16:05", "text": "Bookkeeper sends the one Telegram message"},
         ],
     },
     "research": {
         "title": "How a strategy earns its place",
         "steps": [
-            {"id": "idea", "icon": "\U0001F4A1", "label": "Idea", "text": "From a published paper, or the Quant Researcher"},
-            {"id": "rules", "icon": "\U0001F4D6", "label": "Rules", "text": "Written down exactly, every simplification disclosed"},
+            {"id": "found", "icon": "\U0001F50D", "label": "Found", "text": "Discovery Scout adds real, sourced candidates every month -- a paper or a well-known book, never an invented idea"},
+            {"id": "ranked", "icon": "\U0001F4CA", "label": "Ranked", "text": "Head of Research scores every candidate 0-10, across swing, intraday, medium, long-term and crypto alike"},
+            {"id": "queued", "icon": "\U0001F5C2\ufe0f", "label": "Queued", "text": "One at a time -- free to swap for a better-ranked one, or a specific pick, until research actually starts"},
+            {"id": "locked", "icon": "\U0001F512", "label": "Locked", "text": "Strategy Implementer claims it the instant it starts; nothing can bump it after that"},
             {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
             {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only (crypto: after fees and tax)"},
-            {"id": "promote", "icon": "\U0001F4CB", "label": "Register", "text": "Gets an SW-ID and a Rs.1,00,000 paper book (crypto: 1,000 USDT in Pool E)"},
-            {"id": "trade", "icon": "\U0001F4C8", "label": "Trade", "text": "Runs live in Pool A or Pool E, watched every day"},
+            {"id": "pr", "icon": "\U0001F500", "label": "Pull request", "text": "The real verdict either way -- pass or reject -- never merged by the routine itself"},
+            {"id": "promote", "icon": "\U0001F4CB", "label": "Register & trade", "text": "A human reviews and merges; only then an SW-ID, a paper book, and it runs live, watched every day"},
         ],
     },
 }
