@@ -708,15 +708,27 @@ function wireTapePager(){
 
 // Orders tab: every fill (BUY/SELL/SHORT) across every pool, reusing the same s.ledger rows the
 // Live day tape shows -- but as its own plain, reverse-chronological log, no open/closed grouping.
-let ORDERS_SORT = {key:"date", dir:-1};
+// Same per-column filter popovers as the Live day tape (status/symbol/pool/type/book), minus the
+// tape's date-range calendar -- the Date column is sortable instead, which covers the same need.
+let ORDERS_SORT = {key:"date", dir:-1}, ORDERS_FILTER = "";
 let ORDERS_PAGE = 1, ORDERS_PAGE_SIZE = 50, ORDERS_LAST_SIG = null;
 const ORDERS_COLS = [["status","Status",false],["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
   ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true]];
 function buildOrdersHead(){
   const head = document.getElementById("orders-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
-  head.innerHTML = `<tr>${ORDERS_COLS.map(([k,l,num]) => hcell(l, k, "", num?"n":(k==="symbol"||k==="book"?"l":""))).join("")}</tr>`;
+  const cell = k => ({
+    status: `<select id="orders-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
+    symbol: `<input id="orders-q" type="search" placeholder="find…" autocomplete="off">`,
+    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
+    kind: `<select id="orders-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
+    book: `<select id="orders-book"><option value="">All</option></select>`,
+  })[k] || "";
+  head.innerHTML = `<tr>${ORDERS_COLS.map(([k,l,num]) => hcell(l, k, cell(k), num?"n":(k==="symbol"||k==="book"?"l":""))).join("")}</tr>`;
+  wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { ORDERS_SORT = {key:b.dataset.sort, dir: ORDERS_SORT.key===b.dataset.sort ? -ORDERS_SORT.dir : 1}; renderOrders(STATE); }));
+  document.getElementById("orders-q").addEventListener("input", e => { ORDERS_FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderOrders(STATE); });
+  ["orders-status","orders-pool","orders-kind","orders-book"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderOrders(STATE); }));
 }
 function wireOrdersPager(){
   const pager = document.getElementById("orders-pager"); if(pager.dataset.wired) return;
@@ -729,7 +741,20 @@ function renderOrders(s){
   buildOrdersHead();
   markSort(document.getElementById("orders-head"), ORDERS_SORT);
   const numeric = new Set(ORDERS_COLS.filter(c=>c[2]).map(c=>c[0]));
-  const rows = [...s.ledger].sort((a,b) => {
+  const statusF = sel("orders-status"), poolF = sel("orders-pool"), kindF = sel("orders-kind");
+  // the Book dropdown only offers books that actually appear within the selected pool/type scope
+  const bookSel = document.getElementById("orders-book"), prevBook = bookSel.value;
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"]};
+  const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
+  const bookNames = [...new Set(s.ledger.filter(a => inScope(a.pool)).map(a => a.book).filter(Boolean))].sort();
+  bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option value="${esc(n)}"${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
+  const bookF = bookNames.includes(prevBook) ? prevBook : "";
+  markFilters(document.getElementById("orders-head"), {status: statusF, symbol: ORDERS_FILTER, pool: poolF, kind: kindF, book: bookF});
+  const f = ORDERS_FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
+  const rows = s.ledger.filter(a => hit(a)
+    && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status||"") === statusF))
+    && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF) && (!bookF || a.book === bookF)
+  ).sort((a,b) => {
     const k = ORDERS_SORT.key, x = a[k], y = b[k];
     // same-key ties fall back to date, then time, then symbol -- all descending except symbol,
     // so "latest order first" holds even when the chosen sort column has lots of repeats.
@@ -737,8 +762,8 @@ function renderOrders(s){
     if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*ORDERS_SORT.dir || tie; }
     return String(x??"").localeCompare(String(y??""))*ORDERS_SORT.dir || tie;
   });
-  document.getElementById("orders-count").textContent = `${rows.length} order${rows.length===1?"":"s"}`;
-  const sig = JSON.stringify([ORDERS_SORT.key, ORDERS_SORT.dir, rows.length]);
+  document.getElementById("orders-count").textContent = `${rows.length} of ${s.ledger.length} order${s.ledger.length===1?"":"s"}`;
+  const sig = JSON.stringify([ORDERS_SORT.key, ORDERS_SORT.dir, f, statusF, poolF, kindF, bookF]);
   if(sig !== ORDERS_LAST_SIG){ ORDERS_PAGE = 1; ORDERS_LAST_SIG = sig; }
   wireOrdersPager();
   const pageSize = ORDERS_PAGE_SIZE;
