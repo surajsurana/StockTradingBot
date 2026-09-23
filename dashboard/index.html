@@ -710,7 +710,7 @@ function wireTapePager(){
 // Live day tape shows -- but as its own plain, reverse-chronological log, no open/closed grouping.
 let ORDERS_SORT = {key:"date", dir:-1};
 let ORDERS_PAGE = 1, ORDERS_PAGE_SIZE = 50, ORDERS_LAST_SIG = null;
-const ORDERS_COLS = [["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
+const ORDERS_COLS = [["status","Status",false],["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
   ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true]];
 function buildOrdersHead(){
   const head = document.getElementById("orders-head"); if(head.dataset.built) return;
@@ -749,8 +749,8 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
-  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
-    : `<tr><td colspan="11" class="note">No orders yet.</td></tr>`;
+  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td title="${a.status==="Open"?"Still held -- P&L is unrealized":"Fully exited -- P&L is booked"}"><b>${esc(a.partial ? "Partial" : a.status)}</b></td><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
+    : `<tr><td colspan="12" class="note">No orders yet.</td></tr>`;
   document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
 }
 function showSymbolLedger(row){
