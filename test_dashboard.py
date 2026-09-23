@@ -282,6 +282,8 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertAlmostEqual(x["pnl"], (104.0 - 100.0) * 500)   # current P&L at the latest quote
         self.assertAlmostEqual(x["pct"], 4.0)
         self.assertAlmostEqual(x["pnl_today"], (104.0 - 101.0) * 500)   # vs yesterday's close of 101
+        self.assertAlmostEqual(x["pct_today"], 3.0)   # today's move (1500) as a % of cost (50000), separate from pct's lifetime 4.0
+        self.assertIsNone(y["pct_today"])   # y never set pnl_today (a trade closed on an earlier day) -- pct_today follows suit, not a crash
         self.assertEqual(len(self.s["desks"]), len(DESKS))
         self.assertTrue(all(a["desk"] in {d["id"] for d in DESKS} for a in AGENTS))
 

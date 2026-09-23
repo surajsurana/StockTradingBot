@@ -1330,5 +1330,8 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         cost = float(r.pop("cost", 0) or 0)
         r["pct"] = round(float(r["pnl"]) / cost * 100, 2) if r.get("pnl") is not None and cost > 0 else None
         r.setdefault("pnl_today", None)
+        # Live day tape's P&L column toggles between total and today's -- pct_today is today's
+        # move as a % of cost, the same way pct is the total move as a % of cost.
+        r["pct_today"] = round(float(r["pnl_today"]) / cost * 100, 2) if r.get("pnl_today") is not None and cost > 0 else None
     rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["symbol"] or ""), reverse=True)   # newest first; unstamped last within a day
     return rows

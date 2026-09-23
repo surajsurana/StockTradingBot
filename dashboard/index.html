@@ -525,6 +525,11 @@ function renderLive(s){
 
 const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"bought_on", dir:-1};
+let TAPE_PNL_MODE = "total";   // "total" (lifetime) or "today" -- toggled by clicking the P&L header; P&L % follows it
+function updateTapePnlLabels(){
+  document.getElementById("tape-pnl-label").textContent = TAPE_PNL_MODE === "today" ? "Today's P&L" : "P&L";
+  document.getElementById("tape-pct-label").textContent = TAPE_PNL_MODE === "today" ? "Today's P&L %" : "P&L %";
+}
 const CAL = {y: null, m: null, from: "", to: ""};
 function pad(n){ return String(n).padStart(2, "0"); }
 function calRender(){
@@ -567,9 +572,15 @@ function buildTapeHead(){
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
-  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>` : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>` : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
+  head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>`
+    : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>`
+    : k==="pnl" ? `<th class="n"><span class="hf"><button id="tape-pnl-toggle" class="fbtn" title="Click to switch between total and today's P&amp;L"><span id="tape-pnl-label">${l}</span></button><button data-sort="pnl" class="sortbtn" title="Sort">↕</button></span></th>`
+    : k==="pct" ? `<th class="n"><span class="hf"><span class="lbl" id="tape-pct-label">${l}</span><button data-sort="pct" class="sortbtn" title="Sort">↕</button></span></th>`
+    : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
+  document.getElementById("tape-pnl-toggle").addEventListener("click", e => { e.stopPropagation(); TAPE_PNL_MODE = TAPE_PNL_MODE === "total" ? "today" : "total"; updateTapePnlLabels(); renderTape(STATE); });
+  updateTapePnlLabels();
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
   ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
   document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(); });
@@ -618,9 +629,12 @@ function renderTape(s){
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
   const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
     if(a.status !== b.status) return a.status === "Open" ? -1 : 1;   // open rows always above closed rows
-    const k = TAPE_SORT.key, x = a[k], y = b[k];
+    const k0 = TAPE_SORT.key;
+    // when the P&L column is toggled to "today", sorting by P&L or P&L % follows the same field the column is showing
+    const k = TAPE_PNL_MODE === "today" ? (k0 === "pnl" ? "pnl_today" : k0 === "pct" ? "pct_today" : k0) : k0;
+    const x = a[k], y = b[k];
     const tie = (b.date||"").localeCompare(a.date||"") || (b.time||"").localeCompare(a.time||"") || (a.symbol||"").localeCompare(b.symbol||"");
-    if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || tie; }
+    if(numeric.has(k0)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*TAPE_SORT.dir || tie; }
     return String(x??"").localeCompare(String(y??""))*TAPE_SORT.dir || tie;
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
@@ -641,7 +655,8 @@ function renderTape(s){
   document.getElementById("tape-prev").disabled = TAPE_PAGE <= 1;
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
-  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${a.pnl!=null?cell(a.pnl, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+a.pct)}">${a.pct!=null?(a.pct>0?"+":"")+(+a.pct).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
+  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = TAPE_PNL_MODE==="today" ? a.pnl_today : a.pnl, pctV = TAPE_PNL_MODE==="today" ? a.pct_today : a.pct;
+    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 function showLife(id){
