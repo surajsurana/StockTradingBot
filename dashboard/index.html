@@ -266,6 +266,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="team">The team</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
+  <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="research">Research</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
@@ -286,6 +287,18 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <label class="note">Rows per page <select id="tape-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
     <span class="note" id="tape-pageinfo"></span>
     <span class="pagebtns"><button id="tape-prev" class="iconbtn">‹ Prev</button><button id="tape-next" class="iconbtn">Next ›</button></span>
+  </div>
+</section>
+
+<section id="tab-orders" hidden>
+  <h2>Orders</h2>
+  <p class="note">Every order placed, across every pool and type — most recent first.</p>
+  <div class="tools"><span id="orders-count" class="note"></span></div>
+  <div class="tblwrap" id="orders-wrap"><table><thead id="orders-head"></thead><tbody id="orders"></tbody></table></div>
+  <div class="pager" id="orders-pager">
+    <label class="note">Rows per page <select id="orders-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+    <span class="note" id="orders-pageinfo"></span>
+    <span class="pagebtns"><button id="orders-prev" class="iconbtn">‹ Prev</button><button id="orders-next" class="iconbtn">Next ›</button></span>
   </div>
 </section>
 
@@ -485,7 +498,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); renderTeam(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderLive(s); renderOrders(s); renderTeam(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -691,6 +704,53 @@ function wireTapePager(){
   document.getElementById("tape-pagesize").addEventListener("change", e => { TAPE_PAGE_SIZE = +e.target.value; TAPE_PAGE = 1; if(STATE) renderTape(STATE); });
   document.getElementById("tape-prev").addEventListener("click", () => { TAPE_PAGE--; if(STATE) renderTape(STATE); });
   document.getElementById("tape-next").addEventListener("click", () => { TAPE_PAGE++; if(STATE) renderTape(STATE); });
+}
+
+// Orders tab: every fill (BUY/SELL/SHORT) across every pool, reusing the same s.ledger rows the
+// Live day tape shows -- but as its own plain, reverse-chronological log, no open/closed grouping.
+let ORDERS_SORT = {key:"date", dir:-1};
+let ORDERS_PAGE = 1, ORDERS_PAGE_SIZE = 50, ORDERS_LAST_SIG = null;
+const ORDERS_COLS = [["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
+  ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false]];
+function buildOrdersHead(){
+  const head = document.getElementById("orders-head"); if(head.dataset.built) return;
+  head.dataset.built = "1";
+  head.innerHTML = `<tr>${ORDERS_COLS.map(([k,l,num]) => hcell(l, k, "", num?"n":(k==="symbol"||k==="book"?"l":""))).join("")}</tr>`;
+  head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { ORDERS_SORT = {key:b.dataset.sort, dir: ORDERS_SORT.key===b.dataset.sort ? -ORDERS_SORT.dir : 1}; renderOrders(STATE); }));
+}
+function wireOrdersPager(){
+  const pager = document.getElementById("orders-pager"); if(pager.dataset.wired) return;
+  pager.dataset.wired = "1";
+  document.getElementById("orders-pagesize").addEventListener("change", e => { ORDERS_PAGE_SIZE = +e.target.value; ORDERS_PAGE = 1; if(STATE) renderOrders(STATE); });
+  document.getElementById("orders-prev").addEventListener("click", () => { ORDERS_PAGE--; if(STATE) renderOrders(STATE); });
+  document.getElementById("orders-next").addEventListener("click", () => { ORDERS_PAGE++; if(STATE) renderOrders(STATE); });
+}
+function renderOrders(s){
+  buildOrdersHead();
+  markSort(document.getElementById("orders-head"), ORDERS_SORT);
+  const numeric = new Set(ORDERS_COLS.filter(c=>c[2]).map(c=>c[0]));
+  const rows = [...s.ledger].sort((a,b) => {
+    const k = ORDERS_SORT.key, x = a[k], y = b[k];
+    // same-key ties fall back to date, then time, then symbol -- all descending except symbol,
+    // so "latest order first" holds even when the chosen sort column has lots of repeats.
+    const tie = (b.date||"").localeCompare(a.date||"") || (b.time||"").localeCompare(a.time||"") || (a.symbol||"").localeCompare(b.symbol||"");
+    if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*ORDERS_SORT.dir || tie; }
+    return String(x??"").localeCompare(String(y??""))*ORDERS_SORT.dir || tie;
+  });
+  document.getElementById("orders-count").textContent = `${rows.length} order${rows.length===1?"":"s"}`;
+  const sig = JSON.stringify([ORDERS_SORT.key, ORDERS_SORT.dir, rows.length]);
+  if(sig !== ORDERS_LAST_SIG){ ORDERS_PAGE = 1; ORDERS_LAST_SIG = sig; }
+  wireOrdersPager();
+  const pageSize = ORDERS_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  ORDERS_PAGE = Math.min(Math.max(1, ORDERS_PAGE), totalPages);
+  const pageRows = rows.slice((ORDERS_PAGE - 1) * pageSize, ORDERS_PAGE * pageSize);
+  document.getElementById("orders-pageinfo").textContent = rows.length
+    ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
+  document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
+  document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
+  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td></tr>`).join("")
+    : `<tr><td colspan="10" class="note">No orders yet.</td></tr>`;
 }
 
 // The cards above the Live day tab: today's numbers for whatever the pool/type/strategy filters select.
