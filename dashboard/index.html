@@ -96,8 +96,8 @@ tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
 tr.clickable{cursor:pointer}
-.pool-link,.pnl-link{cursor:pointer}
-.pool-link:hover,.pnl-link:hover{text-decoration:underline}
+.pool-link,.pnl-link,.sym-link{cursor:pointer}
+.pool-link:hover,.pnl-link:hover,.sym-link:hover{text-decoration:underline}
 .gain{color:var(--gain)}.loss{color:var(--loss)}.warn{color:var(--warn)}
 .chip{display:inline-block;font-size:11px;padding:1px 7px;border-radius:10px;background:var(--chip);color:var(--accent);margin-left:6px;vertical-align:middle}
 .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--rule);color:var(--muted)}
@@ -749,8 +749,39 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
-  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td></tr>`).join("")
+  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td></tr>`).join("")
     : `<tr><td colspan="10" class="note">No orders yet.</td></tr>`;
+  document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
+}
+function showSymbolLedger(row){
+  // Every order (across the whole order history, not just this page) for this exact
+  // symbol within this exact book -- a book is what "that account" means here, since
+  // two different strategies holding the same symbol are two unrelated positions.
+  //
+  // s.ledger carries one row per currently-OPEN entry, but only ONE row per already-CLOSED
+  // trade (the exit -- see state_view.py's _ledger(): "the entry leg is implied"). A closed
+  // row still carries that implied entry's own date/qty/price (entry_price, bought_on), so
+  // it's expanded back into its two real legs here before the running balance is computed --
+  // otherwise every closed trade would show up as a lone, unexplained exit.
+  const key = row.symbol_key || row.symbol;
+  const matches = (STATE.ledger || []).filter(a => (a.symbol_key || a.symbol) === key && a.pool === row.pool && a.book === row.book);
+  const legs = matches.flatMap(a => a.status === "Closed"
+    ? [{date: a.bought_on, time: "", action: a.action === "SELL" ? "BUY" : "SHORT", qty: a.qty, price: a.entry_price},
+       {date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price, note: a.note}]
+    : [{date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price}]);
+  const chron = legs.sort((a, b) => (a.date||"").localeCompare(b.date||"") || (a.time||"").localeCompare(b.time||"")
+    || (a.action==="SELL"?1:0) - (b.action==="SELL"?1:0));   // same-day ties: buys/covers before sells, so balance never dips negative for a same-day round trip
+  let bal = 0;
+  const withBalance = chron.map(a => { bal += a.action === "SELL" || a.action === "SHORT" ? -a.qty : +a.qty; return {...a, balance: bal}; });
+  const crypto = row.kind === "Crypto";
+  const qtyFmt = v => (+v).toLocaleString("en-IN", {maximumFractionDigits: 6});
+  const priceFmt = v => (+v).toFixed(2) + (crypto ? " USDT" : "");
+  const body = [...withBalance].reverse().map(a => `<tr title="${esc(a.note||"")}"><td>${fmtDate(a.date)}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="n">${qtyFmt(a.qty)}</td><td class="n">${priceFmt(a.price)}</td><td class="n amt">${inr(a.qty*a.price)}</td><td class="n">${qtyFmt(a.balance)}</td></tr>`).join("");
+  const current = withBalance.length ? withBalance[withBalance.length-1].balance : 0;
+  document.getElementById("life-body").innerHTML =
+    `<h3>${esc(row.symbol)} <span class="note">${esc(row.book || "")} · ${esc(row.pool)} · balance now ${qtyFmt(current)}</span></h3>` +
+    `<table><thead><tr><th>Date</th><th class="n">Time</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>${body || `<tr><td colspan="7" class="note">No orders found.</td></tr>`}</tbody></table>`;
+  document.getElementById("life").showModal();
 }
 
 // The cards above the Live day tab: today's numbers for whatever the pool/type/strategy filters select.
