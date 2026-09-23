@@ -711,7 +711,7 @@ function wireTapePager(){
 let ORDERS_SORT = {key:"date", dir:-1};
 let ORDERS_PAGE = 1, ORDERS_PAGE_SIZE = 50, ORDERS_LAST_SIG = null;
 const ORDERS_COLS = [["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
-  ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false]];
+  ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true]];
 function buildOrdersHead(){
   const head = document.getElementById("orders-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
@@ -749,8 +749,8 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
-  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td></tr>`).join("")
-    : `<tr><td colspan="10" class="note">No orders yet.</td></tr>`;
+  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
+    : `<tr><td colspan="11" class="note">No orders yet.</td></tr>`;
   document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
 }
 function showSymbolLedger(row){
@@ -766,9 +766,9 @@ function showSymbolLedger(row){
   const key = row.symbol_key || row.symbol;
   const matches = (STATE.ledger || []).filter(a => (a.symbol_key || a.symbol) === key && a.pool === row.pool && a.book === row.book);
   const legs = matches.flatMap(a => a.status === "Closed"
-    ? [{date: a.bought_on, time: "", action: a.action === "SELL" ? "BUY" : "SHORT", qty: a.qty, price: a.entry_price},
-       {date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price, note: a.note}]
-    : [{date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price}]);
+    ? [{date: a.bought_on, time: "", action: a.action === "SELL" ? "BUY" : "SHORT", qty: a.qty, price: a.entry_price, pnl: null},
+       {date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price, note: a.note, pnl: a.pnl}]
+    : [{date: a.date, time: a.time, action: a.action, qty: a.qty, price: a.price, pnl: a.pnl}]);   // still open -- pnl here is unrealized
   const chron = legs.sort((a, b) => (a.date||"").localeCompare(b.date||"") || (a.time||"").localeCompare(b.time||"")
     || (a.action==="SELL"?1:0) - (b.action==="SELL"?1:0));   // same-day ties: buys/covers before sells, so balance never dips negative for a same-day round trip
   let bal = 0;
@@ -776,11 +776,11 @@ function showSymbolLedger(row){
   const crypto = row.kind === "Crypto";
   const qtyFmt = v => (+v).toLocaleString("en-IN", {maximumFractionDigits: 6});
   const priceFmt = v => (+v).toFixed(2) + (crypto ? " USDT" : "");
-  const body = [...withBalance].reverse().map(a => `<tr title="${esc(a.note||"")}"><td>${fmtDate(a.date)}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="n">${qtyFmt(a.qty)}</td><td class="n">${priceFmt(a.price)}</td><td class="n amt">${inr(a.qty*a.price)}</td><td class="n">${qtyFmt(a.balance)}</td></tr>`).join("");
+  const body = [...withBalance].reverse().map(a => `<tr title="${esc(a.note||"")}"><td>${fmtDate(a.date)}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="n">${qtyFmt(a.qty)}</td><td class="n">${priceFmt(a.price)}</td><td class="n amt">${inr(a.qty*a.price)}</td><td class="n">${qtyFmt(a.balance)}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("");
   const current = withBalance.length ? withBalance[withBalance.length-1].balance : 0;
   document.getElementById("life-body").innerHTML =
     `<h3>${esc(row.symbol)} <span class="note">${esc(row.book || "")} · ${esc(row.pool)} · balance now ${qtyFmt(current)}</span></h3>` +
-    `<table><thead><tr><th>Date</th><th class="n">Time</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>${body || `<tr><td colspan="7" class="note">No orders found.</td></tr>`}</tbody></table>`;
+    `<table><thead><tr><th>Date</th><th class="n">Time</th><th>Side</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Amount</th><th class="n">Balance</th><th class="n">P&amp;L</th></tr></thead><tbody>${body || `<tr><td colspan="8" class="note">No orders found.</td></tr>`}</tbody></table>`;
   document.getElementById("life").showModal();
 }
 
