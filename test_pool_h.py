@@ -2,7 +2,7 @@
 import unittest
 from datetime import date
 
-from reporting.pool_h import add_pool_h, build, fifo
+from reporting.pool_h import add_pool_h, add_pool_h_placeholder, build, fifo
 
 ORDERS = [["2025-01-10", "AAA", "B", 10, 1000.0], ["2025-03-10", "AAA", "B", 10, 1500.0], ["2026-01-05", "AAA", "S", 15, 2250.0],
           ["2025-02-01", "BBB", "B", 4, 400.0]]
@@ -62,6 +62,18 @@ class TestAddToState(unittest.TestCase):
         dates = [a["date"] for a in state["ledger"]]
         self.assertEqual(dates, sorted(dates, reverse=True))                        # newest first
         self.assertFalse(add_pool_h({"pools": {}}, {"holdings": []}, RAW, 0, date(2026, 9, 21), None))
+
+
+class TestPlaceholder(unittest.TestCase):
+    def test_listed_but_empty_when_there_is_no_real_data(self):
+        state = {"pools": {"A": {"positions": 0}}, "overall": {"positions": 0, "capital": 0.0}, "pools_info": [{"pool": "A"}],
+                 "strategies": [], "statement": [], "ledger": []}
+        add_pool_h_placeholder(state)
+        self.assertEqual([p["pool"] for p in state["pools_info"]], ["A", "H"])
+        row = state["strategies"][0]
+        self.assertEqual((row["pool"], row["type"], row["status"], row["capital"], row["pnl"]), ("Pool H", "Long-term", "MANUAL", None, None))
+        self.assertEqual((set(state["pools"]), state["overall"], state["statement"], state["ledger"]),
+                         ({"A"}, {"positions": 0, "capital": 0.0}, [], []))          # adds nothing to totals, ledger or P&L
 
 
 if __name__ == "__main__":

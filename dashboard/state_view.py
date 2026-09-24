@@ -1126,9 +1126,12 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1),
         "roadmap": roadmap_view(roadmap, registry_records, research_queue) if roadmap else {"ready": [], "deferred": [], "weights": {}},
     }
-    if mode == "live" and reports is not None:    # your real Groww portfolio is Pool H, shown only in Live mode
-        from reporting.pool_h import add_pool_h
-        add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))
+    # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
+    # (Paper mode, or Live before any Groww data has been read), like any pool with nothing running.
+    from reporting.pool_h import add_pool_h, add_pool_h_placeholder
+    if not (mode == "live" and reports is not None
+            and add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))):
+        add_pool_h_placeholder(state)
     return state
 
 

@@ -149,3 +149,18 @@ def add_pool_h(state: dict, mine: dict, raw: Optional[dict], cash: Optional[floa
     state["statement"] = [l for l in state["statement"] if l.get("capital") or l.get("deployed") or l.get("cash")] + [h["line"]]
     state["ledger"] = sorted(list(state["ledger"]) + h["ledger"], key=lambda a: (a["date"], a.get("time") or ""), reverse=True)
     return True
+
+
+INFO_EMPTY = {"pool": "H", "name": "Long-term (real money)",
+              "text": "Your real long-term portfolio at Groww: index funds, gold, silver and stocks you buy and hold for years. You place the orders yourself, so nothing runs here in Paper mode -- switch to Live to see the real holdings."}
+
+
+def add_pool_h_placeholder(state: dict) -> None:
+    """List Pool H (Team tab pools, Strategies row) when there is no real Groww data to show, so it
+    appears in Paper mode like any pool with nothing running: no money, no trades, no orders. It adds
+    nothing to the totals, the ledger or the P&L statement."""
+    state["pools_info"] = list(state["pools_info"]) + [INFO_EMPTY]
+    state["strategies"] = list(state["strategies"]) + [{
+        "key": "long_term", "sid": "LT-001", "name": BOOK + " (manual)", "pool": LABEL, "type": "Long-term", "verdict": "-", "status": "MANUAL",
+        "experiment": "", "brief": INFO_EMPTY["text"], "capital": None, "pnl": None, "started": None, "closed_trades": None, "wins": None,
+        "pools_breakdown": [], "how": HOW, "research": {}, "variants": []}]
