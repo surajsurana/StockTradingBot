@@ -5,21 +5,23 @@ Background (2026-09-25): the app expired on 23 Sep, the dashboard silently fell 
 "today's P&L") and Pool D stopped trading for two days before anyone noticed. This script speaks up instead:
 
   * dead key   -- every run checks that Kite still accepts the app's API key (one unauthenticated GET, no
-                  login, so it can be run often). If it does not, a Telegram alert repeats every 6 hours.
+                  login, so it is safe to run often). If it does not, a Telegram alert repeats every 6 hours.
   * reminders  -- from 7 days before the recorded expiry: the Zerodha balance is read (at most one login a
-                  day) and a Telegram message says whether it covers the fee, and how much to add if not.
+                  day) and a Telegram message says whether it is above the minimum to keep (Rs 1,000, twice the
+                  Rs 500 fee), and how much to add if not. Each one asks you to confirm the expiry date, since
+                  Kite has no API for it.
                   Reminders go out at 7, 3, 2, 1 and 0 days; a low balance is repeated daily.
   * roll-over  -- once the expiry date has passed and the key still works, the recorded expiry moves on one
                   month and Telegram confirms the renewal.
 
 The expiry date and fee live in deployment/state/kite_subscription.json (the first run creates it). Kite has no
-API for either, so change them there if they are wrong:  {"expires": "2026-10-26", "fee": 1000}
+API for either, so change them there if they are wrong:  {"expires": "2026-10-26", "fee": 500, "min_balance": 1000}
 
     python check_kite_subscription.py            # print what it would send (safe default)
     python check_kite_subscription.py --send     # also send it by Telegram
 
-Cron, every 30 minutes:
-    */30 * * * *  cd .../StockTradingBot && venv/bin/python check_kite_subscription.py --send
+Cron, twice a day (a lapse is caught within about half a day):
+    5 9,18 * * *  cd .../StockTradingBot && venv/bin/python check_kite_subscription.py --send
 """
 
 import argparse
@@ -31,7 +33,7 @@ from typing import Dict, List, Optional, Tuple
 import requests
 
 STATE_FILE = "kite_subscription.json"
-DEFAULT_STATE = {"expires": "2026-10-26", "fee": 1000, "sent": {}}
+DEFAULT_STATE = {"expires": "2026-10-26", "fee": 500, "min_balance": 1000, "sent": {}}
 REMIND_AT_DAYS = (7, 3, 2, 1, 0)
 LOW_BALANCE_WINDOW_DAYS = 7
 DEAD_REPEAT_HOURS = 6
@@ -83,7 +85,7 @@ def plan(today: date, now: datetime, state: dict, key_alive: Optional[bool],
     """The alerts due now as [(id, message)] and the state after them. Pure: no network, no clock, no files.
     An alert id already in state["sent"] is never sent again."""
     state = {**state, "sent": dict(state.get("sent", {}))}
-    expires, fee = date.fromisoformat(state["expires"]), float(state["fee"])
+    expires, fee, keep = date.fromisoformat(state["expires"]), float(state["fee"]), float(state["min_balance"])
     days_left = (expires - today).days
     out: List[Tuple[str, str]] = []
 
@@ -103,18 +105,20 @@ def plan(today: date, now: datetime, state: dict, key_alive: Optional[bool],
             nxt = add_month(nxt)
         state["expires"] = nxt.isoformat()
         state["sent"] = {}
-        out.append((f"renewed-{nxt.isoformat()}", f"Kite market-data subscription is active. Next expiry recorded: {nxt.strftime('%d %b %Y')}."))
+        out.append((f"renewed-{nxt.isoformat()}", f"Kite market-data subscription is active. I have recorded the next expiry as {nxt.strftime('%d %b %Y')} -- "
+                    f"please check developers.kite.trade, My apps, and tell me if it shows a different date."))
         return out, state
 
     if 0 <= days_left <= LOW_BALANCE_WINDOW_DAYS:
-        low = balance is not None and balance < fee
+        low = balance is not None and balance < keep
         head = f"Kite market-data subscription expires {expires.strftime('%d %b %Y')} ({'today' if days_left == 0 else f'in {days_left} day' + ('s' if days_left != 1 else '')})."
         if balance is None:
-            body = f"I could not read your Zerodha balance. Make sure at least {money(fee)} is there so it can renew."
+            body = f"I could not read your Zerodha balance. Keep at least {money(keep)} there (renewal is {money(fee)})."
         elif low:
-            body = f"Zerodha balance is {money(balance)}, below the {money(fee)} needed. *Add at least {money(fee - balance)} now* so it can renew itself."
+            body = f"Zerodha balance is {money(balance)}, below the {money(keep)} to keep (renewal is {money(fee)}). *Add at least {money(keep - balance)} now* so it can renew itself."
         else:
-            body = f"Zerodha balance {money(balance)} covers the {money(fee)} fee."
+            body = f"Zerodha balance {money(balance)} is enough (renewal is {money(fee)})."
+        body += "\nRecorded expiry comes from me, not Kite: confirm it under developers.kite.trade, My apps, and tell me if it differs."
         if low or balance is None:
             add(f"low-{expires.isoformat()}-{today.isoformat()}", head + "\n" + body)
         elif days_left in REMIND_AT_DAYS:

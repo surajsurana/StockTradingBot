@@ -5,7 +5,7 @@ from unittest import mock
 
 import check_kite_subscription as cks
 
-STATE = {"expires": "2026-10-26", "fee": 1000, "sent": {}}
+STATE = {"expires": "2026-10-26", "fee": 500, "min_balance": 1000, "sent": {}}
 
 
 def run(today, state=STATE, alive=True, balance=5000.0, hour=10):
@@ -19,16 +19,18 @@ class TestPlan(unittest.TestCase):
     def test_seven_day_reminder_says_the_balance_is_enough(self):
         due, _ = run(date(2026, 10, 19))
         self.assertEqual(len(due), 1)
-        self.assertIn("covers", due[0][1])
+        self.assertIn("is enough", due[0][1])
+        self.assertIn("confirm it", due[0][1])
         self.assertIn("in 7 days", due[0][1])
 
     def test_no_reminder_between_reminder_days_when_balance_is_fine(self):
         self.assertEqual(run(date(2026, 10, 21))[0], [])          # 5 days left
+        self.assertEqual(run(date(2026, 10, 21), balance=1000.0)[0], [])   # exactly the minimum is not low
 
     def test_low_balance_warns_with_the_amount_to_add_and_repeats_daily(self):
         due, _ = run(date(2026, 10, 21), balance=400.0)
         self.assertEqual(len(due), 1)
-        self.assertIn("Add at least Rs 600", due[0][1])
+        self.assertIn("Add at least Rs 600", due[0][1])      # 1000 to keep - 400 in the account
         nxt, _ = run(date(2026, 10, 22), balance=400.0)
         self.assertNotEqual(due[0][0], nxt[0][0])                 # a new id each day, so it is sent again
 
