@@ -24,6 +24,7 @@ monitor_positions.py, which keep using the free-tier order/portfolio APIs
 exactly as before.
 """
 
+import json
 import os
 import sys
 import threading
@@ -60,6 +61,35 @@ NIFTY_50_INSTRUMENT_TOKEN = 256265
 
 _instrument_token_cache: dict = {}
 
+LOGIN_PAUSE_SECONDS = 30 * 60
+LOGIN_PAUSE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "deployment", "state", "kite_market_data_login_pause.json")
+
+
+def _raise_if_login_paused() -> None:
+    try:
+        with open(LOGIN_PAUSE_FILE, encoding="utf-8") as f:
+            info = json.load(f)
+    except (OSError, ValueError):
+        return
+    left = float(info.get("until", 0)) - time.time()
+    if left > 0:
+        raise RuntimeError(f"Kite market-data login paused for another {int(left // 60) + 1} min after a failed attempt ({info.get('reason', '')[:120]})")
+
+
+def _pause_login(reason: str) -> None:
+    try:
+        with open(LOGIN_PAUSE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"until": time.time() + LOGIN_PAUSE_SECONDS, "reason": reason}, f)
+    except OSError:
+        pass
+
+
+def _clear_login_pause() -> None:
+    try:
+        os.remove(LOGIN_PAUSE_FILE)
+    except OSError:
+        pass
+
 
 def get_market_data_session(settings) -> dict:
     """
@@ -68,11 +98,22 @@ def get_market_data_session(settings) -> dict:
     not a long-running process, so there's no persisted-token complexity to
     manage here unlike auth/kite_auto_login.py's ensure_fresh_kite_session).
     Returns ready-to-use request headers.
+
+    A failed login pauses every further attempt for LOGIN_PAUSE_SECONDS (a file, so it holds across
+    the dashboard and Pool D's cron processes). 2026-09-25: the app lapsed, and the dashboard (every
+    20 s) and Pool D (every 5 min) kept logging in; Zerodha started demanding a CAPTCHA and returning
+    "Invalid username or password", which if repeated locks the real trading account.
     """
-    access_token = auto_login(
-        settings.KITE_MARKET_DATA_API_KEY, settings.KITE_MARKET_DATA_API_SECRET,
-        settings.KITE_USER_ID, settings.KITE_PASSWORD, settings.KITE_TOTP_SECRET,
-    )
+    _raise_if_login_paused()
+    try:
+        access_token = auto_login(
+            settings.KITE_MARKET_DATA_API_KEY, settings.KITE_MARKET_DATA_API_SECRET,
+            settings.KITE_USER_ID, settings.KITE_PASSWORD, settings.KITE_TOTP_SECRET,
+        )
+    except Exception as e:
+        _pause_login(f"{type(e).__name__}: {e}")
+        raise
+    _clear_login_pause()
     return {
         "X-Kite-Version": "3",
         "Authorization": f"token {settings.KITE_MARKET_DATA_API_KEY}:{access_token}",

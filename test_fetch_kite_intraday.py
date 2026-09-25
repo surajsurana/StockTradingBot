@@ -78,5 +78,42 @@ class TestPoolDUniverse(unittest.TestCase):
         self.assertIn("RELIANCE", POOL_D_SYMBOLS)
 
 
+class TestLoginPause(unittest.TestCase):
+    """A failed market-data login pauses every further attempt, so a lapsed app can't hammer Zerodha's login."""
+
+    def setUp(self):
+        import os, tempfile
+        fd, self.path = tempfile.mkstemp(suffix=".json")
+        os.close(fd)
+        os.remove(self.path)
+        self.patch = patch.object(fki, "LOGIN_PAUSE_FILE", self.path)
+        self.patch.start()
+        self.settings = type("S", (), {"KITE_MARKET_DATA_API_KEY": "k", "KITE_MARKET_DATA_API_SECRET": "s",
+                                       "KITE_USER_ID": "u", "KITE_PASSWORD": "p", "KITE_TOTP_SECRET": "t"})()
+
+    def tearDown(self):
+        import os
+        self.patch.stop()
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+    def test_one_failed_login_pauses_the_next_attempts_without_calling_kite(self):
+        with patch.object(fki, "auto_login", side_effect=RuntimeError("Invalid CAPTCHA")) as login:
+            with self.assertRaises(RuntimeError):
+                fki.get_market_data_session(self.settings)
+            with self.assertRaisesRegex(RuntimeError, "paused"):
+                fki.get_market_data_session(self.settings)
+        self.assertEqual(login.call_count, 1)
+
+    def test_success_clears_an_expired_pause_and_returns_headers(self):
+        import json
+        with open(self.path, "w") as f:
+            json.dump({"until": time.time() - 1, "reason": "old"}, f)
+        with patch.object(fki, "auto_login", return_value="tok"):
+            self.assertEqual(fki.get_market_data_session(self.settings)["Authorization"], "token k:tok")
+        import os
+        self.assertFalse(os.path.exists(self.path))
+
+
 if __name__ == "__main__":
     unittest.main()
