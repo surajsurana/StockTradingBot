@@ -390,5 +390,23 @@ class TestAccessKey(unittest.TestCase):
         self.assertFalse(is_authorized({}, "dash_key=nope", "s3cret"))
 
 
+class TestNextResearchRun(unittest.TestCase):
+    """The Strategy Implementer routine fires every Sunday at 19:00 IST -- the Research tab shows when."""
+
+    def test_saturday_points_at_tomorrow_evening(self):
+        from dashboard.state_view import next_research_run
+        r = next_research_run(datetime(2026, 9, 26, 12, 30))         # a Saturday
+        self.assertEqual((r["iso"], r["label"]), ("2026-09-27T19:00", "Sun 27 Sep, 7:00 pm IST"))
+
+    def test_sunday_before_seven_is_today_and_after_seven_is_next_week(self):
+        from dashboard.state_view import next_research_run
+        self.assertEqual(next_research_run(datetime(2026, 9, 27, 18, 59))["iso"], "2026-09-27T19:00")
+        self.assertEqual(next_research_run(datetime(2026, 9, 27, 19, 1))["iso"], "2026-10-04T19:00")
+
+    def test_midweek_points_at_the_coming_sunday(self):
+        from dashboard.state_view import next_research_run
+        self.assertEqual(next_research_run(datetime(2026, 9, 30, 9, 0))["label"], "Sun 4 Oct, 7:00 pm IST")
+
+
 if __name__ == "__main__":
     unittest.main()

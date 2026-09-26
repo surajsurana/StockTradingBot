@@ -13,7 +13,7 @@ import functools
 import glob
 import json
 import os
-from datetime import date, datetime, time as dtime
+from datetime import date, datetime, timedelta, time as dtime
 from typing import Callable, Optional
 
 from deployment.base import is_crypto_record, is_pool_a_record
@@ -157,14 +157,14 @@ AGENTS = [
      "detail": "Adds up deployed capital, cash, unrealised and realised P&L for every pool and sends the one "
                "message of the day at 16:05."},
     {"id": "head_of_research", "avatar": {"type": "robot", "body": "#3B7A57", "eye": "#F2C14E", "shape": "square"}, "name": "Head of Research", "icon": "\U0001F4CA", "desk": "research_feeder", "kind": "Rules only",
-     "job": "Ranks candidates and keeps the queue", "status_from": "research_queue",
+     "job": "Ranks candidates and keeps the queue", "when": "Checks every 6 hours (00:00, 06:00, 12:00, 18:00 IST)", "status_from": "research_queue",
      "detail": "Scores every candidate 0-10 on evidence, data available, feasibility, diversification vs. "
                "what's already running, robustness, simplicity and research value, across every lane. Keeps "
                "exactly one candidate queued at a time -- free to swap it for a better-ranked one, or one "
                "picked by hand, right up until research actually starts; once it has, the queue is locked "
                "until that candidate is resolved."},
     {"id": "research_routine", "avatar": {"type": "robot", "body": "#8A5A9E", "eye": "#4CC383", "shape": "round"}, "name": "Strategy Implementer", "icon": "\U0001F9EA", "desk": "research_feeder", "kind": "AI",
-     "job": "Implements and backtests whatever's queued, every Sunday", "status_from": None,
+     "job": "Implements and backtests whatever's queued, every Sunday", "when": "Every Sunday, 7:00 pm IST", "status_from": None,
      "detail": "An unattended agent, not a local script: reads the queue, implements the candidate as real "
                "code following the pattern of whichever existing strategies are closest to it, runs the real "
                "backtest, and opens a pull request with the verdict -- pass or reject, whatever the numbers "
@@ -172,7 +172,7 @@ AGENTS = [
                "always a separate, manual step. Swing, medium, long-term and crypto only -- intraday needs a "
                "live broker session it doesn't have."},
     {"id": "discovery_routine", "avatar": {"type": "robot", "body": "#B8860B", "eye": "#5FB7C0", "shape": "round"}, "name": "Discovery Scout", "icon": "\U0001F50D", "desk": "research_feeder", "kind": "AI",
-     "job": "Searches for new candidates, once a month", "status_from": None,
+     "job": "Searches for new candidates, once a month", "when": "2nd of every month, 9:00 am IST", "status_from": None,
      "detail": "Also unattended: reads what's already tracked, then searches for genuinely new strategies "
                "with real, verifiable sources -- a peer-reviewed paper or a well-known trading book, never an "
                "invented idea or a blog. Adds 1-5 a month, honestly scored, weaknesses included -- or none at "
@@ -201,10 +201,10 @@ FLOWS = {
     "research": {
         "title": "How a strategy earns its place",
         "steps": [
-            {"id": "found", "icon": "\U0001F50D", "label": "Found", "text": "Discovery Scout adds real, sourced candidates every month -- a paper or a well-known book, never an invented idea"},
+            {"id": "found", "icon": "\U0001F50D", "label": "Found", "text": "Discovery Scout searches on the 2nd of every month, 9:00 am IST, and adds real, sourced candidates -- a paper or a well-known book, never an invented idea"},
             {"id": "ranked", "icon": "\U0001F4CA", "label": "Ranked", "text": "Head of Research scores every candidate 0-10, across swing, intraday, medium, long-term and crypto alike"},
-            {"id": "queued", "icon": "\U0001F5C2\ufe0f", "label": "Queued", "text": "One at a time -- free to swap for a better-ranked one, or a specific pick, until research actually starts"},
-            {"id": "locked", "icon": "\U0001F512", "label": "Locked", "text": "Strategy Implementer claims it the instant it starts; nothing can bump it after that"},
+            {"id": "queued", "icon": "\U0001F5C2\ufe0f", "label": "Queued", "text": "One at a time, re-checked every 6 hours -- free to swap for a better-ranked one, or a specific pick, until research actually starts"},
+            {"id": "locked", "icon": "\U0001F512", "label": "Locked", "text": "Strategy Implementer starts every Sunday at 7:00 pm IST and claims it the instant it does; nothing can bump it after that"},
             {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
             {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only (crypto: after fees and tax)"},
             {"id": "pr", "icon": "\U0001F500", "label": "Pull request", "text": "The real verdict either way -- pass or reject -- never merged by the routine itself"},
@@ -938,7 +938,17 @@ def _with_capital(p: dict) -> dict:
     return p
 
 
-def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = None) -> dict:
+def next_research_run(now: datetime) -> dict:
+    """When the Strategy Implementer routine next fires: every Sunday at 19:00 IST (a scheduled cloud agent, so
+    its real start can lag by a few minutes). This is the day and time whatever is queued actually gets picked up."""
+    days = (6 - now.weekday()) % 7
+    when = (now + timedelta(days=days)).replace(hour=19, minute=0, second=0, microsecond=0)
+    if when <= now:
+        when += timedelta(days=7)
+    return {"iso": when.isoformat(timespec="minutes"), "label": f"{when:%a} {when.day} {when:%b}, 7:00 pm IST"}
+
+
+def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = None, now: Optional[datetime] = None) -> dict:
     """The Head-of-Research roadmap (swing_research/research_roadmap.py)
     reduced to what the Strategies tab shows: ranked candidates that
     could be researched now, and the ones waiting on data. Candidates
@@ -994,7 +1004,7 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
         r["blockers"] = [DEFERRED_BY_DIRECTION[s.candidate.key]]
         rows.append(r)
     return {"ready": [row(s, mode, i + 1) for i, (s, mode) in enumerate(ready_pool)], "deferred": rows,
-            "weights": roadmap.get("weights", {})}
+            "weights": roadmap.get("weights", {}), "next_run": next_research_run(now or datetime.now())}
 
 
 def agents_view(queue: Optional[dict] = None) -> list:
@@ -1124,7 +1134,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1),
-        "roadmap": roadmap_view(roadmap, registry_records, research_queue) if roadmap else {"ready": [], "deferred": [], "weights": {}},
+        "roadmap": roadmap_view(roadmap, registry_records, research_queue, now) if roadmap else {"ready": [], "deferred": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
     # (Paper mode, or Live before any Groww data has been read), like any pool with nothing running.

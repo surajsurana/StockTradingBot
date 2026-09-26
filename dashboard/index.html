@@ -200,6 +200,7 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .legend .k{display:inline-flex;align-items:center;gap:6px}
 .agent .nm{font-weight:600;font-size:12.5px;margin-top:4px}
 .agent .jb{color:var(--muted);font-size:11.5px}
+.agent .wn{color:var(--accent);font-size:11px;font-weight:600;margin-top:2px}
 .agent .st{position:absolute;top:8px;right:8px;width:9px;height:9px;border-radius:50%;background:var(--rule)}
 .agent .st.working{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
 .agent .st.done{background:var(--accent)}
@@ -406,7 +407,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
 <dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4 id="brief-what">What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
 <dialog id="life"><button class="iconbtn x" id="life-close" aria-label="Close">×</button><div id="life-body"></div></dialog>
-<dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><button id="who-close">Close</button></dialog>
+<dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><p id="who-when" class="note"></p><button id="who-close">Close</button></dialog>
 
 <script>
 const REFRESH_OPEN_MS = 15000, REFRESH_CLOSED_MS = 60000;
@@ -995,7 +996,7 @@ function renderTeam(s){
   ].join("");
   document.getElementById("poollist").innerHTML = (s.pools_info || []).map(p => `<div class="poolrow"><span class="pl">${esc(p.pool)}</span><span><b>${esc(p.name)}.</b> ${esc(p.text)}</span></div>`).join("");
   document.getElementById("office").innerHTML = s.desks.map(d => {
-    const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span></button>`).join("");
+    const seats = s.agents.filter(a => a.desk===d.id).map(a => `<button class="agent" data-agent="${a.id}"><span class="st ${statusOf(a)}" title="${statusOf(a)||"on call"}"></span><span class="av">${avatarSvg(a)}</span><span class="nm">${esc(a.name)}</span><span class="jb">${esc(a.job)}</span>${a.when ? `<span class="wn">${esc(a.when)}</span>` : ""}</button>`).join("");
     return `<div class="desk"><div class="head"><span class="ic">${d.icon}</span><span class="nm">${esc(d.name)}</span></div><p class="blurb">${esc(d.blurb)}</p><div class="seats">${seats}</div></div>`;
   }).join("");
   document.querySelectorAll(".agent").forEach(btn => btn.addEventListener("click", () => {
@@ -1003,6 +1004,7 @@ function renderTeam(s){
     document.getElementById("who-av").innerHTML = avatarSvg(a, 72); document.getElementById("who-name").textContent = a.name;
     document.getElementById("who-job").textContent = a.job; document.getElementById("who-detail").textContent = a.detail;
     document.getElementById("who-kind").textContent = `${a.kind} · ${s.desks.find(d=>d.id===a.desk)?.name||""}`;
+    document.getElementById("who-when").textContent = a.when ? `When: ${a.when}` : "";
     document.getElementById("who").showModal();
   }));
 }
@@ -1635,10 +1637,11 @@ function renderResearch(s){
     const [u, div] = holdingUnit(hi), a = Math.max(1, Math.round(lo/div)), b = Math.max(1, Math.round(hi/div));
     return a === b ? `~${a} ${u}${a===1?"":"s"}` : `${a}–${b} ${u}${b===1?"":"s"}`;
   };
+  const nextRun = (rm.next_run || {}).label || "";
   const queueAction = c => c.queue && c.queue.state === "current"
     ? c.queue.in_progress
       ? `<span class="pill ok" title="Locked -- research is already under way, so this can no longer be bumped">Researching now</span>`
-      : `<span class="pill" title="Queued but not started yet -- still free to be bumped by a better-ranked candidate, or by picking a different one">Queued</span>`
+      : `<span class="pill" title="Queued but not started yet -- the Strategy Implementer picks it up ${esc(nextRun)}; until then it is still free to be bumped by a better-ranked candidate, or by picking a different one">Queued · ${esc(nextRun)}</span>`
     : c.queue && c.queue.state === "resolved"
     ? `<span class="pill" title="${esc(c.queue.experiment_id||"")}">${esc(c.queue.outcome)}</span>`
     : `<button class="iconbtn startbtn" data-key="${esc(c.key)}">Start research</button>`;
@@ -1660,7 +1663,7 @@ function renderResearch(s){
   curBanner.hidden = !cur;
   if(cur) curBanner.innerHTML = cur.queue.in_progress
     ? `Currently researching: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}).`
-    : `Queued next: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}) -- not started yet, still free to change.`;
+    : `Queued next: <b>${esc(short(cur.name))}</b> (${esc(cur.horizon_lane)}) -- research starts <b>${esc(nextRun)}</b> (the weekly run); until then it is still free to change.`;
   document.getElementById("deferred-summary").textContent = `Waiting on data we don't have (${rm.deferred.length})`;
   document.getElementById("deferred").innerHTML = rm.deferred.map(c => `<tr><td>${esc(short(c.name))}</td><td>${esc(short(c.family))}</td><td class="note">${esc((c.blockers[0]||"").replace(/'/g,"").replace("Requires ","").replace(", confirmed unavailable on this platform.",""))}</td></tr>`).join("");
 }
