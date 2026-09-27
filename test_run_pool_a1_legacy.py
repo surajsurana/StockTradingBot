@@ -60,26 +60,45 @@ class TestRunOneSkipsFetchWhenFullyWoundDown(unittest.TestCase):
     """A strategy with zero open positions and zero pending exits has
     nothing left to do -- must not fetch data or call run_daily at all."""
 
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
     @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily")
     @patch("run_pool_a1_legacy.fetch_all")
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {}, "pending_exits": {}})
-    def test_no_fetch_no_run_daily_when_nothing_held(self, mock_load, mock_fetch, mock_run_daily, mock_get):
+    def test_no_fetch_no_run_daily_when_nothing_held(self, mock_load, mock_fetch, mock_run_daily, mock_get, mock_winddown):
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0, "remaining_cash": 0.0, "reason": None}
         pool_a1._run_one("short_term_reversal")
         mock_fetch.assert_not_called()
         mock_run_daily.assert_not_called()
+
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
+    @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
+    @patch("run_pool_a1_legacy.pte.run_daily")
+    @patch("run_pool_a1_legacy.fetch_all")
+    @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {}, "pending_exits": {}})
+    def test_still_sweeps_cash_when_nothing_held(self, mock_load, mock_fetch, mock_run_daily, mock_get, mock_winddown):
+        """A strategy with zero positions is exactly when leftover idle cash most needs sweeping --
+        the early "fully wound down" return must not skip it."""
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0, "remaining_cash": 0.0, "reason": None}
+        pool_a1._run_one("short_term_reversal")
+        mock_winddown.assert_called_once()
+        self.assertEqual(mock_winddown.call_args.args[0], "short_term_reversal")
+        self.assertEqual(mock_winddown.call_args.kwargs["target_active_capital"], 0.0)
+        self.assertEqual(mock_winddown.call_args.kwargs["daily_fraction"], 1.0)
 
 
 class TestRunOneFetchesOnlyHeldSymbols(unittest.TestCase):
     """Pool A1 must never fetch the full universe -- only symbols actually
     still open (positions) or awaiting a queued exit fill (pending_exits)."""
 
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
     @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio",
            return_value={"positions": {"TCS": {}}, "pending_exits": {"INFY": {}}})
-    def test_fetch_all_called_with_sorted_union_of_held_symbols(self, mock_load, mock_fetch, mock_run_daily, mock_get):
+    def test_fetch_all_called_with_sorted_union_of_held_symbols(self, mock_load, mock_fetch, mock_run_daily, mock_get, mock_winddown):
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0, "remaining_cash": 0.0, "reason": None}
         pool_a1._run_one("minervini_trend_template_filter")
         mock_fetch.assert_called_once_with(["INFY", "TCS"], period="3y")
 
@@ -89,21 +108,25 @@ class TestRunOneAlwaysCallsRunDailyWithEntriesDisabled(unittest.TestCase):
     every single call, unconditionally -- this is the one line that turns
     a normal daily pass into a wind-down-only pass."""
 
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
     @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {"TCS": {}}, "pending_exits": {}})
-    def test_entries_enabled_false_passed_to_run_daily(self, mock_load, mock_fetch, mock_run_daily, mock_get):
+    def test_entries_enabled_false_passed_to_run_daily(self, mock_load, mock_fetch, mock_run_daily, mock_get, mock_winddown):
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0, "remaining_cash": 0.0, "reason": None}
         pool_a1._run_one("cross_sectional_momentum")
         self.assertEqual(mock_run_daily.call_args.kwargs["entries_enabled"], False)
 
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
     @patch("run_pool_a1_legacy.get_strategy", return_value=_paper_trading_record())
     @patch("run_pool_a1_legacy.pte.run_daily", return_value={"new_entries": [], "new_exits": []})
     @patch("run_pool_a1_legacy.fetch_all", return_value={})
     @patch("run_pool_a1_legacy.pte.load_portfolio", return_value={"positions": {"TCS": {}}, "pending_exits": {}})
-    def test_no_compute_extra_columns_fn_passed(self, mock_load, mock_fetch, mock_run_daily, mock_get):
+    def test_no_compute_extra_columns_fn_passed(self, mock_load, mock_fetch, mock_run_daily, mock_get, mock_winddown):
         """Confirms the deliberate lean-fetch design: no cross-sectional
         percentile computation is wired in for the exit-only pass."""
+        mock_winddown.return_value = {"withdrawn": 0.0, "reserved": 0.0, "idle_cash": 0.0, "remaining_cash": 0.0, "reason": None}
         pool_a1._run_one("cross_sectional_momentum")
         self.assertNotIn("compute_extra_columns_fn", mock_run_daily.call_args.kwargs)
 
@@ -116,9 +139,11 @@ class TestMainIsolatesStateDirAndContinuesPastFailure(unittest.TestCase):
 
     def setUp(self):
         self._original_state_dir = pool_a1.pte.PAPER_TRADING_STATE_DIR
+        self._original_cwd_state_dir = pool_a1.cwd.PAPER_TRADING_STATE_DIR
 
     def tearDown(self):
         pool_a1.pte.PAPER_TRADING_STATE_DIR = self._original_state_dir
+        pool_a1.cwd.PAPER_TRADING_STATE_DIR = self._original_cwd_state_dir
 
     @patch("run_pool_a1_legacy._run_one")
     def test_state_dir_set_to_pool_a1_before_any_run(self, mock_run_one):
@@ -127,6 +152,14 @@ class TestMainIsolatesStateDirAndContinuesPastFailure(unittest.TestCase):
         mock_run_one.side_effect = _assert_isolated
         pool_a1.main()
         self.assertEqual(mock_run_one.call_count, len(pool_a1.POOL_A1_STRATEGY_KEYS))
+
+    @patch("run_pool_a1_legacy._run_one")
+    def test_capital_winddowns_own_state_dir_is_isolated_too(self, mock_run_one):
+        """capital_winddown.py's audit log uses its OWN imported PAPER_TRADING_STATE_DIR (not pte's) --
+        without patching this too, a Pool A1 cash sweep would log into Pool A's real winddown_log.jsonl
+        for the same strategy key (see _sweep_cash_to_zero()'s own docstring for the full reasoning)."""
+        pool_a1.main()
+        self.assertEqual(pool_a1.cwd.PAPER_TRADING_STATE_DIR, pool_a1.POOL_A1_STATE_DIR)
 
     @patch("run_pool_a1_legacy._run_one")
     def test_one_strategy_failure_does_not_stop_the_others(self, mock_run_one):
@@ -214,6 +247,25 @@ class TestStrategyKeysMatchApprovedScope(unittest.TestCase):
 
     def test_archived_strategy_not_included(self):
         self.assertNotIn("fifty_two_week_high_momentum", pool_a1.POOL_A1_STRATEGY_KEYS)
+
+
+class TestSweepCashToZero(unittest.TestCase):
+    """Pool A1's own reason to exist (2026-09-27, per explicit direction, "I want to bring the cash
+    to 0"): reuses deployment/capital_winddown.py's tested withdrawal machinery, pointed at a zero
+    target with no daily pacing, since this book has no future use for its cash at all."""
+
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
+    def test_calls_the_real_winddown_machinery_with_zero_target_and_no_pacing(self, mock_winddown):
+        mock_winddown.return_value = {"withdrawn": 5000.0, "reserved": 0.0, "idle_cash": 5000.0, "remaining_cash": 0.0, "reason": None}
+        strategy = MagicMock(risk_pct_per_unit=0.01)
+        pool_a1._sweep_cash_to_zero("short_term_reversal", strategy)
+        mock_winddown.assert_called_once_with("short_term_reversal", risk_pct_per_unit=0.01,
+                                              target_active_capital=0.0, daily_fraction=1.0)
+
+    @patch("run_pool_a1_legacy.apply_capital_winddown")
+    def test_a_winddown_failure_is_non_fatal(self, mock_winddown):
+        mock_winddown.side_effect = RuntimeError("disk full")
+        pool_a1._sweep_cash_to_zero("short_term_reversal", MagicMock(risk_pct_per_unit=0.01))   # must not raise
 
 
 if __name__ == "__main__":

@@ -85,15 +85,26 @@ at this separate directory (the same technique test_deployment.py's own
 fixtures already use: patch.object(pte, "PAPER_TRADING_STATE_DIR", ...),
 just for this process's whole lifetime rather than one test) and always
 called with entries_enabled=False.
+
+Cash sweep (added 2026-09-27, per explicit direction, "I want to bring the
+cash to 0"): each EOD pass ends by withdrawing ALL of that strategy's idle
+cash, via the SAME deployment/capital_winddown.py machinery Pool A's own
+active strategies use for a gentler, paced sweep toward Rs.1,00,000 -- here
+pointed at target 0 with no pacing, since this book has no future use for
+its cash and no daily report for a same-day full withdrawal to visually
+disrupt. See _sweep_cash_to_zero()'s own docstring for why both that
+module's state directory AND pte's need patching in main() below.
 """
 
 import argparse
 import datetime
 import os
 
+import deployment.capital_winddown as cwd
 import deployment.paper_trading_engine as pte
 from data.fetch_historical import fetch_all
 from deployment.base import DeploymentStatus
+from deployment.capital_winddown import apply_capital_winddown
 from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
@@ -131,6 +142,31 @@ def _guard_still_paper_trading(strategy_key: str) -> bool:
     return True
 
 
+def _sweep_cash_to_zero(strategy_key: str, strategy) -> None:
+    """Pool A1 never opens another position (entries_enabled=False, permanently) -- there is no
+    future use for this book's cash, unlike an ACTIVE Pool A strategy where deployment/capital_
+    winddown.py paces withdrawals at PAPER_TRADING_WINDDOWN_DAILY_FRACTION (90%) a day toward
+    Rs.1,00,000 so its own daily report doesn't show a visually-alarming cash swing next to real
+    trades. Pool A1 has no such report (this script is fully silent) and no reason to leave
+    anything behind, so it reuses the SAME tested withdrawal machinery with target_active_capital=
+    0.0 and daily_fraction=1.0 -- compute_winddown_withdrawal() then withdraws the full excess over
+    target (all of it, since target is 0) in one step, every time this runs, still bounded by
+    idle_cash so a leftover pending-entry reservation (there should never be one, since entries are
+    permanently disabled here, but the safety check costs nothing) is never touched.
+
+    apply_capital_winddown() writes its audit log via capital_winddown.py's own PAPER_TRADING_STATE_DIR
+    import (a name bound at that module's import time, separate from pte.PAPER_TRADING_STATE_DIR) --
+    main() below patches BOTH, or this would silently write Pool A1's sweep log into Pool A's REAL
+    winddown_log.jsonl for the same strategy key, corrupting Pool A's own audit trail."""
+    try:
+        result = apply_capital_winddown(strategy_key, risk_pct_per_unit=strategy.risk_pct_per_unit,
+                                         target_active_capital=0.0, daily_fraction=1.0)
+        if result["withdrawn"] > 0:
+            print(f"[{strategy_key}] Pool A1 cash sweep: withdrew {result['withdrawn']} (cash now {result['remaining_cash']}).")
+    except Exception as e:
+        print(f"WARNING: '{strategy_key}' Pool A1 cash sweep failed (non-fatal): {type(e).__name__}: {e}")
+
+
 def _run_one(strategy_key: str) -> None:
     if not _guard_still_paper_trading(strategy_key):
         return
@@ -141,6 +177,7 @@ def _run_one(strategy_key: str) -> None:
     symbols = sorted(set(portfolio.get("positions", {})) | set(portfolio.get("pending_exits", {})))
     if not symbols:
         print(f"[{strategy_key}] Pool A1: no open positions left -- fully wound down.")
+        _sweep_cash_to_zero(strategy_key, strategy)
         return
 
     print(f"[{strategy_key}] Pool A1: fetching data for {len(symbols)} held symbol(s)...")
@@ -153,6 +190,7 @@ def _run_one(strategy_key: str) -> None:
         entries_enabled=False,
     )
     print(f"[{strategy_key}] {result}")
+    _sweep_cash_to_zero(strategy_key, strategy)
 
 
 def _resolve_one_at_open(strategy_key: str) -> None:
@@ -177,6 +215,7 @@ def _resolve_one_at_open(strategy_key: str) -> None:
 
 def main(resolve_at_open: bool = False):
     pte.PAPER_TRADING_STATE_DIR = POOL_A1_STATE_DIR
+    cwd.PAPER_TRADING_STATE_DIR = POOL_A1_STATE_DIR   # see _sweep_cash_to_zero()'s docstring -- its audit log needs this too
     for strategy_key in POOL_A1_STRATEGY_KEYS:
         try:
             if resolve_at_open:
