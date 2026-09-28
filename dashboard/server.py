@@ -520,15 +520,56 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
 
 
+TLS_CERT_PATH = os.path.join(STATE_DIR, "dashboard_tls_cert.pem")
+TLS_KEY_PATH = os.path.join(STATE_DIR, "dashboard_tls_key.pem")
+
+
+def _start_https_listener(host: str, port: int) -> None:
+    """A second listener, HTTPS on `port`, alongside the main plain-HTTP one -- same handler class,
+    same access-key auth, same everything, just a different front door. Self-signed (no domain, no
+    Let's Encrypt -- those need a real hostname to validate against; this is a bare IP), added
+    2026-09-28 because the unattended research routine's cloud sandbox could never reach the plain
+    http://<ip>:8085 URL (repeatable connection timeout, confirmed NOT caused by anything on this
+    VPS -- no DigitalOcean Cloud Firewall attached, ufw inactive, iptables INPUT chain empty) while
+    its own https://github.com check worked fine every time -- the leading theory is that the
+    sandbox's own outbound network policy is stricter about plain HTTP to a raw IP than it is about
+    HTTPS, so this gives the routine an HTTPS door to try instead. A client hitting this will get a
+    certificate warning (self-signed, no browser/CA trust chain) -- curl needs `-k`/`--insecure` to
+    accept it; that's expected, not a misconfiguration.
+    Runs in a daemon thread from main() so a failure here (e.g. missing cert files on a fresh
+    deploy) never takes down the real, already-working plain-HTTP dashboard on :8085."""
+    if not (os.path.exists(TLS_CERT_PATH) and os.path.exists(TLS_KEY_PATH)):
+        print(f"HTTPS listener not started -- {TLS_CERT_PATH} / {TLS_KEY_PATH} not found. "
+              f"Generate a self-signed cert there to enable it (see dashboard/README or ARCHITECTURE.md).", flush=True)
+        return
+    try:
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(certfile=TLS_CERT_PATH, keyfile=TLS_KEY_PATH)
+        https_server = ThreadingHTTPServer((host, port), DashboardHandler)
+        https_server.socket = ctx.wrap_socket(https_server.socket, server_side=True)
+        print(f"Dashboard ALSO on https://{host}:{port}/ (self-signed -- clients need -k/--insecure or "
+              f"to accept the certificate warning)", flush=True)
+        https_server.serve_forever()
+    except Exception as e:
+        print(f"WARNING: HTTPS listener on port {port} failed to start (non-fatal, plain HTTP on the "
+              f"main port is unaffected): {type(e).__name__}: {e}", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8085)
+    parser.add_argument("--https-port", type=int, default=8443)
     parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
 
     DashboardHandler.access_key = load_access_key()
     DashboardHandler.price_cache = PriceCache(STATE_DIR)
     DashboardHandler.price_cache.start()
+
+    import threading
+    threading.Thread(target=_start_https_listener, args=(args.host, args.https_port), daemon=True).start()
+
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
     print(f"Dashboard on http://{args.host}:{args.port}/ "
           f"({'access key required' if DashboardHandler.access_key else 'OPEN -- no access key configured'})",
