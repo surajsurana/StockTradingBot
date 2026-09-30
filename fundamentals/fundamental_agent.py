@@ -14,6 +14,15 @@ skip it. The reasoning: we'd rather cautiously exclude a stock we don't have
 enough information on than silently trade it despite not really knowing its
 financial health. This is a conservative default and can be relaxed later.
 
+Return on equity specifically: yfinance's pre-computed `returnOnEquity` field
+is frequently absent for NSE stocks -- confirmed missing even for RELIANCE.NS,
+VEDL.NS, RVNL.NS and IRCTC.NS, while present for TCS.NS. Rather than auto-fail
+on that gap, fetch_fundamentals() falls back to computing it directly (Net
+Income / Stockholders Equity, most recent annual statements) via
+_compute_roe_fallback() -- the underlying financial statements are available
+on yfinance even when the pre-computed ratio isn't. check_health() still
+fails the check if ROE genuinely can't be determined either way.
+
 Exception: the debt-to-equity check is skipped entirely (not failed) for
 banks and other financial-sector companies. Their business model runs on
 leverage by design -- customer deposits and loans are core to how a bank
@@ -26,6 +35,7 @@ growth still fully apply to financial companies and are still checked.
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 
 import yfinance as yf
 
@@ -38,6 +48,33 @@ class FundamentalsResult:
     passed: bool
     reasons: list = field(default_factory=list)  # human-readable explanations for each check
     metrics: dict = field(default_factory=dict)   # raw values, for the report/debugging
+
+
+_NET_INCOME_ROWS = ["Net Income", "Net Income Common Stockholders"]
+_EQUITY_ROWS = ["Stockholders Equity", "Common Stock Equity", "Total Equity Gross Minority Interest"]
+
+
+def _compute_roe_fallback(ticker) -> Optional[float]:
+    """
+    Computes ROE from the underlying annual statements (most recent column)
+    when yfinance's pre-computed `returnOnEquity` field is absent -- see the
+    module docstring. Tries a couple of row-name variants since yfinance's
+    statement labels vary slightly by company/sector. Returns None if the
+    statements themselves aren't available either (same "don't guess" stance
+    as the rest of this module).
+    """
+    try:
+        financials = ticker.financials
+        balance_sheet = ticker.balance_sheet
+        net_income = next((financials.loc[row].iloc[0] for row in _NET_INCOME_ROWS
+                            if financials is not None and row in financials.index), None)
+        equity = next((balance_sheet.loc[row].iloc[0] for row in _EQUITY_ROWS
+                        if balance_sheet is not None and row in balance_sheet.index), None)
+        if net_income is not None and equity:
+            return float(net_income) / float(equity)
+    except Exception:
+        pass
+    return None
 
 
 def fetch_fundamentals(symbol: str) -> dict:
@@ -58,7 +95,14 @@ def fetch_fundamentals(symbol: str) -> dict:
         "trailingPE",           # valuation context (not a health check by itself)
         "sector",               # used to detect banks/financial companies
     ]
-    return {f: info[f] for f in fields if f in info and info[f] is not None}
+    metrics = {f: info[f] for f in fields if f in info and info[f] is not None}
+
+    if "returnOnEquity" not in metrics:
+        roe = _compute_roe_fallback(ticker)
+        if roe is not None:
+            metrics["returnOnEquity"] = roe
+
+    return metrics
 
 
 def check_health(symbol: str, metrics: dict, criteria: dict) -> FundamentalsResult:
