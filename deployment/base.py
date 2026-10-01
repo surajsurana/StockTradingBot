@@ -95,6 +95,18 @@ def is_pool_a_record(record) -> bool:
     return str(getattr(record, "strategy_family", "") or "").lower().startswith(POOL_A_STRATEGY_FAMILY_PREFIX)
 
 
+US_EQUITY_STRATEGY_FAMILY_PREFIX = "us_equity"
+
+
+def is_us_equity_record(record) -> bool:
+    """Pool I (US markets desk, 2026-10-01) strategies are registered with a
+    strategy_family starting "us_equity" -- they live under
+    deployment/state/pool_i/, not Pool A's paper_trading/ or Pool E's
+    pool_e/, so every Pool A/crypto book listing skips them, mirroring
+    is_crypto_record()'s own role for Pool E."""
+    return str(getattr(record, "strategy_family", "") or "").lower().startswith(US_EQUITY_STRATEGY_FAMILY_PREFIX)
+
+
 def is_valid_transition(from_status: DeploymentStatus, to_status: DeploymentStatus) -> bool:
     if from_status == to_status:
         return True

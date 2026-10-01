@@ -571,6 +571,89 @@ def run_cross_sectional_momentum_experiment(data: dict, start_date: date, end_da
     )
 
 
+def run_minervini_us_experiment(data: dict, start_date: date, end_date: date,
+                                 starting_capital: float = 100_000, n_walk_forward_windows: int = 3,
+                                 narrative_api_key: str = "", narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                 experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                 knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                 skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to run_minervini_experiment() (added 2026-09-30) -- the EXACT SAME
+    Strategy class, unmodified, against US equity `data` (S&P 500 universe,
+    swing_research/universe_us.py) instead of NSE data. Nothing about the strategy's code
+    changes; only the data and universe passed in by the caller does. This is a genuinely new
+    backtest, not a reuse of the India PASS/REJECT verdict -- see
+    published_research_analyst.MINERVINI_TREND_TEMPLATE_FILTER_US's own docstring-equivalent
+    (its `distinctiveness` field) for why.
+
+    `starting_capital` defaults to 100,000 (US dollars, not rupees -- this is only the
+    backtest's internal position-sizing capital, unrelated to whatever capital a later paper
+    pool is actually seeded with).
+    """
+    from swing_research.strategies.minervini_trend_template_filter import MinerviniTrendTemplateFilterStrategy
+    from swing_research.published_research_analyst import MINERVINI_TREND_TEMPLATE_FILTER_US
+    from swing_research.cross_sectional import compute_rs_percentile_ranks
+
+    rs_percentiles = compute_rs_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("rs_percentile") for symbol, series in rs_percentiles.items()}
+
+    minervini = MinerviniTrendTemplateFilterStrategy()
+    return run_generic_swing_experiment(
+        minervini, MINERVINI_TREND_TEMPLATE_FILTER_US, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "minervini_risk_pct_per_unit": minervini.risk_pct_per_unit,
+            "minervini_stop_loss_pct": 0.08, "minervini_rs_percentile_threshold": 70.0,
+            "minervini_pyramiding": False, "minervini_market": "US",
+        },
+    )
+
+
+def run_cross_sectional_momentum_us_experiment(data: dict, start_date: date, end_date: date,
+                                                starting_capital: float = 100_000,
+                                                n_walk_forward_windows: int = 3,
+                                                narrative_api_key: str = "",
+                                                narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                                experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                                knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                                skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to run_cross_sectional_momentum_experiment() (added 2026-09-30) --
+    the EXACT SAME Strategy class, unmodified, against US equity `data` (S&P 500 universe,
+    swing_research/universe_us.py) instead of NSE data. See run_minervini_us_experiment()'s
+    own docstring for the full reasoning (identical pattern, different strategy).
+    """
+    from swing_research.strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
+    from swing_research.published_research_analyst import CROSS_SECTIONAL_MOMENTUM_US
+    from swing_research.cross_sectional import compute_momentum_percentile_ranks
+
+    momentum_percentiles = compute_momentum_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("momentum_percentile") for symbol, series in momentum_percentiles.items()}
+
+    strategy = CrossSectionalMomentumStrategy()
+    return run_generic_swing_experiment(
+        strategy, CROSS_SECTIONAL_MOMENTUM_US, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "cross_sectional_momentum_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "cross_sectional_momentum_stop_loss_pct": 0.08,
+            "cross_sectional_momentum_percentile_threshold": 90.0,
+            "cross_sectional_momentum_formation_days": 126,
+            "cross_sectional_momentum_holding_period_trading_days": 126,
+            "cross_sectional_momentum_single_vintage": True,
+            "cross_sectional_momentum_skip_period": False,
+            "cross_sectional_momentum_percentile_based_early_exit": False,
+            "cross_sectional_momentum_market": "US",
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,

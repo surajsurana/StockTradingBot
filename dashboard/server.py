@@ -131,6 +131,8 @@ class PriceCache:
         self.usdinr = None
         self.prev_close = {}          # symbol -> last close BEFORE today (for "today's move" on open positions)
         self.crypto_prev_close = {}   # coin -> last completed UTC daily close
+        self.us_prices = {}           # Pool I's open US symbols -> latest yfinance close
+        self.us_prev_close = {}       # Pool I -> last close before today
         self._lock = threading.Lock()
         self._saved_at = 0.0
         self._load_disk()
@@ -151,6 +153,7 @@ class PriceCache:
                 d = json.load(f)
             self.prices, self.prev_close = dict(d.get("prices", {})), dict(d.get("prev_close", {}))
             self.crypto_prices, self.crypto_prev_close = dict(d.get("crypto_prices", {})), dict(d.get("crypto_prev_close", {}))
+            self.us_prices, self.us_prev_close = dict(d.get("us_prices", {})), dict(d.get("us_prev_close", {}))
             self.usdinr, self.as_of = d.get("usdinr"), d.get("as_of")
         except (OSError, ValueError):
             pass
@@ -162,7 +165,8 @@ class PriceCache:
         self._saved_at = time.monotonic()
         with self._lock:
             payload = {"as_of": self.as_of, "prices": self.prices, "prev_close": self.prev_close, "crypto_prices": self.crypto_prices,
-                       "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr}
+                       "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr,
+                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close}
             text = json.dumps(payload)
         try:
             os.makedirs(self.state_dir, exist_ok=True)
@@ -200,6 +204,38 @@ class PriceCache:
             with open(pool_g_path, encoding="utf-8") as f:
                 held |= set((json.load(f).get("positions") or {}).keys())
         return sorted(held)
+
+    def _pool_i_symbols(self) -> list:
+        import glob
+        import json
+        held = set()
+        for path in glob.glob(os.path.join(self.state_dir, "pool_i", "*", "portfolio.json")):
+            with open(path, encoding="utf-8") as f:
+                held |= set((json.load(f).get("positions") or {}).keys())
+        return sorted(held)
+
+    def refresh_us_equity(self) -> None:
+        """yfinance closes for Pool I's open US symbols -- EOD cadence only
+        (Pool I trades once a day like every swing book; no Kite coverage of
+        US exchanges exists, so there's no live intraday tier here the way
+        Pool D/swing have via refresh_live())."""
+        from data.fetch_historical import fetch_all
+        symbols = self._pool_i_symbols()
+        if not symbols:
+            return
+        today = datetime.now().date()
+        fresh, prev = {}, {}
+        for symbol, df in fetch_all(symbols, period="5d").items():
+            if df is not None and not df.empty:
+                fresh[symbol] = float(df["Close"].iloc[-1])
+                before_today = df[df.index.date < today]
+                if not before_today.empty:
+                    prev[symbol] = float(before_today["Close"].iloc[-1])
+        with self._lock:
+            held = set(symbols)
+            self.us_prices = {**{k: v for k, v in self.us_prices.items() if k in held}, **fresh}
+            self.us_prev_close = {**{k: v for k, v in self.us_prev_close.items() if k in held}, **prev}
+        self._save_disk()
 
     _groww_last = 0.0
 
@@ -288,6 +324,10 @@ class PriceCache:
             self.refresh_crypto(with_rate=True)
         except Exception as e:
             print(f"crypto price refresh failed: {type(e).__name__}: {e}", flush=True)
+        try:
+            self.refresh_us_equity()
+        except Exception as e:
+            print(f"US equity price refresh failed: {type(e).__name__}: {e}", flush=True)
 
     def refresh_live(self) -> None:
         """Quote refresh: Kite last-traded price AND previous close for every held symbol (swing
@@ -321,9 +361,13 @@ class PriceCache:
         with self._lock:
             return dict(self.crypto_prices), self.usdinr
 
+    def us_snapshot(self) -> tuple:
+        with self._lock:
+            return dict(self.us_prices), self.usdinr
+
     def prev_close_snapshot(self) -> tuple:
         with self._lock:
-            return dict(self.prev_close), dict(self.crypto_prev_close)
+            return dict(self.prev_close), dict(self.crypto_prev_close), dict(self.us_prev_close)
 
     @staticmethod
     def _market_open(now=None) -> bool:
@@ -497,7 +541,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
             prices, as_of = self.price_cache.snapshot()
             crypto_prices, usdinr = self.price_cache.crypto_snapshot()
-            prev_close, crypto_prev_close = self.price_cache.prev_close_snapshot()
+            us_prices, _ = self.price_cache.us_snapshot()
+            prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
             registry = list_strategies()
             import research_queue
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
@@ -505,6 +550,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           research_queue=research_queue.load(STATE_DIR),
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
+                                          us_prices=us_prices, us_prev_close=us_prev_close,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
                                           reports=_load_reports(STATE_DIR) if mode == "live" else None,
                                           advice_params=_advice_params(query) if mode == "live" else None,

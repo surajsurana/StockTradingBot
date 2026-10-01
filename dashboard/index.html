@@ -569,8 +569,8 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
-    kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option></select>`,
+    kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
   head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>`
@@ -600,7 +600,7 @@ function renderTape(s){
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
   // jumps straight to it via the browser's own select typeahead, which matches the visible text).
@@ -610,6 +610,8 @@ function renderTape(s){
     if(ab && ab.sid) return ab.sid;
     const eb = s.pool_e.exists ? s.pool_e.books.find(b => b.display_name === name) : null;
     if(eb && eb.sid) return eb.sid;
+    const ib = s.pool_i.exists ? s.pool_i.books.find(b => b.display_name === name) : null;
+    if(ib && ib.sid) return ib.sid;
     if(name === "Intraday") return (strategyByKey["pool_d_vwap_fade"] || {}).sid || "";
     if(name === "AI judgment") return (strategyByKey["portfolio_g"] || {}).sid || "";
     return "";
@@ -620,6 +622,7 @@ function renderTape(s){
     ...(inScope("Pool D") ? ["Intraday"] : []),
     ...(inScope("Pool E") && s.pool_e.exists ? s.pool_e.books.map(b => b.display_name) : []),
     ...(inScope("Pool G") && s.pool_g.exists ? ["AI judgment"] : []),
+    ...(inScope("Pool I") && s.pool_i.exists ? s.pool_i.books.map(b => b.display_name) : []),
     ...s.ledger.filter(a => inScope(a.pool)).map(a => a.book),
   ].filter(Boolean))].sort((a, b) => sidNumber(sidFor(a)) - sidNumber(sidFor(b)) || a.localeCompare(b));
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => {
@@ -705,7 +708,7 @@ function showTax(idx){
   ["stt", "stamp", "crypto_fee"].filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
   const rates = [...new Set(set.filter(l => l.tax_rate).map(l => l.tax_rate))].map(r => (r * 100).toFixed(1) + "%").join(" / ");
   const taxBasis = set.length === 1
-    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Long-term" ? "Estimated as if everything were sold today: 12.5% on long-term gains above ₹1.25 lakh a year, 20% on short-term gains. Charges are the real ones Groww has taken" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
+    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Long-term" ? "Estimated as if everything were sold today: 12.5% on long-term gains above ₹1.25 lakh a year, 20% on short-term gains. Charges are the real ones Groww has taken" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : set[0].type === "US Equity" ? "No STT-linked concessional rate applies to foreign shares: held >24 months, 20% + 4% cess flat; held less, your own progressive income-tax slab (set in config.settings.US_EQUITY_OTHER_ANNUAL_INCOME), no set-off for losses" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
     : `${rates} of the net gain after charges (crypto: per profitable trade)`;
   rows.push(line(["Income tax", taxBasis], sumK("tax")));
   rows.push(line(["Total tax and charges", ""], sumK("charges") + sumK("gst") + sumK("tax"), "total"));
@@ -736,8 +739,8 @@ function buildOrdersHead(){
   const cell = k => ({
     status: `<select id="orders-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     symbol: `<input id="orders-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option></select>`,
-    kind: `<select id="orders-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option></select>`,
+    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option></select>`,
+    kind: `<select id="orders-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="orders-book"><option value="">All</option></select>`,
   })[k] || "";
   head.innerHTML = `<tr>${ORDERS_COLS.map(([k,l,num]) => hcell(l, k, cell(k), num?"n":(k==="symbol"||k==="book"?"l":""))).join("")}</tr>`;
@@ -760,7 +763,7 @@ function renderOrders(s){
   const statusF = sel("orders-status"), poolF = sel("orders-pool"), kindF = sel("orders-kind");
   // the Book dropdown only offers books that actually appear within the selected pool/type scope
   const bookSel = document.getElementById("orders-book"), prevBook = bookSel.value;
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   const bookNames = [...new Set(s.ledger.filter(a => inScope(a.pool)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option value="${esc(n)}"${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
@@ -829,7 +832,7 @@ function showSymbolLedger(row){
 function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"]};
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I"]};
   let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
@@ -938,7 +941,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
   // A stock-ticker strip of the per-type numbers, in its own row under the chip and exactly as wide as the chip.
-  const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "Other"].filter(kd => kd in todayByKind);
+  const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "US Equity", "Other"].filter(kd => kd in todayByKind);
   const run = kinds.map(kd => `<span class="tk">${kd} <b class="${cls(todayByKind[kd])}">${money(todayByKind[kd], true)}</b></span>`).join("");
   document.getElementById("ticker").innerHTML = kinds.length ? `<span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span>` : "";
   syncTicker();
@@ -1069,8 +1072,8 @@ function buildRegHead(){
   head.dataset.built = "1";
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option value="-">Not trading</option></select>`,
-    type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option value="-">Not trading</option></select>`,
+    type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option></select>`,
   })[k] || "";

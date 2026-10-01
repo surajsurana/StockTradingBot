@@ -322,6 +322,76 @@ CROSS_SECTIONAL_MOMENTUM = PublishedStrategy(
 )
 
 
+# ---------------------------------------------------------------------------
+# US-market variants (added 2026-09-30, per explicit direction): same strategy code,
+# same documented rules, same published source -- a genuinely NEW backtest against US
+# equity data, not a reuse of the India evidence above. Both source papers (Minervini's
+# own trading, Jegadeesh-Titman 1993) were originally studied/practiced on US markets in
+# the first place, so if anything this US test is CLOSER to the papers' own home market
+# than the India application was -- worth noting, not something to lean on as a reason
+# to skip the real backtest.
+# ---------------------------------------------------------------------------
+
+MINERVINI_TREND_TEMPLATE_FILTER_US = PublishedStrategy(
+    name="Minervini Trend Template Filter (US)",
+    source_citation=MINERVINI_TREND_TEMPLATE_FILTER.source_citation,
+    mechanism=MINERVINI_TREND_TEMPLATE_FILTER.mechanism,
+    rules=MINERVINI_TREND_TEMPLATE_FILTER.rules,
+    variant_chosen=MINERVINI_TREND_TEMPLATE_FILTER.variant_chosen,
+    scope_reductions=(
+        "Same 8-criterion screen, same entry-trigger/exit-rule/RS-percentile-substitute "
+        "adaptations as the India version (see MINERVINI_TREND_TEMPLATE_FILTER above for the "
+        "full reasoning) -- unchanged, since none of that is India-specific. No pyramiding, "
+        "for the same reason as before (undocumented trigger/sizing). Long-only: this "
+        "codebase has no short-selling infrastructure for ANY market yet (not an NSE-specific "
+        "gap the way it was described in the India version -- the constraint is this "
+        "codebase's own execution layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS/REJECT verdict. Minervini's own trading and "
+        "track record are US-market in the first place, so this test is arguably closer to "
+        "the source material's native context than the India application was; a different "
+        "result here (either direction) is real information, not noise."
+    ),
+    assumptions_impact=(
+        MINERVINI_TREND_TEMPLATE_FILTER.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here."
+    ),
+)
+
+
+CROSS_SECTIONAL_MOMENTUM_US = PublishedStrategy(
+    name="Cross-Sectional Momentum (US)",
+    source_citation=CROSS_SECTIONAL_MOMENTUM.source_citation,
+    mechanism=CROSS_SECTIONAL_MOMENTUM.mechanism,
+    rules=CROSS_SECTIONAL_MOMENTUM.rules,
+    variant_chosen=CROSS_SECTIONAL_MOMENTUM.variant_chosen,
+    scope_reductions=(
+        "Same J=6/K=6, single-vintage, no-skip-period adaptations as the India version (see "
+        "CROSS_SECTIONAL_MOMENTUM above for the full reasoning) -- unchanged, none of it is "
+        "India-specific. Long-only: this codebase has no short-selling infrastructure for ANY "
+        "market yet (not an NSE-specific gap -- the constraint is this codebase's own "
+        "execution layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS/REJECT verdict. Jegadeesh-Titman (1993) is "
+        "itself a US-equity study, so this test is arguably closer to the paper's own native "
+        "market than the India application was; a different result here (either direction) "
+        "is real information, not noise."
+    ),
+    assumptions_impact=(
+        CROSS_SECTIONAL_MOMENTUM.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here."
+    ),
+)
+
+
 AMIHUD_ILLIQUIDITY_PREMIUM = PublishedStrategy(
     name="Amihud Illiquidity Premium",
     source_citation=(
