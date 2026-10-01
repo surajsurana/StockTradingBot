@@ -48,29 +48,40 @@ POOLS_INFO = [
 
 # ----------------------------------------------------------------------------
 # Markets tab (2026-10-02, per explicit direction: "we need a markets tab...
-# it will show the markets like NSE, NASDAQ, Crypto etc where we are trading").
-# Two parts: MARKETS (real trading -- aggregated from the same pool figures
-# every other tab already shows, grouped by which exchange/venue a pool
-# actually trades on) and MACRO_INSTRUMENTS (gold, silver, crude, major
-# currency pairs -- context for the broader backdrop these markets move in,
-# NOT something any pool trades directly; GOLDBEES/SILVERBEES sitting on
-# Pool B's watchlist is the one indirect exception, noted on the card).
+# it will show the markets like NSE, NASDAQ, Crypto etc where we are trading"
+# -- then, per immediate follow-up correction, "no need to show capital in
+# markets, its just real live markets... the rates, and prices i mean": NOT a
+# recap of our own capital/P&L there (the Team/Strategies/P&L tabs already
+# show that) -- just each market's own live level/rate, like a quote board.
+# Two parts: MARKETS (one representative index/rate per venue we trade on --
+# see MARKET_INDEX_TICKERS) and MACRO_INSTRUMENTS (gold, silver, crude, major
+# currency pairs -- context for the broader backdrop, NOT something any pool
+# trades directly; GOLDBEES/SILVERBEES on Pool B's watchlist is the one
+# indirect exception, noted on the card). Both are plain quote lookups, no
+# pool/capital data needed at all.
 # ----------------------------------------------------------------------------
 MARKETS = [
     {"id": "nse", "name": "NSE (India Equities)", "icon": "\U0001F1EE\U0001F1F3",
-     "pools": ["A", "B", "C", "D", "F", "H"], "hours": "09:15-15:30 IST, Mon-Fri"},
+     "pools": ["A", "B", "C", "D", "F", "H"], "hours": "09:15-15:30 IST, Mon-Fri", "index_name": "Nifty 50"},
     {"id": "crypto", "name": "Crypto (Binance)", "icon": "₿",
-     "pools": ["E", "E1", "G"], "hours": "24/7, every day"},
+     "pools": ["E", "E1", "G"], "hours": "24/7, every day", "index_name": "Bitcoin"},
     {"id": "us", "name": "US Equities (NASDAQ/NYSE)", "icon": "\U0001F1FA\U0001F1F8",
-     "pools": ["I"], "hours": "09:30-16:00 US Eastern, Mon-Fri"},
+     "pools": ["I"], "hours": "09:30-16:00 US Eastern, Mon-Fri", "index_name": "S&P 500"},
 ]
 
-# name -> yfinance ticker, fetched by dashboard/server.py's PriceCache.refresh_macro()
-# and passed into build_dashboard_state() as `macro_quotes`.
+# name -> yfinance ticker, the one representative rate shown on each market's own card.
+MARKET_INDEX_TICKERS = {"Nifty 50": "^NSEI", "Bitcoin": "BTC-USD", "S&P 500": "^GSPC"}
+
+# name -> yfinance ticker, the separate "Macro backdrop" strip below the market cards.
 MACRO_INSTRUMENTS = {
     "Gold": "GC=F", "Silver": "SI=F", "Crude Oil (WTI)": "CL=F",
     "USD/INR": "INR=X", "EUR/INR": "EURINR=X", "EUR/USD": "EURUSD=X",
 }
+
+# Both dicts above are fetched the same way, into the same cache, by
+# dashboard/server.py's PriceCache.refresh_macro() -- passed into
+# build_dashboard_state() as the single `macro_quotes` dict both markets_view()
+# and macro_view() read from (by index_name / by MACRO_INSTRUMENTS membership).
 
 
 def _nse_open(now: datetime) -> bool:
@@ -86,66 +97,20 @@ def _us_market_open(now: datetime) -> bool:
     return et_now.weekday() < 5 and dtime(9, 30) <= et_now.time() <= dtime(16, 0)
 
 
-def markets_view(pools: dict, pool_d: dict, pool_e: dict, pool_e1: dict, pool_g: dict,
-                 pool_i: dict, now: datetime) -> list:
-    """Real aggregated capital/P&L/positions per market, grouped from the
-    SAME already-computed, already-rupee-converted figures every other tab
-    shows (never re-derives a currency conversion) -- see MARKETS above for
-    which pools belong to which market."""
-    def nse_total():
-        capital = deployed = cash = unrealised = realised = 0.0
-        positions = 0
-        for letter in ("A", "B", "C", "F", "H"):
-            p = pools.get(letter)
-            if not p:
-                continue
-            capital += p.get("capital") or 0
-            deployed += p.get("deployed") or 0
-            cash += p.get("cash") or 0
-            unrealised += p.get("unrealised") or 0
-            realised += p.get("realised") or 0
-            positions += p.get("positions") or 0
-        capital += pool_d.get("capital") or 0
-        deployed += pool_d.get("deployed") or 0
-        cash += pool_d.get("cash") or 0
-        unrealised += pool_d.get("unrealised") or 0
-        realised += pool_d.get("realised") or 0
-        positions += pool_d.get("positions") or 0
-        return capital, deployed, cash, unrealised, realised, positions
-
-    def crypto_total():
-        g_rate = pool_g.get("usdinr") or 0
-        e_inr, e1_inr = pool_e.get("inr") or {}, pool_e1.get("inr") or {}
-        capital = (e_inr.get("capital") or 0) + (e1_inr.get("capital") or 0) + (pool_g.get("capital") or 0) * g_rate
-        deployed = (e_inr.get("deployed") or 0) + (e1_inr.get("deployed") or 0) + (pool_g.get("deployed") or 0) * g_rate
-        cash = (e_inr.get("cash") or 0) + (e1_inr.get("cash") or 0) + (pool_g.get("cash") or 0) * g_rate
-        unrealised = ((e_inr.get("unbooked") or {}).get("raw") or 0) + ((e1_inr.get("unbooked") or {}).get("raw") or 0) \
-            + ((pool_g.get("unbooked") or {}).get("raw") or 0) * g_rate
-        realised = ((e_inr.get("booked") or {}).get("raw") or 0) + ((e1_inr.get("booked") or {}).get("raw") or 0) \
-            + ((pool_g.get("booked") or {}).get("raw") or 0) * g_rate
-        positions = ((pool_e.get("usdt") or {}).get("positions") or 0) + ((pool_e1.get("usdt") or {}).get("positions") or 0) \
-            + (pool_g.get("positions") or 0)
-        return capital, deployed, cash, unrealised, realised, positions
-
-    def us_total():
-        i_inr = pool_i.get("inr") or {}
-        capital, deployed, cash = i_inr.get("capital") or 0, i_inr.get("deployed") or 0, i_inr.get("cash") or 0
-        unrealised = (i_inr.get("unbooked") or {}).get("raw") or 0
-        realised = (i_inr.get("booked") or {}).get("raw") or 0
-        positions = (pool_i.get("usd") or {}).get("positions") or 0
-        return capital, deployed, cash, unrealised, realised, positions
-
-    totals_by_id = {"nse": nse_total(), "crypto": crypto_total(), "us": us_total()}
+def markets_view(macro_quotes: Optional[dict], now: datetime) -> list:
+    """One card per venue we trade on -- its own live index/rate (Nifty 50,
+    Bitcoin, S&P 500) and open/closed status, NOT our capital or P&L there
+    (see the module-level note above for why)."""
+    macro_quotes = macro_quotes or {}
     status_by_id = {"nse": _nse_open(now), "crypto": True, "us": _us_market_open(now)}
     out = []
     for m in MARKETS:
-        capital, deployed, cash, unrealised, realised, positions = totals_by_id[m["id"]]
+        q = macro_quotes.get(m["index_name"]) or {}
         out.append({
             "id": m["id"], "name": m["name"], "icon": m["icon"], "hours": m["hours"],
             "pools": [POOL_LABELS.get(p, "Pool " + p) for p in m["pools"]],
             "status": "Open" if status_by_id[m["id"]] else "Closed",
-            "capital": round(capital, 2), "deployed": round(deployed, 2), "cash": round(cash, 2),
-            "unrealised": round(unrealised, 2), "realised": round(realised, 2), "positions": positions,
+            "index_name": m["index_name"], "price": q.get("price"), "change_pct": q.get("change_pct"),
         })
     return out
 
@@ -1322,7 +1287,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     if not (mode == "live" and reports is not None
             and add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))):
         add_pool_h_placeholder(state)
-    state["markets"] = markets_view(state["pools"], pool_d, pool_e, pool_e1, pool_g, pool_i, now)
+    state["markets"] = markets_view(macro_quotes, now)
     state["macro"] = macro_view(macro_quotes)
     return state
 

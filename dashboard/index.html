@@ -190,9 +190,10 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .desk{background:var(--desk);border:2px solid var(--desk-edge);border-radius:16px;padding:14px 14px 12px}
 .desk .head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .desk .head .pill{margin-left:auto}
-.marketstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin:10px 0}
-.marketstats .lbl{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-.marketstats .val{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:15px;margin-top:2px}
+.marketrate{display:flex;align-items:baseline;gap:10px;margin:10px 0}
+.marketrate .lbl{color:var(--muted);font-size:12px}
+.marketrate .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:20px}
+.marketrate .chg{font-size:13px;font-weight:600}
 .poolchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .macrogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
 .macrocard{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:10px 12px}
@@ -1045,14 +1046,11 @@ function renderTeam(s){
 }
 function renderMarkets(s){
   document.getElementById("markets-grid").innerHTML = (s.markets || []).map(m => {
-    const pnl = m.unrealised + m.realised;
     const chips = m.pools.map(p => `<span class="chip">${esc(p)}</span>`).join("");
+    const price = m.price!=null ? (+m.price).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
+    const chg = m.change_pct;
     return `<div class="desk"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div><p class="blurb">${esc(m.hours)}</p>
-      <div class="marketstats">
-        <div><span class="lbl">Capital</span><span class="val">${money(m.capital)}</span></div>
-        <div><span class="lbl">P&amp;L</span><span class="val ${cls(pnl)}">${money(pnl,true)}</span></div>
-        <div><span class="lbl">Positions</span><span class="val">${m.positions}</span></div>
-      </div>
+      <div class="marketrate"><span class="lbl">${esc(m.index_name)}</span><span class="val">${price}</span><span class="chg ${cls(chg)}">${chg!=null?(chg>0?"+":"")+chg.toFixed(2)+"%":"—"}</span></div>
       <div class="poolchips">${chips}</div></div>`;
   }).join("");
   document.getElementById("macro-grid").innerHTML = (s.macro || []).map(q => {

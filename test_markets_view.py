@@ -28,50 +28,42 @@ class TestMarketHours(unittest.TestCase):
 
 
 class TestMarketsView(unittest.TestCase):
-    def test_empty_everything_returns_zeroed_markets_not_an_error(self):
-        result = markets_view({}, {}, {}, {}, {}, {}, datetime(2026, 10, 1, 10, 0))
+    def test_no_quotes_yet_returns_markets_with_null_prices_not_an_error(self):
+        result = markets_view(None, datetime(2026, 10, 1, 10, 0))
         self.assertEqual(len(result), len(MARKETS))
         for m in result:
-            self.assertEqual(m["capital"], 0)
-            self.assertEqual(m["positions"], 0)
+            self.assertIsNone(m["price"])
+            self.assertIsNone(m["change_pct"])
 
-    def test_nse_aggregates_pools_a_through_h_and_pool_d(self):
-        pools = {"A": {"capital": 100.0, "deployed": 50.0, "cash": 50.0, "unrealised": 5.0, "realised": 2.0, "positions": 1},
-                 "H": {"capital": 1000.0, "deployed": 900.0, "cash": 100.0, "unrealised": 50.0, "realised": 0.0, "positions": 3}}
-        pool_d = {"capital": 10.0, "deployed": 5.0, "cash": 5.0, "unrealised": 1.0, "realised": 0.5, "positions": 1}
-        result = markets_view(pools, pool_d, {}, {}, {}, {}, datetime(2026, 10, 1, 10, 0))
+    def test_each_market_shows_its_own_representative_rate(self):
+        quotes = {"Nifty 50": {"price": 22553.95, "change_pct": -0.29},
+                 "Bitcoin": {"price": 84260.62, "change_pct": 0.76},
+                 "S&P 500": {"price": 7651.54, "change_pct": -0.25}}
+        result = markets_view(quotes, datetime(2026, 10, 1, 10, 0))
         nse = next(m for m in result if m["id"] == "nse")
-        self.assertEqual(nse["capital"], 1110.0)
-        self.assertEqual(nse["positions"], 5)
-        self.assertEqual(nse["status"], "Open")
-
-    def test_crypto_aggregates_pool_e_pool_e1_and_pool_g_with_their_own_rates(self):
-        pool_e = {"inr": {"capital": 9000.0, "deployed": 4000.0, "cash": 5000.0,
-                          "unbooked": {"raw": 100.0}, "booked": {"raw": 50.0}},
-                 "usdt": {"positions": 2}}
-        pool_e1 = {"inr": {"capital": 9000.0, "deployed": 0.0, "cash": 9000.0,
-                           "unbooked": {"raw": 0.0}, "booked": {"raw": 0.0}},
-                  "usdt": {"positions": 0}}
-        pool_g = {"capital": 100.0, "deployed": 20.0, "cash": 80.0, "usdinr": 90.0,
-                 "unbooked": {"raw": 2.0}, "booked": {"raw": 1.0}, "positions": 1}
-        result = markets_view({}, {}, pool_e, pool_e1, pool_g, {}, datetime(2026, 10, 1, 10, 0))
         crypto = next(m for m in result if m["id"] == "crypto")
-        self.assertEqual(crypto["capital"], 9000.0 + 9000.0 + 100.0 * 90.0)
-        self.assertEqual(crypto["positions"], 3)
-        self.assertEqual(crypto["status"], "Open")   # crypto is always open
-
-    def test_us_equities_reads_pool_i_inr_and_usd_positions(self):
-        pool_i = {"inr": {"capital": 90000.0, "deployed": 45000.0, "cash": 45000.0,
-                          "unbooked": {"raw": 500.0}, "booked": {"raw": 900.0}},
-                 "usd": {"positions": 1}}
-        result = markets_view({}, {}, {}, {}, {}, pool_i, datetime(2026, 10, 1, 20, 0))   # inside US hours
         us = next(m for m in result if m["id"] == "us")
-        self.assertEqual(us["capital"], 90000.0)
-        self.assertEqual(us["positions"], 1)
-        self.assertEqual(us["status"], "Open")
+        self.assertEqual(nse["price"], 22553.95)
+        self.assertEqual(nse["index_name"], "Nifty 50")
+        self.assertEqual(crypto["price"], 84260.62)
+        self.assertEqual(us["change_pct"], -0.25)
 
-    def test_each_market_carries_its_pool_labels(self):
-        result = markets_view({}, {}, {}, {}, {}, {}, datetime(2026, 10, 1, 10, 0))
+    def test_no_capital_or_position_fields_on_a_market_card(self):
+        # Explicit follow-up direction: markets show rates, not our own capital/P&L there.
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
+        for m in result:
+            for key in ("capital", "deployed", "cash", "unrealised", "realised", "positions"):
+                self.assertNotIn(key, m)
+
+    def test_status_reflects_real_market_hours(self):
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))   # NSE open, US closed, crypto always open
+        by_id = {m["id"]: m["status"] for m in result}
+        self.assertEqual(by_id["nse"], "Open")
+        self.assertEqual(by_id["crypto"], "Open")
+        self.assertEqual(by_id["us"], "Closed")
+
+    def test_each_market_still_carries_its_pool_labels(self):
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
         us = next(m for m in result if m["id"] == "us")
         self.assertEqual(us["pools"], ["Pool I"])
         nse = next(m for m in result if m["id"] == "nse")
@@ -84,11 +76,11 @@ class TestMacroView(unittest.TestCase):
         self.assertEqual(macro_view(None), [])
 
     def test_passes_through_known_instruments_only(self):
-        quotes = {"Gold": {"price": 4200.0, "change_pct": 0.5}, "Unknown Thing": {"price": 1.0}}
+        quotes = {"Gold": {"price": 4200.0, "change_pct": 0.5}, "Nifty 50": {"price": 22553.95}}
         result = macro_view(quotes)
         names = [r["name"] for r in result]
         self.assertIn("Gold", names)
-        self.assertNotIn("Unknown Thing", names)
+        self.assertNotIn("Nifty 50", names)   # that's a market-card rate, not a macro instrument
         gold = next(r for r in result if r["name"] == "Gold")
         self.assertEqual(gold["price"], 4200.0)
         self.assertEqual(gold["change_pct"], 0.5)

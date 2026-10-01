@@ -240,14 +240,16 @@ class PriceCache:
         self._save_disk()
 
     def refresh_macro(self) -> None:
-        """Gold, silver, crude oil and major currency pairs (Markets tab) -- context
-        for the broader backdrop, not something any pool trades directly. Same cadence
-        as the full refresh (refresh_once()); a quote that fails to fetch just keeps
-        its last known value rather than disappearing."""
-        from dashboard.state_view import MACRO_INSTRUMENTS
+        """Markets tab quotes: one representative index/rate per market we trade
+        (MARKET_INDEX_TICKERS) plus gold/silver/crude/major currency pairs for the
+        broader backdrop (MACRO_INSTRUMENTS, not something any pool trades
+        directly). Same cadence as the full refresh (refresh_once()); a quote
+        that fails to fetch just keeps its last known value rather than
+        disappearing."""
+        from dashboard.state_view import MACRO_INSTRUMENTS, MARKET_INDEX_TICKERS
         import yfinance as yf
         quotes = {}
-        for name, ticker in MACRO_INSTRUMENTS.items():
+        for name, ticker in {**MARKET_INDEX_TICKERS, **MACRO_INSTRUMENTS}.items():
             try:
                 hist = yf.Ticker(ticker).history(period="5d")
                 if hist is not None and not hist.empty:
