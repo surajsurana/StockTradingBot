@@ -189,6 +189,16 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .office{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
 .desk{background:var(--desk);border:2px solid var(--desk-edge);border-radius:16px;padding:14px 14px 12px}
 .desk .head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.desk .head .pill{margin-left:auto}
+.marketstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin:10px 0}
+.marketstats .lbl{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.marketstats .val{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:15px;margin-top:2px}
+.poolchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.macrogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.macrocard{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:10px 12px}
+.macrocard .nm{display:block;color:var(--muted);font-size:12px}
+.macrocard .val{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:16px;margin-top:2px}
+.macrocard .chg{display:block;font-size:12px;font-weight:600;margin-top:2px}
 .desk .head .ic{font-size:22px}
 .desk .head .nm{font-weight:600;font-size:15px}
 .desk .blurb{color:var(--muted);font-size:12.5px;margin:0 0 10px}
@@ -266,6 +276,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="modenote" class="note" hidden></p>
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="team">The team</button>
+  <button role="tab" aria-selected="false" data-tab="markets">Markets</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
@@ -315,6 +326,14 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· teal robots with a round head = AI agents, grey robots with a square head = rule-based engines · tap anyone to see what they do</span></div>
   <h2 id="flow-research-title"></h2>
   <div class="strip" id="flow-research"></div>
+</section>
+
+<section id="tab-markets" hidden>
+  <h2>Markets we trade</h2>
+  <div class="office" id="markets-grid"></div>
+  <h2>Macro backdrop</h2>
+  <p class="note">Context for the markets above, not something any pool trades directly — gold and silver ETFs (GOLDBEES/SILVERBEES) on Pool B's watchlist are the one indirect exception.</p>
+  <div class="macrogrid" id="macro-grid"></div>
 </section>
 
 <section id="tab-statement" hidden>
@@ -504,7 +523,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); renderOrders(s); renderTeam(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderLive(s); renderOrders(s); renderTeam(s); renderMarkets(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -1023,6 +1042,23 @@ function renderTeam(s){
     document.getElementById("who-when").textContent = a.when ? `When: ${a.when}` : "";
     document.getElementById("who").showModal();
   }));
+}
+function renderMarkets(s){
+  document.getElementById("markets-grid").innerHTML = (s.markets || []).map(m => {
+    const pnl = m.unrealised + m.realised;
+    const chips = m.pools.map(p => `<span class="chip">${esc(p)}</span>`).join("");
+    return `<div class="desk"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div><p class="blurb">${esc(m.hours)}</p>
+      <div class="marketstats">
+        <div><span class="lbl">Capital</span><span class="val">${money(m.capital)}</span></div>
+        <div><span class="lbl">P&amp;L</span><span class="val ${cls(pnl)}">${money(pnl,true)}</span></div>
+        <div><span class="lbl">Positions</span><span class="val">${m.positions}</span></div>
+      </div>
+      <div class="poolchips">${chips}</div></div>`;
+  }).join("");
+  document.getElementById("macro-grid").innerHTML = (s.macro || []).map(q => {
+    const chg = q.change_pct;
+    return `<div class="macrocard"><span class="nm">${esc(q.name)}</span><span class="val">${q.price!=null?(+q.price).toLocaleString("en-IN",{maximumFractionDigits:2}):"—"}</span><span class="chg ${cls(chg)}">${chg!=null?(chg>0?"+":"")+chg.toFixed(2)+"%":"—"}</span></div>`;
+  }).join("") || `<p class="note">Quotes loading…</p>`;
 }
 document.getElementById("who-close").addEventListener("click", () => document.getElementById("who").close());
 document.getElementById("brief-close").addEventListener("click", () => document.getElementById("brief").close());

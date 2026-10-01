@@ -133,6 +133,7 @@ class PriceCache:
         self.crypto_prev_close = {}   # coin -> last completed UTC daily close
         self.us_prices = {}           # Pool I's open US symbols -> latest yfinance close
         self.us_prev_close = {}       # Pool I -> last close before today
+        self.macro = {}               # Markets tab -- gold/silver/crude/currency pairs, {name: {price, change_pct}}
         self._lock = threading.Lock()
         self._saved_at = 0.0
         self._load_disk()
@@ -154,6 +155,7 @@ class PriceCache:
             self.prices, self.prev_close = dict(d.get("prices", {})), dict(d.get("prev_close", {}))
             self.crypto_prices, self.crypto_prev_close = dict(d.get("crypto_prices", {})), dict(d.get("crypto_prev_close", {}))
             self.us_prices, self.us_prev_close = dict(d.get("us_prices", {})), dict(d.get("us_prev_close", {}))
+            self.macro = dict(d.get("macro", {}))
             self.usdinr, self.as_of = d.get("usdinr"), d.get("as_of")
         except (OSError, ValueError):
             pass
@@ -166,7 +168,7 @@ class PriceCache:
         with self._lock:
             payload = {"as_of": self.as_of, "prices": self.prices, "prev_close": self.prev_close, "crypto_prices": self.crypto_prices,
                        "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr,
-                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close}
+                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close, "macro": self.macro}
             text = json.dumps(payload)
         try:
             os.makedirs(self.state_dir, exist_ok=True)
@@ -235,6 +237,27 @@ class PriceCache:
             held = set(symbols)
             self.us_prices = {**{k: v for k, v in self.us_prices.items() if k in held}, **fresh}
             self.us_prev_close = {**{k: v for k, v in self.us_prev_close.items() if k in held}, **prev}
+        self._save_disk()
+
+    def refresh_macro(self) -> None:
+        """Gold, silver, crude oil and major currency pairs (Markets tab) -- context
+        for the broader backdrop, not something any pool trades directly. Same cadence
+        as the full refresh (refresh_once()); a quote that fails to fetch just keeps
+        its last known value rather than disappearing."""
+        from dashboard.state_view import MACRO_INSTRUMENTS
+        import yfinance as yf
+        quotes = {}
+        for name, ticker in MACRO_INSTRUMENTS.items():
+            try:
+                hist = yf.Ticker(ticker).history(period="5d")
+                if hist is not None and not hist.empty:
+                    last = float(hist["Close"].iloc[-1])
+                    prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else None
+                    quotes[name] = {"price": last, "change_pct": round((last / prev - 1) * 100, 2) if prev else None}
+            except Exception as e:
+                print(f"macro quote failed for {name} ({ticker}): {type(e).__name__}: {e}", flush=True)
+        with self._lock:
+            self.macro = {**self.macro, **quotes}
         self._save_disk()
 
     _groww_last = 0.0
@@ -328,6 +351,10 @@ class PriceCache:
             self.refresh_us_equity()
         except Exception as e:
             print(f"US equity price refresh failed: {type(e).__name__}: {e}", flush=True)
+        try:
+            self.refresh_macro()
+        except Exception as e:
+            print(f"macro quote refresh failed: {type(e).__name__}: {e}", flush=True)
 
     def refresh_live(self) -> None:
         """Quote refresh: Kite last-traded price AND previous close for every held symbol (swing
@@ -364,6 +391,10 @@ class PriceCache:
     def us_snapshot(self) -> tuple:
         with self._lock:
             return dict(self.us_prices), self.usdinr
+
+    def macro_snapshot(self) -> dict:
+        with self._lock:
+            return dict(self.macro)
 
     def prev_close_snapshot(self) -> tuple:
         with self._lock:
@@ -542,6 +573,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             prices, as_of = self.price_cache.snapshot()
             crypto_prices, usdinr = self.price_cache.crypto_snapshot()
             us_prices, _ = self.price_cache.us_snapshot()
+            macro_quotes = self.price_cache.macro_snapshot()
             prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
             registry = list_strategies()
             import research_queue
@@ -551,6 +583,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           us_prices=us_prices, us_prev_close=us_prev_close,
+                                          macro_quotes=macro_quotes,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
                                           reports=_load_reports(STATE_DIR) if mode == "live" else None,
                                           advice_params=_advice_params(query) if mode == "live" else None,
