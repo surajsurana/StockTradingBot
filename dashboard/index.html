@@ -387,6 +387,11 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <h2>Strategies</h2>
   <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
+  <div class="pager" id="reg-pager">
+    <label class="note">Rows per page <select id="reg-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+    <span class="note" id="reg-pageinfo"></span>
+    <span class="pagebtns"><button id="reg-prev" class="iconbtn">‹ Prev</button><button id="reg-next" class="iconbtn">Next ›</button></span>
+  </div>
 </section>
 
 <section id="tab-research" hidden>
@@ -724,6 +729,13 @@ function wireTapePager(){
   document.getElementById("tape-prev").addEventListener("click", () => { TAPE_PAGE--; if(STATE) renderTape(STATE); });
   document.getElementById("tape-next").addEventListener("click", () => { TAPE_PAGE++; if(STATE) renderTape(STATE); });
 }
+function wireRegPager(){
+  const pager = document.getElementById("reg-pager"); if(pager.dataset.wired) return;
+  pager.dataset.wired = "1";
+  document.getElementById("reg-pagesize").addEventListener("change", e => { REG_PAGE_SIZE = +e.target.value; REG_PAGE = 1; if(STATE) renderRegistry(STATE); });
+  document.getElementById("reg-prev").addEventListener("click", () => { REG_PAGE--; if(STATE) renderRegistry(STATE); });
+  document.getElementById("reg-next").addEventListener("click", () => { REG_PAGE++; if(STATE) renderRegistry(STATE); });
+}
 
 // Orders tab: every fill (BUY/SELL/SHORT) across every pool, reusing the same s.ledger rows the
 // Live day tape shows -- but as its own plain, reverse-chronological log, no open/closed grouping.
@@ -731,6 +743,7 @@ function wireTapePager(){
 // tape's date-range calendar -- the Date column is sortable instead, which covers the same need.
 let ORDERS_SORT = {key:"date", dir:-1}, ORDERS_FILTER = "";
 let ORDERS_PAGE = 1, ORDERS_PAGE_SIZE = 50, ORDERS_LAST_SIG = null;
+let REG_PAGE = 1, REG_PAGE_SIZE = 50, REG_LAST_SIG = null;
 const ORDERS_COLS = [["status","Status",false],["date","Date",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],
   ["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true]];
 function buildOrdersHead(){
@@ -1572,7 +1585,18 @@ function renderRegistry(s){
       if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
-  document.getElementById("registry").innerHTML = rows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
+  const sig = JSON.stringify([q, poolF, typeF, verdictF, statusF, REG_SORT.key, REG_SORT.dir]);
+  if(sig !== REG_LAST_SIG){ REG_PAGE = 1; REG_LAST_SIG = sig; }
+  wireRegPager();
+  const pageSize = REG_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  REG_PAGE = Math.min(Math.max(1, REG_PAGE), totalPages);
+  const pageRows = rows.slice((REG_PAGE - 1) * pageSize, REG_PAGE * pageSize);
+  document.getElementById("reg-pageinfo").textContent = rows.length
+    ? `Page ${REG_PAGE} of ${totalPages} (rows ${(REG_PAGE-1)*pageSize+1}–${Math.min(REG_PAGE*pageSize, rows.length)})` : "";
+  document.getElementById("reg-prev").disabled = REG_PAGE <= 1;
+  document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
+  document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
     const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
