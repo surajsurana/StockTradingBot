@@ -39,27 +39,22 @@ class TestMarketHours(unittest.TestCase):
 
 
 class TestMarketsView(unittest.TestCase):
-    def test_no_quotes_or_movers_yet_returns_markets_with_nulls_not_an_error(self):
-        result = markets_view(None, None, datetime(2026, 10, 1, 10, 0))
+    def test_no_quotes_yet_returns_markets_with_nulls_not_an_error(self):
+        result = markets_view(None, datetime(2026, 10, 1, 10, 0))
         self.assertEqual(len(result), len(MARKETS))
         for m in result:
             self.assertIsNone(m["price"])
             self.assertIsNone(m["change_pct"])
-            self.assertEqual(m["movers"], [])
 
-    def test_each_market_shows_its_own_representative_rate_and_movers(self):
+    def test_each_market_shows_its_own_representative_rate(self):
         quotes = {"Nifty 50": {"price": 22553.95, "change_pct": -0.29},
                  "Bitcoin": {"price": 84260.62, "change_pct": 0.76},
                  "S&P 500": {"price": 7651.54, "change_pct": -0.25}}
-        movers = {"nse": [{"symbol": "BAJAJ-AUTO.NS", "name": "BAJAJ AUTO", "price": 10046.0, "change_pct": -7.61}],
-                 "us": [{"symbol": "MRNA", "name": "Moderna", "price": 192.57, "change_pct": -5.35}],
-                 "crypto": [{"symbol": "SOL", "name": "SOL", "price": 210.0, "change_pct": 2.44}]}
-        result = markets_view(quotes, movers, datetime(2026, 10, 1, 10, 0))
+        result = markets_view(quotes, datetime(2026, 10, 1, 10, 0))
         nse = next(m for m in result if m["id"] == "nse")
         us = next(m for m in result if m["id"] == "us")
         self.assertEqual(nse["price"], 22553.95)
-        self.assertEqual(nse["movers"][0]["symbol"], "BAJAJ-AUTO.NS")
-        self.assertEqual(us["movers"][0]["symbol"], "MRNA")
+        self.assertEqual(us["change_pct"], -0.25)
 
     def test_names_match_their_own_index_exactly(self):
         # Regression: the US card used to headline "NASDAQ/NYSE" while showing the
@@ -70,20 +65,20 @@ class TestMarketsView(unittest.TestCase):
         self.assertEqual(us["index_name"], "S&P 500")
 
     def test_no_capital_positions_or_pool_fields_on_a_market_card(self):
-        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
         for m in result:
-            for key in ("capital", "deployed", "cash", "unrealised", "realised", "positions", "pools"):
+            for key in ("capital", "deployed", "cash", "unrealised", "realised", "positions", "pools", "movers"):
                 self.assertNotIn(key, m)
 
     def test_status_reflects_real_market_hours(self):
-        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))   # NSE open, US closed, crypto always open
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))   # NSE open, US closed, crypto always open
         by_id = {m["id"]: m["status"] for m in result}
         self.assertEqual(by_id["nse"], "Open")
         self.assertEqual(by_id["crypto"], "Open")
         self.assertEqual(by_id["us"], "Closed")
 
     def test_only_us_carries_an_ist_hours_label(self):
-        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))
+        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
         by_id = {m["id"]: m["hours_ist"] for m in result}
         self.assertIsNone(by_id["nse"])
         self.assertIsNone(by_id["crypto"])

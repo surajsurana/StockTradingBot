@@ -62,9 +62,11 @@ POOLS_INFO = [
 #    after what we actually track).
 # 3) "additional IST timings also in Foreign market timings" (US hours, see
 #    _us_hours_ist()); "bigger cards like one for comodity, and other for
-#    currency" (COMMODITIES/CURRENCIES, each its own card of rows, same
-#    pattern as a market card's movers list); "country flag[s]"; "top 5
-#    movers of the day with prices" (see MOVERS_FOR below).
+#    currency" (COMMODITIES/CURRENCIES, each its own card of rows); "country
+#    flag[s]" (icons on MARKETS/COMMODITIES/CURRENCIES below). A "top 5
+#    movers" feature was added in this same round and then explicitly
+#    retracted ("actually i dont need the top 5 movers in the card") --
+#    removed again, not left in as dead/unused plumbing.
 # ----------------------------------------------------------------------------
 MARKETS = [
     {"id": "nse", "name": "NSE", "icon": "\U0001F1EE\U0001F1F3",
@@ -122,11 +124,11 @@ def _us_hours_ist(now: datetime) -> str:
     return f"{open_ist.strftime('%H:%M')}-{close_ist.strftime('%H:%M')}{next_day} IST"
 
 
-def markets_view(macro_quotes: Optional[dict], movers: Optional[dict], now: datetime) -> list:
+def markets_view(macro_quotes: Optional[dict], now: datetime) -> list:
     """One card per venue we trade on -- its own live index/rate (Nifty 50,
-    Bitcoin, S&P 500), open/closed status, and that market's top 5 movers --
-    NOT our capital or P&L there (see the module-level note above for why)."""
-    macro_quotes, movers = macro_quotes or {}, movers or {}
+    Bitcoin, S&P 500) and open/closed status, NOT our capital or P&L there
+    (see the module-level note above for why)."""
+    macro_quotes = macro_quotes or {}
     status_by_id = {"nse": _nse_open(now), "crypto": True, "us": _us_market_open(now)}
     out = []
     for m in MARKETS:
@@ -136,7 +138,6 @@ def markets_view(macro_quotes: Optional[dict], movers: Optional[dict], now: date
             "hours_ist": _us_hours_ist(now) if m["id"] == "us" else None,
             "status": "Open" if status_by_id[m["id"]] else "Closed",
             "index_name": m["index_name"], "price": q.get("price"), "change_pct": q.get("change_pct"),
-            "movers": movers.get(m["id"]) or [],
         })
     return out
 
@@ -1195,8 +1196,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
                           advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
                           research_queue: Optional[dict] = None, us_prices: Optional[dict] = None,
-                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None,
-                          movers: Optional[dict] = None) -> dict:
+                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -1321,7 +1321,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     if not (mode == "live" and reports is not None
             and add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))):
         add_pool_h_placeholder(state)
-    state["markets"] = markets_view(macro_quotes, movers, now)
+    state["markets"] = markets_view(macro_quotes, now)
     state["commodities"] = commodities_view(macro_quotes)
     state["currencies"] = currencies_view(macro_quotes)
     return state

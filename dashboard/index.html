@@ -194,7 +194,6 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .marketrate .lbl{color:var(--muted);font-size:12px}
 .marketrate .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:20px}
 .marketrate .chg{font-size:13px;font-weight:600}
-.moverstitle{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px}
 .moverstbl{width:100%;border-collapse:collapse;font-size:12.5px}
 .moverstbl td{padding:3px 4px;border-top:1px solid var(--rule)}
 .moverstbl tr:first-child td{border-top:0}
@@ -1049,11 +1048,9 @@ function renderMarkets(s){
   const fmtPrice = v => v!=null ? (+v).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
   const fmtChg = v => v!=null ? (v>0?"+":"")+v.toFixed(2)+"%" : "—";
   document.getElementById("markets-grid").innerHTML = (s.markets || []).map(m => {
-    const moverRows = (m.movers || []).map(x => `<tr><td class="l">${esc(x.symbol)}</td><td class="n">${fmtPrice(x.price)}</td><td class="n ${cls(x.change_pct)}">${fmtChg(x.change_pct)}</td></tr>`).join("");
     return `<div class="desk market-card"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div>
       <p class="blurb">${esc(m.hours)}${m.hours_ist?` &middot; ${esc(m.hours_ist)}`:""}</p>
       <div class="marketrate"><span class="lbl">${esc(m.index_name)}</span><span class="val">${fmtPrice(m.price)}</span><span class="chg ${cls(m.change_pct)}">${fmtChg(m.change_pct)}</span></div>
-      ${moverRows ? `<p class="moverstitle">Top movers</p><table class="moverstbl"><tbody>${moverRows}</tbody></table>` : `<p class="note">Movers loading…</p>`}
       </div>`;
   }).join("");
   const quoteCard = (title, icon, rows) => `<div class="desk"><div class="head"><span class="ic">${icon}</span><span class="nm">${esc(title)}</span></div>

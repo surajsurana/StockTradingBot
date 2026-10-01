@@ -134,7 +134,6 @@ class PriceCache:
         self.us_prices = {}           # Pool I's open US symbols -> latest yfinance close
         self.us_prev_close = {}       # Pool I -> last close before today
         self.macro = {}               # Markets tab -- indices/gold/silver/crude/currency pairs, {name: {price, change_pct}}
-        self.movers = {}              # Markets tab -- top 5 movers per market, {"nse"/"crypto"/"us": [{symbol,name,price,change_pct}]}
         self._lock = threading.Lock()
         self._saved_at = 0.0
         self._load_disk()
@@ -157,7 +156,6 @@ class PriceCache:
             self.crypto_prices, self.crypto_prev_close = dict(d.get("crypto_prices", {})), dict(d.get("crypto_prev_close", {}))
             self.us_prices, self.us_prev_close = dict(d.get("us_prices", {})), dict(d.get("us_prev_close", {}))
             self.macro = dict(d.get("macro", {}))
-            self.movers = dict(d.get("movers", {}))
             self.usdinr, self.as_of = d.get("usdinr"), d.get("as_of")
         except (OSError, ValueError):
             pass
@@ -170,8 +168,7 @@ class PriceCache:
         with self._lock:
             payload = {"as_of": self.as_of, "prices": self.prices, "prev_close": self.prev_close, "crypto_prices": self.crypto_prices,
                        "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr,
-                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close, "macro": self.macro,
-                       "movers": self.movers}
+                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close, "macro": self.macro}
             text = json.dumps(payload)
         try:
             os.makedirs(self.state_dir, exist_ok=True)
@@ -263,56 +260,6 @@ class PriceCache:
                 print(f"macro quote failed for {name} ({ticker}): {type(e).__name__}: {e}", flush=True)
         with self._lock:
             self.macro = {**self.macro, **quotes}
-        self._save_disk()
-
-    def refresh_movers(self) -> None:
-        """Top 5 movers of the day per market we trade (Markets tab). NSE and
-        US each use ONE Yahoo exchange-filtered screener call for gainers and
-        one for losers (is-in exchange NSI / NMS+NYQ, with a market-cap floor
-        so illiquid micro-caps don't dominate), merged and re-ranked by
-        |change%| -- never a loop over hundreds of individual tickers. Crypto
-        ranks the five majors we already have live prices for (refresh_crypto()),
-        no extra fetch needed. A market whose fetch fails keeps its last known
-        list rather than going blank."""
-        from yfinance.screener.query import EquityQuery
-        import yfinance as yf
-
-        def screen_movers(exchange_codes: list, cap_floor: float) -> list:
-            try:
-                q = EquityQuery("and", [EquityQuery("is-in", ["exchange", *exchange_codes]),
-                                        EquityQuery("gt", ["intradaymarketcap", cap_floor])])
-                gainers = yf.screen(q, sortField="percentchange", sortAsc=False, size=5).get("quotes", [])
-                losers = yf.screen(q, sortField="percentchange", sortAsc=True, size=5).get("quotes", [])
-                combined = {row.get("symbol"): row for row in gainers + losers if row.get("symbol")}.values()
-                ranked = sorted(combined, key=lambda row: abs(row.get("regularMarketChangePercent") or 0), reverse=True)[:5]
-                return [{"symbol": row.get("symbol"), "name": row.get("shortName") or row.get("symbol"),
-                        "price": row.get("regularMarketPrice"),
-                        "change_pct": round(row.get("regularMarketChangePercent"), 2) if row.get("regularMarketChangePercent") is not None else None}
-                       for row in ranked]
-            except Exception as e:
-                print(f"movers screen failed for {exchange_codes}: {type(e).__name__}: {e}", flush=True)
-                return []
-
-        nse = screen_movers(["NSI"], 2e11)     # NSE, cap floor ~Rs 2,000cr -- large/mid-cap, not penny-stock noise
-        us = screen_movers(["NMS", "NYQ"], 5e10)   # NASDAQ + NYSE, cap floor $50bn -- excludes thin OTC ADRs
-
-        from data.fetch_crypto import CRYPTO_MAJORS
-        crypto_rows = []
-        with self._lock:
-            crypto_prices, crypto_prev_close = dict(self.crypto_prices), dict(self.crypto_prev_close)
-        for sym in CRYPTO_MAJORS:
-            price, prev = crypto_prices.get(sym), crypto_prev_close.get(sym)
-            if price is not None and prev:
-                crypto_rows.append({"symbol": sym, "name": sym, "price": price, "change_pct": round((price / prev - 1) * 100, 2)})
-        crypto = sorted(crypto_rows, key=lambda r: abs(r["change_pct"]), reverse=True)[:5]
-
-        with self._lock:
-            if nse:
-                self.movers["nse"] = nse
-            if us:
-                self.movers["us"] = us
-            if crypto:
-                self.movers["crypto"] = crypto
         self._save_disk()
 
     _groww_last = 0.0
@@ -410,10 +357,6 @@ class PriceCache:
             self.refresh_macro()
         except Exception as e:
             print(f"macro quote refresh failed: {type(e).__name__}: {e}", flush=True)
-        try:
-            self.refresh_movers()
-        except Exception as e:
-            print(f"movers refresh failed: {type(e).__name__}: {e}", flush=True)
 
     def refresh_live(self) -> None:
         """Quote refresh: Kite last-traded price AND previous close for every held symbol (swing
@@ -454,10 +397,6 @@ class PriceCache:
     def macro_snapshot(self) -> dict:
         with self._lock:
             return dict(self.macro)
-
-    def movers_snapshot(self) -> dict:
-        with self._lock:
-            return dict(self.movers)
 
     def prev_close_snapshot(self) -> tuple:
         with self._lock:
@@ -637,7 +576,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             crypto_prices, usdinr = self.price_cache.crypto_snapshot()
             us_prices, _ = self.price_cache.us_snapshot()
             macro_quotes = self.price_cache.macro_snapshot()
-            movers = self.price_cache.movers_snapshot()
             prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
             registry = list_strategies()
             import research_queue
@@ -647,7 +585,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           us_prices=us_prices, us_prev_close=us_prev_close,
-                                          macro_quotes=macro_quotes, movers=movers,
+                                          macro_quotes=macro_quotes,
                                           groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
                                           reports=_load_reports(STATE_DIR) if mode == "live" else None,
                                           advice_params=_advice_params(query) if mode == "live" else None,
