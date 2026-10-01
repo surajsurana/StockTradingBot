@@ -1,7 +1,10 @@
 import unittest
 from datetime import datetime
 
-from dashboard.state_view import markets_view, macro_view, _nse_open, _us_market_open, MARKETS
+from dashboard.state_view import (
+    markets_view, commodities_view, currencies_view, _nse_open, _us_market_open, _us_hours_ist,
+    MARKETS, COMMODITIES, CURRENCIES,
+)
 
 
 class TestMarketHours(unittest.TestCase):
@@ -22,68 +25,92 @@ class TestMarketHours(unittest.TestCase):
         self.assertFalse(_us_market_open(datetime(2026, 10, 1, 10, 0)))   # ~00:30 ET, after close
 
     def test_us_market_closed_on_saturday_ist(self):
-        # IST Saturday morning is still Friday night ET in this window -- pick a point
-        # unambiguously inside the US weekend instead.
         self.assertFalse(_us_market_open(datetime(2026, 10, 4, 20, 0)))   # Sunday IST evening -> Sunday ET afternoon
+
+    def test_us_hours_ist_crosses_midnight_in_edt(self):
+        # 9:30 ET = 19:00 IST same day; 16:00 ET = 01:30 IST the NEXT day (EDT, UTC-4).
+        label = _us_hours_ist(datetime(2026, 10, 1, 10, 0))
+        self.assertEqual(label, "19:00-01:30 (+1d) IST")
+
+    def test_us_hours_ist_reflects_est_in_winter(self):
+        # EST (UTC-5): 9:30 ET = 20:00 IST, 16:00 ET = 02:30 IST next day.
+        label = _us_hours_ist(datetime(2026, 1, 15, 10, 0))
+        self.assertEqual(label, "20:00-02:30 (+1d) IST")
 
 
 class TestMarketsView(unittest.TestCase):
-    def test_no_quotes_yet_returns_markets_with_null_prices_not_an_error(self):
-        result = markets_view(None, datetime(2026, 10, 1, 10, 0))
+    def test_no_quotes_or_movers_yet_returns_markets_with_nulls_not_an_error(self):
+        result = markets_view(None, None, datetime(2026, 10, 1, 10, 0))
         self.assertEqual(len(result), len(MARKETS))
         for m in result:
             self.assertIsNone(m["price"])
             self.assertIsNone(m["change_pct"])
+            self.assertEqual(m["movers"], [])
 
-    def test_each_market_shows_its_own_representative_rate(self):
+    def test_each_market_shows_its_own_representative_rate_and_movers(self):
         quotes = {"Nifty 50": {"price": 22553.95, "change_pct": -0.29},
                  "Bitcoin": {"price": 84260.62, "change_pct": 0.76},
                  "S&P 500": {"price": 7651.54, "change_pct": -0.25}}
-        result = markets_view(quotes, datetime(2026, 10, 1, 10, 0))
+        movers = {"nse": [{"symbol": "BAJAJ-AUTO.NS", "name": "BAJAJ AUTO", "price": 10046.0, "change_pct": -7.61}],
+                 "us": [{"symbol": "MRNA", "name": "Moderna", "price": 192.57, "change_pct": -5.35}],
+                 "crypto": [{"symbol": "SOL", "name": "SOL", "price": 210.0, "change_pct": 2.44}]}
+        result = markets_view(quotes, movers, datetime(2026, 10, 1, 10, 0))
         nse = next(m for m in result if m["id"] == "nse")
-        crypto = next(m for m in result if m["id"] == "crypto")
         us = next(m for m in result if m["id"] == "us")
         self.assertEqual(nse["price"], 22553.95)
-        self.assertEqual(nse["index_name"], "Nifty 50")
-        self.assertEqual(crypto["price"], 84260.62)
-        self.assertEqual(us["change_pct"], -0.25)
+        self.assertEqual(nse["movers"][0]["symbol"], "BAJAJ-AUTO.NS")
+        self.assertEqual(us["movers"][0]["symbol"], "MRNA")
 
-    def test_no_capital_or_position_fields_on_a_market_card(self):
-        # Explicit follow-up direction: markets show rates, not our own capital/P&L there.
-        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
+    def test_names_match_their_own_index_exactly(self):
+        # Regression: the US card used to headline "NASDAQ/NYSE" while showing the
+        # S&P 500 rate -- a genuine mismatch (S&P 500 isn't an index of either
+        # exchange alone). Names must now be unambiguous about what's shown.
+        us = next(m for m in MARKETS if m["id"] == "us")
+        self.assertIn("S&P 500", us["name"])
+        self.assertEqual(us["index_name"], "S&P 500")
+
+    def test_no_capital_positions_or_pool_fields_on_a_market_card(self):
+        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))
         for m in result:
-            for key in ("capital", "deployed", "cash", "unrealised", "realised", "positions"):
+            for key in ("capital", "deployed", "cash", "unrealised", "realised", "positions", "pools"):
                 self.assertNotIn(key, m)
 
     def test_status_reflects_real_market_hours(self):
-        result = markets_view({}, datetime(2026, 10, 1, 10, 0))   # NSE open, US closed, crypto always open
+        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))   # NSE open, US closed, crypto always open
         by_id = {m["id"]: m["status"] for m in result}
         self.assertEqual(by_id["nse"], "Open")
         self.assertEqual(by_id["crypto"], "Open")
         self.assertEqual(by_id["us"], "Closed")
 
-    def test_each_market_still_carries_its_pool_labels(self):
-        result = markets_view({}, datetime(2026, 10, 1, 10, 0))
-        us = next(m for m in result if m["id"] == "us")
-        self.assertEqual(us["pools"], ["Pool I"])
-        nse = next(m for m in result if m["id"] == "nse")
-        self.assertIn("Pool A", nse["pools"])
-        self.assertIn("Pool H", nse["pools"])
+    def test_only_us_carries_an_ist_hours_label(self):
+        result = markets_view({}, {}, datetime(2026, 10, 1, 10, 0))
+        by_id = {m["id"]: m["hours_ist"] for m in result}
+        self.assertIsNone(by_id["nse"])
+        self.assertIsNone(by_id["crypto"])
+        self.assertIsNotNone(by_id["us"])
 
 
-class TestMacroView(unittest.TestCase):
-    def test_none_returns_empty_list(self):
-        self.assertEqual(macro_view(None), [])
-
-    def test_passes_through_known_instruments_only(self):
+class TestCommoditiesAndCurrencies(unittest.TestCase):
+    def test_commodities_view_passes_through_known_quotes(self):
         quotes = {"Gold": {"price": 4200.0, "change_pct": 0.5}, "Nifty 50": {"price": 22553.95}}
-        result = macro_view(quotes)
-        names = [r["name"] for r in result]
-        self.assertIn("Gold", names)
-        self.assertNotIn("Nifty 50", names)   # that's a market-card rate, not a macro instrument
+        result = commodities_view(quotes)
+        self.assertEqual(len(result), len(COMMODITIES))
         gold = next(r for r in result if r["name"] == "Gold")
         self.assertEqual(gold["price"], 4200.0)
         self.assertEqual(gold["change_pct"], 0.5)
+        self.assertIn("icon", gold)
+
+    def test_currencies_view_passes_through_known_quotes(self):
+        quotes = {"USD/INR": {"price": 95.97, "change_pct": -0.09}}
+        result = currencies_view(quotes)
+        self.assertEqual(len(result), len(CURRENCIES))
+        usdinr = next(r for r in result if r["name"] == "USD/INR")
+        self.assertEqual(usdinr["price"], 95.97)
+
+    def test_missing_quotes_return_nulls_not_an_error(self):
+        result = commodities_view(None)
+        for r in result:
+            self.assertIsNone(r["price"])
 
 
 if __name__ == "__main__":

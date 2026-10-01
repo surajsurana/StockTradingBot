@@ -194,12 +194,13 @@ details.more{margin-top:12px}details.more summary{cursor:pointer;color:var(--acc
 .marketrate .lbl{color:var(--muted);font-size:12px}
 .marketrate .val{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:20px}
 .marketrate .chg{font-size:13px;font-weight:600}
-.poolchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.macrogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
-.macrocard{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:10px 12px}
-.macrocard .nm{display:block;color:var(--muted);font-size:12px}
-.macrocard .val{display:block;font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:700;font-size:16px;margin-top:2px}
-.macrocard .chg{display:block;font-size:12px;font-weight:600;margin-top:2px}
+.moverstitle{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px}
+.moverstbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.moverstbl td{padding:3px 4px;border-top:1px solid var(--rule)}
+.moverstbl tr:first-child td{border-top:0}
+.moverstbl.quotecard td{padding:5px 4px}
+.ic.small{font-size:13px}
+.macrogrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
 .desk .head .ic{font-size:22px}
 .desk .head .nm{font-weight:600;font-size:15px}
 .desk .blurb{color:var(--muted);font-size:12.5px;margin:0 0 10px}
@@ -1045,18 +1046,21 @@ function renderTeam(s){
   }));
 }
 function renderMarkets(s){
+  const fmtPrice = v => v!=null ? (+v).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
+  const fmtChg = v => v!=null ? (v>0?"+":"")+v.toFixed(2)+"%" : "—";
   document.getElementById("markets-grid").innerHTML = (s.markets || []).map(m => {
-    const chips = m.pools.map(p => `<span class="chip">${esc(p)}</span>`).join("");
-    const price = m.price!=null ? (+m.price).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
-    const chg = m.change_pct;
-    return `<div class="desk"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div><p class="blurb">${esc(m.hours)}</p>
-      <div class="marketrate"><span class="lbl">${esc(m.index_name)}</span><span class="val">${price}</span><span class="chg ${cls(chg)}">${chg!=null?(chg>0?"+":"")+chg.toFixed(2)+"%":"—"}</span></div>
-      <div class="poolchips">${chips}</div></div>`;
+    const moverRows = (m.movers || []).map(x => `<tr><td class="l">${esc(x.symbol)}</td><td class="n">${fmtPrice(x.price)}</td><td class="n ${cls(x.change_pct)}">${fmtChg(x.change_pct)}</td></tr>`).join("");
+    return `<div class="desk market-card"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div>
+      <p class="blurb">${esc(m.hours)}${m.hours_ist?` &middot; ${esc(m.hours_ist)}`:""}</p>
+      <div class="marketrate"><span class="lbl">${esc(m.index_name)}</span><span class="val">${fmtPrice(m.price)}</span><span class="chg ${cls(m.change_pct)}">${fmtChg(m.change_pct)}</span></div>
+      ${moverRows ? `<p class="moverstitle">Top movers</p><table class="moverstbl"><tbody>${moverRows}</tbody></table>` : `<p class="note">Movers loading…</p>`}
+      </div>`;
   }).join("");
-  document.getElementById("macro-grid").innerHTML = (s.macro || []).map(q => {
-    const chg = q.change_pct;
-    return `<div class="macrocard"><span class="nm">${esc(q.name)}</span><span class="val">${q.price!=null?(+q.price).toLocaleString("en-IN",{maximumFractionDigits:2}):"—"}</span><span class="chg ${cls(chg)}">${chg!=null?(chg>0?"+":"")+chg.toFixed(2)+"%":"—"}</span></div>`;
-  }).join("") || `<p class="note">Quotes loading…</p>`;
+  const quoteCard = (title, icon, rows) => `<div class="desk"><div class="head"><span class="ic">${icon}</span><span class="nm">${esc(title)}</span></div>
+    <table class="moverstbl quotecard">${rows.map(q => `<tr><td class="l"><span class="ic small">${q.icon}</span> ${esc(q.name)}</td><td class="n">${fmtPrice(q.price)}</td><td class="n ${cls(q.change_pct)}">${fmtChg(q.change_pct)}</td></tr>`).join("")}</table></div>`;
+  document.getElementById("macro-grid").innerHTML =
+    quoteCard("Commodities", "\u{1F6E2}️", s.commodities || []) +
+    quoteCard("Currencies", "\u{1F4B1}", s.currencies || []);
 }
 document.getElementById("who-close").addEventListener("click", () => document.getElementById("who").close());
 document.getElementById("brief-close").addEventListener("click", () => document.getElementById("brief").close());

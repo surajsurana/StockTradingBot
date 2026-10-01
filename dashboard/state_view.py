@@ -47,41 +47,53 @@ POOLS_INFO = [
 ]
 
 # ----------------------------------------------------------------------------
-# Markets tab (2026-10-02, per explicit direction: "we need a markets tab...
-# it will show the markets like NSE, NASDAQ, Crypto etc where we are trading"
-# -- then, per immediate follow-up correction, "no need to show capital in
-# markets, its just real live markets... the rates, and prices i mean": NOT a
-# recap of our own capital/P&L there (the Team/Strategies/P&L tabs already
-# show that) -- just each market's own live level/rate, like a quote board.
-# Two parts: MARKETS (one representative index/rate per venue we trade on --
-# see MARKET_INDEX_TICKERS) and MACRO_INSTRUMENTS (gold, silver, crude, major
-# currency pairs -- context for the broader backdrop, NOT something any pool
-# trades directly; GOLDBEES/SILVERBEES on Pool B's watchlist is the one
-# indirect exception, noted on the card). Both are plain quote lookups, no
-# pool/capital data needed at all.
+# Markets tab (2026-10-02, per explicit direction, iterated three times:
+# 1) "we need a markets tab... it will show the markets like NSE, NASDAQ,
+#    Crypto etc where we are trading"
+# 2) "no need to show capital in markets, its just real live markets... the
+#    rates, and prices i mean" -- NOT a recap of our own capital/P&L there
+#    (Team/Strategies/P&L already show that); "no need to see pools in it"
+#    either -- just each market's own live level/rate, like a quote board.
+#    "also clearly show markets... please be very clear to only show and
+#    name markets that we are trading in" -- MARKETS["name"] now matches
+#    its own index_name exactly (previously "US Equities (NASDAQ/NYSE)"
+#    headlined two exchanges while the rate below it was S&P 500, a
+#    genuinely different, cross-exchange index -- fixed by naming the card
+#    after what we actually track).
+# 3) "additional IST timings also in Foreign market timings" (US hours, see
+#    _us_hours_ist()); "bigger cards like one for comodity, and other for
+#    currency" (COMMODITIES/CURRENCIES, each its own card of rows, same
+#    pattern as a market card's movers list); "country flag[s]"; "top 5
+#    movers of the day with prices" (see MOVERS_FOR below).
 # ----------------------------------------------------------------------------
 MARKETS = [
-    {"id": "nse", "name": "NSE (India Equities)", "icon": "\U0001F1EE\U0001F1F3",
-     "pools": ["A", "B", "C", "D", "F", "H"], "hours": "09:15-15:30 IST, Mon-Fri", "index_name": "Nifty 50"},
+    {"id": "nse", "name": "NSE", "icon": "\U0001F1EE\U0001F1F3",
+     "hours": "09:15-15:30 IST, Mon-Fri", "index_name": "Nifty 50"},
     {"id": "crypto", "name": "Crypto (Binance)", "icon": "₿",
-     "pools": ["E", "E1", "G"], "hours": "24/7, every day", "index_name": "Bitcoin"},
-    {"id": "us", "name": "US Equities (NASDAQ/NYSE)", "icon": "\U0001F1FA\U0001F1F8",
-     "pools": ["I"], "hours": "09:30-16:00 US Eastern, Mon-Fri", "index_name": "S&P 500"},
+     "hours": "24/7, every day", "index_name": "Bitcoin"},
+    {"id": "us", "name": "S&P 500 (US Equities)", "icon": "\U0001F1FA\U0001F1F8",
+     "hours": "09:30-16:00 US Eastern, Mon-Fri", "index_name": "S&P 500"},
 ]
 
 # name -> yfinance ticker, the one representative rate shown on each market's own card.
 MARKET_INDEX_TICKERS = {"Nifty 50": "^NSEI", "Bitcoin": "BTC-USD", "S&P 500": "^GSPC"}
 
-# name -> yfinance ticker, the separate "Macro backdrop" strip below the market cards.
-MACRO_INSTRUMENTS = {
-    "Gold": "GC=F", "Silver": "SI=F", "Crude Oil (WTI)": "CL=F",
-    "USD/INR": "INR=X", "EUR/INR": "EURINR=X", "EUR/USD": "EURUSD=X",
-}
-
-# Both dicts above are fetched the same way, into the same cache, by
-# dashboard/server.py's PriceCache.refresh_macro() -- passed into
-# build_dashboard_state() as the single `macro_quotes` dict both markets_view()
-# and macro_view() read from (by index_name / by MACRO_INSTRUMENTS membership).
+# Two grouped "bigger cards" below the market cards -- context for the
+# broader backdrop, NOT something any pool trades directly (GOLDBEES/
+# SILVERBEES on Pool B's watchlist is the one indirect exception, noted on
+# the card). Both lists are fetched the same way, into the same cache, by
+# dashboard/server.py's PriceCache.refresh_macro().
+COMMODITIES = [
+    {"name": "Gold", "ticker": "GC=F", "icon": "\U0001F7E1"},
+    {"name": "Silver", "ticker": "SI=F", "icon": "⚪"},
+    {"name": "Crude Oil (WTI)", "ticker": "CL=F", "icon": "\U0001F6E2️"},
+]
+CURRENCIES = [
+    {"name": "USD/INR", "ticker": "INR=X", "icon": "\U0001F1FA\U0001F1F8→\U0001F1EE\U0001F1F3"},
+    {"name": "EUR/INR", "ticker": "EURINR=X", "icon": "\U0001F1EA\U0001F1FA→\U0001F1EE\U0001F1F3"},
+    {"name": "EUR/USD", "ticker": "EURUSD=X", "icon": "\U0001F1EA\U0001F1FA→\U0001F1FA\U0001F1F8"},
+]
+MACRO_INSTRUMENTS = {item["name"]: item["ticker"] for item in COMMODITIES + CURRENCIES}
 
 
 def _nse_open(now: datetime) -> bool:
@@ -97,32 +109,53 @@ def _us_market_open(now: datetime) -> bool:
     return et_now.weekday() < 5 and dtime(9, 30) <= et_now.time() <= dtime(16, 0)
 
 
-def markets_view(macro_quotes: Optional[dict], now: datetime) -> list:
+def _us_hours_ist(now: datetime) -> str:
+    """Today's actual 09:30-16:00 US Eastern session converted to IST,
+    computed fresh per-day via zoneinfo rather than a static range -- the
+    real offset shifts by an hour across the EDT/EST switch, so a fixed
+    string would be quietly wrong for roughly half the year."""
+    et_today = now.replace(tzinfo=IST).astimezone(US_EASTERN).date()
+    open_et = datetime.combine(et_today, dtime(9, 30), tzinfo=US_EASTERN)
+    close_et = datetime.combine(et_today, dtime(16, 0), tzinfo=US_EASTERN)
+    open_ist, close_ist = open_et.astimezone(IST), close_et.astimezone(IST)
+    next_day = " (+1d)" if close_ist.date() != open_ist.date() else ""
+    return f"{open_ist.strftime('%H:%M')}-{close_ist.strftime('%H:%M')}{next_day} IST"
+
+
+def markets_view(macro_quotes: Optional[dict], movers: Optional[dict], now: datetime) -> list:
     """One card per venue we trade on -- its own live index/rate (Nifty 50,
-    Bitcoin, S&P 500) and open/closed status, NOT our capital or P&L there
-    (see the module-level note above for why)."""
-    macro_quotes = macro_quotes or {}
+    Bitcoin, S&P 500), open/closed status, and that market's top 5 movers --
+    NOT our capital or P&L there (see the module-level note above for why)."""
+    macro_quotes, movers = macro_quotes or {}, movers or {}
     status_by_id = {"nse": _nse_open(now), "crypto": True, "us": _us_market_open(now)}
     out = []
     for m in MARKETS:
         q = macro_quotes.get(m["index_name"]) or {}
         out.append({
             "id": m["id"], "name": m["name"], "icon": m["icon"], "hours": m["hours"],
-            "pools": [POOL_LABELS.get(p, "Pool " + p) for p in m["pools"]],
+            "hours_ist": _us_hours_ist(now) if m["id"] == "us" else None,
             "status": "Open" if status_by_id[m["id"]] else "Closed",
             "index_name": m["index_name"], "price": q.get("price"), "change_pct": q.get("change_pct"),
+            "movers": movers.get(m["id"]) or [],
         })
     return out
 
 
-def macro_view(macro_quotes: Optional[dict]) -> list:
-    """Live reference quotes for gold/silver/crude/major currency pairs --
-    fetched by dashboard/server.py's PriceCache, passed straight through.
-    Returns [] (not an error) when nothing has been fetched yet, same
-    convention as every other price-dependent view in this module."""
+def _quote_rows(items: list, macro_quotes: Optional[dict]) -> list:
     macro_quotes = macro_quotes or {}
-    return [{"name": name, "price": q.get("price"), "change_pct": q.get("change_pct")}
-            for name, q in macro_quotes.items() if name in MACRO_INSTRUMENTS]
+    out = []
+    for item in items:
+        q = macro_quotes.get(item["name"]) or {}
+        out.append({"name": item["name"], "icon": item["icon"], "price": q.get("price"), "change_pct": q.get("change_pct")})
+    return out
+
+
+def commodities_view(macro_quotes: Optional[dict]) -> list:
+    return _quote_rows(COMMODITIES, macro_quotes)
+
+
+def currencies_view(macro_quotes: Optional[dict]) -> list:
+    return _quote_rows(CURRENCIES, macro_quotes)
 
 
 DESKS = [
@@ -1162,7 +1195,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
                           advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
                           research_queue: Optional[dict] = None, us_prices: Optional[dict] = None,
-                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None) -> dict:
+                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None,
+                          movers: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -1287,8 +1321,9 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     if not (mode == "live" and reports is not None
             and add_pool_h(state, my_portfolio, reports, (groww or {}).get("cash"), now.date(), (advice_out or {}).get("tax"))):
         add_pool_h_placeholder(state)
-    state["markets"] = markets_view(macro_quotes, now)
-    state["macro"] = macro_view(macro_quotes)
+    state["markets"] = markets_view(macro_quotes, movers, now)
+    state["commodities"] = commodities_view(macro_quotes)
+    state["currencies"] = currencies_view(macro_quotes)
     return state
 
 
