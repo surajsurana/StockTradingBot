@@ -1107,40 +1107,53 @@ def _with_capital(p: dict) -> dict:
     return p
 
 
-def next_research_run(now: datetime) -> dict:
-    """When the Strategy Implementer routine next fires: every Sunday at 19:00 IST (a scheduled cloud agent, so
-    its real start can lag by a few minutes). This is the day and time whatever is queued actually gets picked up."""
-    days = (6 - now.weekday()) % 7
+RESEARCH_RUN_WEEKDAY = {"india": 6, "crypto": 1, "us": 3}   # Sunday / Tuesday / Thursday (Python weekday())
+LANE_LABELS = {"india": "Indian markets", "crypto": "Crypto", "us": "US equity"}
+
+
+def next_research_run(now: datetime, lane: str = "india") -> dict:
+    """When a lane's research routine next fires: 19:00 IST on that lane's own weekday (a scheduled cloud
+    agent, so its real start can lag by a few minutes). Since 2026-10-03 the three lanes are three
+    independent routines on three different days -- India Sunday, crypto Tuesday, US Thursday."""
+    days = (RESEARCH_RUN_WEEKDAY[lane] - now.weekday()) % 7
     when = (now + timedelta(days=days)).replace(hour=19, minute=0, second=0, microsecond=0)
     if when <= now:
         when += timedelta(days=7)
     return {"iso": when.isoformat(timespec="minutes"), "label": f"{when:%a} {when.day} {when:%b}, 7:00 pm IST"}
 
 
-def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = None, now: Optional[datetime] = None) -> dict:
+def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] = None, now: Optional[datetime] = None) -> dict:
     """The Head-of-Research roadmap (swing_research/research_roadmap.py)
     reduced to what the Strategies tab shows: ranked candidates that
     could be researched now, and the ones waiting on data. Candidates
     whose key is already in the registry are dropped -- the roadmap's
     own candidate list lags promotions.
 
-    `queue` is research_queue.load()'s output (2026-09-22): one strategy
-    researched at a time, a new one picked up automatically once a week or
-    started early from the dashboard. Each row gets a `queue_status` --
-    "current" (being researched right now, no Start button), a completed
-    history row's outcome (e.g. "researched" with its experiment id, also
-    no button), or None (still eligible to start)."""
+    `queues` maps each research lane to that lane's research_queue.load()
+    output. Since 2026-10-03 there are THREE independent queues (india,
+    crypto, us), each with its own current candidate and its own weekly
+    routine, so a candidate's queue state is read from its own lane's file
+    -- reading only India's (as this did before) left the crypto lane's
+    live candidate showing a "Start research" button. Each row gets a
+    `queue` -- "current" (being researched right now, no Start button), a
+    completed history row's outcome (e.g. "researched" with its experiment
+    id, also no button), or None (still eligible to start)."""
+    from swing_research.research_roadmap import RESEARCH_LANES, lane_of
     taken = {r.strategy_key for r in registry_records}
-    queue = queue or {"current": None, "history": []}
-    current = queue.get("current") or {}
-    current_key = current.get("key")
-    resolved = {h["key"]: h for h in queue.get("history", []) if h.get("resolved")}
+    queues = queues or {}
+    now = now or datetime.now()
+    per_lane = {}
+    for lane in RESEARCH_LANES:
+        q = queues.get(lane) or {"current": None, "history": []}
+        current = q.get("current") or {}
+        per_lane[lane] = (current, {h["key"]: h for h in q.get("history", []) if h.get("resolved")})
 
-    def queue_status(key):
-        if key == current_key:
+    def queue_status(c):
+        current, resolved = per_lane[lane_of(c)]
+        if c.key == current.get("key"):
             return {"state": "current", "in_progress": bool(current.get("in_progress")), "mode": current.get("mode", "backtest")}
-        if key in resolved:
-            h = resolved[key]
+        if c.key in resolved:
+            h = resolved[c.key]
             return {"state": "resolved", "outcome": h["outcome"], "experiment_id": h.get("experiment_id")}
         return None
 
@@ -1149,11 +1162,11 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
         return {"rank": rank, "key": c.key, "name": c.name, "family": c.factor_family, "year": c.year,
                 "authors": c.authors, "holding": c.typical_holding_period,
                 "holding_days_min": c.holding_days_min, "holding_days_max": c.holding_days_max, "direction": c.direction,
-                "horizon_lane": c.horizon_lane, "market": c.market, "mode": mode,
+                "horizon_lane": c.horizon_lane, "market": c.market, "lane": lane_of(c), "mode": mode,
                 "score": s.total_score, "axes": {k: round(v, 1) for k, v in s.axis_scores.items()},
                 "feasibility": s.feasibility_classification,
                 "blockers": list(s.feasibility_reasons)[:2], "strengths": c.known_strengths,
-                "weaknesses": c.known_weaknesses, "queue": queue_status(c.key)}
+                "weaknesses": c.known_weaknesses, "queue": queue_status(c)}
 
     from swing_research.research_roadmap import DEFERRED_BY_DIRECTION
     # paper_direct_eligible (2026-09-22): a blocked candidate that scores as well as the worst
@@ -1172,17 +1185,25 @@ def roadmap_view(roadmap: dict, registry_records: list, queue: Optional[dict] = 
         r = row(s, "backtest")
         r["blockers"] = [DEFERRED_BY_DIRECTION[s.candidate.key]]
         rows.append(r)
-    return {"ready": [row(s, mode, i + 1) for i, (s, mode) in enumerate(ready_pool)], "deferred": rows,
-            "weights": roadmap.get("weights", {}), "next_run": next_research_run(now or datetime.now())}
+    ready = [row(s, mode, i + 1) for i, (s, mode) in enumerate(ready_pool)]
+    # One status line per lane, so the three independent queues are all visible at a glance rather than
+    # only India's. A lane with nothing researchable (US today -- its one candidate is data-blocked) still
+    # gets a line, saying so, instead of silently vanishing.
+    lanes = [{"lane": lane, "label": LANE_LABELS[lane],
+              "current": next((r for r in ready if r["lane"] == lane and r["queue"] and r["queue"]["state"] == "current"), None),
+              "ready": sum(1 for r in ready if r["lane"] == lane),
+              "deferred": sum(1 for r in rows if r["lane"] == lane),
+              "next_run": next_research_run(now, lane)} for lane in RESEARCH_LANES]
+    return {"ready": ready, "deferred": rows, "lanes": lanes,
+            "weights": roadmap.get("weights", {}), "next_run": next_research_run(now)}
 
 
-def agents_view(queue: Optional[dict] = None) -> list:
-    """AGENTS, with the Strategy Implementer's status overridden to "working" while the research routine
-    (Phase 2, a scheduled cloud agent) actually has something in_progress -- the only agent on the whole
-    team tab whose status reflects something outside this VPS's own logs, since that's the only signal
-    the routine ever sends back (research_queue.mark_in_progress, called over the internet)."""
-    current = (queue or {}).get("current") or {}
-    if not current.get("in_progress"):
+def agents_view(queues: Optional[dict] = None) -> list:
+    """AGENTS, with the Strategy Implementer's status overridden to "working" while any lane's research
+    routine (Phase 2, three scheduled cloud agents) actually has something in_progress -- the only agent on
+    the whole team tab whose status reflects something outside this VPS's own logs, since that's the only
+    signal the routines ever send back (research_queue.mark_in_progress, via the GitHub sync)."""
+    if not any(((q or {}).get("current") or {}).get("in_progress") for q in (queues or {}).values()):
         return AGENTS
     return [{**a, "live_status": "working"} if a["id"] == "research_routine" else a for a in AGENTS]
 
@@ -1195,7 +1216,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
                           advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
-                          research_queue: Optional[dict] = None, us_prices: Optional[dict] = None,
+                          research_queues: Optional[dict] = None, us_prices: Optional[dict] = None,
                           us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
@@ -1308,12 +1329,12 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles, pool_e1=pool_e1,
                           pool_i=pool_i, us_prices=us_prices, us_prev_close=us_prev_close),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": agents_view(research_queue), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades, pool_e1=pool_e1, pool_i=pool_i),
+        "schedule": schedule, "registry": registry, "agents": agents_view(research_queues), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades, pool_e1=pool_e1, pool_i=pool_i),
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1, pool_i=pool_i),
-        "roadmap": roadmap_view(roadmap, registry_records, research_queue, now) if roadmap else {"ready": [], "deferred": [], "weights": {}, "next_run": next_research_run(now)},
+        "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
     # (Paper mode, or Live before any Groww data has been read), like any pool with nothing running.

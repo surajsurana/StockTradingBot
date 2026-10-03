@@ -581,7 +581,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             import research_queue
             state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
                                           roadmap=self.roadmap_cache.get(), mode=mode,
-                                          research_queue=research_queue.load(STATE_DIR),
+                                          research_queues={lane: research_queue.load(STATE_DIR, lane)
+                                                           for lane in research_queue.LANES},
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           us_prices=us_prices, us_prev_close=us_prev_close,

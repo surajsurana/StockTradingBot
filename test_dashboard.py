@@ -327,7 +327,7 @@ class TestBuildDashboardState(unittest.TestCase):
         queue = {"current": {"key": "current_one"}, "history": [
             {"key": "resolved_one", "resolved": "2026-09-20", "outcome": "researched", "experiment_id": "EXP-050"}]}
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
-                                  roadmap=roadmap, research_queue=queue)
+                                  roadmap=roadmap, research_queues={"india": queue})
         rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
         self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False, "mode": "backtest"})
         self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
@@ -337,9 +337,62 @@ class TestBuildDashboardState(unittest.TestCase):
         # until resolved -- the only thing that stops the queue from being freely changed).
         queue["current"]["in_progress"] = True
         s2 = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
-                                   roadmap=roadmap, research_queue=queue)
+                                   roadmap=roadmap, research_queues={"india": queue})
         rows2 = {c["key"]: c["queue"] for c in s2["roadmap"]["ready"]}
         self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True, "mode": "backtest"})
+
+    def test_each_lane_reads_its_own_queue_not_indias(self):
+        # 2026-10-03: the Research tab used to read only research_queue.json (India), so the crypto lane's
+        # live candidate rendered a "Start research" button as if nothing was running. Each candidate's
+        # queue state must come from ITS OWN lane's file.
+        cand = lambda key, name, lane, market: SimpleNamespace(key=key, name=name, factor_family="Reversal",
+            year=2001, authors="A & B", typical_holding_period="1 month", direction="Long only",
+            known_strengths="s", known_weaknesses="w", horizon_lane=lane, market=market,
+            holding_days_min=30, holding_days_max=30)
+        scored = lambda key, name, score, lane, market: SimpleNamespace(candidate=cand(key, name, lane, market),
+            total_score=score, axis_scores={"academic_evidence": 8.0},
+            feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])
+        roadmap = {"researchable_now": [scored("ind", "India one", 9.0, "swing", "India"),
+                                        scored("cry", "Crypto one", 8.0, "crypto", "Global"),
+                                        scored("usa", "US one", 7.0, "long_term", "US")],
+                   "deferred_pending_data": [], "weights": {}}
+        queues = {"india": {"current": {"key": "ind", "in_progress": True}, "history": []},
+                  "crypto": {"current": {"key": "cry", "in_progress": False}, "history": []},
+                  "us": {"current": None, "history": []}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap, research_queues=queues)
+        rows = {c["key"]: c for c in s["roadmap"]["ready"]}
+        self.assertEqual([rows[k]["lane"] for k in ("ind", "cry", "usa")], ["india", "crypto", "us"])
+        self.assertTrue(rows["ind"]["queue"]["in_progress"])
+        self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "mode": "backtest"})
+        self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
+
+    def test_lane_strip_covers_all_three_queues_including_an_idle_one(self):
+        cand = lambda key, name, lane, market: SimpleNamespace(key=key, name=name, factor_family="Reversal",
+            year=2001, authors="A & B", typical_holding_period="1 month", direction="Long only",
+            known_strengths="s", known_weaknesses="w", horizon_lane=lane, market=market,
+            holding_days_min=30, holding_days_max=30)
+        scored = lambda key, name, score, lane, market, feas="IMPLEMENTABLE", reasons=(): SimpleNamespace(
+            candidate=cand(key, name, lane, market), total_score=score, axis_scores={"academic_evidence": 8.0},
+            feasibility_classification=feas, feasibility_reasons=list(reasons))
+        roadmap = {"researchable_now": [scored("ind", "India one", 9.0, "swing", "India"),
+                                        scored("cry", "Crypto one", 8.0, "crypto", "Global")],
+                   "deferred_pending_data": [scored("usa", "US blocked", 7.0, "long_term", "US",
+                                                    "NOT_CURRENTLY_IMPLEMENTABLE", ["Requires 'dividends'"])],
+                   "weights": {}}
+        queues = {"india": {"current": {"key": "ind", "in_progress": True}, "history": []}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap, research_queues=queues)
+        lanes = {l["lane"]: l for l in s["roadmap"]["lanes"]}
+        self.assertEqual(set(lanes), {"india", "crypto", "us"})       # all three, even an empty one
+        self.assertEqual(lanes["india"]["current"]["key"], "ind")
+        self.assertIsNone(lanes["crypto"]["current"])                 # researchable, but nothing picked up yet
+        self.assertEqual(lanes["crypto"]["ready"], 1)
+        self.assertEqual((lanes["us"]["ready"], lanes["us"]["deferred"]), (0, 1))   # US: blocked, so it says so
+        self.assertEqual(s["roadmap"]["deferred"][0]["lane"], "us")
+        # each lane quotes its OWN routine's day -- India Sunday, crypto Tuesday, US Thursday
+        self.assertEqual([lanes[k]["next_run"]["iso"] for k in ("india", "crypto", "us")],
+                         ["2026-09-13T19:00", "2026-09-15T19:00", "2026-09-10T19:00"])
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")
