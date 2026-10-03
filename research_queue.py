@@ -11,11 +11,12 @@ not interrupt"): a candidate sits as `current` with `in_progress=False` from
 the moment it's queued, and can be bumped for a better-ranked one, or a
 specific one picked by hand, any number of times -- reconsider() and
 start_now() both do this. The unattended research routine (Phase 2, a
-scheduled Claude Code cloud agent, not Python in this repo) calls
-mark_in_progress() as the very first thing it does once it commits to a
-candidate; from that moment `current` is locked until resolve() clears it.
-A bumped candidate's history row is closed out with outcome "superseded",
-same append-only audit trail as a real "researched"/"skipped" resolution.
+scheduled Claude Code cloud agent, not Python in this repo) claims a
+candidate by pushing its own branch (research_queue_github_sync.py watches
+for it and calls mark_in_progress()); from that moment `current` is locked
+until resolve() clears it. A bumped candidate's history row is closed out
+with outcome "superseded", same append-only audit trail as a real
+"researched"/"skipped" resolution.
 
 A candidate that can never get a real historical backtest (a genuine data gap, not a scope choice)
 but scores as well as the worst candidate that CAN is still queued -- just with mode="paper_direct"
@@ -30,8 +31,22 @@ new paper-trading pool (no backtest verdict possible), same PR-only, human-merge
 every other candidate; a human manually starting a blocked candidate via start_now() also gets
 paper_direct mode, on their own judgement, regardless of whether it clears the automatic floor.
 
+LANES (added 2026-10-03, per explicit direction: "shall we also build this same auto research for
+crypto and us equity? and each section runs 1 or 2 strategies research per week at different times"):
+three INDEPENDENT queues -- "india" (the original, unchanged), "crypto" and "us" -- each with its own
+`current`/`history`, its own state file, and (research_queue_github_sync.py) its own snapshot/branch-
+prefix on GitHub, so a glut of India candidates can never starve crypto or US of research cadence the
+way a single pooled queue would. research_roadmap.lane_of(candidate) decides which lane a candidate
+belongs to (horizon_lane == "crypto" -> "crypto"; market == "US" -> "us"; everything else -> "india",
+which is every pre-existing candidate, unchanged). Every function below defaults to lane="india" for
+full backward compatibility with every caller that predates this -- the dashboard, the Telegram
+watchdog, and the "india" lane's own cron all keep working completely unmodified. start_now() is the
+one exception: it takes the FULL unfiltered roadmap (not a lane-filtered one) and determines the
+target candidate's lane itself via lane_of(), so the dashboard's single "Start research" button keeps
+working for a candidate in ANY lane without the caller needing to know which.
+
 This module is deliberately dumb -- it only tracks state, in
-deployment/state/research_queue.json, the same atomic-write-over-a-tmp-file
+deployment/state/research_queue*.json, the same atomic-write-over-a-tmp-file
 convention advice/tasks.py already uses for advice_done.json. It never
 scores anything itself (that's research_roadmap.build_roadmap(), unchanged)
 and never writes strategy code or runs a backtest.
@@ -42,17 +57,25 @@ import os
 from datetime import date, datetime
 from typing import Optional
 
-QUEUE_FILE = "research_queue.json"
+LANES = ("india", "crypto", "us")
+
+
+def _queue_filename(lane: str) -> str:
+    """"india" keeps the original, unlabeled filename -- this is the lane an in-flight research run
+    and every pre-2026-10-03 caller already knows about; renaming it would break them."""
+    if lane not in LANES:
+        raise ValueError(f"unknown lane {lane!r}, must be one of {LANES}")
+    return "research_queue.json" if lane == "india" else f"research_queue_{lane}.json"
 
 
 def _empty() -> dict:
     return {"current": None, "history": []}
 
 
-def load(state_dir: Optional[str]) -> dict:
+def load(state_dir: Optional[str], lane: str = "india") -> dict:
     if not state_dir:
         return _empty()
-    path = os.path.join(state_dir, QUEUE_FILE)
+    path = os.path.join(state_dir, _queue_filename(lane))
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -63,12 +86,13 @@ def load(state_dir: Optional[str]) -> dict:
         return _empty()
 
 
-def _save(state_dir: str, data: dict) -> None:
+def _save(state_dir: str, data: dict, lane: str = "india") -> None:
     os.makedirs(state_dir, exist_ok=True)
-    tmp = os.path.join(state_dir, QUEUE_FILE + ".tmp")
+    filename = _queue_filename(lane)
+    tmp = os.path.join(state_dir, filename + ".tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    os.replace(tmp, os.path.join(state_dir, QUEUE_FILE))
+    os.replace(tmp, os.path.join(state_dir, filename))
 
 
 def _resolved_keys(data: dict) -> set:
@@ -78,13 +102,14 @@ def _resolved_keys(data: dict) -> set:
     return {r["key"] for r in data["history"] if r.get("resolved") is not None}
 
 
-def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, mode: str, now: datetime) -> dict:
+def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, mode: str,
+                 now: datetime, lane: str = "india") -> dict:
     entry = {"key": key, "started": now.date().isoformat(), "started_by": started_by, "in_progress": False, "mode": mode}
     data["current"] = entry
     data["history"] = list(data["history"]) + [{"key": key, "name": name, "queued": now.date().isoformat(),
                                                  "started": entry["started"], "started_by": started_by, "mode": mode,
                                                  "resolved": None, "outcome": None, "experiment_id": None, "branch": None}]
-    _save(state_dir, data)
+    _save(state_dir, data, lane)
     return entry
 
 
@@ -97,16 +122,20 @@ def _close_open_row(data: dict, key: str, outcome: str, now: datetime,
             return
 
 
-def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None) -> Optional[dict]:
+def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane: str = "india") -> Optional[dict]:
     """Keeps `current` pointed at the best available candidate: picks the top-ranked one if nothing is
     queued, swaps it for a better-ranked one if the current pick was itself auto-picked and hasn't
     started yet, and does nothing once research is in_progress (locked until resolve()) -- "research
     already ongoing" is the only thing this refuses to interrupt (2026-09-22, per explicit direction).
     A candidate a human chose by hand (start_now, started_by="manual") is left alone here; only a
     human picking something else, via start_now, moves it off a manual pick. Safe to call as often as
-    you like -- every no-op path just returns None."""
+    you like -- every no-op path just returns None.
+
+    `roadmap` should already be scoped to `lane` (research_roadmap.build_roadmap(lane=lane)) -- this
+    function doesn't filter it itself, so passing an unfiltered roadmap would let any lane's queue
+    pick a candidate that actually belongs to a different lane."""
     now = now or datetime.now()
-    data = load(state_dir)
+    data = load(state_dir, lane)
     if data["current"] and data["current"].get("in_progress"):
         return None
     if data["current"] and data["current"].get("started_by") == "manual":
@@ -123,21 +152,29 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None) -> Op
         return None   # already the best available pick
     if data["current"] is not None:
         _close_open_row(data, data["current"]["key"], "superseded", now)
-    return _set_current(state_dir, data, top.key, top.name, "auto", mode, now)
+    return _set_current(state_dir, data, top.key, top.name, "auto", mode, now, lane)
 
 
 def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] = None) -> dict:
     """The manual "start research" button: jump the queue to `key` regardless of rank, any time --
     including bumping whatever's currently queued, auto-picked or manual, as long as research hasn't
-    actually started on it yet. Refuses only once research is in_progress, or for an unknown/already
-    resolved key, same 400-on-bad-input convention as advice.tasks.mark_done."""
+    actually started on it yet. Refuses only once research is in_progress (in `key`'s own lane -- a
+    different lane being in-progress doesn't block this), or for an unknown/already resolved key, same
+    400-on-bad-input convention as advice.tasks.mark_done.
+
+    `roadmap` must be the FULL, unfiltered roadmap (research_roadmap.build_roadmap() with no lane
+    argument) -- this looks `key` up in it and determines which lane's queue to write to itself
+    (research_roadmap.lane_of()), so the one dashboard button works for a candidate in any lane
+    without the caller needing to know which."""
+    from swing_research.research_roadmap import lane_of
     now = now or datetime.now()
-    data = load(state_dir)
-    if data["current"] and data["current"].get("in_progress"):
-        raise ValueError(f"already researching {data['current']['key']}")
     match = next((s for s in roadmap.get("all_scored", []) if s.candidate.key == key), None)
     if match is None:
         raise ValueError(f"unknown candidate {key!r}")
+    lane = lane_of(match.candidate)
+    data = load(state_dir, lane)
+    if data["current"] and data["current"].get("in_progress"):
+        raise ValueError(f"already researching {data['current']['key']}")
     if key in _resolved_keys(data):
         raise ValueError(f"{key!r} was already resolved")
     if data["current"] is not None and data["current"]["key"] == key:
@@ -147,34 +184,37 @@ def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] =
     # A human choosing a blocked candidate by hand is that human's own judgement call, independent of
     # whether it clears the automatic paper_direct_eligible floor.
     mode = "paper_direct" if match.feasibility_classification == "NOT_CURRENTLY_IMPLEMENTABLE" else "backtest"
-    return _set_current(state_dir, data, match.candidate.key, match.candidate.name, "manual", mode, now)
+    return _set_current(state_dir, data, match.candidate.key, match.candidate.name, "manual", mode, now, lane)
 
 
-def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None) -> None:
-    """Called by the research routine the instant it commits to actually working on `key` -- locks
-    `current` so advance()/start_now() can no longer bump it. Raises if `key` is no longer the current
-    pick (it may have been superseded, or resolved, before the routine got to it)."""
+def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None, lane: str = "india") -> None:
+    """Called the instant a candidate is claimed (research_queue_github_sync.py, on seeing its
+    `research/<key>` branch appear on GitHub) -- locks `current` so advance()/start_now() can no
+    longer bump it. Raises if `key` is no longer the current pick (it may have been superseded, or
+    resolved, before the claim was noticed)."""
     now = now or datetime.now()
-    data = load(state_dir)
+    data = load(state_dir, lane)
     if not data["current"] or data["current"]["key"] != key:
         raise ValueError(f"{key!r} is not the current candidate")
     data["current"]["in_progress"] = True
-    _save(state_dir, data)
+    _save(state_dir, data, lane)
 
 
-def build_snapshot(state_dir: str, roadmap: dict) -> dict:
-    """A small, public-safe snapshot of just the live queue's `current` pick
-    -- published to swing_research/research_queue_snapshot.json by
-    research_queue_github_sync.py so the unattended research routine's cloud
-    sandbox can read it from its own git clone of this repo instead of
-    reaching this VPS directly (added 2026-10-03, replacing the routine's
-    old direct-HTTP GET of /api/state: two real runs, 2026-09-27 and
-    2026-09-28, both confirmed the sandbox cannot reach this VPS on any
-    port/protocol at all -- a TCP-level connection timeout, not a cert or
-    TLS problem -- while GitHub access from the same sandbox has never
-    failed). Deliberately tiny: just what step 1 of the routine's prompt
-    actually extracts, nothing about any other candidate, no capital/P&L."""
-    data = load(state_dir)
+def build_snapshot(state_dir: str, roadmap: dict, lane: str = "india") -> dict:
+    """A small, public-safe snapshot of just `lane`'s queue's `current` pick
+    -- published to GitHub by research_queue_github_sync.py so the
+    unattended research routine's cloud sandbox can read it from its own
+    git clone of this repo instead of reaching this VPS directly (added
+    2026-10-03, replacing the routine's old direct-HTTP GET of /api/state:
+    two real runs, 2026-09-27 and 2026-09-28, both confirmed the sandbox
+    cannot reach this VPS on any port/protocol at all -- a TCP-level
+    connection timeout, not a cert or TLS problem -- while GitHub access
+    from the same sandbox has never failed). Deliberately tiny: just what
+    step 1 of the routine's prompt actually extracts, nothing about any
+    other candidate, no capital/P&L.
+
+    `roadmap` should be scoped to `lane`, same requirement as advance()."""
+    data = load(state_dir, lane)
     current = data.get("current")
     if not current:
         return {"current": None}
@@ -189,7 +229,7 @@ def build_snapshot(state_dir: str, roadmap: dict) -> dict:
 
 
 def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str] = None,
-            branch: Optional[str] = None, now: Optional[datetime] = None) -> None:
+            branch: Optional[str] = None, now: Optional[datetime] = None, lane: str = "india") -> None:
     """Called once the research routine finishes with `key` (whatever the result): clears `current`
     and fills in its history row. outcome is "researched" (mode="backtest" -- a real backtest ran,
     PASS or REJECT, experiment_id/branch identify it), "paper_trading_proposed" (mode="paper_direct" --
@@ -198,9 +238,9 @@ def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str]
     if outcome not in ("researched", "paper_trading_proposed", "skipped"):
         raise ValueError("outcome must be 'researched', 'paper_trading_proposed' or 'skipped'")
     now = now or datetime.now()
-    data = load(state_dir)
+    data = load(state_dir, lane)
     if not data["current"] or data["current"]["key"] != key:
         raise ValueError(f"{key!r} is not the current candidate")
     data["current"] = None
     _close_open_row(data, key, outcome, now, experiment_id, branch)
-    _save(state_dir, data)
+    _save(state_dir, data, lane)

@@ -18,12 +18,15 @@ from swing_research.research_roadmap import (
     CANDIDATES,
     DATA_CAPABILITIES,
     DEFAULT_WEIGHTS,
+    RESEARCH_LANES,
     build_roadmap,
     classify_data_feasibility,
     compute_diversification_score,
+    lane_of,
     render_roadmap_markdown,
     score_candidate,
 )
+from dataclasses import dataclass, replace
 
 
 def _fake_registry_path():
@@ -265,6 +268,57 @@ class TestScoringAndRoadmap(unittest.TestCase):
                     self.assertGreaterEqual(c.holding_days_max, c.holding_days_min, c.key)
             else:
                 self.assertIsNone(c.holding_days_max, c.key)   # a min without a max is fine (open-ended); the reverse never is
+
+
+class TestLaneOf(unittest.TestCase):
+    """lane_of() -- which of the three independent research queues (research_queue.py, added
+    2026-10-03) a candidate belongs to."""
+
+    def test_default_candidate_is_india(self):
+        self.assertEqual(lane_of(CANDIDATES[0]), "india")
+
+    def test_crypto_horizon_lane_is_the_crypto_queue_regardless_of_market(self):
+        c = replace(CANDIDATES[0], horizon_lane="crypto")
+        self.assertEqual(lane_of(c), "crypto")
+        c2 = replace(CANDIDATES[0], horizon_lane="crypto", market="US")
+        self.assertEqual(lane_of(c2), "crypto")   # crypto takes priority over market
+
+    def test_us_market_is_the_us_queue(self):
+        c = replace(CANDIDATES[0], market="US")
+        self.assertEqual(lane_of(c), "us")
+
+    def test_every_existing_candidate_is_the_india_lane(self):
+        # Confirms the backward-compat promise: lanes are new, nothing pre-existing moved.
+        for c in CANDIDATES:
+            self.assertEqual(lane_of(c), "india", c.key)
+
+
+class TestBuildRoadmapLaneFilter(unittest.TestCase):
+    def test_no_lane_argument_scores_every_candidate_unchanged(self):
+        r = build_roadmap(registry_path=_fake_registry_path())
+        self.assertEqual(len(r["all_scored"]), len(CANDIDATES))
+
+    def test_india_lane_today_matches_the_full_set(self):
+        # Every real candidate today is India-lane (see TestLaneOf), so filtering to "india" should
+        # change nothing yet -- this is the regression check for that invariant.
+        r_all = build_roadmap(registry_path=_fake_registry_path())
+        r_india = build_roadmap(registry_path=_fake_registry_path(), lane="india")
+        self.assertEqual({s.candidate.key for s in r_all["all_scored"]},
+                         {s.candidate.key for s in r_india["all_scored"]})
+
+    def test_crypto_and_us_lanes_are_empty_today(self):
+        # Honest current state (2026-10-03): zero crypto/US candidates exist in the roadmap yet --
+        # this will need re-seeding once real ones are added, which is the whole point of this test
+        # existing: it'll start failing the moment that happens, as a deliberate signal to update it.
+        r_crypto = build_roadmap(registry_path=_fake_registry_path(), lane="crypto")
+        r_us = build_roadmap(registry_path=_fake_registry_path(), lane="us")
+        self.assertEqual(r_crypto["all_scored"], [])
+        self.assertEqual(r_us["all_scored"], [])
+
+    def test_lane_filter_also_scopes_researchable_now_and_paper_direct_eligible(self):
+        r_crypto = build_roadmap(registry_path=_fake_registry_path(), lane="crypto")
+        self.assertEqual(r_crypto["researchable_now"], [])
+        self.assertEqual(r_crypto["paper_direct_eligible"], [])
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ from research_queue import advance, load, mark_in_progress, resolve, start_now
 class _FakeCandidate:
     key: str
     name: str
+    horizon_lane: str = "swing"
+    market: str = "India"
 
 
 @dataclass
@@ -255,6 +257,81 @@ class TestBuildSnapshot(unittest.TestCase):
         snap = build_snapshot(d, {"all_scored": []})
         self.assertEqual(snap["current"]["name"], "alpha")
         self.assertIsNone(snap["current"]["horizon_lane"])
+
+
+class TestLanes(unittest.TestCase):
+    """Three independent queues (2026-10-03, per explicit direction) -- india/crypto/us -- each with
+    its own state file, so a glut of India candidates can never starve crypto/US of cadence."""
+
+    def test_india_lane_uses_the_original_unlabeled_filename(self):
+        import os
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 3), lane="india")
+        self.assertTrue(os.path.exists(os.path.join(d, "research_queue.json")))
+        self.assertFalse(os.path.exists(os.path.join(d, "research_queue_india.json")))
+
+    def test_crypto_and_us_lanes_use_their_own_filenames(self):
+        import os
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["btc_thing"]), now=datetime(2026, 10, 3), lane="crypto")
+        advance(d, _roadmap(["us_thing"]), now=datetime(2026, 10, 3), lane="us")
+        self.assertTrue(os.path.exists(os.path.join(d, "research_queue_crypto.json")))
+        self.assertTrue(os.path.exists(os.path.join(d, "research_queue_us.json")))
+
+    def test_the_three_lanes_are_fully_independent(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 3), lane="india")
+        advance(d, _roadmap(["beta"]), now=datetime(2026, 10, 3), lane="crypto")
+        advance(d, _roadmap(["gamma"]), now=datetime(2026, 10, 3), lane="us")
+        mark_in_progress(d, "alpha", lane="india")   # locking india must not touch crypto/us
+        self.assertTrue(load(d, lane="india")["current"]["in_progress"])
+        self.assertFalse(load(d, lane="crypto")["current"]["in_progress"])
+        self.assertFalse(load(d, lane="us")["current"]["in_progress"])
+        self.assertEqual(load(d, lane="india")["current"]["key"], "alpha")
+        self.assertEqual(load(d, lane="crypto")["current"]["key"], "beta")
+        self.assertEqual(load(d, lane="us")["current"]["key"], "gamma")
+
+    def test_rejects_an_unknown_lane(self):
+        with self.assertRaises(ValueError):
+            load(tempfile.mkdtemp(), lane="nasdaq")
+
+    def test_start_now_auto_detects_the_lane_from_the_candidate(self):
+        d = tempfile.mkdtemp()
+        full_roadmap = {"all_scored": [
+            _FakeScored(_FakeCandidate("india_thing", "INDIA_THING")),
+            _FakeScored(_FakeCandidate("crypto_thing", "CRYPTO_THING", horizon_lane="crypto")),
+            _FakeScored(_FakeCandidate("us_thing", "US_THING", market="US")),
+        ]}
+        start_now(d, "india_thing", full_roadmap, now=datetime(2026, 10, 3))
+        start_now(d, "crypto_thing", full_roadmap, now=datetime(2026, 10, 3))
+        start_now(d, "us_thing", full_roadmap, now=datetime(2026, 10, 3))
+        self.assertEqual(load(d, lane="india")["current"]["key"], "india_thing")
+        self.assertEqual(load(d, lane="crypto")["current"]["key"], "crypto_thing")
+        self.assertEqual(load(d, lane="us")["current"]["key"], "us_thing")
+
+    def test_start_now_in_one_lane_does_not_block_another_lane_being_in_progress(self):
+        d = tempfile.mkdtemp()
+        full_roadmap = {"all_scored": [
+            _FakeScored(_FakeCandidate("crypto_thing", "CRYPTO_THING", horizon_lane="crypto")),
+            _FakeScored(_FakeCandidate("india_thing", "INDIA_THING")),
+        ]}
+        start_now(d, "crypto_thing", full_roadmap, now=datetime(2026, 10, 3))
+        mark_in_progress(d, "crypto_thing", lane="crypto")
+        # India's own queue is untouched -- starting something there must not be refused by crypto
+        # being locked.
+        entry = start_now(d, "india_thing", full_roadmap, now=datetime(2026, 10, 3))
+        self.assertEqual(entry["key"], "india_thing")
+
+    def test_build_snapshot_respects_lane(self):
+        from research_queue import build_snapshot
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["beta"]), now=datetime(2026, 10, 3), lane="crypto")
+        roadmap_crypto = {"all_scored": [_FakeScored(_FakeCandidate("beta", "BETA", horizon_lane="crypto"))]}
+        snap = build_snapshot(d, roadmap_crypto, lane="crypto")
+        self.assertEqual(snap["current"]["key"], "beta")
+        # The india lane's own snapshot must stay empty -- nothing was ever queued there.
+        snap_india = build_snapshot(d, {"all_scored": []}, lane="india")
+        self.assertIsNone(snap_india["current"])
 
 
 if __name__ == "__main__":

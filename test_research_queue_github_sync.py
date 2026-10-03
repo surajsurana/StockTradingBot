@@ -136,7 +136,7 @@ class TestPublishSnapshot(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(mock_run.call_count, 3)   # pull, add, diff-check -- no commit/push
         calls = [c.args[0] for c in mock_run.call_args_list]
-        self.assertNotIn(["git", "commit", "-m", "Research queue snapshot: automated update"], calls)
+        self.assertNotIn(["git", "commit", "-m", "Research queue snapshot (india): automated update"], calls)
         self.assertNotIn(["git", "push", "origin", "main"], calls)
 
     @patch("subprocess.run")
@@ -154,7 +154,7 @@ class TestPublishSnapshot(unittest.TestCase):
         changed = publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap())
         self.assertTrue(changed)
         calls = [c.args[0] for c in mock_run.call_args_list]
-        self.assertIn(["git", "commit", "-m", "Research queue snapshot: automated update"], calls)
+        self.assertIn(["git", "commit", "-m", "Research queue snapshot (india): automated update"], calls)
         self.assertIn(["git", "push", "origin", "main"], calls)
 
     @patch("subprocess.run", side_effect=OSError("git not found"))
@@ -164,6 +164,62 @@ class TestPublishSnapshot(unittest.TestCase):
         research_queue._set_current(state_dir, research_queue.load(state_dir), "alpha", "ALPHA", "auto", "backtest", datetime(2026, 10, 1))
         changed = publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap())
         self.assertFalse(changed)
+
+    @patch("subprocess.run")
+    def test_crypto_lane_uses_its_own_snapshot_path_and_commit_message(self, mock_run):
+        mock_run.side_effect = self._fake_run(has_diff=True)
+        repo_dir = tempfile.mkdtemp()
+        state_dir = tempfile.mkdtemp()
+        research_queue._set_current(state_dir, research_queue.load(state_dir, lane="crypto"), "beta", "BETA", "auto", "backtest", datetime(2026, 10, 1), lane="crypto")
+        changed = publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap(), lane="crypto")
+        self.assertTrue(changed)
+        with open(os.path.join(repo_dir, "swing_research", "research_queue_snapshot_crypto.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["current"]["key"], "beta")
+        calls = [c.args[0] for c in mock_run.call_args_list]
+        self.assertIn(["git", "commit", "-m", "Research queue snapshot (crypto): automated update"], calls)
+        self.assertFalse(os.path.exists(os.path.join(repo_dir, "swing_research", "research_queue_snapshot.json")))   # india's file untouched
+
+    @patch("subprocess.run")
+    def test_us_lane_uses_its_own_snapshot_path(self, mock_run):
+        mock_run.side_effect = self._fake_run(has_diff=True)
+        repo_dir = tempfile.mkdtemp()
+        state_dir = tempfile.mkdtemp()
+        research_queue._set_current(state_dir, research_queue.load(state_dir, lane="us"), "gamma", "GAMMA", "auto", "backtest", datetime(2026, 10, 1), lane="us")
+        publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap(), lane="us")
+        self.assertTrue(os.path.exists(os.path.join(repo_dir, "swing_research", "research_queue_snapshot_us.json")))
+        self.assertFalse(os.path.exists(os.path.join(repo_dir, "swing_research", "research_queue_snapshot.json")))
+
+
+class TestSyncFromGithubLanes(unittest.TestCase):
+    @patch("research_queue_github_sync._branch_exists")
+    def test_crypto_lane_checks_the_crypto_prefixed_branch(self, mock_exists):
+        mock_exists.return_value = True
+        d = tempfile.mkdtemp()
+        research_queue._set_current(d, research_queue.load(d, lane="crypto"), "beta", "BETA", "auto", "backtest", datetime(2026, 10, 1), lane="crypto")
+        result = sync_from_github(d, lane="crypto")
+        self.assertIn("[crypto]", result)
+        mock_exists.assert_called_once_with("research-crypto/beta")
+        self.assertTrue(research_queue.load(d, lane="crypto")["current"]["in_progress"])
+        # India's own (separate) queue is untouched.
+        self.assertIsNone(research_queue.load(d, lane="india")["current"])
+
+    @patch("research_queue_github_sync._branch_exists")
+    def test_us_lane_checks_the_us_prefixed_branch(self, mock_exists):
+        mock_exists.return_value = True
+        d = tempfile.mkdtemp()
+        research_queue._set_current(d, research_queue.load(d, lane="us"), "gamma", "GAMMA", "auto", "backtest", datetime(2026, 10, 1), lane="us")
+        sync_from_github(d, lane="us")
+        mock_exists.assert_called_once_with("research-us/gamma")
+
+    @patch("research_queue_github_sync._find_pr_for_branch",
+          return_value={"number": 7, "title": "Research: Beta Strategy (PASS)", "body": "Experiment-ID: EXP-200"})
+    def test_crypto_lane_resolve_records_the_crypto_prefixed_branch(self, _mock):
+        d = tempfile.mkdtemp()
+        research_queue._set_current(d, research_queue.load(d, lane="crypto"), "beta", "BETA", "auto", "backtest", datetime(2026, 10, 1), lane="crypto")
+        research_queue.mark_in_progress(d, "beta", lane="crypto")
+        sync_from_github(d, lane="crypto")
+        row = research_queue.load(d, lane="crypto")["history"][-1]
+        self.assertEqual(row["branch"], "research-crypto/beta")
 
 
 if __name__ == "__main__":

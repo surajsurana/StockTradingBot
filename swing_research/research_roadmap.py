@@ -1784,9 +1784,30 @@ def load_portfolio(registry_path: str = REGISTRY_PATH) -> list:
     return list_strategies(registry_path)
 
 
-def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WEIGHTS) -> dict:
+RESEARCH_LANES = ("india", "crypto", "us")
+
+
+def lane_of(candidate: CandidateProfile) -> str:
+    """Which of the three independent research queues (research_queue.py, added 2026-10-03, per
+    explicit direction: "shall we also build this same auto research for crypto and us equity?...
+    each section runs 1 or 2 strategies research per week at different times") a candidate belongs
+    to -- horizon_lane == "crypto" takes priority (crypto isn't a national market, so `market` is
+    irrelevant for it), then market == "US", else "india" -- which is every pre-existing candidate
+    today, unchanged, since both fields default to the India-equity values."""
+    if candidate.horizon_lane == "crypto":
+        return "crypto"
+    if candidate.market == "US":
+        return "us"
+    return "india"
+
+
+def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WEIGHTS,
+                  lane: Optional[str] = None) -> dict:
     """
-    Scores every CANDIDATE against the LIVE deployment registry (so
+    Scores every CANDIDATE (optionally restricted to one research lane -- see lane_of() -- so each
+    lane's own queue only ever ranks/picks within its own candidate pool; None, the default, scores
+    every candidate across every lane together, unchanged from before lanes existed, for every
+    existing caller that doesn't pass this) against the LIVE deployment registry (so
     diversification scoring always reflects the platform's actual current
     state, not a stale snapshot) and splits the result into:
       researchable_now -- ranked descending by total_score, everything
@@ -1815,7 +1836,8 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
       all_scored -- every ScoredCandidate, for the full comparison table.
     """
     portfolio = load_portfolio(registry_path)
-    scored = [score_candidate(c, portfolio, weights) for c in CANDIDATES]
+    candidates = CANDIDATES if lane is None else [c for c in CANDIDATES if lane_of(c) == lane]
+    scored = [score_candidate(c, portfolio, weights) for c in candidates]
     researchable_now = sorted(
         (s for s in scored if s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"
          and s.candidate.key not in DEFERRED_BY_DIRECTION),
