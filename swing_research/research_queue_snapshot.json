@@ -3,7 +3,7 @@
     "key": "size_premium_banz",
     "name": "Size Premium (Small-Cap Effect)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "horizon_lane": "swing"
   }
 }
