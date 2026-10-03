@@ -1,3 +1,9 @@
 {
-  "current": null
+  "current": {
+    "key": "us_short_term_reversal",
+    "name": "Short-Term Reversal (US)",
+    "mode": "backtest",
+    "in_progress": false,
+    "horizon_lane": "swing"
+  }
 }
