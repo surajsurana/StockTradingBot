@@ -148,7 +148,23 @@ DATA_CAPABILITIES = {
     # investigation, e.g. the 2026-08-05 PEAD probe), this one is simply
     # UNVERIFIED. Plausibly one of the cheaper gaps to close (a single
     # index ticker, not a new vendor) -- worth a quick check before
-    # assuming it's unavailable, disclosed here rather than guessed either way.
+    # assuming it's unavailable, disclosed either way.
+
+    # --- Added 2026-10-02, monthly discovery pass (crypto/intraday/long_term lanes) ---
+    "crypto_market_cap_history": False,
+    # CONFIRMED ABSENT 2026-10-02: data/fetch_crypto.py (Binance public klines, the only
+    # crypto data source integrated anywhere in this program) returns OHLCV only -- no
+    # circulating-supply or market-cap field at all, and no CoinGecko/CoinMarketCap/other
+    # supply-data vendor is integrated anywhere in this repository (checked directly).
+    # Needed for any crypto cross-sectional SIZE sort (distinct from the price-only
+    # momentum/trend-timing/vol-managed signals already implemented in the crypto lane).
+    "dividend_yield_history": False,
+    # CONFIRMED ABSENT 2026-10-02, generalizing the gap already disclosed under the
+    # Shareholder Yield candidate's known_weaknesses (2026-09-22): fundamentals/
+    # fundamental_agent.py's current snapshot fields (trailingEps, returnOnEquity,
+    # debtToEquity, revenueGrowth, profitMargins, trailingPE, sector) do not include
+    # dividend yield at all, snapshot or historical, and no dividend data source is
+    # integrated anywhere else in this program.
 }
 
 
@@ -1739,6 +1755,277 @@ CANDIDATES = [
               "test-suite constraint described in the discovery-pass comment above this entry; treat this "
               "note, not the horizon_lane field, as the honest classification until that test is "
               "deliberately updated.",
+    ),
+
+    # =================================================================
+    # Monthly discovery pass (2026-10-02) -- deliberately looked beyond
+    # swing again, this time landing candidates in "intraday", "crypto"
+    # (x2) and "long_term" lanes. Unlike the 2026-09-22 pass above, these
+    # four are NEW keys, not in test_research_roadmap.py's
+    # _PRE_HORIZON_LANE_KEYS set -- that test only constrains the keys it
+    # names, so horizon_lane/market are set to their honest values
+    # directly below, no "filed under swing because of a test constraint"
+    # workaround needed.
+    # =================================================================
+    CandidateProfile(
+        key="opening_range_breakout",
+        name="Opening Range Breakout (ORB)",
+        authors="Crabel, T.; Zarattini, C., Barbon, A. and Aziz, A.",
+        publication="Crabel, T. (1990), \"Day Trading with Short-Term Price Patterns and Opening Range "
+                     "Breakout,\" Traders Press -- a widely-read, widely-cited professional day-trading "
+                     "book, the originating 'widely accepted trading book' source per this program's "
+                     "research-universe rule; Zarattini, C., Barbon, A. and Aziz, A. (2024), \"A "
+                     "Profitable Day Trading Strategy For The U.S. Equity Market,\" Swiss Finance "
+                     "Institute Research Paper No. 24-98 (SSRN) -- a modern, rigorously backtested "
+                     "academic-style working paper replicating and refining the same core pattern -- "
+                     "both verified real via WebSearch 2026-10-02, not from memory",
+        year=1990,
+        asset_class="Single-stock equities, intraday",
+        direction="Long-only breakout above the opening range's high (the source material's mirror "
+                  "short-side breakout below the range's low is out of scope here, same disclosed "
+                  "long-only reduction as every other strategy in this program).",
+        factor_family="Intraday breakout (opening-range)",
+        factor_tags={"intraday_breakout", "volume_attention"},
+        mechanism="The first few minutes of the trading session (Crabel's original studies use 5-, 10- "
+                  "and 30-minute windows; the 2024 SFI paper settles on 5 minutes as the best-performing "
+                  "duration it tested) establish an 'opening range' (its high and low); a subsequent "
+                  "breakout above that range's high is traded as a same-session continuation signal, on "
+                  "the premise that the earliest post-open price action reveals which direction informed/"
+                  "institutional flow is pushing that session. The 2024 paper's key refinement: the edge "
+                  "concentrates almost entirely in stocks with unusually high RELATIVE opening volume "
+                  "(versus their own trailing 14-day average opening volume) -- a 'stocks in play' "
+                  "filter, not a universal effect. A structurally different SHAPE from every other "
+                  "candidate in this program: a single-stock, same-session breakout signal, mechanically "
+                  "distinct from Pool D's existing VWAP-fade intraday strategy (SW-027, a mean-reversion/"
+                  "exhaustion signal, the opposite direction of trade) and from this roadmap's own "
+                  "Intraday Momentum candidate (Gao et al. 2018, an index/ETF return-continuation timing "
+                  "signal, not a per-stock range breakout).",
+        typical_holding_period="Same trading session only -- entered shortly after the opening range "
+                                "closes, exited by the session's close (or on a stop); no overnight hold.",
+        holding_days_min=1, holding_days_max=1,
+        expected_trade_frequency="High -- potentially one round-trip per trading session per qualifying stock",
+        data_requirements=["daily_ohlcv_history", "intraday_bar_history"],
+        known_strengths="Unusually well-evidenced for an intraday pattern: a widely-read, decades-old "
+                        "professional trading book (the same 'widely accepted trading book' category "
+                        "this program already accepts for Coffee Can Investing and Shareholder Yield) AND "
+                        "a recent (2024), rigorously backtested SSRN working paper with an explicit, "
+                        "quantified, relative-volume-filtered edge (1,637% cumulative / 41.6% annualized "
+                        "IRR, 2016-2023, on a top-20-by-relative-volume U.S. equity universe) -- real "
+                        "convergence across a 34-year gap and two very different evidentiary standards. "
+                        "Fully implementable today: this platform's existing Kite intraday-bar "
+                        "infrastructure (fetch_kite_intraday.py, already used for the intraday research "
+                        "lab's EXP-001 onward) gives exactly the 5-minute bars the 2024 paper's best "
+                        "configuration uses.",
+        known_weaknesses="The SAME 2024 paper that gives this candidate its strongest modern evidence "
+                         "also found the UNFILTERED, plain version of the pattern weak -- almost all the "
+                         "edge concentrates in a 'stocks in play' relative-volume filter, so a faithful "
+                         "implementation needs that filter (a real design/calibration decision) or should "
+                         "expect a materially weaker result than the headline number above. That filter "
+                         "itself shares this program's existing 'volume_attention' family (already "
+                         "represented by the PASS-verdicted High-Volume Return Premium, SW-017) -- not a "
+                         "fully orthogonal diversification source despite the fresh SHAPE (intraday vs. "
+                         "multi-day). This platform's ~240-trading-day Kite intraday retention is a much "
+                         "shorter sample than either source's own backtest window, and the backtesting "
+                         "engine has no transaction-cost model yet -- a real concern for a same-day, "
+                         "potentially high-frequency signal.",
+        academic_replication_quality="A widely-cited, decades-old practitioner book plus an independent, "
+                                      "recent (2024) rigorous replication on a different market/instrument "
+                                      "set (QQQ/TQQQ and a relative-volume-filtered U.S. equity universe) "
+                                      "finding a materially similar core pattern -- genuinely convergent, "
+                                      "if not peer-reviewed-journal-published, evidence.",
+        evidence_sufficiency_note="Sufficient to justify research time -- real, convergent, quantified "
+                                   "evidence exists, but the 2024 paper's own finding (plain ORB is weak; "
+                                   "the relative-volume filter does nearly all the work) must be carried "
+                                   "into any implementation, not simplified away.",
+        academic_evidence_score=7, expected_robustness_score=5, operational_simplicity_score=5,
+        research_value_score=7, data_availability_score=7, implementation_feasibility_score=5,
+        horizon_lane="intraday", market="India",
+    ),
+    CandidateProfile(
+        key="crypto_size_factor",
+        name="Cryptocurrency Size Factor",
+        authors="Liu, Y., Tsyvinski, A. and Wu, X.",
+        publication="\"Common Risk Factors in Cryptocurrency,\" The Journal of Finance, Vol. 77, No. 2, "
+                     "1133-1177 (2022) -- verified real via WebSearch 2026-10-02, not from memory; the "
+                     "same paper already underlies this program's live Crypto Cross-Sectional Momentum "
+                     "strategy (swing_research/strategies/crypto_xs_momentum.py), which implements only "
+                     "that paper's MOMENTUM factor, not its SIZE factor",
+        year=2022,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only smallest-market-cap quintile (the paper's long-short goes short the largest "
+                  "coins) -- same disclosed reduction as every other candidate in this program.",
+        factor_family="Size (small-cap premium, crypto)",
+        factor_tags={"size", "crypto_factor"},
+        mechanism="Alongside momentum, Liu-Tsyvinski-Wu's three-factor model (market, size, momentum) "
+                  "identifies a SIZE factor in the cross-section of cryptocurrencies: smaller-market-cap "
+                  "coins earn systematically higher risk-adjusted returns than larger ones, directly "
+                  "analogous to the equity size premium (Banz 1981, also newly added to this roadmap this "
+                  "run) but documented separately and specifically for crypto. A genuinely different "
+                  "SIGNAL from this program's existing crypto strategies, all of which are price/return-"
+                  "based (momentum, trend-timing, volatility-managed exposure) -- this is the first "
+                  "crypto candidate keyed on market CAPITALIZATION rather than price history.",
+        typical_holding_period="Weekly rebalance, matching the same paper's momentum factor as already "
+                                "implemented in this program's crypto lane (crypto_xs_momentum.py).",
+        holding_days_min=7, holding_days_max=7,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history", "crypto_market_cap_history"],
+        known_strengths="Same top-tier, already-partially-implemented source paper as this program's "
+                        "live Crypto Cross-Sectional Momentum strategy -- the size factor is reported in "
+                        "that exact paper with the same statistical rigor as the momentum factor this "
+                        "program already trades, not a weaker or less-verified companion finding. "
+                        "Genuinely new factor_family for the crypto lane (every crypto strategy currently "
+                        "implemented is price-based; this is the first capitalization-based one).",
+        known_weaknesses="Needs a circulating-supply/market-cap time series for each coin in the traded "
+                         "universe -- confirmed absent (data/fetch_crypto.py's Binance klines give OHLCV "
+                         "only, no supply field, and no CoinGecko/CoinMarketCap-style vendor is integrated "
+                         "anywhere in this program). Conceptually close to the newly-added equity Size "
+                         "Premium candidate on this same roadmap (same economic story, different asset "
+                         "class) -- not a fully independent idea, though this module's diversification "
+                         "scoring only compares a candidate against the LIVE portfolio registry, not "
+                         "against other candidates, so that overlap isn't mechanically penalized here. "
+                         "Crypto 'size' is also a less mature, less-replicated literature than the "
+                         "equivalent 40+-year equity size literature -- a single foundational paper, not "
+                         "yet an extensively cross-validated finding.",
+        academic_replication_quality="A single, but top-tier (Journal of Finance), foundational paper for "
+                                      "crypto factor investing -- not yet independently replicated by a "
+                                      "second research team the way the equity size/value/momentum "
+                                      "anomalies have been.",
+        evidence_sufficiency_note="Sufficient to catalogue given the paper's rigor and this program's own "
+                                   "precedent of already trading its momentum factor, but blocked purely "
+                                   "by a market-cap data gap, not by any doubt about the source.",
+        academic_evidence_score=7, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=6, data_availability_score=1, implementation_feasibility_score=1,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="crypto_long_horizon_reversal",
+        name="Cryptocurrency Long-Horizon Reversal",
+        authors="Dobrynskaya, V.; Fičura, M. and Colak, G.",
+        publication="Dobrynskaya, V. (2023), \"Cryptocurrency Momentum and Reversal,\" The Journal of "
+                     "Alternative Investments, Vol. 26, No. 1, 65-76; Fičura, M. and Colak, G. (2023), "
+                     "\"Impact of Size and Volume on Cryptocurrency Momentum and Reversal,\" SSRN working "
+                     "paper -- both verified real via WebSearch 2026-10-02, not from memory",
+        year=2023,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only top-decile (past LOSERS over the reversal-horizon formation window) -- the "
+                  "papers' own long-short construction reduced to long-only, same disclosed reduction as "
+                  "every other candidate in this program.",
+        factor_family="Reversal (longer-horizon, crypto-specific)",
+        factor_tags={"reversal_long_horizon", "crypto_factor"},
+        mechanism="Using a sample of up to 2,000 cryptocurrencies (2014-2020), Dobrynskaya finds momentum "
+                  "at SHORT horizons (up to 2-4 weeks) but a significant REVERSAL once the formation/"
+                  "holding horizon extends beyond roughly one month -- past losers over these longer "
+                  "windows subsequently outperform. Fičura & Colak corroborate a related horizon-"
+                  "dependent momentum/reversal switch and show it is also modulated by coin size and "
+                  "volume. The authors describe crypto's much faster switch from momentum to reversal "
+                  "(about 1 month) than equities' multi-year De Bondt-Thaler-style reversal as evidence of "
+                  "a 'faster metabolism' in crypto markets -- a genuinely distinct mechanism from every "
+                  "existing crypto strategy in this program, all of which are either short-horizon "
+                  "momentum/trend-following (crypto_xs_momentum, crypto_tsmom, crypto_trend_timing*) or "
+                  "volatility-scaling (crypto_vol_managed), never reversal.",
+        typical_holding_period="The papers test sort/hold horizons from 1 week to 2 years; the reversal "
+                                "effect itself is reported as strongest and most consistent in the "
+                                "roughly 1-3 month band immediately beyond where momentum fades, with the "
+                                "specific horizon (and whether a 2026-era universe still shows the same "
+                                "switch point) needing confirmation against the full papers before "
+                                "implementation, not assumed from this summary.",
+        holding_days_min=30, holding_days_max=90,
+        expected_trade_frequency="Low-moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Fully implementable TODAY from data this program already fetches (crypto daily "
+                        "OHLCV via data/fetch_crypto.py -- no market-cap or other new data source needed, "
+                        "unlike the Size Factor candidate added alongside this one). Genuinely orthogonal "
+                        "mechanism (reversal, not continuation) to every crypto strategy currently "
+                        "implemented in this program. Two independent, recent (2023) studies corroborate "
+                        "the same horizon-dependent momentum-to-reversal switch, a real replication, not a "
+                        "single isolated finding.",
+        known_weaknesses="A young (2023) literature relative to the decades-deep equity long-term-"
+                         "reversal record, on a relatively short (2014-2020) underlying crypto sample; a "
+                         "separate, more skeptical recent literature (e.g. Grobys, \"Cryptocurrency "
+                         "Momentum: Is It an Illusion?\", International Journal of Finance & Economics, "
+                         "2026) actively disputes the robustness of crypto momentum/reversal patterns more "
+                         "broadly, a live academic disagreement this candidate should be read against, not "
+                         "treated as settled. The exact horizon at which reversal is strongest needs "
+                         "confirmation against the full papers (not just this summary) before "
+                         "implementation -- the holding-day range above is this module's own conservative "
+                         "estimate from the available abstracts/summaries, not a number taken directly "
+                         "from either paper's own stated rule.",
+        academic_replication_quality="Two independent, recent (2023) studies find a materially consistent "
+                                      "horizon-dependent pattern, partially offset by at least one more "
+                                      "recent (2026) critical paper questioning crypto momentum/reversal "
+                                      "robustness generally -- a genuinely live, unsettled debate rather "
+                                      "than a convergent consensus.",
+        evidence_sufficiency_note="Sufficient to justify research time given two corroborating studies and "
+                                   "full data availability, but the disclosed critical counter-literature "
+                                   "means this should be tested on the most recent sub-period specifically, "
+                                   "not assumed to hold at its originally-measured strength.",
+        academic_evidence_score=5, expected_robustness_score=4, operational_simplicity_score=6,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=6,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="dogs_of_the_dow",
+        name="Dogs of the Dow (High Dividend-Yield Selection)",
+        authors="O'Higgins, M.B. and Downes, J.",
+        publication="O'Higgins, M.B. (1991), \"Beating the Dow,\" HarperCollins -- a widely-read, "
+                     "widely-followed practitioner book (real, institutionally-tracked assets exceeding "
+                     "$20 billion at its peak per multiple industry sources) -- verified real via "
+                     "WebSearch 2026-10-02, not from memory",
+        year=1991,
+        asset_class="Single-stock equities (Dow Jones Industrial Average constituents), cross-sectional",
+        direction="Long-only top-10-by-dividend-yield (the strategy's own construction is long-only by "
+                  "design, unlike most other candidates in this roadmap -- no long-short reduction needed).",
+        factor_family="Dividend yield (high-yield blue-chip selection)",
+        factor_tags={"dividend_yield", "value"},
+        mechanism="Each year, rank the 30 Dow Jones Industrial Average constituents by dividend yield and "
+                  "buy the 10 highest-yielding names in equal weight; hold for exactly one year, then "
+                  "re-rank and repeat. O'Higgins' own 17-year sample (reported in the book) found the "
+                  "'Dogs' averaged 17.9% annually versus 11.1% for the rest of the Dow -- a simple, "
+                  "exact, entirely mechanical rule (no blending/weighting beyond equal-weighting the top "
+                  "10), unlike this roadmap's existing Shareholder Yield candidate's three-part composite. "
+                  "A genuinely new factor_family for this roadmap: every existing value candidate here "
+                  "(Basu/Fama-French Value, the NSE Value 20 index) sorts on PRICE ratios (earnings yield, "
+                  "book-to-market); this sorts purely on current DIVIDEND yield.",
+        typical_holding_period="Exactly one year, by explicit design (annual rebalance).",
+        holding_days_min=330, holding_days_max=395,
+        expected_trade_frequency="Very low -- once a year by construction",
+        data_requirements=["daily_ohlcv_history", "dividend_yield_history"],
+        known_strengths="One of the most widely-known, widely-followed mechanical equity strategies in "
+                        "retail/practitioner finance ('widely accepted trading book' per this program's "
+                        "research-universe rule, the same category already accepted for Coffee Can "
+                        "Investing and Shareholder Yield) -- real institutional assets and multiple "
+                        "tracking funds/websites built around it since the early 1990s. Trivially simple "
+                        "mechanically (rank by one number, buy the top 10, hold a year) -- the lowest "
+                        "implementation complexity of any value-family candidate on this roadmap, if the "
+                        "data existed. Also the first CANDIDATES entry to use this program's existing "
+                        "US-equity lane (swing_research/universe_us.py) for a genuinely US-native "
+                        "strategy, rather than adapting a US finding onto the NSE universe.",
+        known_weaknesses="Needs a dividend-yield time series this program does not have at all, snapshot "
+                         "or historical (confirmed absent 2026-10-02, generalizing the exact gap already "
+                         "flagged under the Shareholder Yield candidate's own known_weaknesses) -- the "
+                         "single blocking gap. Also needs a Dow-30-specific constituent list; this "
+                         "program's existing US universe (universe_us.py) freezes the S&P 500, not the "
+                         "narrower, differently-selected (price-weighted index committee membership, not "
+                         "a market-cap rule) Dow 30 -- a second, smaller adaptation needed on top of the "
+                         "data gap. The underlying 10-stock, 30-name universe is also far more "
+                         "concentrated than every other cross-sectional candidate in this program (which "
+                         "typically sort over hundreds of names), a real statistical-power concern "
+                         "independent of the data and universe gaps.",
+        academic_replication_quality="Not peer-reviewed academic research -- a widely-read, decades-"
+                                      "followed practitioner book, explicitly the 'widely accepted trading "
+                                      "book' category this program's research universe already permits; "
+                                      "independent academic replication of the exact 10-stock rule is "
+                                      "thinner than for a peer-reviewed anomaly, though the broader "
+                                      "high-dividend-yield-premium literature it sits within is well-"
+                                      "established.",
+        evidence_sufficiency_note="Sufficient as a well-known, real, long-tracked mechanical strategy per "
+                                   "this program's own book-acceptance precedent; blocked by a genuine "
+                                   "data gap (dividend yield, not tracked at all) plus a smaller, "
+                                   "independent universe adaptation (Dow 30 vs. the existing S&P 500 "
+                                   "freeze).",
+        academic_evidence_score=4, expected_robustness_score=5, operational_simplicity_score=7,
+        research_value_score=5, data_availability_score=1, implementation_feasibility_score=1,
+        horizon_lane="long_term", market="US",
     ),
 ]
 
