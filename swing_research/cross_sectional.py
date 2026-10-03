@@ -541,6 +541,52 @@ def compute_idiosyncratic_volatility_percentile_ranks(data: dict, market_close: 
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+def compute_market_cap_score(price_history: pd.DataFrame, shares_outstanding: float) -> pd.Series:
+    """Banz (1981)'s size measure: market capitalization = Close x shares
+    outstanding, a POINT-IN-TIME figure -- no rolling/averaging window,
+    faithful to the paper's own annual size-sort at the formation date
+    (unlike this module's other cross-sectional signals, which deliberately
+    average over a formation window). shares_outstanding is a single
+    CURRENT snapshot value (see data/fetch_shares_outstanding.py's module
+    docstring for the disclosed historical-series limitation), applied
+    across the whole price history -- same convention as
+    compute_turnover_score()'s identical snapshot limitation. Returns an
+    all-NaN Series if shares_outstanding is missing or non-positive, so the
+    symbol simply never qualifies rather than multiplying by a bad value."""
+    if not shares_outstanding or shares_outstanding <= 0:
+        return pd.Series(float("nan"), index=price_history.index)
+    return price_history["Close"] * shares_outstanding
+
+
+def compute_market_cap_percentile_ranks(data: dict, shares_outstanding: dict) -> dict:
+    """data: {symbol: DataFrame of daily OHLCV bars}. shares_outstanding:
+    {symbol: float}, from data/fetch_shares_outstanding.py.
+
+    Returns {symbol: pd.Series of market_cap_percentile (0-100)} -- each
+    symbol's cross-sectional percentile rank, among whatever symbols have
+    both price history and a known share count that day, of its own market
+    capitalization. LOW percentile = LOW market cap (a small-cap firm) --
+    this strategy's entry condition is percentile <=10, the bottom decile,
+    the size-premium candidate's own long-only reduction of Banz (1981)'s
+    size-sorted portfolio. Symbols with no shares-outstanding figure are
+    silently excluded from the cross-section for every date (their score is
+    all-NaN, so pandas' rank() ignores them), not treated as automatically
+    small-cap. Same vectorized .rank(axis=1, pct=True) construction as every
+    other cross-sectional signal in this module."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_market_cap_score(df.sort_index(), shares_outstanding.get(symbol))
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 OVERNIGHT_RETURN_FORMATION_DAYS = 21  # 1 month -- this program's convention, see strategy module docstring
 
 

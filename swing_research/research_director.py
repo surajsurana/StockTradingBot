@@ -926,6 +926,59 @@ def run_turnover_liquidity_experiment(data: dict, start_date: date, end_date: da
     )
 
 
+def run_size_premium_banz_experiment(data: dict, start_date: date, end_date: date,
+                                      starting_capital: float = 1_000_000,
+                                      n_walk_forward_windows: int = 3,
+                                      narrative_api_key: str = "",
+                                      narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                      experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                      knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                      skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for Size Premium /
+    Banz (1981) -- computes the point-in-time market-capitalization
+    cross-sectional percentile ONCE up front (same pattern as Turnover /
+    Liquidity), reused across every walk-forward window by
+    run_walk_forward_generic()'s own per-window slicing of
+    extra_columns_by_symbol. No formation-window averaging and no warm-up
+    delay are needed (unlike this program's other long-holding-period
+    strategies, e.g. Realized Low Volatility): market cap is a point-in-
+    time figure, valid from the very first bar that has both a Close and a
+    shares-outstanding snapshot. Same shares-outstanding snapshot fetch as
+    Turnover / Liquidity (see data/fetch_shares_outstanding.py's module
+    docstring for the disclosed historical-series limitation this implies).
+    """
+    from swing_research.strategies.size_premium_banz import SizePremiumBanzStrategy
+    from swing_research.published_research_analyst import SIZE_PREMIUM_BANZ
+    from swing_research.cross_sectional import compute_market_cap_percentile_ranks
+    from data.fetch_shares_outstanding import get_shares_outstanding
+
+    shares_outstanding = get_shares_outstanding(list(data.keys()), max_age_days=30)
+    market_cap_percentiles = compute_market_cap_percentile_ranks(data, shares_outstanding)
+    extra_columns = {symbol: series.rename("market_cap_percentile")
+                     for symbol, series in market_cap_percentiles.items()}
+
+    strategy = SizePremiumBanzStrategy()
+    return run_generic_swing_experiment(
+        strategy, SIZE_PREMIUM_BANZ, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "size_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "size_stop_loss_pct": 0.08,
+            "size_percentile_threshold": 10.0,
+            "size_formation_window": "point-in-time (no averaging) -- see module docstring",
+            "size_holding_period_trading_days": 252,
+            "size_single_vintage": True,
+            "size_percentile_based_early_exit": False,
+            "shares_outstanding_symbols_found": len(shares_outstanding),
+            "shares_outstanding_symbols_requested": len(data),
+        },
+    )
+
+
 def run_idiosyncratic_volatility_experiment(data: dict, start_date: date, end_date: date,
                                              starting_capital: float = 1_000_000,
                                              n_walk_forward_windows: int = 3,
