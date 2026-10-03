@@ -1,3 +1,9 @@
 {
-  "current": null
+  "current": {
+    "key": "crypto_long_horizon_reversal",
+    "name": "Cryptocurrency Long-Horizon Reversal",
+    "mode": "backtest",
+    "in_progress": false,
+    "horizon_lane": "crypto"
+  }
 }
