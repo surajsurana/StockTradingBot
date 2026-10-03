@@ -117,29 +117,32 @@ def sync_from_github(state_dir: str, now=None) -> Optional[str]:
 
 def publish_snapshot(repo_dir: str, state_dir: str, roadmap: dict) -> bool:
     """Writes the snapshot and commits+pushes it ONLY if the content
-    actually changed. Returns whether it pushed anything. Never raises --
-    a git/push failure (e.g. the deploy key still being read-only) is
-    printed and swallowed, since this is a best-effort sync, not something
-    that should ever break the cron job that calls it."""
+    actually changed FROM WHAT'S COMMITTED (checked via `git diff --cached`,
+    not by comparing against the working tree -- a prior run that wrote the
+    file but then failed to commit/push, e.g. because git had no configured
+    user identity, left the working tree ahead of HEAD; comparing against
+    the working tree would wrongly treat that as "already published" and
+    silently never retry it). Returns whether it pushed anything. Never
+    raises -- a git/push failure (e.g. the deploy key still being read-only,
+    or a merge conflict from a concurrent manual deploy) is printed and
+    swallowed, since this is a best-effort sync, not something that should
+    ever break the cron job that calls it; the next cycle retries."""
     snapshot = research_queue.build_snapshot(state_dir, roadmap)
     new_content = json.dumps(snapshot, indent=2) + "\n"
     full_path = os.path.join(repo_dir, SNAPSHOT_PATH)
     try:
-        with open(full_path, encoding="utf-8") as f:
-            if f.read() == new_content:
-                return False
-    except OSError:
-        pass
-    try:
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, "w", encoding="utf-8") as f:
-            f.write(new_content)
         # Defensive pull first -- this cron shares the branch with manual deploys
         # (git stash / pull --ff-only / stash pop, same as every other deploy in
         # this project); staying fast-forward-able avoids ever needing to resolve
         # a conflict unattended.
         subprocess.run(["git", "pull", "--ff-only"], cwd=repo_dir, check=True, capture_output=True, text=True)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
         subprocess.run(["git", "add", SNAPSHOT_PATH], cwd=repo_dir, check=True, capture_output=True, text=True)
+        staged = subprocess.run(["git", "diff", "--cached", "--quiet", "--", SNAPSHOT_PATH], cwd=repo_dir)
+        if staged.returncode == 0:
+            return False   # identical to what's already committed -- nothing to do
         subprocess.run(["git", "commit", "-m", "Research queue snapshot: automated update"],
                        cwd=repo_dir, check=True, capture_output=True, text=True)
         subprocess.run(["git", "push", "origin", "main"], cwd=repo_dir, check=True, capture_output=True, text=True)

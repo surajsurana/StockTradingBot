@@ -104,28 +104,58 @@ class TestPublishSnapshot(unittest.TestCase):
 
         return {"all_scored": [S(C("alpha", "ALPHA"))]}
 
+    @staticmethod
+    def _fake_run(has_diff):
+        def run(cmd, **kwargs):
+            if cmd[:3] == ["git", "diff", "--cached"]:
+                return MagicMock(returncode=1 if has_diff else 0)
+            return MagicMock(returncode=0)
+        return run
+
     @patch("subprocess.run")
     def test_writes_commits_and_pushes_when_content_changes(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0)
+        mock_run.side_effect = self._fake_run(has_diff=True)
         repo_dir = tempfile.mkdtemp()
         state_dir = tempfile.mkdtemp()
         research_queue._set_current(state_dir, research_queue.load(state_dir), "alpha", "ALPHA", "auto", "backtest", datetime(2026, 10, 1))
         changed = publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap())
         self.assertTrue(changed)
-        self.assertEqual(mock_run.call_count, 4)   # pull, add, commit, push
+        self.assertEqual(mock_run.call_count, 5)   # pull, add, diff-check, commit, push
         with open(os.path.join(repo_dir, "swing_research", "research_queue_snapshot.json"), encoding="utf-8") as f:
             self.assertEqual(json.load(f)["current"]["key"], "alpha")
 
     @patch("subprocess.run")
-    def test_no_change_skips_the_commit_entirely(self, mock_run):
+    def test_no_change_vs_head_skips_the_commit(self, mock_run):
+        # Regression: must check against git's HEAD (via `git diff --cached`), not the working
+        # tree -- a prior run that wrote the file but failed to commit (e.g. no git identity
+        # configured) must NOT look "already published" forever.
+        mock_run.side_effect = self._fake_run(has_diff=False)
         repo_dir = tempfile.mkdtemp()
         state_dir = tempfile.mkdtemp()
-        os.makedirs(os.path.join(repo_dir, "swing_research"))
-        with open(os.path.join(repo_dir, "swing_research", "research_queue_snapshot.json"), "w", encoding="utf-8") as f:
-            f.write(json.dumps({"current": None}, indent=2) + "\n")
         changed = publish_snapshot(repo_dir, state_dir, {"all_scored": []})
         self.assertFalse(changed)
-        mock_run.assert_not_called()
+        self.assertEqual(mock_run.call_count, 3)   # pull, add, diff-check -- no commit/push
+        calls = [c.args[0] for c in mock_run.call_args_list]
+        self.assertNotIn(["git", "commit", "-m", "Research queue snapshot: automated update"], calls)
+        self.assertNotIn(["git", "push", "origin", "main"], calls)
+
+    @patch("subprocess.run")
+    def test_a_prior_failed_commit_is_retried_not_silently_skipped(self, mock_run):
+        # Simulates exactly what happened in production: the file got written and `git add`ed by
+        # an earlier run, but `git commit` failed (no user.name/user.email configured) -- the next
+        # run must still see a real diff against HEAD and complete the commit+push.
+        repo_dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(repo_dir, "swing_research"))
+        with open(os.path.join(repo_dir, "swing_research", "research_queue_snapshot.json"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"current": {"key": "alpha"}}, indent=2) + "\n")   # left behind, never committed
+        state_dir = tempfile.mkdtemp()
+        research_queue._set_current(state_dir, research_queue.load(state_dir), "alpha", "ALPHA", "auto", "backtest", datetime(2026, 10, 1))
+        mock_run.side_effect = self._fake_run(has_diff=True)
+        changed = publish_snapshot(repo_dir, state_dir, self._fake_candidate_roadmap())
+        self.assertTrue(changed)
+        calls = [c.args[0] for c in mock_run.call_args_list]
+        self.assertIn(["git", "commit", "-m", "Research queue snapshot: automated update"], calls)
+        self.assertIn(["git", "push", "origin", "main"], calls)
 
     @patch("subprocess.run", side_effect=OSError("git not found"))
     def test_git_failure_is_swallowed_not_raised(self, _mock):
