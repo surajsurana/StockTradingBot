@@ -278,7 +278,11 @@ _CRYPTO_KEYS = {"crypto_size_factor", "crypto_long_horizon_reversal",           
                 "crypto_idiosyncratic_volatility", "crypto_illiquidity_premium",       # PR #3
                 "crypto_funding_rate_carry"}
 _US_KEYS = {"dogs_of_the_dow",                                                         # PR #2
-            "us_price_delay_factor"}                                                   # PR #3
+            "us_price_delay_factor",                                                   # PR #3
+            # cross-market ports of India PASS strategies, added 2026-10-03
+            "us_short_term_reversal", "us_max_effect", "us_turn_of_month",
+            "us_overnight_return_anomaly", "us_high_volume_return_premium",
+            "us_earnings_announcement_premium"}
 
 
 class TestLaneOf(unittest.TestCase):
@@ -319,6 +323,106 @@ class TestLaneOf(unittest.TestCase):
             self.assertEqual(lane_of(by_key[key]), "us", key)
 
 
+class TestDiversificationIsLaneScoped(unittest.TestCase):
+    """2026-10-03: overlap only counts within a lane. A factor already running on NSE is not evidence
+    about the S&P 500 -- both strategies ported to Pool I so far PASSed in the US while their India
+    originals are INCONCLUSIVE."""
+
+    def setUp(self):
+        self.registry_path = _fake_registry_path()
+        # India's short_term_reversal, live in paper trading -- the heaviest overlap weight there is.
+        register_strategy("short_term_reversal", "Short-Term Reversal",
+                          "swing_research published strategy", registry_path=self.registry_path)
+        set_research_verdict("short_term_reversal", ResearchVerdict.PASS, registry_path=self.registry_path)
+        set_deployment_status("short_term_reversal", DeploymentStatus.PAPER_TRADING,
+                              reason="test", registry_path=self.registry_path)
+
+    def tearDown(self):
+        os.remove(self.registry_path)
+
+    def _portfolio(self):
+        from deployment.deployment_manager import list_strategies
+        return list_strategies(self.registry_path)
+
+    def test_an_india_strategy_does_not_penalise_a_us_candidate(self):
+        score, notes = compute_diversification_score({"reversal_short_horizon"}, self._portfolio(), lane="us")
+        self.assertEqual(score, 10.0)
+        self.assertEqual(notes, [])
+
+    def test_the_same_india_strategy_still_penalises_an_india_candidate(self):
+        score, notes = compute_diversification_score({"reversal_short_horizon"}, self._portfolio(), lane="india")
+        self.assertEqual(score, 7.0)        # 10 - 3.0 for PASS/PAPER_TRADING
+        self.assertEqual(len(notes), 1)
+
+    def test_india_remains_the_default_so_existing_callers_are_unchanged(self):
+        self.assertEqual(compute_diversification_score({"reversal_short_horizon"}, self._portfolio()),
+                         compute_diversification_score({"reversal_short_horizon"}, self._portfolio(), "india"))
+
+    def test_a_us_strategy_penalises_a_us_candidate_in_its_own_lane(self):
+        # the other half of lane scoping: US-vs-US overlap must still be seen. Before this change the
+        # two Pool I strategies weren't in EXISTING_STRATEGY_TAGS at all, so it never was.
+        register_strategy("cross_sectional_momentum_us", "Cross-Sectional Momentum (US)",
+                          "us_equity", registry_path=self.registry_path)
+        set_research_verdict("cross_sectional_momentum_us", ResearchVerdict.PASS, registry_path=self.registry_path)
+        set_deployment_status("cross_sectional_momentum_us", DeploymentStatus.PAPER_TRADING,
+                              reason="test", registry_path=self.registry_path)
+        us_score, us_notes = compute_diversification_score({"momentum_cross_sectional"}, self._portfolio(), "us")
+        self.assertEqual(us_score, 7.0)
+        self.assertEqual(len(us_notes), 1)
+        # ...and it must NOT leak into the India lane
+        self.assertEqual(compute_diversification_score({"momentum_cross_sectional"}, self._portfolio(), "india")[0],
+                         10.0)
+
+    def test_the_real_us_ports_are_not_penalised_by_their_india_twins(self):
+        # end-to-end against the REAL registry: every cross-market port scores a clean 10 on
+        # diversification even though its India original is registered and live.
+        from deployment.deployment_manager import list_strategies
+        portfolio = list_strategies()      # the real one on purpose -- that's the regression
+        by_key = {c.key: c for c in CANDIDATES}
+        for key in ("us_short_term_reversal", "us_max_effect", "us_turn_of_month",
+                    "us_overnight_return_anomaly", "us_high_volume_return_premium",
+                    "us_earnings_announcement_premium"):
+            self.assertEqual(score_candidate(by_key[key], portfolio).axis_scores["diversification"], 10.0, key)
+
+
+class TestCrossMarketPorts(unittest.TestCase):
+    """The six India-PASS mechanisms proposed as US-lane candidates (2026-10-03)."""
+
+    PORTS = {"us_short_term_reversal": "short_term_reversal",
+             "us_max_effect": "max_effect",
+             "us_turn_of_month": "turn_of_month",
+             "us_overnight_return_anomaly": "overnight_return_anomaly",
+             "us_high_volume_return_premium": "high_volume_return_premium",
+             "us_earnings_announcement_premium": "earnings_announcement_premium"}
+
+    def test_every_port_lands_in_the_us_lane_and_is_researchable(self):
+        r_us = build_roadmap(registry_path=_fake_registry_path(), lane="us")
+        researchable = {s.candidate.key for s in r_us["researchable_now"]}
+        for key in self.PORTS:
+            self.assertIn(key, researchable, key)
+
+    def test_each_port_keeps_its_india_originals_factor_tags(self):
+        # so that once a port is promoted, same-lane overlap scoring recognises a future duplicate.
+        from swing_research.research_roadmap import EXISTING_STRATEGY_TAGS
+        by_key = {c.key: c for c in CANDIDATES}
+        for port, india in self.PORTS.items():
+            self.assertEqual(by_key[port].factor_tags, EXISTING_STRATEGY_TAGS[india], port)
+
+    def test_the_india_originals_really_are_registered_and_passed(self):
+        # the premise of the whole exercise -- if one of these is ever rolled back, the matching port's
+        # rationale ("already PASSed here, untested there") no longer holds and should be revisited.
+        from deployment.deployment_manager import list_strategies
+        by_key = {r.strategy_key: r for r in list_strategies()}
+        for india in self.PORTS.values():
+            self.assertEqual(by_key[india].research_verdict.value, "PASS", india)
+
+    def test_ports_use_only_data_this_program_actually_has(self):
+        by_key = {c.key: c for c in CANDIDATES}
+        for key in self.PORTS:
+            classification, reasons = classify_data_feasibility(by_key[key].data_requirements)
+            self.assertEqual(classification, "IMPLEMENTABLE", f"{key}: {reasons}")
+
+
 class TestBuildRoadmapLaneFilter(unittest.TestCase):
     def test_no_lane_argument_scores_every_candidate_unchanged(self):
         r = build_roadmap(registry_path=_fake_registry_path())
@@ -348,7 +452,9 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
         # weekly routine can actually pick up. dogs_of_the_dow stays blocked on dividend-yield data.
         r_us = build_roadmap(registry_path=_fake_registry_path(), lane="us")
         self.assertEqual({s.candidate.key for s in r_us["all_scored"]}, _US_KEYS)
-        self.assertEqual([s.candidate.key for s in r_us["researchable_now"]], ["us_price_delay_factor"])
+        # everything except Dogs of the Dow is researchable: us_price_delay_factor plus the six
+        # cross-market ports added 2026-10-03, all of which need only data this program already has.
+        self.assertEqual({s.candidate.key for s in r_us["researchable_now"]}, _US_KEYS - {"dogs_of_the_dow"})
         self.assertEqual([s.candidate.key for s in r_us["deferred_pending_data"]], ["dogs_of_the_dow"])
 
 

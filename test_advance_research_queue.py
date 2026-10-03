@@ -66,7 +66,10 @@ class TestAdvanceResearchQueue(unittest.TestCase):
                 self.assertIsNotNone(data["current"], lane)
                 picked[lane] = data["current"]["key"]
             self.assertEqual(len(set(picked.values())), 3)   # three lanes, three different candidates
-            self.assertEqual(picked["us"], "us_price_delay_factor")   # the only researchable US one today
+        # each lane picks ITS OWN top-ranked candidate -- derived from the real roadmap rather than
+        # hardcoded, so adding a candidate changes the expectation automatically instead of failing here
+        for lane, key in picked.items():
+            self.assertEqual(key, build_roadmap(lane=lane)["researchable_now"][0].candidate.key, lane)
         mock_run.assert_called()   # confirms the git path was actually exercised, just safely mocked
         self.assertFalse(any(call.args[0][:2] == ["git", "push"] for call in mock_run.call_args_list))   # returncode=0 on the diff-check means no commit was ever attempted -- confirms that, not just that push is mocked
 

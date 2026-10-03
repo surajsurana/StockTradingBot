@@ -175,6 +175,16 @@ DATA_CAPABILITIES = {
     # Volatility Risk Premium candidate). Needed for any crypto carry/basis strategy that trades the
     # funding-rate payment itself, as distinct from every price-only crypto signal already on this
     # roadmap.
+
+    "earnings_announcement_dates": True,
+    # CONFIRMED PRESENT 2026-10-03: data/fetch_earnings_calendar.py wraps yfinance's
+    # Ticker.get_earnings_dates() (EARNINGS_HISTORY_LIMIT = 16 quarters, roughly four years of
+    # reported dates) and is already relied on in production by two registered strategies -- 'pead'
+    # and 'earnings_announcement_premium', the latter a PASS. It was simply never listed here.
+    # Market-agnostic: the same call takes bare US tickers, exactly as fetch_historical.py does.
+    # LIMITS, disclosed rather than assumed away: an unofficial source (that module says so itself),
+    # day-level timestamp ambiguity, and only ~4 years of depth -- enough for this program's
+    # walk-forward windows, NOT enough for a multi-decade replication.
 }
 
 
@@ -271,6 +281,17 @@ EXISTING_STRATEGY_TAGS = {
     "earnings_announcement_premium": {"earnings_drift", "seasonality_calendar"},
     "downside_beta": {"risk_based"},   # researched 2026-09-14
     "nifty_low_volatility_30": {"risk_based"},   # researched 2026-09-14
+    # Crypto lane (Pool E/E1/G) and US lane (Pool I). Added 2026-10-03 alongside lane-scoped
+    # diversification: these were never classified here, so crypto and US candidates were scored
+    # against India strategies they share nothing with, and against nothing in their own lane at all.
+    "crypto_xs_momentum": {"momentum_cross_sectional"},
+    "crypto_trend_timing": {"trend_following"},
+    "crypto_trend_timing_weekly": {"trend_following"},
+    "crypto_trend_timing_daily": {"trend_following"},
+    "crypto_tsmom": {"trend_following"},        # time-series momentum (Moskowitz/Ooi/Pedersen)
+    "crypto_vol_managed": {"risk_based"},       # volatility-managed exposure (Moreira/Muir)
+    "minervini_trend_template_filter_us": {"trend_following", "momentum_cross_sectional"},
+    "cross_sectional_momentum_us": {"momentum_cross_sectional"},
 }
 
 # How much a given (research_verdict, deployment_status) combination
@@ -348,19 +369,40 @@ def _overlap_weight(research_verdict: str, deployment_status: str) -> float:
     return _STATUS_OVERLAP_WEIGHT.get((research_verdict, deployment_status), _DEFAULT_OVERLAP_WEIGHT)
 
 
-def compute_diversification_score(factor_tags: set, portfolio_records: list) -> tuple:
+def _record_lane(record) -> str:
+    """Which research lane an already-registered strategy trades in -- the registry-side mirror of
+    lane_of(), with the same crypto-before-US precedence."""
+    from deployment.base import is_crypto_record, is_us_equity_record
+    if is_crypto_record(record):
+        return "crypto"
+    if is_us_equity_record(record):
+        return "us"
+    return "india"
+
+
+def compute_diversification_score(factor_tags: set, portfolio_records: list, lane: str = "india") -> tuple:
     """
-    10 = no overlap at all with anything already researched. Each existing
+    10 = no overlap at all with anything already researched IN THE SAME LANE. Each existing
     strategy sharing at least one factor_tag subtracts a penalty scaled by
     how "occupied" that family currently is (see _STATUS_OVERLAP_WEIGHT) --
     a live PAPER_TRADING strategy in the same family costs far more
     diversification credit than a REJECTed/ARCHIVED one. Floors at 0, never
     negative. Returns (score, overlap_notes) so the reasoning is visible,
     not just the number.
+
+    Lane-scoped since 2026-10-03, per explicit direction ("the seed feeder should also consider
+    them... because we can use them as well for us equity"). A factor already running on NSE says
+    nothing about whether it survives on the S&P 500: both strategies ported to Pool I so far
+    (Minervini, Cross-Sectional Momentum) came back PASS in the US while their India originals are
+    INCONCLUSIVE. Scoring a US candidate down because its India twin exists was suppressing exactly
+    the cross-market research worth doing -- a US port of a PASS/PAPER_TRADING India strategy was
+    losing 3.0 of 10 on this axis (0.60 of total score) for a market it has never been tested in.
     """
     penalty = 0.0
     overlap_notes = []
     for rec in portfolio_records:
+        if _record_lane(rec) != lane:
+            continue   # a different market entirely -- not evidence about this one
         tags = EXISTING_STRATEGY_TAGS.get(rec.strategy_key)
         if tags is None:
             continue   # strategy not yet classified here -- see module docstring
@@ -390,7 +432,8 @@ class ScoredCandidate:
 def score_candidate(candidate: CandidateProfile, portfolio_records: list,
                      weights: dict = DEFAULT_WEIGHTS) -> ScoredCandidate:
     feasibility_classification, feasibility_reasons = classify_data_feasibility(candidate.data_requirements)
-    diversification, overlap_notes = compute_diversification_score(candidate.factor_tags, portfolio_records)
+    diversification, overlap_notes = compute_diversification_score(candidate.factor_tags, portfolio_records,
+                                                                   lane_of(candidate))
 
     axis_scores = {
         "academic_evidence": candidate.academic_evidence_score,
@@ -2343,6 +2386,319 @@ CANDIDATES = [
                                    "as real, open items, not formalities.",
         academic_evidence_score=8, expected_robustness_score=6, operational_simplicity_score=4,
         research_value_score=8, data_availability_score=10, implementation_feasibility_score=6,
+        horizon_lane="swing", market="US",
+    ),
+
+    # =================================================================================
+    # CROSS-MARKET PORTS -- added 2026-10-03 per explicit direction ("the seed feeder should also
+    # consider [strategies already tested for Indian markets]... because we can use them as well for
+    # us equity"). Each of the six below is a mechanism this program ALREADY researched on NSE data
+    # and registered with a PASS, proposed here as a separate US-lane candidate.
+    #
+    # Why this is real research and not bookkeeping: every one of these six was ORIGINALLY documented
+    # on US data (Jegadeesh JF 1990, Bali/Cakici/Whitelaw JFE 2011, Ariel JFE 1987, Lou/Polk/Skouras
+    # JFE 2019, Gervais/Kaniel/Mingelgrin JF 2001, Frazzini/Lamont 2007 + Barber et al. JFE 2013), so
+    # the US evidence is the ORIGINATING evidence -- stronger than the India evidence these were
+    # accepted on. And a port genuinely changes the answer: both strategies already taken to Pool I
+    # (Minervini, Cross-Sectional Momentum) came back PASS on US data while their India originals sit
+    # at INCONCLUSIVE.
+    #
+    # What a PASS in India does NOT mean: that the US version works. Each still goes through the same
+    # unmodified walk-forward pipeline and earns its own PASS/REJECT on real US data, exactly as
+    # directed for Pool I ("backtest the strategies in the US markets and then pass/fail and then
+    # promote to paper trading"). The India verdict is recorded below as context, never as evidence.
+    # =================================================================================
+    CandidateProfile(
+        key="us_short_term_reversal",
+        name="Short-Term Reversal (US)",
+        authors="Jegadeesh, N.",
+        publication="\"Evidence of Predictable Behavior of Security Returns,\" The Journal of Finance, "
+                     "Vol. 45, No. 3 (1990) -- the citation already recorded for this program's own India "
+                     "implementation (swing_research/published_research_analyst.py, SHORT_TERM_REVERSAL), "
+                     "reused verbatim rather than re-sourced; the paper's sample is US (NYSE/AMEX).",
+        year=1990,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only bottom decile (prior-month losers) -- the same disclosed reduction from the "
+                  "paper's zero-cost long-short construction already applied to the India version.",
+        factor_family="Short-horizon reversal",
+        factor_tags={"reversal_short_horizon"},
+        mechanism="Significant NEGATIVE autocorrelation in individual stock returns at weekly-to-monthly "
+                  "lags: stocks with the worst returns over the prior month subsequently outperform. "
+                  "Attributed to liquidity provision -- a short-horizon loser is often a stock that absorbed "
+                  "selling pressure, and the reversal is the compensation paid to whoever supplied that "
+                  "liquidity. Identical mechanism to this program's registered India strategy "
+                  "'short_term_reversal' (PASS, paper trading); the open question is purely whether it "
+                  "survives on S&P 500 large caps, which is a different liquidity environment entirely from "
+                  "the NSE universe it passed on.",
+        typical_holding_period="One month: prior-1-month formation, 1-month hold, the paper's headline and "
+                                "most-replicated specification.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="High -- full monthly rotation of the book.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Foundational, heavily-cited top-journal source (Journal of Finance), and the US "
+                        "sample IS the paper's own sample -- this is the factor's home market, not a "
+                        "transplant. Needs nothing beyond the daily OHLCV already fetched for the frozen "
+                        "S&P 500 universe (swing_research/universe_us.py). Implementation is close to free: "
+                        "the India Strategy class already exists and, like every Strategy subclass here, "
+                        "contains no NSE-specific code -- the two existing Pool I ports reused their India "
+                        "classes completely unmodified, so this is a new experiment over existing code "
+                        "rather than a new strategy to write.",
+        known_weaknesses="The weakest of the six cross-market ports on expected robustness, and honestly so. "
+                         "Short-term reversal is among the most heavily documented DECAYED anomalies in US "
+                         "equities post-2000, and the surviving premium is concentrated in small, illiquid, "
+                         "high-spread names -- close to the opposite of an S&P 500 large-cap universe, which "
+                         "is the only US universe this program has. It also demands full monthly rotation, "
+                         "so it is the most transaction-cost-sensitive candidate here; the realistic "
+                         "expectation is that costs modelled by execution_realism_engine.py eat a large "
+                         "share of whatever gross premium remains. India PASSing says nothing about this: "
+                         "the NSE universe it passed on is far less liquid than the S&P 500.",
+        academic_replication_quality="Extensively replicated across decades and markets, including the "
+                                      "well-documented post-publication decay in US large caps -- the "
+                                      "replication record here cuts both ways and is cited above in full.",
+        evidence_sufficiency_note="Sufficient to research, NOT to expect a PASS. The value is largely in "
+                                   "getting a real US verdict on a mechanism already live for India: a "
+                                   "REJECT here would be a genuinely useful, cost-informed result about "
+                                   "large-cap liquidity provision, not a wasted cycle.",
+        academic_evidence_score=9, expected_robustness_score=3, operational_simplicity_score=8,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_max_effect",
+        name="MAX Effect / Lottery-Demand Anomaly (US)",
+        authors="Bali, T.G., Cakici, N. and Whitelaw, R.F.",
+        publication="\"Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns,\" Journal "
+                     "of Financial Economics, Vol. 99, No. 2 (2011) -- the citation already recorded for "
+                     "this program's India implementation (MAX_EFFECT), reused verbatim; the paper's sample "
+                     "is US (CRSP).",
+        year=2011,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only LOW-MAX decile -- the paper's premium accrues to avoiding the lottery-like "
+                  "names; same long-only reduction as the India version.",
+        factor_family="Behavioural / lottery demand",
+        factor_tags={"behavioral_lottery"},
+        mechanism="Investors overpay for stocks with lottery-like payoffs. Sorting on MAX -- the single "
+                  "largest daily return in the prior month -- isolates exactly those names, and the "
+                  "highest-MAX stocks subsequently UNDERPERFORM. The premium is therefore earned by holding "
+                  "the lowest-MAX names. Same mechanism as the registered India strategy 'max_effect' "
+                  "(PASS, paper trading).",
+        typical_holding_period="One month: MAX measured over the prior month, monthly rebalance.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate to high -- monthly rebalance.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Top-tier journal (JFE), very heavily cited, and the US sample is the paper's own. "
+                        "Computed from a single column of daily OHLCV already fetched for the US universe -- "
+                        "arguably the simplest signal of the six to compute correctly. The India class is "
+                        "reusable unmodified, as with every port here.",
+        known_weaknesses="MAX is strongly correlated with idiosyncratic volatility, which this program "
+                         "already researched for India ('idiosyncratic_volatility', INCONCLUSIVE) -- so a US "
+                         "result here is partly a re-test of a mechanism this program has already found "
+                         "ambiguous once, in another market. More seriously for the only US universe "
+                         "available here: the lottery-demand effect is documented as strongest in small, "
+                         "cheap, retail-held stocks, and the S&P 500 is the large-cap, institution-dominated "
+                         "end of exactly that spectrum, where the effect is weakest. Several post-2011 "
+                         "studies also attribute much of MAX's power to its IVOL correlation rather than to "
+                         "lottery demand as a distinct channel.",
+        academic_replication_quality="Widely replicated internationally and the subject of an active "
+                                      "literature on whether MAX is distinct from idiosyncratic volatility "
+                                      "-- strong standing, with a genuine unresolved attribution debate.",
+        evidence_sufficiency_note="Sufficient to research. The honest expectation is a weaker US large-cap "
+                                   "result than the paper's full-CRSP headline, and the research value is as "
+                                   "much in the IVOL-overlap question as in the raw verdict.",
+        academic_evidence_score=8, expected_robustness_score=4, operational_simplicity_score=8,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_turn_of_month",
+        name="Turn-of-the-Month Effect (US)",
+        authors="Ariel, R.A.",
+        publication="\"A Monthly Effect in Stock Returns,\" Journal of Financial Economics, Vol. 18, No. 1 "
+                     "(1987) -- the citation already recorded for this program's India implementation "
+                     "(TURN_OF_MONTH), reused verbatim; the paper's sample is US.",
+        year=1987,
+        asset_class="US equity index / broad universe exposure, calendar-timed",
+        direction="Long-only, in and out on fixed calendar dates -- no cross-sectional selection at all.",
+        factor_family="Calendar seasonality",
+        factor_tags={"seasonality_calendar"},
+        mechanism="US equity returns concentrate almost entirely in a narrow window spanning the last "
+                  "trading days of one month and the first few of the next; the rest of the month "
+                  "contributes close to nothing on average. Commonly attributed to recurring cash flows -- "
+                  "salary, pension and fund inflows clustering at month boundaries. Same mechanism as the "
+                  "registered India strategy 'turn_of_month' (PASS, paper trading).",
+        typical_holding_period="A few days per month, entered and exited on fixed calendar dates.",
+        holding_days_min=3, holding_days_max=8,
+        expected_trade_frequency="Low -- one entry and one exit per month, fully scheduled in advance.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="The simplest and cheapest of the six to run by a wide margin: no ranking, no "
+                        "regression, no estimation window, and the book sits in cash most of the month, so "
+                        "capital is free for other US strategies between windows. Foundational JFE source "
+                        "on US data, and the India version already PASSed on the same engine.",
+        known_weaknesses="Calendar anomalies are the canonical data-mining concern in this literature, and "
+                         "this one has been publicly known and tradeable for nearly four decades -- "
+                         "post-publication decay is well documented and several studies find the US effect "
+                         "substantially weaker after 2000. It also offers no mechanism that would survive "
+                         "being arbitraged, unlike a risk- or liquidity-based premium. Because the signal is "
+                         "purely a date, a US result adds little NEW mechanistic knowledge beyond confirming "
+                         "or denying survival -- which is why its research-value score is the lowest of the "
+                         "six despite its operational simplicity being the highest.",
+        academic_replication_quality="Replicated across many markets and decades, with an equally "
+                                      "well-documented post-publication weakening in the US specifically.",
+        evidence_sufficiency_note="Sufficient to research, cheaply. Worth running precisely BECAUSE it is "
+                                   "nearly free to test and occupies almost no capital-time; not worth "
+                                   "prioritising over the mechanistically richer candidates in this lane.",
+        academic_evidence_score=7, expected_robustness_score=4, operational_simplicity_score=9,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_overnight_return_anomaly",
+        name="Overnight Return Anomaly (US)",
+        authors="Lou, D., Polk, C. and Skouras, S.; Berkman, D., Koch, P.D., Tuttle, L. and Zhang, S.J.",
+        publication="\"A Tug of War: Overnight Versus Intraday Expected Returns,\" Journal of Financial "
+                     "Economics, Vol. 134, No. 1 (2019); see also \"Paying Attention: Overnight Returns and "
+                     "the Cross-Section of Stock Returns,\" Journal of Finance, Vol. 67, No. 5 (2012) -- the "
+                     "citations already recorded for this program's India implementation "
+                     "(OVERNIGHT_RETURN_ANOMALY), reused verbatim; both samples are US.",
+        year=2019,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only the high-overnight-return group, same reduction as the India version.",
+        factor_family="Microstructure / overnight-intraday decomposition",
+        factor_tags={"microstructure_overnight"},
+        mechanism="A stock's return splits into an overnight (previous close to open) and an intraday (open "
+                  "to close) component, and the two have persistently OPPOSITE cross-sectional predictive "
+                  "signs -- different investor clienteles dominate the two windows, with retail and "
+                  "attention-driven demand concentrated at the open. A stock's past overnight returns "
+                  "predict its future overnight returns, and the effect is not explained by the total daily "
+                  "return. Same mechanism as the registered India strategy 'overnight_return_anomaly' "
+                  "(PASS, paper trading).",
+        typical_holding_period="Overnight to a few days, depending on the rebalance cadence chosen; the "
+                                "signal itself is formed from a trailing window of overnight returns.",
+        holding_days_min=1, holding_days_max=5,
+        expected_trade_frequency="High.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Two independent top-tier papers (JFE 2019 and JF 2012) pointing the same way, both "
+                        "on US data -- among the better-evidenced candidates in this lane. Needs only the "
+                        "OPEN and CLOSE columns this program already fetches for the US universe; the "
+                        "decomposition is arithmetic, with no estimation window. The India version PASSed on "
+                        "this same engine.",
+        known_weaknesses="The one candidate here with a real STRUCTURAL question to settle before the "
+                         "backtest can be trusted, and it must be settled rather than assumed: the entire "
+                         "return being harvested IS the close-to-open gap, so the result is unusually "
+                         "sensitive to fill timing, and Pool I is configured fill_timing='next_day_open'. "
+                         "Whether that configuration can faithfully express an overnight hold -- or whether "
+                         "the strategy as implemented for India is actually capturing something subtly "
+                         "different -- needs checking against the India implementation and "
+                         "execution_realism_engine.py FIRST, because a backtest that silently mismodels the "
+                         "fill would produce a meaningless PASS. Beyond that: US open auctions are "
+                         "crowded and spreads are widest at the open, so realistic slippage is a serious "
+                         "threat to a premium measured in tens of basis points.",
+        academic_replication_quality="Strong and recent -- two separate top-journal treatments plus an "
+                                      "active follow-on literature on overnight/intraday decomposition.",
+        evidence_sufficiency_note="Sufficient to research, with the fill-timing question treated as a "
+                                   "genuine prerequisite rather than a caveat to note afterwards.",
+        academic_evidence_score=8, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=8, data_availability_score=10, implementation_feasibility_score=7,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_high_volume_return_premium",
+        name="High-Volume Return Premium (US)",
+        authors="Gervais, S., Kaniel, R. and Mingelgrin, D.H.",
+        publication="\"The High-Volume Return Premium,\" The Journal of Finance, Vol. 56, No. 3 (2001) -- "
+                     "the citation already recorded for this program's India implementation "
+                     "(HIGH_VOLUME_RETURN_PREMIUM), reused verbatim; the paper's sample is US (NYSE). "
+                     "Independently re-surfaced as a US candidate by the 2026-10-03 Discovery Scout run, "
+                     "which then dropped it as 'already implemented' -- the market-blind deduplication this "
+                     "entry exists to correct.",
+        year=2001,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only the high-volume group, same reduction as the India version.",
+        factor_family="Volume / investor attention",
+        factor_tags={"volume_attention"},
+        mechanism="Stocks experiencing unusually HIGH trading volume over a short formation window "
+                  "subsequently outperform over the following weeks, and unusually low-volume stocks "
+                  "underperform. The authors attribute it to visibility: a volume shock raises a stock's "
+                  "salience, drawing in buyers and pushing price up over the following period. Note the "
+                  "signal is the volume shock ITSELF, independent of the direction of the accompanying price "
+                  "move. Same mechanism as the registered India strategy 'high_volume_return_premium' "
+                  "(PASS, paper trading).",
+        typical_holding_period="Formation over a short window (the paper uses a day or a week), held for "
+                                "roughly the following month.",
+        holding_days_min=20, holding_days_max=30,
+        expected_trade_frequency="Moderate to high.",
+        data_requirements=["daily_ohlcv_history", "volume"],
+        known_strengths="Top-tier journal (Journal of Finance), well cited, US sample. Both inputs -- price "
+                        "and volume -- are already fetched for the US universe, and volume is confirmed "
+                        "available in DATA_CAPABILITIES. The India class is reusable unmodified. "
+                        "Mechanistically distinct from everything else proposed for this lane: it keys on a "
+                        "volume shock rather than on any past-return or risk measure.",
+        known_weaknesses="The headline result rests on 1963-1996 NYSE data, and the modern US market is "
+                         "structurally different in exactly the dimension the paper depends on -- volume is "
+                         "now fragmented across many venues, and a large share is algorithmic rather than "
+                         "attention-driven, so 'unusually high volume' may no longer mean what it meant in "
+                         "the sample. Volume figures also need care around splits and index events. A real "
+                         "risk that the premium has decayed or changed character rather than simply weakened.",
+        academic_replication_quality="Replicated across markets, with an active follow-on attention "
+                                      "literature; the modern-microstructure caveat above is the main open "
+                                      "question rather than the original finding's validity.",
+        evidence_sufficiency_note="Sufficient to research. The honest framing is that this tests whether a "
+                                   "1960s-90s attention mechanism still exists in a fragmented, "
+                                   "algorithm-dominated US tape -- which is itself a worthwhile answer.",
+        academic_evidence_score=8, expected_robustness_score=5, operational_simplicity_score=7,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_earnings_announcement_premium",
+        name="Earnings Announcement Premium (US)",
+        authors="Frazzini, A. and Lamont, O.A.; Barber, B.M., De George, E.T., Lehavy, R. and Trueman, B.",
+        publication="\"The Earnings Announcement Premium and Trading Volume,\" NBER Working Paper 13090 "
+                     "(2007); \"The earnings announcement premium around the globe,\" Journal of Financial "
+                     "Economics 108(1), 118-138 (2013) -- the citations already recorded for this program's "
+                     "India implementation (EARNINGS_ANNOUNCEMENT_PREMIUM), reused verbatim. The 2013 JFE "
+                     "paper's international sample includes the US.",
+        year=2007,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only expected announcers, same reduction as the India version (which drops the "
+                  "short leg for lack of cash-market shorting infrastructure).",
+        factor_family="Earnings event / announcement premium",
+        factor_tags={"earnings_drift", "seasonality_calendar"},
+        mechanism="Stocks earn abnormally high returns in the MONTH they are predicted to report earnings -- "
+                  "a premium for holding the announcement risk, concentrated in names that attract the most "
+                  "attention and volume around the event. Distinct from post-earnings-announcement drift: "
+                  "the position is taken BEFORE the announcement based on a predictable schedule, not after "
+                  "it based on the surprise. Same mechanism as the registered India strategy "
+                  "'earnings_announcement_premium' (PASS, paper trading).",
+        typical_holding_period="About one month, around the predicted announcement.",
+        holding_days_min=20, holding_days_max=35,
+        expected_trade_frequency="Moderate, clustered into earnings season.",
+        data_requirements=["daily_ohlcv_history", "volume", "earnings_announcement_dates"],
+        known_strengths="A JFE paper plus a widely-cited NBER working paper, with the 2013 international "
+                        "study explicitly covering the US. The announcement-date pipeline already exists and "
+                        "is market-agnostic: data/fetch_earnings_calendar.py wraps yfinance's "
+                        "get_earnings_dates(), which takes bare US tickers exactly as fetch_historical.py "
+                        "does, and is already relied on in production by two registered India strategies. "
+                        "Earnings-date coverage and reliability for S&P 500 constituents should be BETTER "
+                        "than for the NSE universe this passed on, not worse.",
+        known_weaknesses="The binding constraint is history depth, and it is a real one: "
+                         "EARNINGS_HISTORY_LIMIT is 16 quarters, so roughly four years of announcement "
+                         "dates are available. That is enough for this program's walk-forward windows but "
+                         "materially shorter than the backtest span available to every other candidate in "
+                         "this lane, which means a weaker, more period-dependent verdict -- four years can "
+                         "easily be one regime. The source is also unofficial and day-level ambiguous (that "
+                         "module discloses this itself). Operationally this is the most complex of the six: "
+                         "it needs the date pipeline, a volume-concentration ranking, and the 'exactly four "
+                         "announcements in the prior twelve months' filter, so it is the one port where the "
+                         "India class may genuinely need US-specific review rather than straight reuse.",
+        academic_replication_quality="Replicated internationally by the 2013 JFE study across many markets "
+                                      "including the US -- good standing, though the premium's size varies "
+                                      "considerably by market and period.",
+        evidence_sufficiency_note="Sufficient to research, but it should be sequenced LAST of the six: the "
+                                   "four-year date history caps how confident any verdict can be, so the "
+                                   "cheaper, deeper-history ports are better use of the queue first.",
+        academic_evidence_score=7, expected_robustness_score=6, operational_simplicity_score=5,
+        research_value_score=7, data_availability_score=7, implementation_feasibility_score=6,
         horizon_lane="swing", market="US",
     ),
 ]
