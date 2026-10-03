@@ -287,10 +287,25 @@ class TestLaneOf(unittest.TestCase):
         c = replace(CANDIDATES[0], market="US")
         self.assertEqual(lane_of(c), "us")
 
-    def test_every_existing_candidate_is_the_india_lane(self):
-        # Confirms the backward-compat promise: lanes are new, nothing pre-existing moved.
+    def test_every_pre_lane_candidate_is_the_india_lane(self):
+        # Confirms the backward-compat promise: every candidate that predates lanes (2026-10-03) is
+        # still india -- checked by the same fixed key set TestScoringAndRoadmap's own
+        # _PRE_HORIZON_LANE_KEYS-style test uses, not "every candidate in CANDIDATES", since the
+        # Discovery Scout has since (2026-10-02 run, merged 2026-10-03) legitimately added real
+        # crypto/US candidates -- lane_of() correctly routing THOSE elsewhere is the point, not a
+        # regression.
         for c in CANDIDATES:
-            self.assertEqual(lane_of(c), "india", c.key)
+            if c.key not in ("crypto_size_factor", "crypto_long_horizon_reversal", "dogs_of_the_dow"):
+                self.assertEqual(lane_of(c), "india", c.key)
+
+    def test_the_first_real_discovered_crypto_and_us_candidates_route_correctly(self):
+        # 2026-10-03: the monthly Discovery Scout's 2026-10-02 run (PR #2, merged after review) found
+        # the first genuinely real, non-India candidates since lanes were split -- this is the
+        # regression check that they land in the right queue, not a synthetic fixture.
+        by_key = {c.key: c for c in CANDIDATES}
+        self.assertEqual(lane_of(by_key["crypto_size_factor"]), "crypto")
+        self.assertEqual(lane_of(by_key["crypto_long_horizon_reversal"]), "crypto")
+        self.assertEqual(lane_of(by_key["dogs_of_the_dow"]), "us")
 
 
 class TestBuildRoadmapLaneFilter(unittest.TestCase):
@@ -298,27 +313,33 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
         r = build_roadmap(registry_path=_fake_registry_path())
         self.assertEqual(len(r["all_scored"]), len(CANDIDATES))
 
-    def test_india_lane_today_matches_the_full_set(self):
-        # Every real candidate today is India-lane (see TestLaneOf), so filtering to "india" should
-        # change nothing yet -- this is the regression check for that invariant.
+    def test_india_lane_excludes_the_non_india_candidates(self):
         r_all = build_roadmap(registry_path=_fake_registry_path())
         r_india = build_roadmap(registry_path=_fake_registry_path(), lane="india")
-        self.assertEqual({s.candidate.key for s in r_all["all_scored"]},
+        non_india_keys = {"crypto_size_factor", "crypto_long_horizon_reversal", "dogs_of_the_dow"}
+        self.assertEqual({s.candidate.key for s in r_all["all_scored"]} - non_india_keys,
                          {s.candidate.key for s in r_india["all_scored"]})
+        self.assertTrue(non_india_keys.isdisjoint({s.candidate.key for s in r_india["all_scored"]}))
 
-    def test_crypto_and_us_lanes_are_empty_today(self):
-        # Honest current state (2026-10-03): zero crypto/US candidates exist in the roadmap yet --
-        # this will need re-seeding once real ones are added, which is the whole point of this test
-        # existing: it'll start failing the moment that happens, as a deliberate signal to update it.
+    def test_crypto_lane_has_the_two_real_discovered_candidates(self):
+        # 2026-10-03: no longer empty -- PR #2's two crypto candidates were merged. One is genuinely
+        # researchable today (crypto_long_horizon_reversal, real daily OHLCV data only); the other
+        # (crypto_size_factor) is blocked, pending market-cap data this program doesn't have.
         r_crypto = build_roadmap(registry_path=_fake_registry_path(), lane="crypto")
+        self.assertEqual({s.candidate.key for s in r_crypto["all_scored"]},
+                         {"crypto_size_factor", "crypto_long_horizon_reversal"})
+        self.assertEqual([s.candidate.key for s in r_crypto["researchable_now"]], ["crypto_long_horizon_reversal"])
+
+    def test_us_lane_has_the_one_real_discovered_candidate_but_it_is_blocked(self):
+        # 2026-10-03: Dogs of the Dow is real and US-lane, but blocked (no dividend-yield data source)
+        # and doesn't clear the paper_direct score threshold either -- the US lane is honestly still
+        # not researchable yet, even though it's no longer literally empty. This is accurate, not a
+        # bug: a fresh, US-targeted Discovery Scout search is still needed for a genuinely
+        # implementable US candidate.
         r_us = build_roadmap(registry_path=_fake_registry_path(), lane="us")
-        self.assertEqual(r_crypto["all_scored"], [])
-        self.assertEqual(r_us["all_scored"], [])
-
-    def test_lane_filter_also_scopes_researchable_now_and_paper_direct_eligible(self):
-        r_crypto = build_roadmap(registry_path=_fake_registry_path(), lane="crypto")
-        self.assertEqual(r_crypto["researchable_now"], [])
-        self.assertEqual(r_crypto["paper_direct_eligible"], [])
+        self.assertEqual({s.candidate.key for s in r_us["all_scored"]}, {"dogs_of_the_dow"})
+        self.assertEqual(r_us["researchable_now"], [])
+        self.assertEqual(r_us["paper_direct_eligible"], [])
 
 
 if __name__ == "__main__":

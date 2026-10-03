@@ -41,10 +41,12 @@ class TestAdvanceResearchQueue(unittest.TestCase):
         self.assertIn("(us)", msg_us)
 
     def test_run_lane_against_the_real_roadmap_for_each_of_the_three_lanes(self):
-        # crypto/us are genuinely empty today (2026-10-03, no candidates seeded yet) -- confirms
-        # run_lane() handles an empty lane cleanly (prints, doesn't crash, doesn't send anything)
-        # while india (every real candidate today) still picks something, same as the un-laned test
-        # above. No real Telegram send -- send=False throughout.
+        # india and crypto both have a real researchable candidate today (crypto since 2026-10-03,
+        # PR #2 merged -- crypto_long_horizon_reversal); us has a real candidate (dogs_of_the_dow) but
+        # it's blocked and doesn't clear the paper_direct threshold, so it's honestly still not
+        # researchable -- confirms run_lane() handles both the "picks something" and "nothing
+        # eligible yet" cases cleanly (prints, doesn't crash, doesn't send anything on the empty
+        # path). No real Telegram send -- send=False throughout.
         #
         # IMPORTANT: run_lane() also calls sync_from_github()/publish_snapshot(), which make REAL
         # GitHub API calls and (worse) a REAL `git commit`+`push` against advance_research_queue.py's
@@ -62,7 +64,7 @@ class TestAdvanceResearchQueue(unittest.TestCase):
                 d = tempfile.mkdtemp()
                 run_lane(lane, d, send=False, token="", chat_id="")   # must not raise
                 data = load(d, lane=lane)
-                if lane == "india":
+                if lane in ("india", "crypto"):
                     self.assertIsNotNone(data["current"])
                 else:
                     self.assertIsNone(data["current"])   # nothing eligible yet in these lanes
