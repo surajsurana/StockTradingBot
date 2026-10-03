@@ -270,6 +270,17 @@ class TestScoringAndRoadmap(unittest.TestCase):
                 self.assertIsNone(c.holding_days_max, c.key)   # a min without a max is fine (open-ended); the reverse never is
 
 
+# Every candidate the monthly Discovery Scout has added outside the India lane, newest run last.
+# Listed by hand rather than derived from lane_of() so the lane tests below stay real assertions
+# instead of tautologies: a newly discovered non-India candidate makes them fail until it is added
+# here, which is the intended signal to go and look at what landed.
+_CRYPTO_KEYS = {"crypto_size_factor", "crypto_long_horizon_reversal",                  # PR #2
+                "crypto_idiosyncratic_volatility", "crypto_illiquidity_premium",       # PR #3
+                "crypto_funding_rate_carry"}
+_US_KEYS = {"dogs_of_the_dow",                                                         # PR #2
+            "us_price_delay_factor"}                                                   # PR #3
+
+
 class TestLaneOf(unittest.TestCase):
     """lane_of() -- which of the three independent research queues (research_queue.py, added
     2026-10-03) a candidate belongs to."""
@@ -291,21 +302,21 @@ class TestLaneOf(unittest.TestCase):
         # Confirms the backward-compat promise: every candidate that predates lanes (2026-10-03) is
         # still india -- checked by the same fixed key set TestScoringAndRoadmap's own
         # _PRE_HORIZON_LANE_KEYS-style test uses, not "every candidate in CANDIDATES", since the
-        # Discovery Scout has since (2026-10-02 run, merged 2026-10-03) legitimately added real
-        # crypto/US candidates -- lane_of() correctly routing THOSE elsewhere is the point, not a
-        # regression.
+        # Discovery Scout has since legitimately added real crypto/US candidates -- lane_of()
+        # correctly routing THOSE elsewhere is the point, not a regression.
         for c in CANDIDATES:
-            if c.key not in ("crypto_size_factor", "crypto_long_horizon_reversal", "dogs_of_the_dow"):
+            if c.key not in _CRYPTO_KEYS | _US_KEYS:
                 self.assertEqual(lane_of(c), "india", c.key)
 
-    def test_the_first_real_discovered_crypto_and_us_candidates_route_correctly(self):
-        # 2026-10-03: the monthly Discovery Scout's 2026-10-02 run (PR #2, merged after review) found
-        # the first genuinely real, non-India candidates since lanes were split -- this is the
-        # regression check that they land in the right queue, not a synthetic fixture.
+    def test_the_real_discovered_crypto_and_us_candidates_route_correctly(self):
+        # The genuinely real, non-India candidates the Discovery Scout has found since lanes were
+        # split -- this is the regression check that they land in the right queue, not a synthetic
+        # fixture. Every key here is a candidate a real monthly run proposed and a human merged.
         by_key = {c.key: c for c in CANDIDATES}
-        self.assertEqual(lane_of(by_key["crypto_size_factor"]), "crypto")
-        self.assertEqual(lane_of(by_key["crypto_long_horizon_reversal"]), "crypto")
-        self.assertEqual(lane_of(by_key["dogs_of_the_dow"]), "us")
+        for key in _CRYPTO_KEYS:
+            self.assertEqual(lane_of(by_key[key]), "crypto", key)
+        for key in _US_KEYS:
+            self.assertEqual(lane_of(by_key[key]), "us", key)
 
 
 class TestBuildRoadmapLaneFilter(unittest.TestCase):
@@ -316,30 +327,29 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
     def test_india_lane_excludes_the_non_india_candidates(self):
         r_all = build_roadmap(registry_path=_fake_registry_path())
         r_india = build_roadmap(registry_path=_fake_registry_path(), lane="india")
-        non_india_keys = {"crypto_size_factor", "crypto_long_horizon_reversal", "dogs_of_the_dow"}
+        non_india_keys = _CRYPTO_KEYS | _US_KEYS
         self.assertEqual({s.candidate.key for s in r_all["all_scored"]} - non_india_keys,
                          {s.candidate.key for s in r_india["all_scored"]})
         self.assertTrue(non_india_keys.isdisjoint({s.candidate.key for s in r_india["all_scored"]}))
 
-    def test_crypto_lane_has_the_two_real_discovered_candidates(self):
-        # 2026-10-03: no longer empty -- PR #2's two crypto candidates were merged. One is genuinely
-        # researchable today (crypto_long_horizon_reversal, real daily OHLCV data only); the other
-        # (crypto_size_factor) is blocked, pending market-cap data this program doesn't have.
+    def test_crypto_lane_holds_every_discovered_crypto_candidate(self):
+        # Three are genuinely researchable from daily OHLCV alone; crypto_size_factor is blocked on
+        # market-cap data and crypto_funding_rate_carry on perpetual-futures funding rates, neither of
+        # which this program integrates.
         r_crypto = build_roadmap(registry_path=_fake_registry_path(), lane="crypto")
-        self.assertEqual({s.candidate.key for s in r_crypto["all_scored"]},
-                         {"crypto_size_factor", "crypto_long_horizon_reversal"})
-        self.assertEqual([s.candidate.key for s in r_crypto["researchable_now"]], ["crypto_long_horizon_reversal"])
+        self.assertEqual({s.candidate.key for s in r_crypto["all_scored"]}, _CRYPTO_KEYS)
+        self.assertEqual({s.candidate.key for s in r_crypto["researchable_now"]},
+                         {"crypto_long_horizon_reversal", "crypto_idiosyncratic_volatility",
+                          "crypto_illiquidity_premium"})
 
-    def test_us_lane_has_the_one_real_discovered_candidate_but_it_is_blocked(self):
-        # 2026-10-03: Dogs of the Dow is real and US-lane, but blocked (no dividend-yield data source)
-        # and doesn't clear the paper_direct score threshold either -- the US lane is honestly still
-        # not researchable yet, even though it's no longer literally empty. This is accurate, not a
-        # bug: a fresh, US-targeted Discovery Scout search is still needed for a genuinely
-        # implementable US candidate.
+    def test_us_lane_is_researchable_now_that_a_non_blocked_candidate_exists(self):
+        # 2026-10-03 (PR #3): us_price_delay_factor (Hou & Moskowitz, RFS 2005) needs only daily OHLCV,
+        # which Pool I already fetches for the S&P 500 -- so the US lane finally has something its
+        # weekly routine can actually pick up. dogs_of_the_dow stays blocked on dividend-yield data.
         r_us = build_roadmap(registry_path=_fake_registry_path(), lane="us")
-        self.assertEqual({s.candidate.key for s in r_us["all_scored"]}, {"dogs_of_the_dow"})
-        self.assertEqual(r_us["researchable_now"], [])
-        self.assertEqual(r_us["paper_direct_eligible"], [])
+        self.assertEqual({s.candidate.key for s in r_us["all_scored"]}, _US_KEYS)
+        self.assertEqual([s.candidate.key for s in r_us["researchable_now"]], ["us_price_delay_factor"])
+        self.assertEqual([s.candidate.key for s in r_us["deferred_pending_data"]], ["dogs_of_the_dow"])
 
 
 if __name__ == "__main__":

@@ -41,12 +41,10 @@ class TestAdvanceResearchQueue(unittest.TestCase):
         self.assertIn("(us)", msg_us)
 
     def test_run_lane_against_the_real_roadmap_for_each_of_the_three_lanes(self):
-        # india and crypto both have a real researchable candidate today (crypto since 2026-10-03,
-        # PR #2 merged -- crypto_long_horizon_reversal); us has a real candidate (dogs_of_the_dow) but
-        # it's blocked and doesn't clear the paper_direct threshold, so it's honestly still not
-        # researchable -- confirms run_lane() handles both the "picks something" and "nothing
-        # eligible yet" cases cleanly (prints, doesn't crash, doesn't send anything on the empty
-        # path). No real Telegram send -- send=False throughout.
+        # All three lanes have a real researchable candidate as of 2026-10-03 (crypto and us both via
+        # merged Discovery Scout PRs #2 and #3) -- confirms run_lane() advances each lane against the
+        # REAL roadmap without crashing, and that each lane writes to its own queue file rather than
+        # treading on another's. No real Telegram send -- send=False throughout.
         #
         # IMPORTANT: run_lane() also calls sync_from_github()/publish_snapshot(), which make REAL
         # GitHub API calls and (worse) a REAL `git commit`+`push` against advance_research_queue.py's
@@ -60,14 +58,15 @@ class TestAdvanceResearchQueue(unittest.TestCase):
              patch.object(advance_research_queue, "REPO_DIR", tempfile.mkdtemp()):
             mock_get.return_value = MagicMock(status_code=404, json=lambda: [])   # no branch/PR found, anywhere
             mock_run.return_value = MagicMock(returncode=0)   # `git diff --cached --quiet`: nothing staged
+            picked = {}
             for lane in ("india", "crypto", "us"):
                 d = tempfile.mkdtemp()
                 run_lane(lane, d, send=False, token="", chat_id="")   # must not raise
                 data = load(d, lane=lane)
-                if lane in ("india", "crypto"):
-                    self.assertIsNotNone(data["current"])
-                else:
-                    self.assertIsNone(data["current"])   # nothing eligible yet in these lanes
+                self.assertIsNotNone(data["current"], lane)
+                picked[lane] = data["current"]["key"]
+            self.assertEqual(len(set(picked.values())), 3)   # three lanes, three different candidates
+            self.assertEqual(picked["us"], "us_price_delay_factor")   # the only researchable US one today
         mock_run.assert_called()   # confirms the git path was actually exercised, just safely mocked
         self.assertFalse(any(call.args[0][:2] == ["git", "push"] for call in mock_run.call_args_list))   # returncode=0 on the diff-check means no commit was ever attempted -- confirms that, not just that push is mocked
 
