@@ -165,6 +165,16 @@ DATA_CAPABILITIES = {
     # debtToEquity, revenueGrowth, profitMargins, trailingPE, sector) do not include
     # dividend yield at all, snapshot or historical, and no dividend data source is
     # integrated anywhere else in this program.
+
+    # --- Added 2026-10-03, monthly discovery pass (crypto/US weighted) ---
+    "crypto_funding_rate_history": False,
+    # CONFIRMED ABSENT 2026-10-03: data/fetch_crypto.py integrates only Binance's public SPOT klines
+    # endpoint (BINANCE_KLINES_URL, OHLCV only) -- no perpetual-futures endpoint (funding rate, mark
+    # price, open interest) is integrated anywhere in this program, and this platform has no futures/
+    # derivatives execution path at all (same structural gap already disclosed for the Options-Based
+    # Volatility Risk Premium candidate). Needed for any crypto carry/basis strategy that trades the
+    # funding-rate payment itself, as distinct from every price-only crypto signal already on this
+    # roadmap.
 }
 
 
@@ -2026,6 +2036,314 @@ CANDIDATES = [
         academic_evidence_score=4, expected_robustness_score=5, operational_simplicity_score=7,
         research_value_score=5, data_availability_score=1, implementation_feasibility_score=1,
         horizon_lane="long_term", market="US",
+    ),
+
+    # =================================================================
+    # Monthly discovery pass (2026-10-03) -- deliberately weighted toward
+    # the crypto and US-equity lanes per explicit direction (both were
+    # still thin: 2 crypto candidates total, one blocked; exactly 1 US
+    # candidate, also blocked). All four below verified real via WebSearch
+    # 2026-10-03, not from memory. Two candidates proposed by the initial
+    # literature search this run were REJECTED before being added here
+    # because they turned out to be the SAME paper/mechanism already
+    # implemented in this program under a different market (Lou-Polk-
+    # Skouras 2019's overnight-return persistence finding IS this
+    # program's own live Overnight Return Anomaly strategy, SW-016/
+    # EXP-078 PASS; Gervais-Kaniel-Mingelgrin 2001's volume-shock finding
+    # IS this program's own live High-Volume Return Premium strategy,
+    # SW-017/EXP-080 PASS) -- exactly the "same core mechanism, different
+    # market" duplicate this module's governance rules out, caught by
+    # cross-checking against EXISTING_STRATEGY_TAGS/the strategy source
+    # files before writing these entries, not after.
+    # =================================================================
+    CandidateProfile(
+        key="crypto_idiosyncratic_volatility",
+        name="Cryptocurrency Idiosyncratic Volatility Factor",
+        authors="Zhang, W. and Li, Y.",
+        publication="\"Is idiosyncratic volatility priced in cryptocurrency markets?\", Research in "
+                     "International Business and Finance, Vol. 54 (2020), Elsevier -- verified real via "
+                     "WebSearch 2026-10-03 (confirmed authors, journal, volume and year, and that it is "
+                     "an original, cited empirical finding, not a survey), not from memory",
+        year=2020,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only top-decile (highest idiosyncratic volatility) -- the paper's own documented "
+                  "sign for crypto (see mechanism below), a disclosed reduction from its long-short "
+                  "portfolio-sort construction, same convention as every other candidate in this program.",
+        factor_family="Idiosyncratic volatility (risk-based, crypto-specific)",
+        factor_tags={"risk_based", "crypto_factor"},
+        mechanism="For each coin, regress daily returns on a crypto-market-factor proxy (a Fama-MacBeth-"
+                  "style market model, the same general regression machinery this program already built "
+                  "for Jensen's Alpha and Betting Against Beta); the regression RESIDUAL's volatility is "
+                  "that coin's idiosyncratic volatility (IVOL), net of common crypto-market risk. "
+                  "Cross-sectionally sorting coins by IVOL finds a POSITIVE IVOL-return relationship in "
+                  "crypto -- the OPPOSITE sign from the well-known equity-market 'IVOL puzzle' (Ang, Chen, "
+                  "Xing and colleagues' well-documented NEGATIVE relationship, already represented in this "
+                  "program's own 'risk_based' family via idiosyncratic_volatility, INCONCLUSIVE/PAPER_"
+                  "TRADING). A genuinely different mechanism SHAPE from every existing crypto candidate: "
+                  "this is the first crypto candidate that cross-sectionally ranks coins by a RISK measure "
+                  "(residual volatility) rather than by price-return momentum/reversal/trend, or by "
+                  "Crypto Volatility-Managed Exposure's (crypto_vol_managed, already implemented, REJECT) "
+                  "entirely different use of volatility -- that strategy TIME-SCALES one portfolio's net "
+                  "exposure by its own trailing realized volatility over time, never cross-sectionally "
+                  "ranking coins against each other by a residual-risk measure the way this candidate does.",
+        typical_holding_period="Monthly portfolio sorts and rebalancing, the paper's own Fama-MacBeth "
+                                "regression cadence.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Fully implementable TODAY from data this program already fetches (crypto daily "
+                        "OHLCV via data/fetch_crypto.py for both the individual-coin return series and the "
+                        "market-factor proxy, built the same way this program's existing crypto momentum "
+                        "strategies already construct a cross-sectional universe return) -- no new data "
+                        "source needed, unlike the Size Factor and Funding-Rate Carry candidates on this "
+                        "same roadmap. Reuses this program's existing rolling-regression infrastructure "
+                        "(already built for Jensen's Alpha / Betting Against Beta) rather than needing new "
+                        "signal-construction machinery from scratch.",
+        known_weaknesses="The SIGN of this effect is genuinely contested in the broader crypto-volatility "
+                         "literature -- related studies (e.g. work on a crypto 'low volatility anomaly') "
+                         "report the OPPOSITE (negative) relationship in different samples/periods, so this "
+                         "should be read as 'a real, published, positive-sign finding worth testing "
+                         "empirically on this platform's own universe,' not as a settled direction to "
+                         "assume going in. The underlying crypto sample periods in this literature are "
+                         "still short (pre-2020 crypto data is thin and survivorship-prone), a general "
+                         "immaturity this entire crypto lane already discloses elsewhere on this roadmap. "
+                         "Shares this program's 'risk_based' factor tag with the already-implemented, "
+                         "INCONCLUSIVE equity Idiosyncratic Volatility strategy -- not the same signal (crypto "
+                         "vs. India equities, opposite documented sign), but real conceptual/mechanical "
+                         "lineage (both are residual-volatility measures from a market-model regression), "
+                         "so a meaningful, not full, diversification credit is warranted.",
+        academic_replication_quality="A single foundational paper in a mid-tier but real, peer-reviewed "
+                                      "finance journal (Research in International Business and Finance, "
+                                      "Elsevier) -- not yet as deeply replicated as this program's top-tier "
+                                      "(Journal of Finance) crypto momentum/size source paper, and the "
+                                      "sign itself is actively disputed by at least one other study in this "
+                                      "young literature.",
+        evidence_sufficiency_note="Sufficient to catalogue and test empirically given the paper's real, "
+                                   "peer-reviewed sourcing and full data availability, but the contested "
+                                   "sign means any implementation should treat the direction as a hypothesis "
+                                   "to verify on this platform's own universe, not a given.",
+        academic_evidence_score=5, expected_robustness_score=4, operational_simplicity_score=6,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=7,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="crypto_illiquidity_premium",
+        name="Cryptocurrency Illiquidity Premium (Amihud-style)",
+        authors="Ali, A., Peng, S. and Shams, S.; corroborated by Zhang, W. and Li, Y.",
+        publication="Ali, Peng and Shams, \"Unravelling cross-sectional patterns in cryptocurrencies: a "
+                     "four-factor asset pricing model,\" China Accounting and Finance Review, Vol. 27, No. "
+                     "4, 493 (2025), Emerald (DOI 10.1108/CAFR-06-2024-0077); corroborated by Zhang, W. and "
+                     "Li, Y., \"Liquidity risk and expected cryptocurrency returns,\" International Journal "
+                     "of Finance & Economics, Vol. 28 (2023), 472-492, Wiley -- both verified real via "
+                     "WebSearch 2026-10-03 (confirmed authors, journals, DOIs/volumes and years), not from "
+                     "memory",
+        year=2025,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only top-decile (highest illiquidity, i.e. the Amihud-style premium side) -- a "
+                  "disclosed reduction from each paper's long-short factor-portfolio construction.",
+        factor_family="Liquidity risk premium (crypto-specific)",
+        factor_tags={"liquidity", "crypto_factor"},
+        mechanism="Computes an Amihud (2002) -style illiquidity measure per coin -- the trailing average "
+                  "of |daily return| divided by daily dollar volume -- then cross-sectionally sorts coins "
+                  "long the most illiquid. Ali-Peng-Shams build a dedicated crypto illiquidity factor "
+                  "(their 'CIHML', across 1,160 coins, January 2014-December 2022) as part of a four-factor "
+                  "crypto asset-pricing model and find it survives controlling for their own crypto size "
+                  "and reversal factors; Zhang-Li independently corroborate a priced crypto liquidity-risk "
+                  "premium using a related measure. The SAME broad mechanism as this program's own "
+                  "already-tested Amihud Illiquidity Premium (SW-010, PASS with a conflicting robustness "
+                  "REJECT) -- deliberately so: this is the crypto-market application of a factor family "
+                  "already proven real and tradeable (if imperfectly robust) on this program's own India "
+                  "equity data, now with independent crypto-specific supporting literature, rather than an "
+                  "untested extrapolation.",
+        typical_holding_period="Monthly, matching the standard crypto cross-sectional factor-sort cadence "
+                                "used throughout this literature (and this program's own crypto_size_factor "
+                                "and crypto_xs_momentum candidates/strategies).",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history", "volume"],
+        known_strengths="Fully implementable TODAY from data this program already fetches (crypto daily "
+                        "OHLCV plus Volume, both already part of data/fetch_crypto.py's klines pull) -- no "
+                        "new data source needed. Reuses this program's existing Amihud-ratio computation "
+                        "logic (already built and live for the India-equity Amihud Illiquidity Premium "
+                        "strategy) rather than needing new signal machinery from scratch. Two independent "
+                        "recent studies (2023 and 2025) converge on a priced crypto liquidity-risk premium, "
+                        "a real replication rather than a single isolated finding.",
+        known_weaknesses="Directly shares this program's 'liquidity' factor tag with the already-"
+                         "implemented, PASS-verdicted (but robustness-REJECTed on a supplementary check) "
+                         "India-equity Amihud Illiquidity Premium -- meaningful diversification overlap by "
+                         "design, though a different asset class and market than that existing strategy. "
+                         "Amihud-style measures are known to be sensitive to EXCHANGE/VENUE choice in "
+                         "crypto specifically -- reported trading volume differs materially across "
+                         "exchanges, and wash-trading concerns on some venues are a documented, real issue "
+                         "in this literature (this platform's own data/fetch_crypto.py uses Binance only, "
+                         "one of the more scrutinized/regulated large venues, which mitigates but does not "
+                         "eliminate this concern). The crypto illiquidity and crypto size factors are also "
+                         "correlated in the source literature, so a future crypto_size_factor "
+                         "implementation (also on this roadmap, currently blocked) would need to control "
+                         "for this overlap rather than treat both as fully independent.",
+        academic_replication_quality="Two independent, recent (2023, 2025) studies in real peer-reviewed "
+                                      "journals (Wiley's International Journal of Finance & Economics and "
+                                      "Emerald's China Accounting and Finance Review) find a materially "
+                                      "consistent crypto liquidity premium using related but distinct "
+                                      "measures -- genuine, if still young, convergence.",
+        evidence_sufficiency_note="Sufficient to justify research time given two corroborating recent "
+                                   "studies, full data availability, and directly reusable existing "
+                                   "Amihud-computation infrastructure from this program's own India-equity "
+                                   "strategy.",
+        academic_evidence_score=6, expected_robustness_score=5, operational_simplicity_score=8,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="crypto_funding_rate_carry",
+        name="Cryptocurrency Perpetual-Futures Funding-Rate Carry",
+        authors="He, S., Manela, A., Ross, O. and von Wachter, V.",
+        publication="\"Fundamentals of Perpetual Futures,\" working paper, arXiv:2212.06888 / SSRN 4301150 "
+                     "(first draft December 2022, most recent revision confirmed live on arXiv 2026-10-03) "
+                     "-- verified real via WebSearch 2026-10-03 (confirmed authors, arXiv/SSRN identifiers, "
+                     "and that it is a real, actively-cited working paper on crypto perpetual-futures "
+                     "pricing, NOT yet published in a peer-reviewed journal as of this search), not from "
+                     "memory",
+        year=2022,
+        asset_class="Cryptocurrency perpetual futures vs. spot, relative-value",
+        direction="Structurally a basis/carry trade (long spot, short the perpetual future, or vice versa "
+                  "depending on the funding rate's sign) -- not a cash-only long position the way every "
+                  "other crypto candidate on this roadmap can be reduced to; there is no meaningful "
+                  "long-only cash-equity-style adaptation, the same structural issue already disclosed for "
+                  "this program's Pairs Trading / Statistical Arbitrage candidate.",
+        factor_family="Carry / basis (crypto derivatives)",
+        factor_tags={"carry_basis", "crypto_factor"},
+        mechanism="Perpetual futures (the dominant crypto derivative, over $100 billion traded daily per "
+                  "the paper) use a periodic FUNDING-RATE payment between long and short holders to keep "
+                  "the perpetual's price anchored to spot; the paper derives the no-arbitrage pricing "
+                  "implications and shows the funding-rate payment is itself a harvestable, quantifiable "
+                  "risk premium -- a genuinely different mechanism TYPE from every other candidate on this "
+                  "entire roadmap (a derivatives-funding-structure premium, not a price pattern, "
+                  "fundamentals signal, or risk-based cross-sectional sort). The first candidate in the "
+                  "crypto lane keyed on derivatives market structure rather than spot price/volume history.",
+        typical_holding_period="Funding settles every 8 hours on most exchanges including Binance; carry-"
+                                "strategy implementations in the related applied literature typically "
+                                "rebalance daily to weekly.",
+        holding_days_min=1, holding_days_max=7,
+        expected_trade_frequency="High (funding accrues every 8 hours; a real implementation would need "
+                                  "to decide how often to actually re-enter/exit, not necessarily every "
+                                  "settlement)",
+        data_requirements=["daily_ohlcv_history", "crypto_funding_rate_history"],
+        known_strengths="A genuinely NEW mechanism type for this roadmap's crypto lane -- every other "
+                        "crypto candidate (implemented or proposed) is a spot-price/volume-based signal; "
+                        "this is the first keyed on derivatives market structure. The underlying funding-"
+                        "rate mechanism itself is real, large (the paper cites >$100bn/day in perpetual-"
+                        "futures volume), and increasingly studied in both academic and practitioner crypto-"
+                        "finance circles, not an obscure or fringe claim.",
+        known_weaknesses="NOT YET A PEER-REVIEWED, PUBLISHED PAPER -- a working paper (arXiv/SSRN, first "
+                         "circulated 2022, still being revised as of this search) with a real but "
+                         "comparatively thin citation record so far, a materially weaker evidentiary bar "
+                         "than this program's other, journal-published crypto source papers; disclosed "
+                         "honestly here rather than overstated. DOUBLY BLOCKED, not just a data gap: (1) "
+                         "no funding-rate data source is integrated anywhere in this program (confirmed "
+                         "absent, see DATA_CAPABILITIES' new crypto_funding_rate_history entry), and (2) "
+                         "even if that data existed, this platform has NO perpetual-futures/derivatives "
+                         "execution path at all -- the same structural 'new asset class, not just a new "
+                         "signal' blocker already disclosed for the Options-Based Volatility Risk Premium "
+                         "candidate, compounding the data gap rather than being solved by it alone. Funding-"
+                         "rate dynamics are also documented as regime-dependent and prone to sign flips "
+                         "during high-leverage/high-volatility periods, a real robustness concern even "
+                         "setting the infrastructure gap aside.",
+        academic_replication_quality="A single, real, actively-circulated but not yet peer-reviewed-"
+                                      "published working paper -- the weakest sourcing of any candidate "
+                                      "added to this roadmap this run, included because the underlying "
+                                      "funding-rate mechanism itself is real, large, and distinct, not "
+                                      "because the paper has the same evidentiary weight as this program's "
+                                      "journal-published sources.",
+        evidence_sufficiency_note="Sufficient to catalogue as a real, distinct, genuinely novel-mechanism "
+                                   "candidate for completeness and future reference, explicitly NOT "
+                                   "sufficient yet to treat as equivalent in evidentiary weight to this "
+                                   "program's peer-reviewed crypto factor candidates -- flagged as "
+                                   "DOUBLY blocked (data AND execution infrastructure) and should be "
+                                   "re-checked for journal publication before any future research time is "
+                                   "spent on it.",
+        academic_evidence_score=4, expected_robustness_score=3, operational_simplicity_score=3,
+        research_value_score=7, data_availability_score=0, implementation_feasibility_score=0,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="us_price_delay_factor",
+        name="Price Delay Factor (Slow Information Diffusion)",
+        authors="Hou, K. and Moskowitz, T.J.",
+        publication="\"Market Frictions, Price Delay, and the Cross-Section of Expected Returns,\" The "
+                     "Review of Financial Studies, Vol. 18, No. 3, 981-1020 (2005) -- verified real via "
+                     "WebSearch 2026-10-03 (confirmed authors, journal, volume/pages and year, and the "
+                     "paper's continued citation record two decades on), not from memory",
+        year=2005,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only top-decile (highest price delay) -- the side the paper's return premium "
+                  "accrues to, a disclosed reduction from its long-short construction.",
+        factor_family="Price delay / information-diffusion speed",
+        factor_tags={"price_delay"},
+        mechanism="For each stock, regress its own weekly returns on the CONTEMPORANEOUS market-index "
+                  "return AND several weeks of LAGGED market-index returns, over a rolling ~3-year window; "
+                  "'delay' is the fraction of that regression's explanatory power that comes ONLY from the "
+                  "lagged terms -- i.e., how much of the stock's price reaction to market-wide information "
+                  "arrives with a measurable lag rather than immediately. Stocks with the highest delay "
+                  "(slowest information diffusion, attributed by the authors mainly to investor-recognition "
+                  "frictions -- smaller, less-followed names) earn a large subsequent return premium not "
+                  "explained by size, liquidity, or microstructure effects the authors directly tested "
+                  "against. A GENUINELY NEW mechanism family for this entire roadmap, India and US "
+                  "candidates combined: every existing momentum/reversal/trend candidate measures a "
+                  "stock's OWN past return; this instead measures the LAG STRUCTURE of a stock's "
+                  "co-movement with the broad market -- a measure of information-processing speed, not of "
+                  "price direction at all. Also mechanically distinct from this program's beta-based "
+                  "risk-based candidates (Betting Against Beta, Downside Beta, Jensen's Alpha): those use "
+                  "a CONTEMPORANEOUS regression coefficient (slope or intercept) at a single lag; this uses "
+                  "the regression's LAGGED-term structure specifically.",
+        typical_holding_period="The original paper reports monthly-rebalanced portfolios held 1 month as "
+                                "its primary result, with a longer annual-holding-period version also "
+                                "reported as a robustness check.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="A single but top-tier, heavily-cited (two decades and counting) journal (Review "
+                        "of Financial Studies) source -- as strong an evidentiary bar as this program's "
+                        "best-sourced existing candidates. Fully computable from plain daily/weekly OHLCV "
+                        "already fetched for this program's frozen S&P 500 universe (swing_research/"
+                        "universe_us.py) PLUS a market-index return series buildable from that same "
+                        "universe (an equal- or cap-weighted composite of the existing universe, or a "
+                        "single broad-index ETF ticker such as SPY via the same yfinance pipeline) -- no "
+                        "new data source needed, unlike this platform's existing Dogs of the Dow (blocked "
+                        "on dividend data) or every fundamentals-based candidate on this roadmap. The first "
+                        "genuinely new factor MECHANISM proposed for the US lane specifically since it was "
+                        "stood up (as distinct from applying an already-catalogued mechanism to US data).",
+        known_weaknesses="Needs a rolling ~3-YEAR weekly regression window per stock before a signal can "
+                         "even be formed -- a real, disclosed engineering lift (this program has no "
+                         "existing rolling-regression-with-multiple-lagged-terms machinery; the closest "
+                         "existing infrastructure, the single-lag CAPM-style regressions built for Jensen's "
+                         "Alpha and Betting Against Beta, would need extending, not reusing as-is) and it "
+                         "meaningfully shortens the usable backtest window versus a simple decile-sort "
+                         "signal, similar in spirit to the long-formation-window concern already disclosed "
+                         "for this roadmap's Long-Term Reversal candidate. The authors themselves find "
+                         "delay correlates with size, analyst coverage, and institutional ownership -- they "
+                         "argue investor-recognition frictions, not these other characteristics, drive the "
+                         "premium, and control for it in the paper, but a from-scratch implementation here "
+                         "would need to re-verify that the premium survives on this platform's own S&P 500 "
+                         "universe and period, not assume the original paper's attribution carries over "
+                         "unchanged two decades later. No India-specific or NSE replication of this exact "
+                         "measure was found or attempted here -- this candidate is scoped to the US lane "
+                         "specifically, not proposed as a transferable India candidate.",
+        academic_replication_quality="A single foundational paper in a top-tier journal (Review of "
+                                      "Financial Studies), continuously cited across two decades of "
+                                      "subsequent market-frictions and information-diffusion literature -- "
+                                      "strong standing, though (unlike e.g. momentum or value) it has not "
+                                      "spawned the same volume of direct independent replications this "
+                                      "program's most foundational candidates have.",
+        evidence_sufficiency_note="Sufficient to justify research time -- a real, well-cited, top-journal "
+                                   "finding, fully computable from data this program already has for the US "
+                                   "lane -- but the rolling-regression engineering lift and the need to "
+                                   "re-verify the premium on this platform's own universe/period (rather "
+                                   "than assume the 2005 result transfers unchanged) should both be treated "
+                                   "as real, open items, not formalities.",
+        academic_evidence_score=8, expected_robustness_score=6, operational_simplicity_score=4,
+        research_value_score=8, data_availability_score=10, implementation_feasibility_score=6,
+        horizon_lane="swing", market="US",
     ),
 ]
 
