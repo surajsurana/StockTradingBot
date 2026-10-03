@@ -214,5 +214,48 @@ class TestLoad(unittest.TestCase):
         self.assertEqual(load(None), {"current": None, "history": []})
 
 
+@dataclass
+class _FakeCandidateWithLane:
+    key: str
+    name: str
+    horizon_lane: str = "swing"
+
+
+class TestBuildSnapshot(unittest.TestCase):
+    def _roadmap_with_lane(self, key, name, horizon_lane):
+        scored = _FakeScored(_FakeCandidateWithLane(key, name, horizon_lane))
+        return {"all_scored": [scored]}
+
+    def test_no_current_candidate_returns_null(self):
+        from research_queue import build_snapshot
+        d = tempfile.mkdtemp()
+        self.assertEqual(build_snapshot(d, {"all_scored": []}), {"current": None})
+
+    def test_current_candidate_includes_name_and_horizon_lane_from_roadmap(self):
+        from research_queue import build_snapshot
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 1))
+        snap = build_snapshot(d, self._roadmap_with_lane("alpha", "ALPHA", "crypto"))
+        self.assertEqual(snap, {"current": {"key": "alpha", "name": "ALPHA", "mode": "backtest",
+                                            "in_progress": False, "horizon_lane": "crypto"}})
+
+    def test_in_progress_flag_is_carried_through(self):
+        from research_queue import build_snapshot
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 1))
+        mark_in_progress(d, "alpha")
+        snap = build_snapshot(d, self._roadmap_with_lane("alpha", "ALPHA", "swing"))
+        self.assertTrue(snap["current"]["in_progress"])
+
+    def test_candidate_not_found_in_roadmap_falls_back_to_key_as_name(self):
+        # Can happen if the roadmap changed shape between runs -- never crash the snapshot publish over it.
+        from research_queue import build_snapshot
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 1))
+        snap = build_snapshot(d, {"all_scored": []})
+        self.assertEqual(snap["current"]["name"], "alpha")
+        self.assertIsNone(snap["current"]["horizon_lane"])
+
+
 if __name__ == "__main__":
     unittest.main()

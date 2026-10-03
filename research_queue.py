@@ -162,6 +162,32 @@ def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None) -
     _save(state_dir, data)
 
 
+def build_snapshot(state_dir: str, roadmap: dict) -> dict:
+    """A small, public-safe snapshot of just the live queue's `current` pick
+    -- published to swing_research/research_queue_snapshot.json by
+    research_queue_github_sync.py so the unattended research routine's cloud
+    sandbox can read it from its own git clone of this repo instead of
+    reaching this VPS directly (added 2026-10-03, replacing the routine's
+    old direct-HTTP GET of /api/state: two real runs, 2026-09-27 and
+    2026-09-28, both confirmed the sandbox cannot reach this VPS on any
+    port/protocol at all -- a TCP-level connection timeout, not a cert or
+    TLS problem -- while GitHub access from the same sandbox has never
+    failed). Deliberately tiny: just what step 1 of the routine's prompt
+    actually extracts, nothing about any other candidate, no capital/P&L."""
+    data = load(state_dir)
+    current = data.get("current")
+    if not current:
+        return {"current": None}
+    match = next((s.candidate for s in roadmap.get("all_scored", []) if s.candidate.key == current["key"]), None)
+    return {"current": {
+        "key": current["key"],
+        "name": match.name if match else current["key"],
+        "mode": current.get("mode", "backtest"),
+        "in_progress": bool(current.get("in_progress")),
+        "horizon_lane": match.horizon_lane if match else None,
+    }}
+
+
 def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str] = None,
             branch: Optional[str] = None, now: Optional[datetime] = None) -> None:
     """Called once the research routine finishes with `key` (whatever the result): clears `current`

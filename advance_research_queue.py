@@ -12,8 +12,15 @@ should not interrupt" -- this script is what makes "anytime" real, by running of
 This script only decides WHAT is next -- it never writes strategy code or runs a backtest.
 That's the unattended research routine's job (Phase 2, a scheduled Claude Code cloud agent,
 not Python in this repo); it picks up whatever this script (or the dashboard's manual
-"start research" button, research_queue.start_now()) has set as `current`, and is the only thing
-that locks it (research_queue.mark_in_progress, called over the internet the instant it commits).
+"start research" button, research_queue.start_now()) has set as `current`.
+
+Also runs research_queue_github_sync.py's two jobs every cycle (2026-10-03, replacing the
+routine's old direct-HTTP-to-this-VPS design after confirming its cloud sandbox cannot reach
+this VPS at all -- see that module's own docstring for the full story): publishes a small
+queue snapshot to GitHub (the routine's new read channel, instead of GET /api/state) and polls
+GitHub for a `research/<key>` branch/PR (the routine's new write channel -- mark_in_progress()/
+resolve() now driven by what THIS script observes on GitHub, instead of the routine POSTing
+back over a connection that kept timing out).
 
     python advance_research_queue.py            # print what it would do (safe default)
     python advance_research_queue.py --send      # also send the Telegram notification
@@ -25,8 +32,12 @@ both infrequent, but this keeps "anytime" honest without needing a write on ever
 """
 
 import argparse
+import os
 
 from research_queue import advance
+from research_queue_github_sync import publish_snapshot, sync_from_github
+
+REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def message(entry: dict, name: str, horizon_lane: str, mechanism: str) -> str:
@@ -53,13 +64,25 @@ def main() -> None:
     if entry is None:
         print("Nothing to change: the current pick is already the best available, research is already "
               "under way, it was picked by hand, or nothing eligible remains.")
-        return
-    c = next(s.candidate for s in roadmap["all_scored"] if s.candidate.key == entry["key"])
-    msg = message(entry, c.name, c.horizon_lane, c.mechanism.split(".")[0] + ".")
-    print(msg)
-    if args.send:
-        from reporting.telegram_notifier import send_telegram_message
-        send_telegram_message(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+    else:
+        c = next(s.candidate for s in roadmap["all_scored"] if s.candidate.key == entry["key"])
+        msg = message(entry, c.name, c.horizon_lane, c.mechanism.split(".")[0] + ".")
+        print(msg)
+        if args.send:
+            from reporting.telegram_notifier import send_telegram_message
+            send_telegram_message(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+    github_msg = sync_from_github(state_dir)
+    if github_msg:
+        print(github_msg)
+        if args.send:
+            from reporting.telegram_notifier import send_telegram_message
+            send_telegram_message(f"*Research queue (from GitHub)*\n{github_msg}", TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+
+    # Re-read the roadmap's view of `current` is unaffected by sync_from_github (it only ever locks/resolves,
+    # never changes WHICH candidate is current) -- the same `roadmap` object is still valid for the snapshot.
+    if publish_snapshot(REPO_DIR, state_dir, roadmap):
+        print("Published updated research_queue_snapshot.json to GitHub.")
 
 
 if __name__ == "__main__":
