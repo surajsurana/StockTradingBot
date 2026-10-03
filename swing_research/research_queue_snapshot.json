@@ -1,0 +1,9 @@
+{
+  "current": {
+    "key": "size_premium_banz",
+    "name": "Size Premium (Small-Cap Effect)",
+    "mode": "backtest",
+    "in_progress": false,
+    "horizon_lane": "swing"
+  }
+}
