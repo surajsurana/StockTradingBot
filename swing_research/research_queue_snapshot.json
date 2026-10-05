@@ -1,7 +1,7 @@
 {
   "current": {
-    "key": "turnover_liquidity",
-    "name": "Turnover / Liquidity Anomaly",
+    "key": "intraday_momentum_half_hour",
+    "name": "Intraday Momentum (First Half-Hour Return Predicts Last Half-Hour Return)",
     "mode": "backtest",
     "in_progress": false,
     "horizon_lane": "swing"
