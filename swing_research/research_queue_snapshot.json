@@ -1,9 +1,9 @@
 {
   "current": {
-    "key": "size_premium_banz",
-    "name": "Size Premium (Small-Cap Effect)",
+    "key": "turnover_liquidity",
+    "name": "Turnover / Liquidity Anomaly",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "horizon_lane": "swing"
   }
 }
