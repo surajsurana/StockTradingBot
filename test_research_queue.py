@@ -88,6 +88,33 @@ class TestAdvance(unittest.TestCase):
         resolve(d, "alpha", "researched", now=datetime(2026, 9, 23))
         self.assertIsNone(advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 29)))
 
+    def test_skips_candidates_already_built_and_judged_in_the_registry(self):
+        # 2026-10-05: the roadmap's CANDIDATES list lags promotions, so a strategy that has already
+        # been built and given a verdict is still a "candidate". Without `exclude` the queue
+        # re-proposes finished work -- it really picked turnover_liquidity, already REJECTed as
+        # SW-031, the first time it advanced past a stuck candidate.
+        d = tempfile.mkdtemp()
+        entry = advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22), exclude={"alpha"})
+        self.assertEqual(entry["key"], "beta")
+        self.assertEqual(load(d)["current"]["key"], "beta")
+
+    def test_an_excluded_key_that_is_already_queued_gets_superseded(self):
+        # the live case: `alpha` was picked before the registry exclusion existed, so it has to be
+        # moved off, not just skipped on the next fresh pick.
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        entry = advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 23), exclude={"alpha"})
+        self.assertEqual(entry["key"], "beta")
+        alpha_row = next(r for r in load(d)["history"] if r["key"] == "alpha")
+        self.assertEqual(alpha_row["outcome"], "superseded")
+
+    def test_exclude_does_not_override_an_in_progress_lock(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 23))
+        self.assertIsNone(advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 24), exclude={"alpha"}))
+        self.assertEqual(load(d)["current"]["key"], "alpha")   # research under way still wins
+
 
 class TestPaperDirectMode(unittest.TestCase):
     def test_advance_picks_mode_backtest_for_a_normal_candidate(self):

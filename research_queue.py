@@ -122,7 +122,8 @@ def _close_open_row(data: dict, key: str, outcome: str, now: datetime,
             return
 
 
-def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane: str = "india") -> Optional[dict]:
+def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane: str = "india",
+            exclude: Optional[set] = None) -> Optional[dict]:
     """Keeps `current` pointed at the best available candidate: picks the top-ranked one if nothing is
     queued, swaps it for a better-ranked one if the current pick was itself auto-picked and hasn't
     started yet, and does nothing once research is in_progress (locked until resolve()) -- "research
@@ -133,14 +134,20 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane:
 
     `roadmap` should already be scoped to `lane` (research_roadmap.build_roadmap(lane=lane)) -- this
     function doesn't filter it itself, so passing an unfiltered roadmap would let any lane's queue
-    pick a candidate that actually belongs to a different lane."""
+    pick a candidate that actually belongs to a different lane.
+
+    `exclude` is keys already in the strategy registry (2026-10-05). The roadmap's candidate list
+    lags promotions -- a candidate stays in CANDIDATES after it has been built and judged -- so
+    without this the queue re-proposes finished work: it picked turnover_liquidity, already REJECTed
+    as SW-031, the first time the queue advanced past a stuck candidate. The dashboard has always
+    dropped these (roadmap_view's `taken`); the queue simply never did."""
     now = now or datetime.now()
     data = load(state_dir, lane)
     if data["current"] and data["current"].get("in_progress"):
         return None
     if data["current"] and data["current"].get("started_by") == "manual":
         return None
-    resolved = _resolved_keys(data)
+    resolved = _resolved_keys(data) | set(exclude or ())
     pool = ([(s, "backtest") for s in roadmap.get("researchable_now", [])]
             + [(s, "paper_direct") for s in roadmap.get("paper_direct_eligible", [])])
     pool.sort(key=lambda pair: -pair[0].total_score)

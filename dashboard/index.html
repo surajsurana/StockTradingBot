@@ -873,7 +873,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
   const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H"];
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H","I"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const kindOfPool = Object.fromEntries(Object.entries(poolsOf).flatMap(([kd, ps]) => ps.map(x => [x, kd])));
@@ -924,6 +924,9 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       else if(k === "E"){ if(s.pool_e.exists) p = {capital: s.pool_e.inr.capital, deployed: s.pool_e.inr.deployed, cash: s.pool_e.inr.cash, realised: s.pool_e.inr.booked.raw, unrealised: s.pool_e.inr.unbooked.raw, realised_today: s.pool_e.inr.booked_today.raw, positions: s.pool_e.usdt.positions}; }
       else if(k === "E1"){ if(s.pool_e1.exists) p = {capital: s.pool_e1.inr.capital, deployed: s.pool_e1.inr.deployed, cash: s.pool_e1.inr.cash, realised: s.pool_e1.inr.booked.raw, unrealised: s.pool_e1.inr.unbooked.raw, realised_today: s.pool_e1.inr.booked_today.raw, positions: s.pool_e1.usdt.positions}; }
       else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.raw*r, unrealised: g.unbooked.raw*r, realised_today: g.booked_today.raw*r, positions: g.positions}; }
+      // Pool I is already converted to rupees server-side (reporting/pool_i.py, real USD/INR rate), so
+      // it reads straight off .inr like Pool E -- it is NOT in s.pools, which is why it needs its own branch.
+      else if(k === "I"){ if(s.pool_i.exists) p = {capital: s.pool_i.inr.capital, deployed: s.pool_i.inr.deployed, cash: s.pool_i.inr.cash, realised: s.pool_i.inr.booked.raw, unrealised: s.pool_i.inr.unbooked.raw, realised_today: s.pool_i.inr.booked_today.raw, positions: s.pool_i.usd.positions}; }
       else p = s.pools[k];
       if(!p) continue;
       capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;

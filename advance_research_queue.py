@@ -60,9 +60,11 @@ def message(entry: dict, name: str, horizon_lane: str, mechanism: str, lane: str
 
 
 def run_lane(lane: str, state_dir: str, send: bool, token: str, chat_id: str) -> None:
+    from deployment.deployment_manager import list_strategies
     from swing_research.research_roadmap import build_roadmap
     roadmap = build_roadmap(lane=lane)
-    entry = advance(state_dir, roadmap, lane=lane)
+    entry = advance(state_dir, roadmap, lane=lane,
+                    exclude={r.strategy_key for r in list_strategies()})
     if entry is None:
         print(f"[{lane}] Nothing to change: the current pick is already the best available, research "
               "is already under way, it was picked by hand, or nothing eligible remains.")
