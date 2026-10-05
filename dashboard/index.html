@@ -432,7 +432,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Lane</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
   </div>
   <div id="research-results-view" hidden>
-    <div class="tblwrap"><table><thead><tr><th>Strategy</th><th>Lane</th><th>Finished</th><th>Outcome</th><th class="n">Trades</th><th class="n">CAGR</th><th class="n">Sharpe</th><th class="n">Max DD</th><th class="n">Win rate</th><th>Experiment</th></tr></thead><tbody id="research-results"></tbody></table></div>
+    <div class="pager" id="research-pager">
+      <label class="note">Rows per page <select id="research-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+      <span class="note" id="research-pageinfo"></span>
+      <span class="pagebtns"><button id="research-prev" class="iconbtn">‹ Prev</button><button id="research-next" class="iconbtn">Next ›</button></span>
+    </div>
+    <div class="tblwrap"><table><thead id="research-results-head"></thead><tbody id="research-results"></tbody></table></div>
     <p class="note" id="research-results-empty" hidden></p>
   </div>
 </section>
@@ -1263,6 +1268,19 @@ function renderMine(s){
 let REP_SUB = null, REP_POOL = null;   // REP_SUB null = the row of report pills; REP_POOL = pool filter (paper mode)
 let RESEARCH_LANE = null;              // Research tab lane filter; null = all three queues in one ranking
 let RESEARCH_VIEW = "queue";           // Research tab sub-view: "queue" (what's next) or "results" (what finished)
+let RESEARCH_SORT = {key:"exp_no", dir:-1};   // newest experiment first, same default the list arrives in
+let RESEARCH_PAGE = 1, RESEARCH_PAGE_SIZE = 50, RESEARCH_LAST_SIG = null;
+const RESEARCH_COLS = [["name","Strategy",false],["label","Lane",false],["resolved","Finished",false],
+                       ["verdict","Outcome",false],["status","Now",false],["trades","Trades",true],
+                       ["cagr","CAGR",true],["sharpe","Sharpe",true],["max_dd","Max DD",true],
+                       ["win_rate","Win rate",true],["exp_no","Experiment",true]];
+function wireResearchPager(){
+  const pager = document.getElementById("research-pager"); if(pager.dataset.wired) return;
+  pager.dataset.wired = "1";
+  document.getElementById("research-pagesize").addEventListener("change", e => { RESEARCH_PAGE_SIZE = +e.target.value; RESEARCH_PAGE = 1; if(STATE) renderResearch(STATE); });
+  document.getElementById("research-prev").addEventListener("click", () => { RESEARCH_PAGE--; if(STATE) renderResearch(STATE); });
+  document.getElementById("research-next").addEventListener("click", () => { RESEARCH_PAGE++; if(STATE) renderResearch(STATE); });
+}
 document.getElementById("research-nav").addEventListener("click", e => {
   const b = e.target.closest("[data-view]");
   if(!b) return;
@@ -1782,7 +1800,7 @@ function renderResearch(s){
 // Every closed research run. A candidate vanishes from the ranked table once it is promoted, so this
 // is the only place an auto run's actual outcome survives.
 function renderResearchResults(rm, laneName){
-  const rows = (rm.results || []).filter(r => RESEARCH_LANE === null || r.lane === RESEARCH_LANE);
+  let rows = (rm.results || []).filter(r => RESEARCH_LANE === null || r.lane === RESEARCH_LANE);
   const num = (v, suffix) => v == null || v === "" ? "—" : (+v).toFixed(2).replace(/\.00$/, "") + (suffix || "");
   const rate = v => v == null ? "—" : (v * 100).toFixed(0) + "%";   // metrics.json stores win_rate as a fraction
   const verdictPill = r => {
@@ -1804,9 +1822,32 @@ function renderResearchResults(rm, laneName){
   const when = r => r.source === "queue"
     ? `${esc(r.resolved || "—")}<div class="note">${esc(r.started_by === "manual" ? "queue · by hand" : "queue · auto")}</div>`
     : `<span class="note">before the queue</span>`;
-  document.getElementById("research-results").innerHTML = rows.map(r => `<tr><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${when(r)}</td><td>${verdictPill(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
+  // What happened to it after the verdict, as the same Paper/Live/Off tristate the Strategies tab uses.
+  const nowCell = r => {
+    if(!r.status) return `<span class="note" title="never registered as a strategy -- it never reached a verdict">—</span>`;
+    const ls = liveState(r.status);
+    return `<span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span>`;
+  };
+
+  sortableHead("research-results-head", RESEARCH_COLS, RESEARCH_SORT, () => renderResearch(STATE));
+  rows = sortRows(rows, RESEARCH_COLS, RESEARCH_SORT, "name");
+  // Reset to page 1 only when the filtered/sorted set itself changes, not on every price refresh.
+  const sig = JSON.stringify([RESEARCH_LANE, RESEARCH_SORT.key, RESEARCH_SORT.dir, rows.length]);
+  if(sig !== RESEARCH_LAST_SIG){ RESEARCH_PAGE = 1; RESEARCH_LAST_SIG = sig; }
+  wireResearchPager();
+  const pageSize = RESEARCH_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  RESEARCH_PAGE = Math.min(Math.max(1, RESEARCH_PAGE), totalPages);
+  const pageRows = rows.slice((RESEARCH_PAGE - 1) * pageSize, RESEARCH_PAGE * pageSize);
+  document.getElementById("research-pageinfo").textContent = rows.length
+    ? `Page ${RESEARCH_PAGE} of ${totalPages} (rows ${(RESEARCH_PAGE-1)*pageSize+1}–${Math.min(RESEARCH_PAGE*pageSize, rows.length)})` : "";
+  document.getElementById("research-prev").disabled = RESEARCH_PAGE <= 1;
+  document.getElementById("research-next").disabled = RESEARCH_PAGE >= totalPages;
+
+  document.getElementById("research-results").innerHTML = pageRows.map(r => `<tr><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${when(r)}</td><td>${verdictPill(r)}</td><td>${nowCell(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
   const empty = document.getElementById("research-results-empty");
   empty.hidden = rows.length > 0;
+  document.getElementById("research-pager").hidden = !rows.length;
   if(!rows.length) empty.textContent = (rm.results || []).length
     ? "Nothing researched in this lane yet."
     : "Nothing researched yet. A strategy lands here once its backtest finishes on the VPS.";

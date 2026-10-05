@@ -391,14 +391,18 @@ class TestBuildDashboardState(unittest.TestCase):
                                   roadmap=roadmap, research_queues=queues)
         res = s["roadmap"]["results"]
         by_key = {r["key"]: r for r in res}
-        # queue rows, newest resolved first, ahead of the undated pre-queue ones
-        self.assertEqual([r["key"] for r in res][:3], ["cry", "bumped", "old"])
+        self.assertEqual(res[0]["key"], "old")                    # newest experiment first by default
         self.assertNotIn("open_one", by_key)                      # still running -- not a result yet
-        self.assertEqual(by_key["old"]["experiment_id"], "EXP-999")
+        # the run's own experiment wins over the registry's canonical one for the same strategy
+        self.assertEqual((by_key["old"]["experiment_id"], by_key["old"]["exp_no"]), ("EXP-999", 999))
         self.assertEqual(by_key["cry"]["label"], "Crypto")
         # a row that closed without ever being backtested carries no numbers, and says why
         self.assertEqual((by_key["bumped"]["outcome"], by_key["bumped"]["experiment_id"]), ("superseded", None))
         self.assertEqual(by_key["bumped"]["metrics"], {})
+        self.assertIsNone(by_key["bumped"]["exp_no"])
+        self.assertEqual(by_key["bumped"]["status"], "")          # never registered, so no Paper/Live/Off
+        # queue rows that never produced an experiment sort last, not first
+        self.assertGreater(res.index(by_key["bumped"]), res.index(by_key["old"]))
 
     def test_results_include_research_done_before_the_queue_existed(self):
         # 2026-10-05: listing only queue history made the tab read as "nothing has ever been

@@ -1223,6 +1223,14 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
             if h.get("resolved") is not None:
                 queue_rows.setdefault(h["key"], (lane, h))
 
+    def _sortable(exp_id: str, exp: dict) -> dict:
+        """Headline numbers flattened onto the row so the dashboard's generic sortRows() can reach
+        them, plus the experiment's number as an int -- "EXP-9" vs "EXP-100" misorders as a string."""
+        digits = re.sub(r"\D", "", exp_id or "")
+        return {"trades": exp.get("total_trades"), "cagr": exp.get("cagr"),
+                "sharpe": exp.get("sharpe_ratio"), "max_dd": exp.get("max_drawdown_pct"),
+                "win_rate": exp.get("win_rate"), "exp_no": int(digits) if digits else None}
+
     results = []
     for r in registry_records:
         exp_id = getattr(r, "primary_experiment_id", "") or ""
@@ -1247,7 +1255,11 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         # review downgraded them). Showing verdict.md would quietly overstate 10 results.
                         # The run's own word is kept alongside so the disagreement is visible, not hidden.
                         "verdict": _verdict_word(r.research_verdict) or exp.get("verdict", ""),
-                        "run_verdict": exp.get("verdict", ""), "metrics": exp})
+                        "run_verdict": exp.get("verdict", ""), "metrics": exp,
+                        # what actually happened to it after the verdict -- the registry's own
+                        # deployment status, same field the Strategies tab's Paper/Live/Off reads
+                        "status": str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1],
+                        **_sortable(exp_id, exp)})
     covered = {r["key"] for r in results}
     for key, (lane, h) in queue_rows.items():
         if key in covered or h.get("experiment_id"):
@@ -1256,8 +1268,11 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
                         "resolved": h["resolved"], "started_by": h.get("started_by"),
                         "source": "queue", "outcome": h.get("outcome"), "experiment_id": None,
-                        "branch": h.get("branch"), "verdict": "", "run_verdict": "", "metrics": {}})
-    results.sort(key=lambda r: (r["resolved"] or "", r["experiment_id"] or "", r["key"]), reverse=True)
+                        "branch": h.get("branch"), "verdict": "", "run_verdict": "", "metrics": {},
+                        "status": "",   # never registered -- it never got as far as a verdict
+                        **_sortable("", {})})
+    # Newest research first by default; the dashboard re-sorts client-side from here.
+    results.sort(key=lambda r: (r["exp_no"] or 0, r["resolved"] or "", r["key"]), reverse=True)
 
     lanes = [{"lane": lane, "label": LANE_LABELS[lane],
               "current": next((r for r in ready if r["lane"] == lane and r["queue"] and r["queue"]["state"] == "current"), None),
