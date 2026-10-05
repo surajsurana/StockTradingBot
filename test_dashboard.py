@@ -390,11 +390,29 @@ class TestBuildDashboardState(unittest.TestCase):
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                   roadmap=roadmap, research_queues=queues)
         res = s["roadmap"]["results"]
-        self.assertEqual([r["key"] for r in res], ["cry", "bumped", "old"])   # newest resolved first
-        self.assertNotIn("open_one", [r["key"] for r in res])                 # still running -- not a result
-        self.assertEqual(res[2]["experiment_id"], "EXP-999")
-        self.assertEqual({r["lane"] for r in res}, {"india", "crypto"})
-        self.assertEqual(res[0]["label"], "Crypto")
+        by_key = {r["key"]: r for r in res}
+        # queue rows, newest resolved first, ahead of the undated pre-queue ones
+        self.assertEqual([r["key"] for r in res][:3], ["cry", "bumped", "old"])
+        self.assertNotIn("open_one", by_key)                      # still running -- not a result yet
+        self.assertEqual(by_key["old"]["experiment_id"], "EXP-999")
+        self.assertEqual(by_key["cry"]["label"], "Crypto")
+        # a row that closed without ever being backtested carries no numbers, and says why
+        self.assertEqual((by_key["bumped"]["outcome"], by_key["bumped"]["experiment_id"]), ("superseded", None))
+        self.assertEqual(by_key["bumped"]["metrics"], {})
+
+    def test_results_include_research_done_before_the_queue_existed(self):
+        # 2026-10-05: listing only queue history made the tab read as "nothing has ever been
+        # researched" when 29 registry strategies carry real experiments. Those must show too,
+        # marked as pre-queue so it stays clear which ones the automation actually produced.
+        roadmap = {"researchable_now": [], "deferred_pending_data": [], "weights": {}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap, research_queues={})
+        res = s["roadmap"]["results"]
+        self.assertTrue(res, "registry strategies carrying an experiment must appear")
+        self.assertTrue(all(r["source"] == "earlier" for r in res))
+        self.assertTrue(all(r["experiment_id"] for r in res))
+        self.assertTrue(all(r["outcome"] == "researched" for r in res))
+        self.assertTrue(all(r["resolved"] is None for r in res))   # no invented dates
 
     def test_lane_strip_covers_all_three_queues_including_an_idle_one(self):
         cand = lambda key, name, lane, market: SimpleNamespace(key=key, name=name, factor_family="Reversal",

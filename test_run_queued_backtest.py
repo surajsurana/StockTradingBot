@@ -71,9 +71,12 @@ class TestImplementedKeys(unittest.TestCase):
     def test_the_real_crypto_catalog_is_readable_and_non_empty(self):
         self.assertIn("crypto_tsmom", rqb.implemented_keys("crypto"))
 
-    def test_the_us_lane_has_no_runner_yet_and_says_so_instead_of_raising(self):
-        # us has only hand-written Pool I wrappers, no CLI -- must degrade, not crash the cron.
-        self.assertEqual(rqb.implemented_keys("us"), set())
+    def test_the_real_us_catalog_is_readable_and_non_empty(self):
+        # run_us_experiment.py (2026-10-05) closed the gap where the US lane had no CLI at all.
+        self.assertIn("cross_sectional_momentum_us", rqb.implemented_keys("us"))
+
+    def test_an_unknown_lane_degrades_instead_of_raising(self):
+        self.assertEqual(rqb.implemented_keys("mars"), set())
 
     def test_a_broken_catalog_is_reported_not_raised(self):
         with patch.dict(rqb.LANE_RUNNERS, {"india": ("x.py", MagicMock(side_effect=ImportError("boom")))}):

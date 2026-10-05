@@ -33,11 +33,11 @@ signal, with no extra marker file to keep in sync.
 
 One candidate at a time, guarded by a lock file: a full walk-forward over the
 457-symbol universe takes a long while, and the cron that calls this fires
-every 6 hours.
+nightly.
 
-The US lane has no experiment CLI yet (only two hand-written Pool I wrappers in
-research_director.py), so it is deliberately absent from LANE_RUNNERS below and
-is skipped with a clear message rather than failing.
+All three lanes have a CLI as of 2026-10-05 (run_us_experiment.py was written
+to close the US gap -- until then a US candidate could be implemented but never
+run, which would have locked that queue the same way).
 """
 
 import argparse
@@ -60,6 +60,8 @@ LANE_RUNNERS = {
                                   fromlist=["RESEARCH_EXPERIMENT_SPECS"]).RESEARCH_EXPERIMENT_SPECS}),
     "crypto": ("run_crypto_experiment.py",
                lambda: set(__import__("run_crypto_experiment", fromlist=["RUNNERS"]).RUNNERS)),
+    "us": ("run_us_experiment.py",
+           lambda: set(__import__("run_us_experiment", fromlist=["RUNNERS"]).RUNNERS)),
 }
 
 

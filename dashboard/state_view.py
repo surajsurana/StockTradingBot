@@ -431,6 +431,14 @@ STRATEGY_HOW = {
 }
 
 
+def _verdict_word(verdict) -> str:
+    """The bare verdict word from a registry record's research_verdict (a ResearchVerdict enum in
+    production, a plain string in tests) -- the fallback when an experiment has no verdict.md."""
+    raw = getattr(verdict, "value", None) or str(verdict or "")
+    m = re.search(r"\b(PASS|REJECT|INCONCLUSIVE|NOT_YET_EVALUATED)\b", raw)
+    return m.group(1) if m else ""
+
+
 def _experiment_verdict(verdict_path: str) -> str:
     """PASS / REJECT / INCONCLUSIVE from an experiment's own verdict.md, "" if it has none."""
     try:
@@ -1151,7 +1159,7 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     `queue` -- "current" (being researched right now, no Start button), a
     completed history row's outcome (e.g. "researched" with its experiment
     id, also no button), or None (still eligible to start)."""
-    from swing_research.research_roadmap import RESEARCH_LANES, lane_of
+    from swing_research.research_roadmap import RESEARCH_LANES, _record_lane, lane_of
     taken = {r.strategy_key for r in registry_records}
     queues = queues or {}
     now = now or datetime.now()
@@ -1202,24 +1210,54 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     # One status line per lane, so the three independent queues are all visible at a glance rather than
     # only India's. A lane with nothing researchable (US today -- its one candidate is data-blocked) still
     # gets a line, saying so, instead of silently vanishing.
-    # Every closed research run, newest first -- the only place an auto-run's outcome is visible once
-    # its candidate leaves the ranked table above (a promoted strategy is dropped from it entirely).
-    # "researched" rows carry the real verdict and headline numbers from the experiment on disk;
-    # superseded/skipped rows carry none, because no backtest ever ran for them.
+    # Everything this program has actually researched, newest first. Two sources, deliberately
+    # merged: every registry strategy carrying a real experiment (most of them predate the queue --
+    # showing only queue rows made the tab read as "nothing has ever been researched", which is
+    # false), plus queue rows that closed WITHOUT an experiment. Those latter rows carry no numbers
+    # because no backtest ever ran for them, and they say so rather than showing blanks that look
+    # like a zero.
     names = {s.candidate.key: s.candidate.name for s in roadmap.get("all_scored", [])}
-    results = []
+    queue_rows = {}
     for lane in RESEARCH_LANES:
         for h in (queues.get(lane) or {}).get("history", []):
-            if h.get("resolved") is None:
-                continue
-            exp = _experiment_summary(h.get("experiment_id") or "")
-            results.append({"key": h["key"], "name": h.get("name") or names.get(h["key"], h["key"]),
-                            "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
-                            "started": h.get("started"), "resolved": h["resolved"],
-                            "started_by": h.get("started_by"), "outcome": h.get("outcome"),
-                            "experiment_id": h.get("experiment_id"), "branch": h.get("branch"),
-                            "verdict": exp.get("verdict", ""), "metrics": exp})
-    results.sort(key=lambda r: (r["resolved"] or "", r["key"]), reverse=True)
+            if h.get("resolved") is not None:
+                queue_rows.setdefault(h["key"], (lane, h))
+
+    results = []
+    for r in registry_records:
+        exp_id = getattr(r, "primary_experiment_id", "") or ""
+        if not exp_id:
+            continue
+        lane, h = queue_rows.get(r.strategy_key, (_record_lane(r), None))
+        # when a research run produced its own experiment, that run's id is the one to show -- the
+        # registry's primary_experiment_id is the strategy's canonical one, which can be an earlier run.
+        exp_id = (h or {}).get("experiment_id") or exp_id
+        exp = _experiment_summary(exp_id)
+        results.append({"key": r.strategy_key, "name": getattr(r, "display_name", r.strategy_key),
+                        "lane": lane, "label": LANE_LABELS[lane],
+                        "mode": (h or {}).get("mode", "backtest"), "resolved": (h or {}).get("resolved"),
+                        "started_by": (h or {}).get("started_by"),
+                        "source": "queue" if h else "earlier",
+                        "outcome": "researched", "experiment_id": exp_id,
+                        "branch": (h or {}).get("branch"),
+                        # The REGISTRY verdict is authoritative, not the experiment's own verdict.md:
+                        # 10 of 29 disagree today, every one of them an early experiment whose
+                        # acceptance-criteria output said PASS while the recorded research verdict is
+                        # REJECT or INCONCLUSIVE (the criteria tightened, and robustness/cross-strategy
+                        # review downgraded them). Showing verdict.md would quietly overstate 10 results.
+                        # The run's own word is kept alongside so the disagreement is visible, not hidden.
+                        "verdict": _verdict_word(r.research_verdict) or exp.get("verdict", ""),
+                        "run_verdict": exp.get("verdict", ""), "metrics": exp})
+    covered = {r["key"] for r in results}
+    for key, (lane, h) in queue_rows.items():
+        if key in covered or h.get("experiment_id"):
+            continue      # an experiment-carrying row is already above, via the registry
+        results.append({"key": key, "name": h.get("name") or names.get(key, key),
+                        "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
+                        "resolved": h["resolved"], "started_by": h.get("started_by"),
+                        "source": "queue", "outcome": h.get("outcome"), "experiment_id": None,
+                        "branch": h.get("branch"), "verdict": "", "run_verdict": "", "metrics": {}})
+    results.sort(key=lambda r: (r["resolved"] or "", r["experiment_id"] or "", r["key"]), reverse=True)
 
     lanes = [{"lane": lane, "label": LANE_LABELS[lane],
               "current": next((r for r in ready if r["lane"] == lane and r["queue"] and r["queue"]["state"] == "current"), None),
