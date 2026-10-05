@@ -367,6 +367,35 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
 
+    def test_completed_research_runs_are_listed_newest_first_across_every_lane(self):
+        # 2026-10-05: a candidate disappears from the ranked table once it is promoted, so the queue's
+        # own history is the only surviving record of what an auto run actually produced.
+        cand = lambda key, name, lane, market: SimpleNamespace(key=key, name=name, factor_family="Reversal",
+            year=2001, authors="A & B", typical_holding_period="1 month", direction="Long only",
+            known_strengths="s", known_weaknesses="w", horizon_lane=lane, market=market,
+            holding_days_min=30, holding_days_max=30)
+        scored = lambda key, name, lane, market: SimpleNamespace(candidate=cand(key, name, lane, market),
+            total_score=9.0, axis_scores={"academic_evidence": 8.0},
+            feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])
+        roadmap = {"researchable_now": [scored("ind", "India one", "swing", "India")],
+                   "deferred_pending_data": [], "weights": {}}
+        row = lambda key, outcome, resolved, exp=None: {
+            "key": key, "name": key.upper(), "queued": "2026-10-01", "started": "2026-10-01",
+            "started_by": "auto", "mode": "backtest", "resolved": resolved, "outcome": outcome,
+            "experiment_id": exp, "branch": f"research/{key}"}
+        queues = {"india": {"current": None, "history": [row("old", "researched", "2026-10-02", "EXP-999"),
+                                                         row("bumped", "superseded", "2026-10-04")]},
+                  "crypto": {"current": None, "history": [row("cry", "skipped", "2026-10-06")]},
+                  "us": {"current": None, "history": [row("open_one", None, None)]}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                  roadmap=roadmap, research_queues=queues)
+        res = s["roadmap"]["results"]
+        self.assertEqual([r["key"] for r in res], ["cry", "bumped", "old"])   # newest resolved first
+        self.assertNotIn("open_one", [r["key"] for r in res])                 # still running -- not a result
+        self.assertEqual(res[2]["experiment_id"], "EXP-999")
+        self.assertEqual({r["lane"] for r in res}, {"india", "crypto"})
+        self.assertEqual(res[0]["label"], "Crypto")
+
     def test_lane_strip_covers_all_three_queues_including_an_idle_one(self):
         cand = lambda key, name, lane, market: SimpleNamespace(key=key, name=name, factor_family="Reversal",
             year=2001, authors="A & B", typical_holding_period="1 month", direction="Long only",

@@ -422,11 +422,19 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-research" hidden>
-  <h2>Next up for research</h2>
-  <div id="lane-strip" class="lanestrip"></div>
-  <div id="lane-filter" class="poolchips" role="group" aria-label="Research lane" style="margin:12px 0 10px"></div>
-  <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th>Route</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
-  <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Lane</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
+  <div class="repbar" style="margin-bottom:14px"><h2 id="research-title" style="margin:0">Next up for research</h2>
+    <div class="ltnav" id="research-nav" role="group" aria-label="Research view">
+      <button data-view="queue" class="on">Next up</button><button data-view="results">Results</button></div></div>
+  <div id="research-queue-view">
+    <div id="lane-strip" class="lanestrip"></div>
+    <div id="lane-filter" class="poolchips" role="group" aria-label="Research lane" style="margin:12px 0 10px"></div>
+    <div class="tblwrap"><table><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th>Route</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
+    <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Lane</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
+  </div>
+  <div id="research-results-view" hidden>
+    <div class="tblwrap"><table><thead><tr><th>Strategy</th><th>Lane</th><th>Finished</th><th>Outcome</th><th class="n">Trades</th><th class="n">CAGR</th><th class="n">Sharpe</th><th class="n">Max DD</th><th class="n">Win rate</th><th>Experiment</th></tr></thead><tbody id="research-results"></tbody></table></div>
+    <p class="note" id="research-results-empty" hidden></p>
+  </div>
 </section>
 </div>
 
@@ -1254,6 +1262,16 @@ function renderMine(s){
 // ---- Reports (both modes) and Advice (live): page-style routes so the back button works: #reports, #reports/returns, #advice
 let REP_SUB = null, REP_POOL = null;   // REP_SUB null = the row of report pills; REP_POOL = pool filter (paper mode)
 let RESEARCH_LANE = null;              // Research tab lane filter; null = all three queues in one ranking
+let RESEARCH_VIEW = "queue";           // Research tab sub-view: "queue" (what's next) or "results" (what finished)
+document.getElementById("research-nav").addEventListener("click", e => {
+  const b = e.target.closest("[data-view]");
+  if(!b) return;
+  RESEARCH_VIEW = b.dataset.view;
+  document.querySelectorAll("#research-nav button").forEach(x => x.classList.toggle("on", x.dataset.view === RESEARCH_VIEW));
+  document.getElementById("research-queue-view").hidden = RESEARCH_VIEW !== "queue";
+  document.getElementById("research-results-view").hidden = RESEARCH_VIEW !== "results";
+  document.getElementById("research-title").textContent = RESEARCH_VIEW === "queue" ? "Next up for research" : "Completed research";
+});
 const currentTab = () => (document.querySelector('nav button[aria-selected="true"]') || {dataset: {}}).dataset.tab;
 function pushRoute(){
   const h = currentTab() === "advice" ? "#advice" : "#reports" + (REP_SUB ? "/" + REP_SUB : "");
@@ -1755,9 +1773,33 @@ function renderResearch(s){
     } catch(e){ alert("Couldn't start research: " + e.message); b.disabled = false; b.textContent = "Start research"; return; }
     if(typeof load === "function") load();
   }));
+  renderResearchResults(rm, laneName);
   const deferred = rm.deferred.filter(c => RESEARCH_LANE === null || c.lane === RESEARCH_LANE);
   document.getElementById("deferred-summary").textContent = `Waiting on data we don't have (${deferred.length})`;
   document.getElementById("deferred").innerHTML = deferred.map(c => `<tr><td>${esc(short(c.name))}</td><td>${esc(short(c.family))}</td><td>${esc(laneName[c.lane]||c.lane)}</td><td class="note">${esc((c.blockers[0]||"").replace(/'/g,"").replace("Requires ","").replace(", confirmed unavailable on this platform.",""))}</td></tr>`).join("");
+}
+
+// Every closed research run. A candidate vanishes from the ranked table once it is promoted, so this
+// is the only place an auto run's actual outcome survives.
+function renderResearchResults(rm, laneName){
+  const rows = (rm.results || []).filter(r => RESEARCH_LANE === null || r.lane === RESEARCH_LANE);
+  const num = (v, suffix) => v == null || v === "" ? "—" : (+v).toFixed(2).replace(/\.00$/, "") + (suffix || "");
+  const rate = v => v == null ? "—" : (v * 100).toFixed(0) + "%";   // metrics.json stores win_rate as a fraction
+  const verdictPill = r => {
+    if(r.outcome === "researched") return r.verdict
+      ? `<span class="pill ${r.verdict === "PASS" ? "ok" : r.verdict === "REJECT" ? "miss" : ""}" title="verdict from the experiment's own verdict.md">${esc(r.verdict)}</span>`
+      : `<span class="pill" title="backtest ran, but no verdict word was found in the experiment">researched</span>`;
+    if(r.outcome === "paper_trading_proposed") return `<span class="pill" title="no backtest was possible, so it was proposed straight for paper trading">Paper proposed</span>`;
+    if(r.outcome === "skipped") return `<span class="pill" title="claimed but abandoned before a verdict -- nothing was researched">Skipped</span>`;
+    return `<span class="pill info" title="a better-ranked candidate replaced it before research started">Superseded</span>`;
+  };
+  const m = r => r.metrics || {};
+  document.getElementById("research-results").innerHTML = rows.map(r => `<tr><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${esc(r.resolved || "—")}<div class="note">${esc(r.started_by === "manual" ? "started by hand" : "auto")}</div></td><td>${verdictPill(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
+  const empty = document.getElementById("research-results-empty");
+  empty.hidden = rows.length > 0;
+  if(!rows.length) empty.textContent = (rm.results || []).length
+    ? "No completed runs in this lane yet."
+    : "No research run has completed yet. A run lands here once its backtest finishes on the VPS.";
 }
 
 load();

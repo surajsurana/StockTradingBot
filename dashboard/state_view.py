@@ -13,6 +13,7 @@ import functools
 import glob
 import json
 import os
+import re
 from datetime import date, datetime, timedelta, time as dtime
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
@@ -430,6 +431,17 @@ STRATEGY_HOW = {
 }
 
 
+def _experiment_verdict(verdict_path: str) -> str:
+    """PASS / REJECT / INCONCLUSIVE from an experiment's own verdict.md, "" if it has none."""
+    try:
+        with open(verdict_path, encoding="utf-8") as f:
+            head = f.read(400)
+    except OSError:
+        return ""
+    m = re.search(r"\b(PASS|REJECT|INCONCLUSIVE)\b", head)
+    return m.group(1) if m else ""
+
+
 def _experiment_summary(exp_id: str) -> dict:
     """The headline numbers of a strategy's primary experiment, if its
     folder is on disk (swing experiments first, then the intraday lab)."""
@@ -444,6 +456,7 @@ def _experiment_summary(exp_id: str) -> dict:
                                          "avg_holding_period_days", "total_pnl")}
             eq = m.get("evidence_quality") or {}
             out["evidence"] = f"{eq.get('label', '')} {eq.get('score', '')}".strip()
+            out["verdict"] = _experiment_verdict(os.path.join(os.path.dirname(path), "verdict.md"))
             if "pre_tax" in m:
                 pre = m["pre_tax"].get("full_period", {})
                 out["pre_tax"] = {k: pre.get(k) for k in ("cagr", "total_pnl", "max_drawdown_pct")}
@@ -1189,12 +1202,31 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     # One status line per lane, so the three independent queues are all visible at a glance rather than
     # only India's. A lane with nothing researchable (US today -- its one candidate is data-blocked) still
     # gets a line, saying so, instead of silently vanishing.
+    # Every closed research run, newest first -- the only place an auto-run's outcome is visible once
+    # its candidate leaves the ranked table above (a promoted strategy is dropped from it entirely).
+    # "researched" rows carry the real verdict and headline numbers from the experiment on disk;
+    # superseded/skipped rows carry none, because no backtest ever ran for them.
+    names = {s.candidate.key: s.candidate.name for s in roadmap.get("all_scored", [])}
+    results = []
+    for lane in RESEARCH_LANES:
+        for h in (queues.get(lane) or {}).get("history", []):
+            if h.get("resolved") is None:
+                continue
+            exp = _experiment_summary(h.get("experiment_id") or "")
+            results.append({"key": h["key"], "name": h.get("name") or names.get(h["key"], h["key"]),
+                            "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
+                            "started": h.get("started"), "resolved": h["resolved"],
+                            "started_by": h.get("started_by"), "outcome": h.get("outcome"),
+                            "experiment_id": h.get("experiment_id"), "branch": h.get("branch"),
+                            "verdict": exp.get("verdict", ""), "metrics": exp})
+    results.sort(key=lambda r: (r["resolved"] or "", r["key"]), reverse=True)
+
     lanes = [{"lane": lane, "label": LANE_LABELS[lane],
               "current": next((r for r in ready if r["lane"] == lane and r["queue"] and r["queue"]["state"] == "current"), None),
               "ready": sum(1 for r in ready if r["lane"] == lane),
               "deferred": sum(1 for r in rows if r["lane"] == lane),
               "next_run": next_research_run(now, lane)} for lane in RESEARCH_LANES]
-    return {"ready": ready, "deferred": rows, "lanes": lanes,
+    return {"ready": ready, "deferred": rows, "lanes": lanes, "results": results,
             "weights": roadmap.get("weights", {}), "next_run": next_research_run(now)}
 
 
@@ -1334,7 +1366,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1, pool_i=pool_i),
-        "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "weights": {}, "next_run": next_research_run(now)},
+        "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
     # (Paper mode, or Live before any Groww data has been read), like any pool with nothing running.
