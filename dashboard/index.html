@@ -1537,6 +1537,13 @@ const liveRunnerHtml = () => `
     <span class="note" id="run-msg"></span>
   </div>
   <div id="run-out"></div>`;
+// "Settings tab" in a note should take you there rather than make you hunt for it.
+document.addEventListener("click", e => {
+  const a = e.target.closest(".golink");
+  if(!a) return;
+  e.preventDefault();
+  document.querySelector(`nav button[data-tab="${a.dataset.tab}"]`)?.click();
+});
 function wireLiveRunner(){
   const dry = document.getElementById("run-dry"), live = document.getElementById("run-live");
   if(!dry) return;
@@ -1627,7 +1634,7 @@ function renderAllocations(s){
   panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveRunnerHtml()
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
-        : lc.pool ? "" : `<p class="note">Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to cap what the bot may deploy, then assign it per strategy in the Live capital column.</p>`)
+        : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than is assignable.</p>` : "");
   wireLiveRunner();
 }
