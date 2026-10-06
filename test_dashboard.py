@@ -421,6 +421,36 @@ class TestBuildDashboardState(unittest.TestCase):
                                      coindcx_balance=(10_000.0, ""))
         self.assertEqual(view["assignable_crypto"], 2_000.0)    # your setting is the lower of the two
 
+    def test_over_allocation_is_judged_per_account_not_against_a_combined_total(self):
+        # Rs10,000 correctly assigned to a crypto strategy was flagged "more is assigned than is
+        # assignable" because it was compared against the Rs500 EQUITY balance. Each account must be
+        # judged against its own.
+        from dashboard.state_view import live_capital_view
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        pool_g = StrategyRecord(strategy_key="portfolio_g", display_name="Pool G",
+                                strategy_family="AI judgment book (crypto, Pool G)",
+                                research_verdict=ResearchVerdict.NOT_YET_EVALUATED,
+                                deployment_status=DeploymentStatus.PILOT_LIVE)
+        root = tempfile.mkdtemp()
+        with patch("deployment.settings.STATE_DIR", root),              patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 10_000, create=True),              patch("deployment.live_allocations.load", return_value={"portfolio_g": 10_000.0}):
+            view = live_capital_view([pool_g], kite_balance=(500.0, ""),
+                                     coindcx_balance=(10_000.0, ""))
+        self.assertEqual(view["allocated_crypto"], 10_000.0)
+        self.assertEqual(view["allocated_equity"], 0.0)
+        self.assertFalse(view["over_allocated"])        # it fits in the account that holds it
+
+    def test_over_allocation_is_still_caught_within_an_account(self):
+        from dashboard.state_view import live_capital_view
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        pool_g = StrategyRecord(strategy_key="portfolio_g", display_name="Pool G",
+                                strategy_family="AI judgment book (crypto, Pool G)",
+                                research_verdict=ResearchVerdict.NOT_YET_EVALUATED,
+                                deployment_status=DeploymentStatus.PILOT_LIVE)
+        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 10_000, create=True),              patch("deployment.live_allocations.load", return_value={"portfolio_g": 10_000.0}):
+            view = live_capital_view([pool_g], kite_balance=(500.0, ""),
+                                     coindcx_balance=(200.0, ""))   # the crypto account shrank
+        self.assertTrue(view["over_allocated"])
+
     def test_an_unknown_crypto_balance_assigns_nothing_rather_than_falling_back(self):
         from dashboard.state_view import live_capital_view
         with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 10_000, create=True):

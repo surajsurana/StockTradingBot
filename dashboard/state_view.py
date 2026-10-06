@@ -520,7 +520,8 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
             "balance": None if balance is None else round(float(balance), 2),
             "balance_error": balance_error, "assignable": assignable,
             "free": round(max(0.0, assignable - allocated), 2),
-            "over_allocated": allocated > assignable, "strategies": rows,
+            "over_allocated": (allocated_equity > assignable
+                                or allocated_crypto > assignable_crypto), "strategies": rows,
             "crypto_balance": crypto_balance, "crypto_balance_error": crypto_error,
             "assignable_crypto": assignable_crypto,
             "allocated_crypto": allocated_crypto, "allocated_equity": allocated_equity}

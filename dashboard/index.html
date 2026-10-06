@@ -1549,10 +1549,18 @@ function wireLiveRunner(){
   if(!dry) return;
   dry.addEventListener("click", () => startRun(false));
   live.addEventListener("click", () => {
+    const msg = document.getElementById("run-msg");
     if(live.dataset.armed !== "1"){
+      // An icon alone cannot say "are you sure" -- the tick meant nothing without this line, and it
+      // disarmed before you could read it.
       live.dataset.armed = "1"; live.textContent = "✓"; live.classList.add("armed");
+      const was = msg.textContent;
+      msg.innerHTML = `<b style="color:var(--loss)">Click the tick again to run live.</b> Real orders, if LIVE_TRADING is on.`;
       clearTimeout(live._d);
-      live._d = setTimeout(() => { live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed"); }, 5000);
+      live._d = setTimeout(() => {
+        live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed");
+        msg.textContent = was;
+      }, 15000);
       return;
     }
     clearTimeout(live._d); live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed");
@@ -1638,7 +1646,7 @@ function renderAllocations(s){
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
         : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
-    + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than is assignable.</p>` : "");
+    + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
   wireLiveRunner();
 }
 
