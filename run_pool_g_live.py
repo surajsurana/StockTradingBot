@@ -165,6 +165,38 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
 
     if settings is None:
         from config import settings as settings           # noqa: PLC0415
+
+    # RECONCILE BEFORE PLACING. The cycle has already written its decisions into the book, so by now
+    # the book may claim positions that were never bought. Acting on that without checking is how one
+    # silent divergence becomes a sell order for a coin the account has never held.
+    if client is None:
+        try:
+            from deployment.credential_store import credential
+            from execution.coindcx_client import CoinDCXClient
+            config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+            client = CoinDCXClient(credential("COINDCX_API_KEY", config_dir, settings),
+                                   credential("COINDCX_API_SECRET", config_dir, settings))
+        except Exception as e:
+            return {"status": "halted", "allocated_inr": allocated_inr, "engine": result,
+                    "orders": orders, "placed": [],
+                    "reconciliation": {"ok": False, "problems": [f"No exchange client: {e}"]},
+                    "reason": "Could not reach the exchange to verify the book, so nothing was placed."}
+
+    from deployment.reconciliation import reconcile_against_exchange
+    check = reconcile_against_exchange(target, client, now=now)
+    recon = {"ok": check.ok, "checked_at": check.checked_at, "problems": list(check.problems),
+             "notes": list(check.notes),
+             "positions": [{"symbol": p.symbol, "book": p.book_quantity,
+                            "exchange": p.exchange_quantity, "verdict": p.verdict}
+                           for p in check.positions]}
+    if not check.ok:
+        # Halt rather than repair. Rewriting the book to match would destroy the evidence of whatever
+        # went wrong, and guessing which side is right is not a judgement to make about real money.
+        return {"status": "halted", "allocated_inr": allocated_inr, "engine": result,
+                "orders": orders, "placed": [], "reconciliation": recon,
+                "reason": "The book and the exchange disagree, so no orders were placed. "
+                          + " ".join(check.problems)}
+
     place = place_fn
     if place is None:
         from deployment.crypto_executor import place_crypto_order as place
@@ -178,7 +210,7 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
                        "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
     diverged = _divergence(orders, placed)
     return {"status": result.get("status"), "allocated_inr": allocated_inr, "engine": result,
-            "orders": orders, "placed": placed, "divergence": diverged}
+            "orders": orders, "placed": placed, "divergence": diverged, "reconciliation": recon}
 
 
 def main() -> None:

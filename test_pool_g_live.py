@@ -28,6 +28,19 @@ from portfolio_g.daily import _apply_decisions
 SETTINGS = SimpleNamespace(LIVE_TRADING=True, COINDCX_API_KEY="ck", COINDCX_API_SECRET="cs")
 
 
+class _Exchange:
+    """Reports whatever balances it is given. Default: agrees with an empty book."""
+
+    def __init__(self, balances=None, raises=None):
+        self._balances = balances if balances is not None else []
+        self.raises = raises
+
+    def balances(self):
+        if self.raises:
+            raise self.raises
+        return self._balances
+
+
 def _record(status=DeploymentStatus.PILOT_LIVE):
     return StrategyRecord(strategy_key="portfolio_g", display_name="Pool G", strategy_family="crypto",
                           research_verdict=ResearchVerdict.NOT_YET_EVALUATED,
@@ -185,7 +198,7 @@ class TestDivergenceIsSurfacedNotSilent(unittest.TestCase):
                                    fill_price=1.0, reasons=[] if placed_ok else ["guard refused"])
         with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", return_value=self.cycle):
             return rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
-                                place_fn=fake_place, dry_run=False)
+                                place_fn=fake_place, client=_Exchange(), dry_run=False)
 
     def test_a_refused_order_is_reported_as_a_divergence(self):
         result = self._run(placed_ok=False)
@@ -269,7 +282,7 @@ class TestOrdersAndDryRun(unittest.TestCase):
         with patch.object(rpg, "list_strategies", return_value=[_record()]), \
              patch("portfolio_g.daily.run_pool_g_cycle", return_value=self.cycle):
             result = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
-                                  place_fn=fake_place, dry_run=False)
+                                  place_fn=fake_place, client=_Exchange(), dry_run=False)
         self.assertEqual(len(sent), 3)
         self.assertTrue(all(p["placed"] for p in result["placed"]))
         # the quantity handed to the exchange is the one the cycle decided, in coin units

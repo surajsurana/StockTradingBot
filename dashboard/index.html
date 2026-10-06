@@ -1550,13 +1550,24 @@ function renderRun(){
   if(!r){ msg.textContent = "The live book has not run yet. It runs on its own schedule — nothing to press."; out.innerHTML = ""; return; }
   msg.textContent = `Last run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
   const orders = r.orders || [], placed = r.placed || [], diverged = r.divergence || [];
+  // Reconciliation runs before any order is placed. A failure HALTS the run, so it is the first
+  // thing shown -- the orders below it were decided but deliberately not sent.
+  const rec = r.reconciliation || null;
+  const halted = rec && rec.ok === false
+    ? `<p class="note" style="color:var(--loss)"><b>Halted: the book and the exchange disagree.</b>
+       ${esc((rec.problems || []).join(" "))} No orders were placed. Nothing has been changed automatically —
+       the book is left exactly as it was so the cause stays visible.</p>`
+    : "";
+  const recNote = rec && rec.ok && (rec.notes || []).length
+    ? `<p class="note">Reconciled against the exchange at ${esc(rec.checked_at || "")}. ${esc(rec.notes.join(" "))}</p>`
+    : (rec && rec.ok ? `<p class="note">Book and exchange agreed at ${esc(rec.checked_at || "")}.</p>` : "");
   // A live run writes the book before placing, so anything refused leaves the book ahead of reality.
   // Until reconciliation exists, say so loudly rather than letting it pass as a normal refusal.
-  const warn = diverged.length
+  const warn = halted + recNote + (diverged.length ? "" : "") + (diverged.length
     ? `<p class="note" style="color:var(--loss)"><b>The live book and the exchange no longer agree.</b>
        ${diverged.length} decision(s) were written into the book but not placed:
        ${esc(diverged.join("; "))}. Reconcile before the next live run.</p>`
-    : "";
+    : "");
   if(!orders.length){ out.innerHTML = warn + `<p class="note">No orders decided.</p>`; return; }
   const byKey = {}; placed.forEach(p => { byKey[p.symbol + p.side] = p; });
   out.innerHTML = warn + `<div class="tblwrap"><table><thead><tr><th>Side</th><th>Coin</th><th class="n">Quantity</th><th class="n">Price (USDT)</th><th>Why</th><th>Result</th></tr></thead><tbody>
