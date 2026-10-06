@@ -39,7 +39,7 @@ from fundamentals.fundamental_agent import fetch_fundamentals, check_health
 from news.news_agent import analyze_news_cached, disabled_news_assessment, ClaudeAPIError
 from research.research_analyst import analyze_stock
 from risk.risk_manager import ApprovedTrade
-from risk.trailing_stop import compute_trailing_stop_update
+from risk.trailing_stop import compute_trailing_stop_update, compute_trailing_stop_fallback
 from risk.partial_profit import should_book_partial_profit, compute_extended_target, compute_booking_split
 from execution.execution_engine import ExecutionEngine
 from execution.positions import fetch_all_holdings
@@ -331,34 +331,62 @@ def check_holding(holding, regime_series, active_strategies: list, known_positio
                 activation_fraction=settings.TRAILING_STOP_ACTIVATION_FRACTION,
                 lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
             )
+            stop_to_place = new_stop
+            fallback_used = False
             if new_stop is not None and _trailing_stop_would_be_rejected(new_stop, holding.last_price):
                 # Kite requires a GTT's stop-loss to sit BELOW current price when
                 # placed (the two triggers must bracket the current price). new_stop
                 # was computed from the highest price reached since entry -- a past
                 # peak -- so if price has since pulled back to/through that level,
                 # attempting to place it would be rejected outright (seen live: Kite
-                # error "Trigger prices must bracket current price"). Skip this cycle
-                # rather than retry a call guaranteed to fail; the ORIGINAL stop is
-                # completely unaffected, so nothing is lost by waiting -- if price
-                # moves back up past this level, the ratchet will succeed next check.
-                print(f"  Trailing stop would raise to Rs.{new_stop:,.2f}, but price has since "
-                      f"pulled back to Rs.{holding.last_price:,.2f} -- skipping this cycle, "
-                      f"original stop-loss (Rs.{known.stop_loss:,.2f}) unaffected.")
-                trailing_note = " | Trailing stop deferred (price pulled back below the computed level)"
-            elif new_stop is not None:
+                # error "Trigger prices must bracket current price").
+                #
+                # Real incident (NTPC.NS, 2026-07): the ideal stop was rejected once
+                # and never revisited -- price never again exceeded the same peak, so
+                # the identical (rejected) stop was recomputed on every check for the
+                # next ~3 weeks, leaving the position's entire unrealized gain
+                # completely unprotected the whole time behind only the original
+                # entry-based stop. Falling back to a smaller, currently-placeable
+                # lock-in (off current price rather than the unreachable peak) means
+                # the position always gets SOME improved protection once it's
+                # meaningfully in profit, instead of none until price revisits a high
+                # it may never revisit again.
+                fallback_stop = compute_trailing_stop_fallback(
+                    entry_price=known.entry_price, current_stop=known.stop_loss, target=known.target,
+                    current_price=holding.last_price,
+                    fallback_activation_fraction=settings.TRAILING_STOP_FALLBACK_ACTIVATION_FRACTION,
+                    lock_in_fraction=settings.TRAILING_STOP_LOCK_IN_FRACTION,
+                )
+                if fallback_stop is not None:
+                    stop_to_place = fallback_stop
+                    fallback_used = True
+                    print(f"  Ideal trailing stop (Rs.{new_stop:,.2f}) unreachable -- price has pulled "
+                          f"back to Rs.{holding.last_price:,.2f}. Using fallback: locking in a smaller "
+                          f"gain off current price instead.")
+                else:
+                    stop_to_place = None
+                    print(f"  Trailing stop would raise to Rs.{new_stop:,.2f}, but price has since "
+                          f"pulled back to Rs.{holding.last_price:,.2f} -- skipping this cycle, "
+                          f"original stop-loss (Rs.{known.stop_loss:,.2f}) unaffected.")
+                    trailing_note = " | Trailing stop deferred (price pulled back below the computed level)"
+
+            if stop_to_place is not None:
                 trailing_signal = Signal(
                     symbol=holding.symbol, direction="BUY", entry_price=known.entry_price,
-                    stop_loss=new_stop, target=known.target, confidence=assessment.confidence,
-                    strategy_name="trailing_stop", reason="Trailing stop ratchet",
+                    stop_loss=stop_to_place, target=known.target, confidence=assessment.confidence,
+                    strategy_name="trailing_stop", reason="Trailing stop ratchet (fallback)" if fallback_used
+                    else "Trailing stop ratchet",
                 )
                 try:
                     new_gtt_id = execution_engine.replace_gtt(known.gtt_id, ApprovedTrade(
                         signal=trailing_signal, quantity=current_quantity,
                         capital_deployed=current_quantity * known.entry_price,
                     ))
-                    update_position_stop(holding.symbol, new_stop, new_gtt_id)
-                    trailing_note = f" | Trailing stop raised to Rs.{new_stop:,.2f} (locking in gain)"
-                    print(f"  Trailing stop raised: Rs.{known.stop_loss:,.2f} -> Rs.{new_stop:,.2f}")
+                    update_position_stop(holding.symbol, stop_to_place, new_gtt_id)
+                    trailing_note = (f" | Trailing stop raised to Rs.{stop_to_place:,.2f} "
+                                      f"({'fallback, ' if fallback_used else ''}locking in gain)")
+                    print(f"  Trailing stop raised: Rs.{known.stop_loss:,.2f} -> Rs.{stop_to_place:,.2f}"
+                          f"{' (fallback)' if fallback_used else ''}")
                 except Exception as e:
                     print(f"WARNING: could not raise trailing stop for {holding.symbol}: {e} "
                           f"-- original stop-loss (Rs.{known.stop_loss:,.2f}) remains in place.")

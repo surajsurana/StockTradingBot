@@ -75,3 +75,69 @@ def compute_trailing_stop_update(entry_price: float, current_stop: float, target
         return None
 
     return candidate_stop
+
+
+def compute_trailing_stop_fallback(entry_price: float, current_stop: float, target: float,
+                                    current_price: float, fallback_activation_fraction: float,
+                                    lock_in_fraction: float) -> Optional[float]:
+    """
+    Used when compute_trailing_stop_update()'s ideal (peak-based) stop can't
+    actually be placed -- Kite requires a stop-loss GTT trigger to sit below
+    the current market price, and the ideal stop is computed from the
+    HIGHEST price reached since entry, so once price has pulled back below
+    that level, placing it is guaranteed to be rejected outright. Real
+    incident: NTPC.NS reached +3.2% since entry, the ideal ratchet was
+    rejected the moment it was attempted (price had already eased off the
+    peak), and because price never again exceeded that same peak, the ideal
+    stop was recomputed and rejected on every check for the next ~3 weeks --
+    the entire unrealized gain sat completely unprotected behind only the
+    original entry-based stop the whole time. Exactly the "runs up then
+    round-trips to a loss" pattern this module's docstring says v1 was built
+    to eliminate, reintroduced via this edge case in v2.
+
+    v3.1 note: an earlier draft of this function fired on ANY positive gain
+    (no activation gate at all), reasoning that callers only reach here
+    after the peak already cleared compute_trailing_stop_update()'s own
+    activation bar. Backtested (150 Nifty 500 symbols / 3mo, real signals
+    from both live strategies) against that same peak-only trailing stop:
+    total P&L got WORSE (Rs.136 -> -Rs.410), not better -- it fired on tiny,
+    noisy gains far too readily, tightening the stop into normal volatility
+    and clipping trades that would have recovered on their own. The exact
+    same "clips winners too early" failure v1 (flat-percentage activation)
+    was retired for, reintroduced by having no floor at all on the other
+    end. fallback_activation_fraction restores a real gate -- deliberately
+    LOWER than the ideal stop's own activation_fraction (current price has,
+    by construction, already pulled back from the peak that cleared the
+    higher bar, so requiring it to independently reclear the SAME bar was
+    the original, different bug -- see git history), but still a genuine
+    floor: only fires once current price itself has covered a meaningful
+    fraction of the entry-to-target distance, not any positive tick.
+
+    lock_in_fraction: same meaning as compute_trailing_stop_update()'s --
+    always placeable when it fires (current_price > entry_price and
+    lock_in_fraction < 1 together guarantee the result sits strictly below
+    current_price). Never returns a value that isn't a genuine improvement
+    over current_stop.
+    """
+    if entry_price <= 0 or current_price is None:
+        return None
+
+    distance_to_target = target - entry_price
+    if distance_to_target <= 0:
+        return None
+
+    favorable_move = current_price - entry_price
+    if favorable_move <= 0:
+        return None
+
+    progress_fraction = favorable_move / distance_to_target
+    if progress_fraction < fallback_activation_fraction:
+        return None
+
+    candidate_stop = entry_price + lock_in_fraction * favorable_move
+    if candidate_stop <= current_stop:
+        return None
+    if candidate_stop >= current_price:
+        return None  # shouldn't happen given lock_in_fraction < 1, but never place an invalid stop
+
+    return candidate_stop

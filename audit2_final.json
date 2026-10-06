@@ -1,0 +1,1048 @@
+{
+  "per_strategy": {
+    "minervini_trend_template_filter": {
+      "strategy_id": "SW-002",
+      "display_name": "Minervini Trend Template Filter",
+      "research_verdict": "INCONCLUSIVE",
+      "deployment_status": "PAPER_TRADING",
+      "last_processed_date": "2026-08-21",
+      "cash": 217987.22,
+      "equity": 993404.95,
+      "starting_capital": 1000000.0,
+      "open_positions_count": 10,
+      "total_unrealized_pnl": 4694.66,
+      "realized_pnl_closed_trades": -11289.71,
+      "closed_trades_count": 4,
+      "win_count": 0,
+      "holding_days_closed": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "exit_reasons_closed": {
+        "signal_exit": 4
+      },
+      "entry_date_distribution": {
+        "2026-08-17": 2,
+        "2026-08-19": 2,
+        "2026-08-20": 3,
+        "2026-08-21": 3
+      },
+      "pending_entries_count": 4,
+      "pending_exits_count": 1,
+      "metrics_cumulative": {
+        "total_trades": 4,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "expectancy": -2822.43,
+        "cagr": -100.0,
+        "sharpe_ratio": -21.479,
+        "sortino_ratio": -40.63,
+        "max_drawdown_pct": 63.78,
+        "recovery_factor": -0.029,
+        "avg_holding_period_days": 1.2,
+        "exposure_pct": 25.0,
+        "monthly_returns_pct": {
+          "2026-08": -1.129
+        },
+        "annual_returns_pct": {
+          "2026": -1.129
+        },
+        "rolling_annual_returns_pct": {},
+        "total_pnl": -11289.71,
+        "return_on_capital_pct": -1.13
+      },
+      "positions_detail": [
+        {
+          "symbol": "KPIL.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1404.2,
+          "quantity": 111,
+          "current_price": 1404.5,
+          "unrealized_pnl": 33.31,
+          "current_value": 155899.5
+        },
+        {
+          "symbol": "USHAMART.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 498.05,
+          "quantity": 223,
+          "current_price": 481.3,
+          "unrealized_pnl": -3735.25,
+          "current_value": 107329.9
+        },
+        {
+          "symbol": "ACMESOLAR.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 371.5,
+          "quantity": 309,
+          "current_price": 401.6,
+          "unrealized_pnl": 9300.9,
+          "current_value": 124094.4
+        },
+        {
+          "symbol": "IDEA.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 14.12,
+          "quantity": 4897,
+          "current_price": 13.94,
+          "unrealized_pnl": -881.46,
+          "current_value": 68264.18
+        },
+        {
+          "symbol": "MEDANTA.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1420.0,
+          "quantity": 50,
+          "current_price": 1409.7,
+          "unrealized_pnl": -515.0,
+          "current_value": 70485.0
+        },
+        {
+          "symbol": "TATATECH.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 815.9,
+          "quantity": 72,
+          "current_price": 820.75,
+          "unrealized_pnl": 349.2,
+          "current_value": 59094.0
+        },
+        {
+          "symbol": "UNIONBANK.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 187.93,
+          "quantity": 263,
+          "current_price": 183.45,
+          "unrealized_pnl": -1178.24,
+          "current_value": 48247.35
+        },
+        {
+          "symbol": "ABCAPITAL.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 410.0,
+          "quantity": 132,
+          "current_price": 413.0,
+          "unrealized_pnl": 396.0,
+          "current_value": 54516.0
+        },
+        {
+          "symbol": "CARBORUNIV.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1137.9,
+          "quantity": 41,
+          "current_price": 1169.8,
+          "unrealized_pnl": 1307.9,
+          "current_value": 47961.8
+        },
+        {
+          "symbol": "EXIDEIND.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 464.05,
+          "quantity": 86,
+          "current_price": 459.6,
+          "unrealized_pnl": -382.7,
+          "current_value": 39525.6
+        }
+      ]
+    },
+    "fifty_two_week_high_momentum": {
+      "strategy_id": "SW-003",
+      "display_name": "52-Week High Momentum",
+      "research_verdict": "PASS",
+      "deployment_status": "PAPER_TRADING",
+      "last_processed_date": "2026-08-21",
+      "cash": 19082.08,
+      "equity": 1013552.74,
+      "starting_capital": 1000000,
+      "open_positions_count": 33,
+      "total_unrealized_pnl": 13552.74,
+      "realized_pnl_closed_trades": 0,
+      "closed_trades_count": 0,
+      "win_count": 0,
+      "holding_days_closed": [],
+      "exit_reasons_closed": {},
+      "entry_date_distribution": {
+        "2026-08-17": 10,
+        "2026-08-19": 12,
+        "2026-08-20": 4,
+        "2026-08-21": 7
+      },
+      "pending_entries_count": 6,
+      "pending_exits_count": 0,
+      "metrics_cumulative": {
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "profit_factor": null,
+        "expectancy": 0.0,
+        "cagr": null,
+        "sharpe_ratio": null,
+        "sortino_ratio": null,
+        "max_drawdown_pct": null,
+        "recovery_factor": null,
+        "avg_holding_period_days": null,
+        "exposure_pct": null,
+        "monthly_returns_pct": {},
+        "annual_returns_pct": {},
+        "rolling_annual_returns_pct": {},
+        "total_pnl": 0.0,
+        "return_on_capital_pct": 0.0
+      },
+      "positions_detail": [
+        {
+          "symbol": "BALRAMCHIN.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 655.75,
+          "quantity": 190,
+          "current_price": 729.35,
+          "unrealized_pnl": 13984.0,
+          "current_value": 138576.5
+        },
+        {
+          "symbol": "BHEL.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 435.95,
+          "quantity": 251,
+          "current_price": 413.0,
+          "unrealized_pnl": -5760.45,
+          "current_value": 103663.0
+        },
+        {
+          "symbol": "CRAFTSMAN.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 10480.0,
+          "quantity": 9,
+          "current_price": 10644.5,
+          "unrealized_pnl": 1480.5,
+          "current_value": 95800.5
+        },
+        {
+          "symbol": "ENDURANCE.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 2978.2,
+          "quantity": 28,
+          "current_price": 3029.5,
+          "unrealized_pnl": 1436.4,
+          "current_value": 84826.0
+        },
+        {
+          "symbol": "IPCALAB.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1884.6,
+          "quantity": 39,
+          "current_price": 1911.2,
+          "unrealized_pnl": 1037.4,
+          "current_value": 74536.8
+        },
+        {
+          "symbol": "KPIL.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1404.2,
+          "quantity": 45,
+          "current_price": 1404.5,
+          "unrealized_pnl": 13.5,
+          "current_value": 63202.5
+        },
+        {
+          "symbol": "NAM-INDIA.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1202.7,
+          "quantity": 46,
+          "current_price": 1251.0,
+          "unrealized_pnl": 2221.8,
+          "current_value": 57546.0
+        },
+        {
+          "symbol": "OBEROIRLTY.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1931.0,
+          "quantity": 25,
+          "current_price": 1886.0,
+          "unrealized_pnl": -1125.0,
+          "current_value": 47150.0
+        },
+        {
+          "symbol": "SONACOMS.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 805.1,
+          "quantity": 54,
+          "current_price": 817.6,
+          "unrealized_pnl": 675.0,
+          "current_value": 44150.4
+        },
+        {
+          "symbol": "TVSMOTOR.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 4385.9,
+          "quantity": 8,
+          "current_price": 4390.0,
+          "unrealized_pnl": 32.8,
+          "current_value": 35120.0
+        },
+        {
+          "symbol": "ACE.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1190.7,
+          "quantity": 26,
+          "current_price": 1182.2,
+          "unrealized_pnl": -221.0,
+          "current_value": 30737.2
+        },
+        {
+          "symbol": "AUROPHARMA.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1645.0,
+          "quantity": 18,
+          "current_price": 1621.3,
+          "unrealized_pnl": -426.6,
+          "current_value": 29183.4
+        },
+        {
+          "symbol": "CHENNPETRO.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1429.0,
+          "quantity": 15,
+          "current_price": 1393.5,
+          "unrealized_pnl": -532.5,
+          "current_value": 20902.5
+        },
+        {
+          "symbol": "GLAXO.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 2877.3,
+          "quantity": 8,
+          "current_price": 2902.2,
+          "unrealized_pnl": 199.2,
+          "current_value": 23217.6
+        },
+        {
+          "symbol": "HFCL.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 233.0,
+          "quantity": 76,
+          "current_price": 228.01,
+          "unrealized_pnl": -379.24,
+          "current_value": 17328.76
+        },
+        {
+          "symbol": "PPLPHARMA.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 211.58,
+          "quantity": 81,
+          "current_price": 213.67,
+          "unrealized_pnl": 169.29,
+          "current_value": 17307.27
+        },
+        {
+          "symbol": "RBLBANK.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 383.3,
+          "quantity": 41,
+          "current_price": 392.5,
+          "unrealized_pnl": 377.2,
+          "current_value": 16092.5
+        },
+        {
+          "symbol": "RRKABEL.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 2790.0,
+          "quantity": 4,
+          "current_price": 2919.3,
+          "unrealized_pnl": 517.2,
+          "current_value": 11677.2
+        },
+        {
+          "symbol": "SAILIFE.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1440.0,
+          "quantity": 8,
+          "current_price": 1457.4,
+          "unrealized_pnl": 139.2,
+          "current_value": 11659.2
+        },
+        {
+          "symbol": "SYRMA.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1507.9,
+          "quantity": 7,
+          "current_price": 1439.3,
+          "unrealized_pnl": -480.2,
+          "current_value": 10075.1
+        },
+        {
+          "symbol": "WELSPUNLIV.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 177.5,
+          "quantity": 57,
+          "current_price": 189.22,
+          "unrealized_pnl": 668.04,
+          "current_value": 10785.54
+        },
+        {
+          "symbol": "ZENTEC.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1995.0,
+          "quantity": 4,
+          "current_price": 1926.3,
+          "unrealized_pnl": -274.8,
+          "current_value": 7705.2
+        },
+        {
+          "symbol": "360ONE.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1187.5,
+          "quantity": 6,
+          "current_price": 1199.0,
+          "unrealized_pnl": 69.0,
+          "current_value": 7194.0
+        },
+        {
+          "symbol": "DATAPATTNS.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 4810.0,
+          "quantity": 1,
+          "current_price": 4829.9,
+          "unrealized_pnl": 19.9,
+          "current_value": 4829.9
+        },
+        {
+          "symbol": "NAUKRI.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1385.3,
+          "quantity": 4,
+          "current_price": 1350.1,
+          "unrealized_pnl": -140.8,
+          "current_value": 5400.4
+        },
+        {
+          "symbol": "TORNTPHARM.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 5044.5,
+          "quantity": 1,
+          "current_price": 4896.5,
+          "unrealized_pnl": -148.0,
+          "current_value": 4896.5
+        },
+        {
+          "symbol": "ACMESOLAR.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 400.0,
+          "quantity": 11,
+          "current_price": 401.6,
+          "unrealized_pnl": 17.6,
+          "current_value": 4417.6
+        },
+        {
+          "symbol": "GRASIM.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 3280.0,
+          "quantity": 1,
+          "current_price": 3308.0,
+          "unrealized_pnl": 28.0,
+          "current_value": 3308.0
+        },
+        {
+          "symbol": "JSWSTEEL.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1298.0,
+          "quantity": 3,
+          "current_price": 1293.7,
+          "unrealized_pnl": -12.9,
+          "current_value": 3881.1
+        },
+        {
+          "symbol": "LAURUSLABS.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1825.0,
+          "quantity": 1,
+          "current_price": 1802.0,
+          "unrealized_pnl": -23.0,
+          "current_value": 1802.0
+        },
+        {
+          "symbol": "PVRINOX.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1219.6,
+          "quantity": 2,
+          "current_price": 1216.8,
+          "unrealized_pnl": -5.6,
+          "current_value": 2433.6
+        },
+        {
+          "symbol": "REDINGTON.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 348.45,
+          "quantity": 8,
+          "current_price": 350.55,
+          "unrealized_pnl": 16.8,
+          "current_value": 2804.4
+        },
+        {
+          "symbol": "SHRIRAMFIN.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1140.0,
+          "quantity": 2,
+          "current_price": 1130.0,
+          "unrealized_pnl": -20.0,
+          "current_value": 2260.0
+        }
+      ]
+    },
+    "cross_sectional_momentum": {
+      "strategy_id": "SW-006",
+      "display_name": "Cross-Sectional Momentum",
+      "research_verdict": "PASS",
+      "deployment_status": "PAPER_TRADING",
+      "last_processed_date": "2026-08-21",
+      "cash": 266708.26,
+      "equity": 1005507.66,
+      "starting_capital": 1000000.0,
+      "open_positions_count": 10,
+      "total_unrealized_pnl": 5507.66,
+      "realized_pnl_closed_trades": 0,
+      "closed_trades_count": 0,
+      "win_count": 0,
+      "holding_days_closed": [],
+      "exit_reasons_closed": {},
+      "entry_date_distribution": {
+        "2026-08-17": 3,
+        "2026-08-19": 4,
+        "2026-08-20": 2,
+        "2026-08-21": 1
+      },
+      "pending_entries_count": 1,
+      "pending_exits_count": 0,
+      "metrics_cumulative": {
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "profit_factor": null,
+        "expectancy": 0.0,
+        "cagr": null,
+        "sharpe_ratio": null,
+        "sortino_ratio": null,
+        "max_drawdown_pct": null,
+        "recovery_factor": null,
+        "avg_holding_period_days": null,
+        "exposure_pct": null,
+        "monthly_returns_pct": {},
+        "annual_returns_pct": {},
+        "rolling_annual_returns_pct": {},
+        "total_pnl": 0.0,
+        "return_on_capital_pct": 0.0
+      },
+      "positions_detail": [
+        {
+          "symbol": "ADANIPOWER.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 203.56,
+          "quantity": 614,
+          "current_price": 205.5,
+          "unrealized_pnl": 1191.16,
+          "current_value": 126177.0
+        },
+        {
+          "symbol": "BLUEJET.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 593.2,
+          "quantity": 184,
+          "current_price": 596.15,
+          "unrealized_pnl": 542.8,
+          "current_value": 109691.6
+        },
+        {
+          "symbol": "CARTRADE.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 2796.9,
+          "quantity": 34,
+          "current_price": 3072.9,
+          "unrealized_pnl": 9384.0,
+          "current_value": 104478.6
+        },
+        {
+          "symbol": "COHANCE.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 457.4,
+          "quantity": 173,
+          "current_price": 463.0,
+          "unrealized_pnl": 968.8,
+          "current_value": 80099.0
+        },
+        {
+          "symbol": "CRAFTSMAN.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 10910.0,
+          "quantity": 6,
+          "current_price": 10644.5,
+          "unrealized_pnl": -1593.0,
+          "current_value": 63867.0
+        },
+        {
+          "symbol": "FLUOROCHEM.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 4710.0,
+          "quantity": 12,
+          "current_price": 4621.9,
+          "unrealized_pnl": -1057.2,
+          "current_value": 55462.8
+        },
+        {
+          "symbol": "ZENTEC.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1995.0,
+          "quantity": 27,
+          "current_price": 1926.3,
+          "unrealized_pnl": -1854.9,
+          "current_value": 52010.1
+        },
+        {
+          "symbol": "CONCORDBIO.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1594.8,
+          "quantity": 30,
+          "current_price": 1571.3,
+          "unrealized_pnl": -705.0,
+          "current_value": 47139.0
+        },
+        {
+          "symbol": "DIVISLAB.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 8590.0,
+          "quantity": 5,
+          "current_price": 8597.0,
+          "unrealized_pnl": 35.0,
+          "current_value": 42985.0
+        },
+        {
+          "symbol": "BALRAMCHIN.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 747.35,
+          "quantity": 78,
+          "current_price": 729.35,
+          "unrealized_pnl": -1404.0,
+          "current_value": 56889.3
+        }
+      ]
+    },
+    "pead": {
+      "strategy_id": "SW-007",
+      "display_name": "Post-Earnings Announcement Drift (PEAD)",
+      "research_verdict": "NOT_YET_EVALUATED",
+      "deployment_status": "PAPER_TRADING",
+      "last_processed_date": "2026-08-21",
+      "cash": 1000000.0,
+      "equity": 1000000.0,
+      "starting_capital": 1000000.0,
+      "open_positions_count": 0,
+      "total_unrealized_pnl": 0.0,
+      "realized_pnl_closed_trades": 0,
+      "closed_trades_count": 0,
+      "win_count": 0,
+      "holding_days_closed": [],
+      "exit_reasons_closed": {},
+      "entry_date_distribution": {},
+      "pending_entries_count": 0,
+      "pending_exits_count": 0,
+      "metrics_cumulative": {
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "profit_factor": null,
+        "expectancy": 0.0,
+        "cagr": null,
+        "sharpe_ratio": null,
+        "sortino_ratio": null,
+        "max_drawdown_pct": null,
+        "recovery_factor": null,
+        "avg_holding_period_days": null,
+        "exposure_pct": null,
+        "monthly_returns_pct": {},
+        "annual_returns_pct": {},
+        "rolling_annual_returns_pct": {},
+        "total_pnl": 0.0,
+        "return_on_capital_pct": 0.0
+      },
+      "positions_detail": []
+    },
+    "short_term_reversal": {
+      "strategy_id": "SW-008",
+      "display_name": "Short-Term Reversal",
+      "research_verdict": "PASS",
+      "deployment_status": "PAPER_TRADING",
+      "last_processed_date": "2026-08-21",
+      "cash": 13837.27,
+      "equity": 1000149.36,
+      "starting_capital": 1000000,
+      "open_positions_count": 35,
+      "total_unrealized_pnl": 149.36,
+      "realized_pnl_closed_trades": 0,
+      "closed_trades_count": 0,
+      "win_count": 0,
+      "holding_days_closed": [],
+      "exit_reasons_closed": {},
+      "entry_date_distribution": {
+        "2026-08-17": 10,
+        "2026-08-19": 11,
+        "2026-08-20": 7,
+        "2026-08-21": 7
+      },
+      "pending_entries_count": 10,
+      "pending_exits_count": 0,
+      "metrics_cumulative": {
+        "total_trades": 0,
+        "win_rate": 0.0,
+        "profit_factor": null,
+        "expectancy": 0.0,
+        "cagr": null,
+        "sharpe_ratio": null,
+        "sortino_ratio": null,
+        "max_drawdown_pct": null,
+        "recovery_factor": null,
+        "avg_holding_period_days": null,
+        "exposure_pct": null,
+        "monthly_returns_pct": {},
+        "annual_returns_pct": {},
+        "rolling_annual_returns_pct": {},
+        "total_pnl": 0.0,
+        "return_on_capital_pct": 0.0
+      },
+      "positions_detail": [
+        {
+          "symbol": "ADANIENSOL.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1589.1,
+          "quantity": 78,
+          "current_price": 1541.9,
+          "unrealized_pnl": -3681.6,
+          "current_value": 120268.2
+        },
+        {
+          "symbol": "ADANIPORTS.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1691.0,
+          "quantity": 64,
+          "current_price": 1700.0,
+          "unrealized_pnl": 576.0,
+          "current_value": 108800.0
+        },
+        {
+          "symbol": "AFCONS.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 271.7,
+          "quantity": 353,
+          "current_price": 278.9,
+          "unrealized_pnl": 2541.59,
+          "current_value": 98451.7
+        },
+        {
+          "symbol": "ATGL.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 646.9,
+          "quantity": 129,
+          "current_price": 646.1,
+          "unrealized_pnl": -103.21,
+          "current_value": 83346.9
+        },
+        {
+          "symbol": "AXISBANK.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1227.3,
+          "quantity": 59,
+          "current_price": 1245.8,
+          "unrealized_pnl": 1091.5,
+          "current_value": 73502.2
+        },
+        {
+          "symbol": "CPPLUS.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 3343.1,
+          "quantity": 19,
+          "current_price": 3475.5,
+          "unrealized_pnl": 2515.6,
+          "current_value": 66034.5
+        },
+        {
+          "symbol": "DELHIVERY.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 456.0,
+          "quantity": 124,
+          "current_price": 450.7,
+          "unrealized_pnl": -657.2,
+          "current_value": 55886.8
+        },
+        {
+          "symbol": "GODREJIND.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 1223.0,
+          "quantity": 40,
+          "current_price": 1230.0,
+          "unrealized_pnl": 280.0,
+          "current_value": 49200.0
+        },
+        {
+          "symbol": "INDIACEM.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 376.15,
+          "quantity": 115,
+          "current_price": 370.9,
+          "unrealized_pnl": -603.75,
+          "current_value": 42653.5
+        },
+        {
+          "symbol": "INTELLECT.NS",
+          "entry_date": "2026-08-17",
+          "entry_price": 695.45,
+          "quantity": 54,
+          "current_price": 691.25,
+          "unrealized_pnl": -226.8,
+          "current_value": 37327.5
+        },
+        {
+          "symbol": "BSE.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 3317.0,
+          "quantity": 9,
+          "current_price": 3241.0,
+          "unrealized_pnl": -684.0,
+          "current_value": 29169.0
+        },
+        {
+          "symbol": "COLPAL.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1905.0,
+          "quantity": 15,
+          "current_price": 1889.0,
+          "unrealized_pnl": -240.0,
+          "current_value": 28335.0
+        },
+        {
+          "symbol": "DEEPAKFERT.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1472.1,
+          "quantity": 17,
+          "current_price": 1449.2,
+          "unrealized_pnl": -389.3,
+          "current_value": 24636.4
+        },
+        {
+          "symbol": "HOMEFIRST.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1177.1,
+          "quantity": 19,
+          "current_price": 1193.7,
+          "unrealized_pnl": 315.4,
+          "current_value": 22680.3
+        },
+        {
+          "symbol": "PFC.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 374.95,
+          "quantity": 52,
+          "current_price": 363.0,
+          "unrealized_pnl": -621.4,
+          "current_value": 18876.0
+        },
+        {
+          "symbol": "RPOWER.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 22.4,
+          "quantity": 807,
+          "current_price": 23.45,
+          "unrealized_pnl": 847.35,
+          "current_value": 18924.15
+        },
+        {
+          "symbol": "SAMMAANCAP.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 150.99,
+          "quantity": 96,
+          "current_price": 150.52,
+          "unrealized_pnl": -45.12,
+          "current_value": 14449.92
+        },
+        {
+          "symbol": "SUZLON.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 47.7,
+          "quantity": 289,
+          "current_price": 46.71,
+          "unrealized_pnl": -286.11,
+          "current_value": 13499.19
+        },
+        {
+          "symbol": "TORNTPOWER.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1272.6,
+          "quantity": 8,
+          "current_price": 1247.7,
+          "unrealized_pnl": -199.2,
+          "current_value": 9981.6
+        },
+        {
+          "symbol": "VOLTAS.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 1250.0,
+          "quantity": 8,
+          "current_price": 1235.0,
+          "unrealized_pnl": -120.0,
+          "current_value": 9880.0
+        },
+        {
+          "symbol": "ZENSARTECH.NS",
+          "entry_date": "2026-08-19",
+          "entry_price": 485.2,
+          "quantity": 19,
+          "current_price": 483.55,
+          "unrealized_pnl": -31.35,
+          "current_value": 9187.45
+        },
+        {
+          "symbol": "AAVAS.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1373.1,
+          "quantity": 5,
+          "current_price": 1355.3,
+          "unrealized_pnl": -89.0,
+          "current_value": 6776.5
+        },
+        {
+          "symbol": "ACUTAAS.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 3280.0,
+          "quantity": 1,
+          "current_price": 3169.0,
+          "unrealized_pnl": -111.0,
+          "current_value": 3169.0
+        },
+        {
+          "symbol": "GVT&D.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 4140.0,
+          "quantity": 1,
+          "current_price": 4127.2,
+          "unrealized_pnl": -12.8,
+          "current_value": 4127.2
+        },
+        {
+          "symbol": "NLCINDIA.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 267.45,
+          "quantity": 24,
+          "current_price": 269.8,
+          "unrealized_pnl": 56.4,
+          "current_value": 6475.2
+        },
+        {
+          "symbol": "NUVAMA.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1738.8,
+          "quantity": 3,
+          "current_price": 1743.6,
+          "unrealized_pnl": 14.4,
+          "current_value": 5230.8
+        },
+        {
+          "symbol": "NUVOCO.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 317.8,
+          "quantity": 15,
+          "current_price": 322.05,
+          "unrealized_pnl": 63.75,
+          "current_value": 4830.75
+        },
+        {
+          "symbol": "TATACOMM.NS",
+          "entry_date": "2026-08-20",
+          "entry_price": 1675.7,
+          "quantity": 2,
+          "current_price": 1655.4,
+          "unrealized_pnl": -40.6,
+          "current_value": 3310.8
+        },
+        {
+          "symbol": "AEGISVOPAK.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 268.7,
+          "quantity": 13,
+          "current_price": 276.3,
+          "unrealized_pnl": 98.8,
+          "current_value": 3591.9
+        },
+        {
+          "symbol": "GESHIP.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 1298.9,
+          "quantity": 2,
+          "current_price": 1311.3,
+          "unrealized_pnl": 24.8,
+          "current_value": 2622.6
+        },
+        {
+          "symbol": "GMRAIRPORT.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 101.3,
+          "quantity": 28,
+          "current_price": 99.63,
+          "unrealized_pnl": -46.76,
+          "current_value": 2789.64
+        },
+        {
+          "symbol": "HSCL.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 705.1,
+          "quantity": 3,
+          "current_price": 654.4,
+          "unrealized_pnl": -152.1,
+          "current_value": 1963.2
+        },
+        {
+          "symbol": "POWERGRID.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 264.6,
+          "quantity": 9,
+          "current_price": 272.4,
+          "unrealized_pnl": 70.2,
+          "current_value": 2451.6
+        },
+        {
+          "symbol": "TATACHEM.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 635.0,
+          "quantity": 3,
+          "current_price": 626.75,
+          "unrealized_pnl": -24.75,
+          "current_value": 1880.25
+        },
+        {
+          "symbol": "TTML.NS",
+          "entry_date": "2026-08-21",
+          "entry_price": 37.41,
+          "quantity": 53,
+          "current_price": 37.78,
+          "unrealized_pnl": 19.61,
+          "current_value": 2002.34
+        }
+      ]
+    }
+  },
+  "symbol_overlap": {
+    "KPIL.NS": [
+      "minervini_trend_template_filter",
+      "fifty_two_week_high_momentum"
+    ],
+    "ACMESOLAR.NS": [
+      "minervini_trend_template_filter",
+      "fifty_two_week_high_momentum"
+    ],
+    "BALRAMCHIN.NS": [
+      "fifty_two_week_high_momentum",
+      "cross_sectional_momentum"
+    ],
+    "CRAFTSMAN.NS": [
+      "fifty_two_week_high_momentum",
+      "cross_sectional_momentum"
+    ],
+    "ZENTEC.NS": [
+      "fifty_two_week_high_momentum",
+      "cross_sectional_momentum"
+    ]
+  }
+}

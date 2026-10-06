@@ -147,14 +147,85 @@ class TestIntendedOrders(unittest.TestCase):
         self.assertEqual(rpl.intended_orders({}), [])
 
 
-class TestItCannotPlaceAnOrder(unittest.TestCase):
-    def test_the_module_contains_no_broker_call(self):
-        # structural: step 1 reports intent only. Sending to Kite is a separate, later change.
+class TestItReachesTheBrokerOnlyThroughTheGuard(unittest.TestCase):
+    def test_it_owns_no_broker_call_of_its_own(self):
+        # It places orders now -- but only by calling deployment/live_executor.py, which calls the
+        # guard itself. A direct broker call here would be a path to real money that skips every check.
         with open(rpl.__file__, encoding="utf-8") as f:
             source = f.read()
-        for forbidden in ("import requests", "kiteconnect", "place_order",
-                          "from execution", "import execution"):
-            self.assertNotIn(forbidden, source, forbidden)
+        code = " ".join(line.split("#")[0] for line in source.splitlines())
+        for forbidden in ("import requests", "kiteconnect", "from execution", "import execution",
+                          "ExecutionEngine"):
+            self.assertNotIn(forbidden, code, forbidden)
+
+    def test_placement_goes_through_live_executor(self):
+        with open(rpl.__file__, encoding="utf-8") as f:
+            source = f.read()
+        self.assertIn("from deployment.live_executor import place_live_order", source)
+
+    def test_dry_run_is_the_default_so_nothing_sends_by_accident(self):
+        import inspect
+        self.assertIs(inspect.signature(rpl.run_live).parameters["dry_run"].default, True)
+
+
+class TestItReconcilesBeforePlacing(unittest.TestCase):
+    """The engine writes its decisions into the book as part of deciding, so by the time orders are
+    placed the book may claim positions that were never filled."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "alpha", 50_000, available_balance=100_000)
+        self.spec = SimpleNamespace(strategy_key="alpha", strategy_factory=lambda: object(),
+                                    compute_extra_columns_fn=None)
+        self.cycle = {"status": "processed",
+                      "new_entries": [{"symbol": "RELIANCE.NS", "quantity": 2, "entry_price": 1400.0}]}
+
+    def _run(self, client, place_fn):
+        with patch.object(rpl, "list_strategies", return_value=[_record()]),              patch.dict(rpl._SPECS_BY_KEY, {"alpha": self.spec}),              patch.object(pte, "run_daily", return_value=self.cycle):
+            return rpl.run_live("alpha", fetch_data_fn=lambda: {}, state_dir=self.d,
+                                settings=SimpleNamespace(LIVE_TRADING=True), client=client,
+                                place_fn=place_fn, dry_run=False)
+
+    def test_a_mismatch_halts_and_places_nothing(self):
+        sent = []
+
+        class ShortBroker:
+            def balances(self):
+                return []          # the book will claim a position the broker does not report
+
+        # seed a book that claims a holding
+        path = os.path.join(self.d, "live", "paper_trading", "alpha", "portfolio.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"cash": 1.0, "starting_capital": 50_000,
+                       "positions": {"RELIANCE.NS": {"quantity": 5}}}, f)
+
+        result = self._run(ShortBroker(), lambda **kw: sent.append(kw))
+        self.assertEqual(result["status"], "halted")
+        self.assertEqual(sent, [])
+        self.assertFalse(result["reconciliation"]["ok"])
+
+    def test_an_agreeing_broker_lets_the_orders_through(self):
+        sent = []
+
+        class Agreeing:
+            def balances(self):
+                return [{"currency": "RELIANCE.NS", "balance": 5, "locked_balance": 0}]
+
+        path = os.path.join(self.d, "live", "paper_trading", "alpha", "portfolio.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"cash": 1.0, "starting_capital": 50_000,
+                       "positions": {"RELIANCE.NS": {"quantity": 5}}}, f)
+
+        def fake_place(**kw):
+            sent.append(kw)
+            return SimpleNamespace(placed=True, order_id="o1", fill_price=1400.0, reasons=[])
+
+        result = self._run(Agreeing(), fake_place)
+        self.assertNotEqual(result["status"], "halted")
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(result["placed"][0]["placed"])
 
 
 if __name__ == "__main__":

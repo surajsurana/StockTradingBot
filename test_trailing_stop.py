@@ -17,7 +17,7 @@ with:
 
 import unittest
 
-from risk.trailing_stop import compute_trailing_stop_update
+from risk.trailing_stop import compute_trailing_stop_update, compute_trailing_stop_fallback
 
 
 class TestComputeTrailingStopUpdate(unittest.TestCase):
@@ -92,6 +92,103 @@ class TestComputeTrailingStopUpdate(unittest.TestCase):
             activation_fraction=0.6, lock_in_fraction=0.5,
         )
         self.assertIsNone(result)
+
+
+class TestComputeTrailingStopFallback(unittest.TestCase):
+    """
+    compute_trailing_stop_fallback() -- used when the ideal (peak-based)
+    stop from compute_trailing_stop_update() can't actually be placed
+    because price has pulled back below it. Real incident this fixes:
+    NTPC.NS reached +3.2% since entry, the ideal ratchet was rejected the
+    moment it was attempted, and because price never again exceeded that
+    same peak, the position sat with NO improved protection for the next
+    ~3 weeks despite remaining solidly in profit the whole time.
+
+    v3.1: uses its own fallback_activation_fraction, deliberately LOWER
+    than the ideal stop's activation_fraction (current price has, by
+    construction, already pulled back from the peak that cleared the
+    higher bar) but NOT zero -- an earlier draft fired on any positive
+    gain at all and was backtested (150 Nifty 500 symbols/3mo) to make
+    total P&L WORSE than no fallback (Rs.136 -> -Rs.410), clipping trades
+    on ordinary volatility. These tests pin down the corrected contract.
+    """
+
+    def test_locks_in_gain_off_current_price_not_peak(self):
+        # NTPC-shaped: entry 344, target 357.75 (distance 13.75), current
+        # price 351 -- (351-344)/13.75 = 51%, clears a 50% fallback bar
+        # despite being nowhere near the ideal stop's own 80% bar.
+        result = compute_trailing_stop_fallback(
+            entry_price=344.0, current_stop=333.10, target=357.75, current_price=351.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        favorable_move = 351.0 - 344.0
+        expected = 344.0 + 0.7 * favorable_move
+        self.assertAlmostEqual(result, expected)
+        self.assertLess(result, 351.0)  # always placeable -- strictly below current price
+        self.assertGreater(result, 333.10)  # genuine improvement over the original stop
+
+    def test_not_armed_below_fallback_activation_threshold(self):
+        # current price only 22% of the way to target -- a real but small
+        # gain that should NOT trigger the fallback (this is exactly the
+        # case an earlier, gate-less draft got wrong and was backtested
+        # to hurt total P&L).
+        result = compute_trailing_stop_fallback(
+            entry_price=344.0, current_stop=333.10, target=357.75, current_price=347.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        self.assertIsNone(result)
+
+    def test_armed_exactly_at_fallback_activation_threshold(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=90.0, target=120.0, current_price=110.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.5,
+        )
+        self.assertAlmostEqual(result, 105.0)
+
+    def test_never_lowers_an_existing_better_stop(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=115.0, target=120.0, current_price=118.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.5,
+        )
+        self.assertIsNone(result)
+
+    def test_current_price_at_or_below_entry_returns_none(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=90.0, target=120.0, current_price=100.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        self.assertIsNone(result)
+
+    def test_invalid_entry_price_returns_none(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=0.0, current_stop=97.0, target=120.0, current_price=115.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        self.assertIsNone(result)
+
+    def test_degenerate_target_at_or_below_entry_returns_none(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=97.0, target=100.0, current_price=105.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        self.assertIsNone(result)
+
+    def test_none_current_price_returns_none(self):
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=97.0, target=120.0, current_price=None,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.7,
+        )
+        self.assertIsNone(result)
+
+    def test_lock_in_fraction_near_one_still_never_reaches_current_price(self):
+        # an aggressive lock-in fraction must still guarantee a strictly
+        # placeable (below current price) result, never an invalid one
+        result = compute_trailing_stop_fallback(
+            entry_price=100.0, current_stop=90.0, target=110.0, current_price=109.0,
+            fallback_activation_fraction=0.5, lock_in_fraction=0.99,
+        )
+        self.assertIsNotNone(result)
+        self.assertLess(result, 109.0)
 
 
 if __name__ == "__main__":

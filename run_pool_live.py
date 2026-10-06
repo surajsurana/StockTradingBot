@@ -1,10 +1,11 @@
 """
 The live runner (Pool L) -- Gate H, step 1 of 2.
 
-*** THIS PLACES NO ORDERS. *** It runs the SAME engine the paper pools run, against a
-separate live book sized to the strategy's assigned capital, and reports the orders it
-WOULD place. Actually sending them to Kite is a separate change
-(deployment/live_guard.py gates it) that is deliberately not in this file yet.
+It runs the SAME engine the paper pools run, against a separate live book sized to the
+strategy's assigned capital, then places what it decided through
+deployment/live_executor.py -- which calls deployment/live_guard.py itself, so there is no
+path from here to a broker that skips the guard. dry_run=True is the default: the whole
+path runs and nothing is sent.
 
 WHY A SEPARATE RUNNER AND NOT A FLAG ON THE PAPER ONE. The paper book must keep
 running untouched alongside live -- it is the control. If live underperforms paper on
@@ -80,7 +81,8 @@ def intended_orders(result: dict) -> list:
 
 
 def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None,
-             force: bool = False, state_dir: str = STATE_DIR) -> dict:
+             force: bool = False, state_dir: str = STATE_DIR, settings=None, client=None,
+             place_fn=None, dry_run: bool = True, now=None) -> dict:
     """
     Runs one strategy against its LIVE book and returns what it would do.
 
@@ -115,8 +117,48 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
         )
     finally:
         pte.PAPER_TRADING_STATE_DIR = previous       # always restored, even on an exception
+    orders = intended_orders(result)
+    if dry_run:
+        return {"status": "dry_run", "allocated": allocated, "engine": result, "orders": orders,
+                "placed": []}
+
+    if settings is None:
+        from config import settings as settings            # noqa: PLC0415
+
+    # RECONCILE BEFORE PLACING, for the same reason the crypto path does: the engine writes its
+    # decisions into the book as part of deciding, so by now the book may claim positions that were
+    # never filled. Acting on that unchecked is how a sell order for stock we do not own happens.
+    book_path = os.path.join(live_dir, strategy_key, "portfolio.json")
+    recon = {"ok": True, "problems": []}
+    if client is not None:
+        from deployment.reconciliation import reconcile_against_exchange
+        check = reconcile_against_exchange(book_path, client, now=now)
+        recon = {"ok": check.ok, "checked_at": check.checked_at, "problems": list(check.problems),
+                 "notes": list(check.notes),
+                 "positions": [{"symbol": p.symbol, "book": p.book_quantity,
+                                "exchange": p.exchange_quantity, "verdict": p.verdict}
+                               for p in check.positions]}
+        if not check.ok:
+            return {"status": "halted", "allocated": allocated, "engine": result, "orders": orders,
+                    "placed": [], "reconciliation": recon,
+                    "reason": "The book and the broker disagree, so no orders were placed. "
+                              + " ".join(check.problems)}
+
+    place = place_fn
+    if place is None:
+        from deployment.live_executor import place_live_order as place
+    placed = []
+    for order in orders:
+        outcome = place(settings=settings, record=record, state_dir=state_dir,
+                        symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
+                        reference_price=order.get("price"), strategy_key=strategy_key, now=now)
+        placed.append({**order, "placed": bool(outcome.placed), "order_id": outcome.order_id,
+                       "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
+    unplaced = [p for p in placed if not p["placed"]]
     return {"status": result.get("status"), "allocated": allocated, "engine": result,
-            "orders": intended_orders(result)}
+            "orders": orders, "placed": placed, "reconciliation": recon,
+            "divergence": [f"{p['side']} {p['quantity']} {p['symbol']}: "
+                           f"{' '.join(p['reasons'] or ['not placed'])}" for p in unplaced]}
 
 
 def _ensure_book(live_dir: str, strategy_key: str, allocated: float) -> None:
