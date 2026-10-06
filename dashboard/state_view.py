@@ -661,6 +661,11 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
     return out
 
 
+# The charge components a breakdown may show, and nothing else. equity_costs puts "gst" and "total"
+# in the same dict; both are carried separately, so they must not also appear as components.
+CHARGE_COMPONENTS = ("brokerage", "stt", "exchange", "sebi", "stamp", "dp", "crypto_fee")
+
+
 def attach_net_pnl(strategy_rows: list, statement: list) -> None:
     """Gives each Strategies-tab row a `net` block: the same gross P&L the row already shows, with
     what it actually costs to earn taken off.
@@ -680,7 +685,12 @@ def attach_net_pnl(strategy_rows: list, statement: list) -> None:
                                               "gst": 0.0, "tax": 0.0, "detail": {}, "pools": []})
         for field in ("realised", "unrealised", "charges", "gst", "tax"):
             agg[field] += float(line.get(field, 0) or 0)
+        # equity_costs.book_costs() returns its detail with "gst" and "total" alongside the six real
+        # components. Both are already carried as their own fields, so letting them through would
+        # count GST twice and draw a row labelled "total" inside the breakdown.
         for component, amount in (line.get("detail") or {}).items():
+            if component not in CHARGE_COMPONENTS:
+                continue
             agg["detail"][component] = round(agg["detail"].get(component, 0.0) + float(amount or 0), 2)
         agg["pools"].append(line["pool"])
     for row in strategy_rows:

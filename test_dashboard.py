@@ -510,6 +510,32 @@ class TestBuildDashboardState(unittest.TestCase):
         # a strategy with no book gets NO block: "nothing to show" is not the same claim as "zero"
         self.assertNotIn("net", rows[2])
 
+    def test_the_charge_breakdown_excludes_gst_and_total(self):
+        # equity_costs.book_costs() returns detail with "gst" and "total" mixed in among the six real
+        # components. Both are carried as their own fields, so letting them through the breakdown
+        # counts GST twice and draws a row labelled "total" inside the itemisation.
+        from dashboard.state_view import CHARGE_COMPONENTS, attach_net_pnl
+        rows = [{"key": "k"}]
+        attach_net_pnl(rows, [{"key": "k", "pool": "Pool A", "realised": 100.0, "unrealised": 0.0,
+                               "charges": 30.0, "gst": 5.0, "tax": 0.0,
+                               "detail": {"stt": 20.0, "dp": 10.0, "gst": 5.0, "total": 35.0}}])
+        self.assertEqual(rows[0]["net"]["detail"], {"stt": 20.0, "dp": 10.0})
+        self.assertEqual(rows[0]["net"]["gst"], 5.0)           # still reported, once, on its own
+        self.assertEqual(rows[0]["net"]["net"], 65.0)
+
+    def test_the_itemised_charges_add_up_to_the_charges_total_on_real_state(self):
+        from dashboard.state_view import CHARGE_COMPONENTS
+        checked = 0
+        for r in self.s["strategies"]:
+            n = r.get("net")
+            if not n or not n["detail"]:
+                continue
+            for component in n["detail"]:
+                self.assertIn(component, CHARGE_COMPONENTS, r["key"])
+            self.assertAlmostEqual(sum(n["detail"].values()), n["charges"], places=0, msg=r["key"])
+            checked += 1
+        self.assertTrue(checked, "no strategy carried an itemised charge breakdown")
+
     def test_net_pnl_on_the_real_state_always_reconciles_with_the_pnl_tab(self):
         by_key = {}
         for line in self.s["statement"]:
