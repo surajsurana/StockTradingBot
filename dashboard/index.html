@@ -89,8 +89,9 @@ table.roadmaptbl th:nth-child(7){width:54px}
 table.roadmaptbl th:nth-child(8){width:66px}
 table.roadmaptbl th:nth-child(9){width:72px}
 table.roadmaptbl th:nth-child(10){width:118px}
-table.roadmaptbl td{overflow-wrap:anywhere}
-#roadmap td.holding{white-space:normal}
+/* td is nowrap globally; with fixed widths that made long Type/Candidate text spill over the next
+   column instead of wrapping inside its own. */
+table.roadmaptbl td,table.roadmaptbl th{white-space:normal;overflow-wrap:anywhere}
 /* The full holding description stays in the cell's title; three lines is enough to read it at a
    glance without every row growing to the height of its longest sentence. */
 #roadmap td.holding .note{font-size:11.5px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
