@@ -24,11 +24,23 @@ from deployment.settings import REGISTRY_PATH
 
 
 def _load_registry(path: str = REGISTRY_PATH) -> dict:
+    """The registry, with live deployment status overlaid.
+
+    The registry file is tracked by git -- registering a strategy and recording a verdict are repo
+    facts. Deployment status is not: it is what this machine is doing, and a deploy resetting the
+    tracked file used to silently revert every promotion. deployment/status_overlay.py keeps status
+    in an untracked file beside it; this merges the two so callers see one record."""
     if not os.path.exists(path):
         return {}
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
-    return {key: StrategyRecord.from_dict(value) for key, value in raw.items()}
+    registry = {key: StrategyRecord.from_dict(value) for key, value in raw.items()}
+    try:
+        from deployment.status_overlay import apply_to
+        apply_to(registry, os.path.dirname(path))
+    except Exception:
+        pass            # a broken overlay must not stop the program knowing its strategies
+    return registry
 
 
 def _save_registry(registry: dict, path: str = REGISTRY_PATH) -> None:
@@ -195,10 +207,15 @@ def set_deployment_status(strategy_key: str, new_status: DeploymentStatus, reaso
             f"{record.deployment_status.value} -> {new_status.value}. "
             f"Pass force=True if this is a genuinely intentional exception."
         )
-    record.deployment_status_history.append({
-        "from_status": record.deployment_status.value, "to_status": new_status.value,
-        "timestamp": time.time(), "reason": reason,
-    })
+    entry = {"from_status": record.deployment_status.value, "to_status": new_status.value,
+             "timestamp": time.time(), "reason": reason}
+    record.deployment_status_history.append(entry)
     record.deployment_status = new_status
+    # Written to the UNTRACKED overlay, not the tracked registry, so a deploy cannot revert it.
+    # The registry is still saved for everything else the record carries, and if the overlay write
+    # fails the status change is refused rather than left looking applied until the next deploy.
+    from deployment.status_overlay import record_status
+    record_status(os.path.dirname(registry_path), strategy_key, entry["from_status"],
+                  entry["to_status"], reason, when=entry["timestamp"])
     _save_registry(registry, registry_path)
     return record

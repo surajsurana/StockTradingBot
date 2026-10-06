@@ -30,8 +30,12 @@ from dataclasses import dataclass, replace
 
 
 def _fake_registry_path():
-    fd, path = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
+    """A registry in its OWN directory, not the shared temp root.
+
+    deployment/status_overlay.py keeps live deployment status in a file beside the registry, so two
+    registries sharing a directory share an overlay -- every test using this helper would inherit
+    every other one's promotions, and they would survive between runs."""
+    path = os.path.join(tempfile.mkdtemp(), "strategy_registry.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({}, f)
     return path
