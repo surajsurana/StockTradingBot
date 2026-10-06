@@ -1495,7 +1495,8 @@ function renderAllocations(s){
          ? `Cash available · <b>Kite</b><br>${esc((lc.balance_error || "").slice(0, 70))}`
          : `Cash available · <b>Kite</b>`, lc.balance == null ? "warn" : "src"),
     card(lc.pool, `Deployment cap · <b>your setting</b><br>LIVE_CAPITAL_POOL_RUPEES`),
-    card(lc.assignable, `Assignable · <b>lesser of the two</b>`),
+    card(lc.assignable, `Assignable to equity · <b>Kite, capped by your setting</b>`),
+    card(lc.assignable_crypto, `Assignable to crypto · <b>CoinDCX, capped by your setting</b>`),
     card(lc.allocated, `Assigned to strategies · <b>${money(lc.free)} free</b>`, lc.over_allocated ? "warn" : ""),
     // A SEPARATE pot. Rupees at Kite cannot buy crypto and rupees at CoinDCX cannot buy shares, so
     // this sits on its own card rather than being folded into the equity cash figure above.

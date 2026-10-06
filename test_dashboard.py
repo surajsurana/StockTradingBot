@@ -404,6 +404,30 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(view["crypto_balance"], 10_000.0)
         self.assertNotEqual(view["balance"], 60_000.0)       # never added together
 
+    def test_what_is_assignable_is_computed_per_venue(self):
+        # a crypto strategy funded from the CoinDCX balance must not be capped by the Kite one.
+        # This is the bug that refused a Rs10,000 crypto allocation against a Rs500 equity balance.
+        from dashboard.state_view import live_capital_view
+        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 10_000, create=True):
+            view = live_capital_view(self.records, kite_balance=(500.0, ""),
+                                     coindcx_balance=(10_000.0, ""))
+        self.assertEqual(view["assignable"], 500.0)             # equity capped by Kite
+        self.assertEqual(view["assignable_crypto"], 10_000.0)   # crypto capped by CoinDCX
+
+    def test_each_venue_is_still_capped_by_the_deployment_setting(self):
+        from dashboard.state_view import live_capital_view
+        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 2_000, create=True):
+            view = live_capital_view(self.records, kite_balance=(500.0, ""),
+                                     coindcx_balance=(10_000.0, ""))
+        self.assertEqual(view["assignable_crypto"], 2_000.0)    # your setting is the lower of the two
+
+    def test_an_unknown_crypto_balance_assigns_nothing_rather_than_falling_back(self):
+        from dashboard.state_view import live_capital_view
+        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 10_000, create=True):
+            view = live_capital_view(self.records, kite_balance=(500.0, ""),
+                                     coindcx_balance=(None, "down"))
+        self.assertEqual(view["assignable_crypto"], 0.0)
+
     def test_an_unreachable_exchange_is_unknown_not_zero(self):
         # zero reads as "the account is empty", which is the difference between refusing to assign
         # capital and appearing to have none -- the same fail-closed rule the Kite balance follows

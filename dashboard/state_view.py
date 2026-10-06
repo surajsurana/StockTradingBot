@@ -499,7 +499,12 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
     # What may actually be assigned is the LESSER of what you chose to deploy and what the account
     # holds. An unknown balance caps at 0 rather than falling back to the setting: capital must never
     # be assigned against a figure nobody could confirm.
+    # Assignable is PER VENUE, because the two balances are different money: rupees at Kite cannot
+    # buy crypto and rupees at CoinDCX cannot buy shares. One combined figure would say a crypto
+    # strategy can be funded from the equity account, which is how a Rs10,000 CoinDCX balance ended
+    # up being refused against a Rs500 Kite one.
     assignable = 0.0 if balance is None else round(min(pool, float(balance)), 2)
+    assignable_crypto = 0.0 if crypto_balance is None else round(min(pool, float(crypto_balance)), 2)
     names = {r.strategy_key: getattr(r, "display_name", r.strategy_key) for r in registry_records}
     rows = [{"key": k, "name": names.get(k, k), "allocated": v} for k, v in sorted(allocations.items())]
     return {"pool": round(pool, 2), "allocated": allocated,
@@ -507,7 +512,8 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
             "balance_error": balance_error, "assignable": assignable,
             "free": round(max(0.0, assignable - allocated), 2),
             "over_allocated": allocated > assignable, "strategies": rows,
-            "crypto_balance": crypto_balance, "crypto_balance_error": crypto_error}
+            "crypto_balance": crypto_balance, "crypto_balance_error": crypto_error,
+            "assignable_crypto": assignable_crypto}
 
 
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:

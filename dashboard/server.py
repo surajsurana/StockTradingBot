@@ -659,20 +659,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length) or b"{}")
                 from config import settings
                 pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
-                # Cap by the LESSER of what you chose to deploy and what the account actually holds.
+                key = str(body.get("key", ""))
+                # WHICH ACCOUNT holds this strategy's money. Rupees at Kite cannot buy crypto and
+                # rupees at CoinDCX cannot buy shares, so capping a crypto allocation against the
+                # equity balance (which this did) refuses funding that is sitting right there in the
+                # other account. The venue follows the strategy, not the dashboard.
+                record = next((r for r in list_strategies() if r.strategy_key == key), None)
+                from deployment.base import is_crypto_record
+                crypto = bool(record is not None and is_crypto_record(record))
+                venue = "CoinDCX" if crypto else "Kite"
+                balance, balance_error = (self.coindcx_cache.get() if crypto
+                                          else self.balance_cache.get())
+                # Cap by the LESSER of what you chose to deploy and what that account actually holds.
                 # An unknown balance refuses new capital rather than falling back to the setting --
                 # assigning money we cannot confirm exists is exactly the mistake to avoid.
-                balance, balance_error = self.balance_cache.get()
                 if balance is None:
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({
-                        "ok": False, "error": "Cannot confirm the Kite balance right now, so capital "
-                                              "cannot be assigned. " + balance_error}).encode("utf-8"),
+                        "ok": False, "error": f"Cannot confirm the {venue} balance right now, so "
+                                              f"capital cannot be assigned. " + balance_error}).encode("utf-8"),
                         "application/json")
                     return
                 self.state_cache.invalidate()
-                result = set_allocation(STATE_DIR, str(body.get("key", "")), body.get("rupees"),
+                result = set_allocation(STATE_DIR, key, body.get("rupees"),
                                         available_balance=min(pool, balance),
-                                        open_live_positions=_open_live_positions(str(body.get("key", ""))))
+                                        open_live_positions=_open_live_positions(key))
                 payload = {"ok": result.ok, "allocations": result.allocations,
                            "error": " ".join(result.reasons)}
                 self._send(HTTPStatus.OK if result.ok else HTTPStatus.BAD_REQUEST,
