@@ -15,6 +15,17 @@ repo (including you, on a new machine) knows exactly what to fill in.
 # (2) you've reviewed backtest results, (3) you've tested with a tiny position.
 LIVE_TRADING = False
 
+# --- Live trading hard caps (deployment/live_guard.py, 2026-10-06) ---
+# Enforced in code on EVERY real order, not by convention. Absent, blank or
+# unparseable values fall back to live_guard.py's own conservative defaults --
+# never to "no limit", so a typo here cannot quietly remove a cap.
+# A kill switch overrides all of them: create a file named
+# LIVE_TRADING_HALTED in deployment/state/ and every order is refused, with no
+# code change, no deploy and no working Python needed.
+LIVE_MAX_ORDER_VALUE_RUPEES = 5000      # most one real order may be worth
+LIVE_MAX_EXPOSURE_RUPEES = 25000        # most all live positions may be worth at once
+LIVE_MAX_ORDERS_PER_DAY = 20            # circuit breaker against a signal-generation bug
+
 # --- Zerodha Kite Connect ---
 KITE_API_KEY = ""          # from developers.kite.trade
 KITE_API_SECRET = ""       # from developers.kite.trade -- never commit this
