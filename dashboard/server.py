@@ -446,6 +446,44 @@ class PriceCache:
         threading.Thread(target=loop, daemon=True, name="price-refresh").start()
 
 
+class KiteBalanceCache:
+    """The real equity balance from Kite's margins API, cached.
+
+    The dashboard refreshes every 15-60s; the balance moves only on a fill or a transfer, so polling
+    a broker API at that rate would be rude and would risk rate limits for no benefit. Ten minutes.
+
+    A FAILURE IS NOT ZERO. The access token expires daily, so a failed fetch is routine, and
+    reporting it as a zero balance would be read as "the account is empty" -- which, where this feeds
+    an allocation cap, is the difference between refusing a change and silently appearing to have
+    nothing. It returns None for "unknown" and the callers treat unknown as "do not allow new
+    capital to be assigned", the same fail-closed rule as live_guard.py."""
+
+    def __init__(self, ttl_seconds: int = 600):
+        self.ttl = ttl_seconds
+        self._value, self._error, self._at = None, "", 0.0
+        self._lock = threading.Lock()
+
+    def get(self) -> tuple:
+        """(balance_or_None, error_text)."""
+        with self._lock:
+            if self._at and time.monotonic() - self._at <= self.ttl:
+                return self._value, self._error
+            self._at = time.monotonic()
+            try:
+                from config import settings
+                key = str(getattr(settings, "KITE_API_KEY", "") or "").strip()
+                token = str(getattr(settings, "KITE_ACCESS_TOKEN", "") or "").strip()
+                if not key or not token:
+                    self._value, self._error = None, "No Kite credentials configured."
+                    return self._value, self._error
+                from execution.execution_engine import fetch_available_capital
+                self._value, self._error = float(fetch_available_capital(key, token)), ""
+            except Exception as e:                      # a stale token is routine, never fatal here
+                self._value = None
+                self._error = f"{type(e).__name__}: {e}"[:200]
+            return self._value, self._error
+
+
 class RoadmapCache:
     """swing_research/research_roadmap.py's build_roadmap() re-scores 30+
     candidates against the registry; cheap, but not per request."""
@@ -471,6 +509,7 @@ class RoadmapCache:
 class DashboardHandler(BaseHTTPRequestHandler):
     price_cache: PriceCache = None
     roadmap_cache: RoadmapCache = RoadmapCache()
+    balance_cache: KiteBalanceCache = KiteBalanceCache()
     access_key: str = ""
 
     def log_message(self, fmt, *args):   # quieter than the default (one line per request is enough)
@@ -512,8 +551,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length) or b"{}")
                 from config import settings
                 pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
+                # Cap by the LESSER of what you chose to deploy and what the account actually holds.
+                # An unknown balance refuses new capital rather than falling back to the setting --
+                # assigning money we cannot confirm exists is exactly the mistake to avoid.
+                balance, balance_error = self.balance_cache.get()
+                if balance is None:
+                    self._send(HTTPStatus.BAD_REQUEST, json.dumps({
+                        "ok": False, "error": "Cannot confirm the Kite balance right now, so capital "
+                                              "cannot be assigned. " + balance_error}).encode("utf-8"),
+                        "application/json")
+                    return
                 result = set_allocation(STATE_DIR, str(body.get("key", "")), body.get("rupees"),
-                                        available_balance=pool,
+                                        available_balance=min(pool, balance),
                                         open_live_positions=_open_live_positions(str(body.get("key", ""))))
                 payload = {"ok": result.ok, "allocations": result.allocations,
                            "error": " ".join(result.reasons)}
@@ -620,6 +669,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                           roadmap=self.roadmap_cache.get(), mode=mode,
                                           research_queues={lane: research_queue.load(STATE_DIR, lane)
                                                            for lane in research_queue.LANES},
+                                          kite_balance=self.balance_cache.get(),
                                           crypto_prices=crypto_prices, usdinr=usdinr,
                                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                           us_prices=us_prices, us_prev_close=us_prev_close,

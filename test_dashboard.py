@@ -373,6 +373,26 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
 
+    def test_an_unknown_kite_balance_assigns_nothing_rather_than_trusting_the_setting(self):
+        # a stale access token is routine, so a failed balance fetch must not read as "the account is
+        # empty" OR fall back to the configured pool -- capital must never be assigned against a
+        # figure nobody could confirm
+        from dashboard.state_view import live_capital_view
+        lc = live_capital_view(self.records, kite_balance=(None, "TokenException: stale"))
+        self.assertIsNone(lc["balance"])
+        self.assertEqual(lc["assignable"], 0.0)
+        self.assertEqual(lc["free"], 0.0)
+        self.assertIn("stale", lc["balance_error"])
+
+    def test_assignable_is_the_lesser_of_the_funded_pool_and_the_real_balance(self):
+        from unittest.mock import patch
+        from dashboard.state_view import live_capital_view
+        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 50_000, create=True):
+            rich = live_capital_view(self.records, kite_balance=(500_000.0, ""))
+            self.assertEqual(rich["assignable"], 50_000.0)      # capped by what you chose to deploy
+            poor = live_capital_view(self.records, kite_balance=(10_000.0, ""))
+            self.assertEqual(poor["assignable"], 10_000.0)      # capped by what is actually there
+
     def test_every_strategy_row_carries_its_live_gate_and_what_is_blocking_it(self):
         # the Strategies tab's "Live gate" column: the AUTOMATED part of LIVE_PROMOTION_CRITERIA.md
         # (verdict, 60 paper days, 20 closed trades) computed per strategy, with the shortfall named.

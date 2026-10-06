@@ -1182,9 +1182,15 @@ function renderAllocations(s){
   const lc = s.live_capital || {pool:0, allocated:0, free:0};
   const warn = lc.over_allocated
     ? ` <b class="loss">More is assigned than the pool holds.</b>` : "";
-  panel.innerHTML = lc.pool
-    ? `<p class="note">Real cash pool: <b>${money(lc.pool)}</b> funded · <b>${money(lc.allocated)}</b> assigned · <b>${money(lc.free)}</b> free.${warn}</p>`
-    : `<p class="note">No real capital funded yet. Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to what you have actually funded, then assign it per strategy in the Live capital column.</p>`;
+  // Two different numbers, both worth seeing: what Kite actually holds, and what you chose to
+  // deploy. Assignable is the lesser of the two -- an unknown balance assigns nothing.
+  const bal = lc.balance == null
+    ? `<b title="${esc(lc.balance_error || "")}">unavailable</b>`
+    : `<b>${money(lc.balance)}</b>`;
+  const cap = lc.pool ? "" : ` <span class="note">Set <b>LIVE_CAPITAL_POOL_RUPEES</b> on the VPS to cap what the bot may deploy.</span>`;
+  panel.innerHTML = `<p class="note">Kite cash available: ${bal} · you have capped deployment at <b>${money(lc.pool)}</b> ·
+    assignable <b>${money(lc.assignable)}</b> · assigned <b>${money(lc.allocated)}</b> · free <b>${money(lc.free)}</b>.${warn}${cap}</p>`
+    + (lc.balance == null ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown. ${esc(lc.balance_error || "")}</p>` : "");
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.

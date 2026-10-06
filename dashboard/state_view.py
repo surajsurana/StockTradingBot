@@ -473,7 +473,7 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
-def live_capital_view(registry_records: list) -> dict:
+def live_capital_view(registry_records: list, kite_balance: tuple = (None, "")) -> dict:
     """The one real cash pool and how much of it each strategy has been assigned
     (deployment/live_allocations.py). Read from the canonical state directory, not the mode-specific
     one -- there is only ever one real pool, and it does not change with which view you are looking at.
@@ -488,13 +488,20 @@ def live_capital_view(registry_records: list) -> dict:
         pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
     except Exception:
         pool = 0.0
+    balance, balance_error = (kite_balance or (None, ""))
     allocations = load_allocations(STATE_DIR)
     allocated = round(sum(allocations.values()), 2)
+    # What may actually be assigned is the LESSER of what you chose to deploy and what the account
+    # holds. An unknown balance caps at 0 rather than falling back to the setting: capital must never
+    # be assigned against a figure nobody could confirm.
+    assignable = 0.0 if balance is None else round(min(pool, float(balance)), 2)
     names = {r.strategy_key: getattr(r, "display_name", r.strategy_key) for r in registry_records}
     rows = [{"key": k, "name": names.get(k, k), "allocated": v} for k, v in sorted(allocations.items())]
     return {"pool": round(pool, 2), "allocated": allocated,
-            "free": round(max(0.0, pool - allocated), 2),
-            "over_allocated": allocated > pool, "strategies": rows}
+            "balance": None if balance is None else round(float(balance), 2),
+            "balance_error": balance_error, "assignable": assignable,
+            "free": round(max(0.0, assignable - allocated), 2),
+            "over_allocated": allocated > assignable, "strategies": rows}
 
 
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:
@@ -1357,6 +1364,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
                           advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
                           research_queues: Optional[dict] = None, us_prices: Optional[dict] = None,
+                          kite_balance: tuple = (None, ""),
                           us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
@@ -1457,7 +1465,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                     books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                     state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1,
                                     pool_i=pool_i, now=now)
-    live_capital = live_capital_view(registry_records)
+    live_capital = live_capital_view(registry_records, kite_balance)
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
