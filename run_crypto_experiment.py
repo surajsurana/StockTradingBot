@@ -30,6 +30,7 @@ RUNNERS = {
     "crypto_vol_managed": (lambda: _lane().run_crypto_vol_managed_experiment, CRYPTO_MAJORS, 9),
     "crypto_trend_timing_weekly": (lambda: _lane().run_crypto_trend_timing_weekly_experiment, CRYPTO_MAJORS, 9),
     "crypto_trend_timing_daily": (lambda: _lane().run_crypto_trend_timing_daily_experiment, CRYPTO_MAJORS, 9),
+    "crypto_illiquidity_premium": (lambda: _lane().run_crypto_illiquidity_premium_experiment, CRYPTO_UNIVERSE, 5),
 }
 
 

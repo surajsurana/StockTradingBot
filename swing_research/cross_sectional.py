@@ -767,3 +767,47 @@ def compute_realized_volatility_percentile_ranks(data: dict,
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+CRYPTO_ILLIQ_FORMATION_DAYS = 365  # ~1 year of CALENDAR days, not the equity lane's 252 TRADING
+                                     # days (AMIHUD_ILLIQ_FORMATION_DAYS above) -- crypto trades
+                                     # every day, so 252 bars would be ~8.3 months, not a full year.
+                                     # Same "every day is a bar, 12 months = 365 days" convention
+                                     # crypto_tsmom.py's own TSMOM_LOOKBACK_DAYS already discloses.
+
+
+def compute_crypto_illiq_percentile_ranks(data: dict, lookback_days: int = CRYPTO_ILLIQ_FORMATION_DAYS) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of crypto_illiq_percentile (0-100), indexed
+    by date} -- each coin's cross-sectional percentile rank, among
+    whatever coins have a valid (non-NaN, i.e. >=365 bars of history)
+    trailing 365-day Amihud ILLIQ that day, of its own illiquidity. HIGH
+    percentile means HIGH illiquidity (hard to trade) -- this strategy's
+    entry condition is percentile >=90 (the top decile, MOST illiquid),
+    the same polarity convention as compute_amihud_illiq_percentile_ranks().
+
+    Reuses swing_research.execution_realism_engine.compute_trailing_illiq()
+    -- the SAME Amihud (2002) ILLIQ formula (Close x dollar-volume proxy)
+    already established for the equity Amihud strategy -- with THIS
+    strategy's own 365-CALENDAR-day formation window, not the equity
+    lane's 252-TRADING-day window or execution_realism_engine.py's own
+    20-day execution-cost-estimate window. One function, three callers,
+    three different (disclosed, distinct-purpose) lookback lengths -- not
+    a duplicated formula.
+    """
+    from swing_research.execution_realism_engine import compute_trailing_illiq
+
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_trailing_illiq(df.sort_index(), lookback_days=lookback_days)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

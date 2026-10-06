@@ -192,6 +192,28 @@ def run_crypto_xs_momentum_experiment(data: dict, start_date: date, end_date: da
     )
 
 
+def run_crypto_illiquidity_premium_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Amihud-style crypto illiquidity premium (crypto_illiquidity_premium candidate, 2026-10-06)."""
+    from swing_research.strategies.crypto_illiquidity_premium import (
+        HOLDING_PERIOD_DAYS, ILLIQ_PERCENTILE_THRESHOLD, STOP_LOSS_PCT, CryptoIlliquidityPremiumStrategy,
+    )
+    from swing_research.published_research_analyst import CRYPTO_ILLIQUIDITY_PREMIUM
+    from swing_research.cross_sectional import CRYPTO_ILLIQ_FORMATION_DAYS, compute_crypto_illiq_percentile_ranks
+
+    ranks = compute_crypto_illiq_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("crypto_illiq_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoIlliquidityPremiumStrategy(), CRYPTO_ILLIQUIDITY_PREMIUM, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_illiq_formation_days": CRYPTO_ILLIQ_FORMATION_DAYS,
+                          "crypto_illiq_percentile_threshold": ILLIQ_PERCENTILE_THRESHOLD,
+                          "crypto_illiq_holding_period_days": HOLDING_PERIOD_DAYS,
+                          "crypto_rebalance": "last UTC calendar day of each month",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_illiq_single_vintage": True},
+        **kwargs,
+    )
+
+
 def run_crypto_trend_timing_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
     """Faber's 10-month SMA rule on the majors (EXP-083 candidate, 2026-09-13)."""
     from swing_research.strategies.crypto_trend_timing import (
