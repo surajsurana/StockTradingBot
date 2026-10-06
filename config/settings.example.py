@@ -26,6 +26,13 @@ LIVE_MAX_ORDER_VALUE_RUPEES = 5000      # most one real order may be worth
 LIVE_MAX_EXPOSURE_RUPEES = 25000        # most all live positions may be worth at once
 LIVE_MAX_ORDERS_PER_DAY = 20            # circuit breaker against a signal-generation bug
 
+# The real cash pool live strategies are assigned from (deployment/live_allocations.py).
+# Set it to what you have actually funded and are willing to deploy. Each strategy is given
+# a slice of this from the dashboard, and sizes positions off its slice exactly as it sizes
+# off its paper capital -- so the percentages stay identical to paper. 0 means nothing can be
+# allocated, which is the intended default until you deliberately fund it.
+LIVE_CAPITAL_POOL_RUPEES = 0
+
 # --- Zerodha Kite Connect ---
 KITE_API_KEY = ""          # from developers.kite.trade
 KITE_API_SECRET = ""       # from developers.kite.trade -- never commit this

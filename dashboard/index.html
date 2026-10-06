@@ -1744,7 +1744,9 @@ function renderRegistry(s){
   markSort(document.getElementById("reg-head"), REG_SORT);
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
-  const all = s.strategies || [];
+  // In Live mode only strategies actually running real money belong here. Showing all 34 with
+  // blank capital and P&L made the Live view read as if everything were live but flat.
+  const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live");
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
@@ -1776,7 +1778,10 @@ function renderRegistry(s){
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
-    return mainRow + subRows; }).join("");
+    return mainRow + subRows; }).join("")
+    || `<tr><td colspan="${REG_COLS.length}" class="note">${MODE === "live"
+         ? "No strategy is running real money yet. Everything is still in paper trading -- switch to Paper to see it."
+         : "No strategies match these filters."}</td></tr>`;
   const toggleExpand = key => {
     const btn = document.querySelector(`#registry .expand-toggle[data-key="${CSS.escape(key)}"]`); if(!btn) return;
     const open = btn.textContent === "▾";

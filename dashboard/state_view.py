@@ -473,6 +473,30 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
+def live_capital_view(registry_records: list) -> dict:
+    """The one real cash pool and how much of it each strategy has been assigned
+    (deployment/live_allocations.py). Read from the canonical state directory, not the mode-specific
+    one -- there is only ever one real pool, and it does not change with which view you are looking at.
+
+    `pool` is config.settings.LIVE_CAPITAL_POOL_RUPEES: what you have actually funded and are willing
+    to deploy. It defaults to 0, so until it is deliberately set nothing can be allocated and the
+    dashboard says so rather than leaving the question invisible."""
+    from deployment.live_allocations import load as load_allocations
+    from deployment.settings import STATE_DIR
+    try:
+        from config import settings
+        pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
+    except Exception:
+        pool = 0.0
+    allocations = load_allocations(STATE_DIR)
+    allocated = round(sum(allocations.values()), 2)
+    names = {r.strategy_key: getattr(r, "display_name", r.strategy_key) for r in registry_records}
+    rows = [{"key": k, "name": names.get(k, k), "allocated": v} for k, v in sorted(allocations.items())]
+    return {"pool": round(pool, 2), "allocated": allocated,
+            "free": round(max(0.0, pool - allocated), 2),
+            "over_allocated": allocated > pool, "strategies": rows}
+
+
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:
     """The AUTOMATED part of the live-promotion bar for one strategy -- deployment/pilot_live.py's
     check_pilot_eligibility(), which covers Gates A, B, C and I of deployment/LIVE_PROMOTION_CRITERIA.md
@@ -1451,6 +1475,10 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                       state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1, pool_i=pool_i,
                                       now=now),
+        # Live capital: one real pool, sliced per strategy. Read from the canonical state directory
+        # rather than the mode-specific one -- there is only ever one real pool, and it does not
+        # change depending on which view you are looking at.
+        "live_capital": live_capital_view(registry_records),
         "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
