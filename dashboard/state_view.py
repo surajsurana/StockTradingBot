@@ -473,7 +473,8 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
-def live_capital_view(registry_records: list, kite_balance: tuple = (None, "")) -> dict:
+def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
+                      coindcx_balance: tuple = (None, "")) -> dict:
     """The one real cash pool and how much of it each strategy has been assigned
     (deployment/live_allocations.py). Read from the canonical state directory, not the mode-specific
     one -- there is only ever one real pool, and it does not change with which view you are looking at.
@@ -489,6 +490,10 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, "")) 
     except Exception:
         pool = 0.0
     balance, balance_error = (kite_balance or (None, ""))
+    # CoinDCX is a SEPARATE pot of money, not part of the equity balance. Adding the two would read
+    # as one deployable pool, when in fact rupees at Kite cannot buy crypto and rupees at CoinDCX
+    # cannot buy shares. They are reported side by side and summed only as a memo.
+    crypto_balance, crypto_error = (coindcx_balance or (None, ""))
     allocations = load_allocations(STATE_DIR)
     allocated = round(sum(allocations.values()), 2)
     # What may actually be assigned is the LESSER of what you chose to deploy and what the account
@@ -501,7 +506,8 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, "")) 
             "balance": None if balance is None else round(float(balance), 2),
             "balance_error": balance_error, "assignable": assignable,
             "free": round(max(0.0, assignable - allocated), 2),
-            "over_allocated": allocated > assignable, "strategies": rows}
+            "over_allocated": allocated > assignable, "strategies": rows,
+            "crypto_balance": crypto_balance, "crypto_balance_error": crypto_error}
 
 
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:
@@ -1491,6 +1497,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prices_as_of: Optional[str], now: Optional[datetime] = None,
                           roadmap: Optional[dict] = None, mode: str = "paper",
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
+                          coindcx_balance: tuple = (None, ""),
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
@@ -1601,7 +1608,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                 d_trades, pool_e1=pool_e1, pool_i=pool_i)
     attach_net_pnl(strategy_rows, statement)
     attach_promotion_score(strategy_rows)
-    live_capital = live_capital_view(registry_records, kite_balance)
+    live_capital = live_capital_view(registry_records, kite_balance, coindcx_balance)
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]

@@ -547,6 +547,49 @@ class StateCache:
             self._entries.clear()
 
 
+class CoinDCXBalanceCache:
+    """The real INR balance at CoinDCX, cached, on exactly the same terms as the Kite one.
+
+    Free balance only -- `locked_balance` is money already committed to a resting order and cannot
+    size a new position, so counting it would overstate what is deployable.
+
+    A FAILURE IS NOT ZERO, for the same reason it is not at Kite: reporting an unreachable exchange
+    as an empty account is the difference between refusing to assign capital and appearing to have
+    none. None means unknown, and callers treat unknown as "do not allow new capital".
+
+    Credentials come through the shared resolver, so a key set on the dashboard's Settings tab is
+    picked up here without an edit or a restart."""
+
+    def __init__(self, ttl_seconds: int = 600, failure_ttl_seconds: int = 1800):
+        self.ttl = ttl_seconds
+        self.failure_ttl = failure_ttl_seconds
+        self._value, self._error, self._at = None, "", 0.0
+        self._lock = threading.Lock()
+
+    def get(self) -> tuple:
+        """(inr_balance_or_None, error_text)."""
+        with self._lock:
+            ttl = self.ttl if self._value is not None else self.failure_ttl
+            if self._at and time.monotonic() - self._at <= ttl:
+                return self._value, self._error
+            self._at = time.monotonic()
+            try:
+                from config import settings
+                from deployment.credential_store import credential
+                key = credential("COINDCX_API_KEY", CONFIG_DIR, settings)
+                secret = credential("COINDCX_API_SECRET", CONFIG_DIR, settings)
+                if not (key and secret):
+                    self._value, self._error = None, "No CoinDCX API key configured."
+                    return self._value, self._error
+                from execution.coindcx_client import CoinDCXClient
+                self._value = float(CoinDCXClient(key, secret).balance_of("INR"))
+                self._error = ""
+            except Exception as e:              # never let an exchange hiccup break the dashboard
+                self._value = None
+                self._error = f"{type(e).__name__}: {e}"[:200]
+            return self._value, self._error
+
+
 class RoadmapCache:
     """swing_research/research_roadmap.py's build_roadmap() re-scores 30+
     candidates against the registry; cheap, but not per request."""
@@ -571,6 +614,7 @@ class RoadmapCache:
 
 class DashboardHandler(BaseHTTPRequestHandler):
     state_cache = StateCache()      # replaced in main(); here so the class is usable standalone
+    coindcx_cache = CoinDCXBalanceCache()
     price_cache: PriceCache = None
     roadmap_cache: RoadmapCache = RoadmapCache()
     balance_cache: KiteBalanceCache = KiteBalanceCache()
@@ -869,6 +913,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       research_queues={lane: research_queue.load(STATE_DIR, lane)
                                                        for lane in research_queue.LANES},
                                       kite_balance=self.balance_cache.get(),
+                                      coindcx_balance=self.coindcx_cache.get(),
                                       crypto_prices=crypto_prices, usdinr=usdinr,
                                       prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                       us_prices=us_prices, us_prev_close=us_prev_close,
@@ -948,6 +993,7 @@ def main():
 
     DashboardHandler.access_key = load_access_key()
     DashboardHandler.state_cache = StateCache()
+    DashboardHandler.coindcx_cache = CoinDCXBalanceCache()
     DashboardHandler.price_cache = PriceCache(STATE_DIR)
     DashboardHandler.price_cache.start()
 

@@ -394,6 +394,30 @@ class TestBuildDashboardState(unittest.TestCase):
             poor = live_capital_view(self.records, kite_balance=(10_000.0, ""))
             self.assertEqual(poor["assignable"], 10_000.0)      # capped by what is actually there
 
+    def test_the_crypto_cash_is_reported_separately_from_the_equity_cash(self):
+        # rupees at Kite cannot buy crypto and rupees at CoinDCX cannot buy shares, so summing them
+        # into one "available" figure would overstate what any single order can actually draw on
+        from dashboard.state_view import live_capital_view
+        view = live_capital_view(self.records, kite_balance=(50_000.0, ""),
+                                 coindcx_balance=(10_000.0, ""))
+        self.assertEqual(view["balance"], 50_000.0)
+        self.assertEqual(view["crypto_balance"], 10_000.0)
+        self.assertNotEqual(view["balance"], 60_000.0)       # never added together
+
+    def test_an_unreachable_exchange_is_unknown_not_zero(self):
+        # zero reads as "the account is empty", which is the difference between refusing to assign
+        # capital and appearing to have none -- the same fail-closed rule the Kite balance follows
+        from dashboard.state_view import live_capital_view
+        view = live_capital_view(self.records, kite_balance=(50_000.0, ""),
+                                 coindcx_balance=(None, "ConnectionError: timed out"))
+        self.assertIsNone(view["crypto_balance"])
+        self.assertIn("timed out", view["crypto_balance_error"])
+
+    def test_the_crypto_balance_defaults_to_unknown_when_not_supplied(self):
+        from dashboard.state_view import live_capital_view
+        view = live_capital_view(self.records, kite_balance=(50_000.0, ""))
+        self.assertIsNone(view["crypto_balance"])
+
     def test_every_strategy_row_carries_its_live_gate_and_what_is_blocking_it(self):
         # the Strategies tab's "Live gate" column: the AUTOMATED part of LIVE_PROMOTION_CRITERIA.md
         # (verdict, 60 paper days, 20 closed trades) computed per strategy, with the shortfall named.

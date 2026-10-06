@@ -40,6 +40,39 @@ from typing import Optional
 
 KILL_SWITCH_FILENAME = "LIVE_TRADING_HALTED"
 
+# Which credentials each broker needs, and what to say when one is missing. A pair of names means
+# either will do (Kite's token is refreshed into settings by the TOTP auto-login, so it may live
+# there rather than in the credential store).
+#
+# ADDING A BROKER IS ONE ENTRY HERE. The guard's other checks -- kill switch, deployment status,
+# pilot gates, caps -- are broker-agnostic and apply unchanged, which is the point: a new venue
+# inherits every protection rather than needing its own.
+DEFAULT_BROKER = "kite"
+BROKER_CREDENTIALS = {
+    "kite": [("No Kite API key configured.", ("KITE_API_KEY",)),
+             ("No Kite access token configured (it expires daily).", ("KITE_ACCESS_TOKEN",))],
+    "coindcx": [("No CoinDCX API key configured.", ("COINDCX_API_KEY",)),
+                ("No CoinDCX API secret configured.", ("COINDCX_API_SECRET",))],
+}
+
+
+# Where the dashboard's credential store lives. A module constant rather than a value computed
+# inside the lookup, so a test can point it somewhere empty: otherwise these checks read whatever
+# real credentials happen to sit on the machine, and a test that passes on a laptop fails on the
+# server that has the store -- which is precisely backwards.
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
+
+
+def _credential(settings, state_dir: str, name: str) -> str:
+    """A credential's value, from the dashboard's store first and config/settings.py second -- the
+    same resolution order everything else uses, so a key set on the Settings tab is honoured here.
+    Any failure reading the store is treated as "absent", which fails the check closed."""
+    try:
+        from deployment.credential_store import credential
+        return credential(name, CONFIG_DIR, settings)
+    except Exception:
+        return str(getattr(settings, name, "") or "")
+
 # Conservative defaults. They are floors on caution, not recommendations: the real numbers belong in
 # config/settings.py on the VPS, and anything absent falls back to these rather than to "unlimited".
 DEFAULT_MAX_ORDER_VALUE_RUPEES = 5_000.0
@@ -104,7 +137,8 @@ def _setting(settings, name: str, default):
 
 def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees: float,
                         current_live_exposure_rupees: float, orders_placed_today: int,
-                        eligibility=None, now: Optional[date] = None) -> LiveOrderDecision:
+                        eligibility=None, now: Optional[date] = None,
+                        broker: str = DEFAULT_BROKER) -> LiveOrderDecision:
     """
     The single entry point. Every argument is supplied by the caller rather than read from global
     state here, so this stays pure and fully testable without a broker, a VPS or a clock.
@@ -127,11 +161,15 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
     if kill_switch_engaged(state_dir):
         reasons.append(f"The kill switch is engaged ({kill_switch_path(state_dir)} exists).")
 
-    # 3. Credentials. Checked for presence only -- never logged, never echoed.
-    if not str(getattr(settings, "KITE_API_KEY", "") or "").strip():
-        reasons.append("No broker API key configured.")
-    if not str(getattr(settings, "KITE_ACCESS_TOKEN", "") or "").strip():
-        reasons.append("No broker access token configured (it expires daily).")
+    # 3. Credentials for THIS order's broker. Presence only -- never logged, never echoed.
+    #
+    # Which credentials matter depends on where the order is going: an equity order needs Kite, a
+    # crypto order needs CoinDCX. Hard-coding Kite here (as this did) meant a correctly configured
+    # crypto order was refused for "no broker API key" while the key sat right there.
+    for label, names in BROKER_CREDENTIALS.get(str(broker or DEFAULT_BROKER).lower(),
+                                               BROKER_CREDENTIALS[DEFAULT_BROKER]):
+        if not any(str(_credential(settings, state_dir, n) or "").strip() for n in names):
+            reasons.append(label)
 
     # 4. The strategy itself must be deliberately live, not merely paper trading.
     status = getattr(record, "deployment_status", None)
