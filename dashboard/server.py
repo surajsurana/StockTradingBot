@@ -452,33 +452,50 @@ class KiteBalanceCache:
     The dashboard refreshes every 15-60s; the balance moves only on a fill or a transfer, so polling
     a broker API at that rate would be rude and would risk rate limits for no benefit. Ten minutes.
 
-    A FAILURE IS NOT ZERO. The access token expires daily, so a failed fetch is routine, and
-    reporting it as a zero balance would be read as "the account is empty" -- which, where this feeds
-    an allocation cap, is the difference between refusing a change and silently appearing to have
-    nothing. It returns None for "unknown" and the callers treat unknown as "do not allow new
-    capital to be assigned", the same fail-closed rule as live_guard.py."""
+    The daily token expiry is handled by auth/kite_auto_login.py's TOTP login, which this calls
+    before each refresh -- it verifies the existing token first and only logs in when it has actually
+    expired, so this costs one cheap call on all but the first refresh of the day.
 
-    def __init__(self, ttl_seconds: int = 600):
+    A FAILURE IS STILL NOT ZERO. Auto-login can fail too (a changed password, a 2FA change, Kite
+    being down), and reporting that as a zero balance would read as "the account is empty" -- which,
+    where this feeds an allocation cap, is the difference between refusing a change and silently
+    appearing to have nothing. It returns None for "unknown", callers treat unknown as "do not allow
+    new capital to be assigned" (the same fail-closed rule as live_guard.py), and a failed refresh
+    backs off to failure_ttl so a broken login is not retried every few minutes."""
+
+    def __init__(self, ttl_seconds: int = 600, failure_ttl_seconds: int = 1800):
         self.ttl = ttl_seconds
+        self.failure_ttl = failure_ttl_seconds   # back off harder when it is not working
         self._value, self._error, self._at = None, "", 0.0
         self._lock = threading.Lock()
 
     def get(self) -> tuple:
         """(balance_or_None, error_text)."""
         with self._lock:
-            if self._at and time.monotonic() - self._at <= self.ttl:
+            ttl = self.ttl if self._value is not None else self.failure_ttl
+            if self._at and time.monotonic() - self._at <= ttl:
                 return self._value, self._error
             self._at = time.monotonic()
             try:
                 from config import settings
-                key = str(getattr(settings, "KITE_API_KEY", "") or "").strip()
-                token = str(getattr(settings, "KITE_ACCESS_TOKEN", "") or "").strip()
-                if not key or not token:
-                    self._value, self._error = None, "No Kite credentials configured."
+                if not str(getattr(settings, "KITE_API_KEY", "") or "").strip():
+                    self._value, self._error = None, "No Kite API key configured."
+                    return self._value, self._error
+                # The access token expires daily. ensure_fresh_kite_session() checks it with one cheap
+                # call and only logs in (TOTP) when it is actually stale, mutating settings in place --
+                # so this is a no-op on all but the first call of the day, and the token must be re-read
+                # from settings afterwards rather than captured before.
+                from auth.kite_auto_login import ensure_fresh_kite_session
+                if not ensure_fresh_kite_session(settings):
+                    self._value = None
+                    self._error = ("Kite session is stale and automatic login did not succeed. "
+                                   "Check KITE_USER_ID / KITE_PASSWORD / KITE_TOTP_SECRET.")
                     return self._value, self._error
                 from execution.execution_engine import fetch_available_capital
-                self._value, self._error = float(fetch_available_capital(key, token)), ""
-            except Exception as e:                      # a stale token is routine, never fatal here
+                self._value = float(fetch_available_capital(settings.KITE_API_KEY,
+                                                            settings.KITE_ACCESS_TOKEN))
+                self._error = ""
+            except Exception as e:                      # never let a broker hiccup break the dashboard
                 self._value = None
                 self._error = f"{type(e).__name__}: {e}"[:200]
             return self._value, self._error

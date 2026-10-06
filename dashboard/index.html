@@ -54,6 +54,13 @@ h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;mar
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.cashcards{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 12px}
+.cashcard{flex:0 1 220px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:4px;padding:11px 14px}
+.cashcard.src{border-left-color:var(--accent)}
+.cashcard.warn{border-left-color:var(--loss)}
+.cashcard .amt{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;color:var(--ink);line-height:1.15}
+.cashcard .amt.none{font-size:17px;color:var(--muted)}
+.cashcard .src{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.35}
 #livecards{flex-wrap:nowrap}#livecards .grp{flex:1 1 0;min-width:0;padding:10px 9px}#livecards .gi > span{gap:6px;padding:6px 7px}#livecards .gi b{font-size:14px}#livecards .gi > span.posrow{grid-template-columns:1fr repeat(4,auto);gap:6px}
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
@@ -1180,17 +1187,25 @@ function renderAllocations(s){
   if(MODE !== "live"){ panel.hidden = true; return; }
   panel.hidden = false;
   const lc = s.live_capital || {pool:0, allocated:0, free:0};
-  const warn = lc.over_allocated
-    ? ` <b class="loss">More is assigned than the pool holds.</b>` : "";
-  // Two different numbers, both worth seeing: what Kite actually holds, and what you chose to
-  // deploy. Assignable is the lesser of the two -- an unknown balance assigns nothing.
-  const bal = lc.balance == null
-    ? `<b title="${esc(lc.balance_error || "")}">unavailable</b>`
-    : `<b>${money(lc.balance)}</b>`;
-  const cap = lc.pool ? "" : ` <span class="note">Set <b>LIVE_CAPITAL_POOL_RUPEES</b> on the VPS to cap what the bot may deploy.</span>`;
-  panel.innerHTML = `<p class="note">Kite cash available: ${bal} · you have capped deployment at <b>${money(lc.pool)}</b> ·
-    assignable <b>${money(lc.assignable)}</b> · assigned <b>${money(lc.allocated)}</b> · free <b>${money(lc.free)}</b>.${warn}${cap}</p>`
-    + (lc.balance == null ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown. ${esc(lc.balance_error || "")}</p>` : "");
+  // Four cards, each saying plainly where its number comes from. The cash figure is the broker's,
+  // the cap is yours, and assignable is the lesser of the two -- naming the source on each card is
+  // what stops them being read as one authoritative "balance".
+  const card = (amount, source, cls) => `<div class="cashcard ${cls || ""}">
+      <div class="amt${amount == null ? " none" : ""}">${amount == null ? "unavailable" : money(amount)}</div>
+      <div class="src">${source}</div></div>`;
+  const cards = [
+    card(lc.balance, lc.balance == null
+         ? `Cash available · <b>Kite</b><br>${esc((lc.balance_error || "").slice(0, 70))}`
+         : `Cash available · <b>Kite</b>`, lc.balance == null ? "warn" : "src"),
+    card(lc.pool, `Deployment cap · <b>your setting</b><br>LIVE_CAPITAL_POOL_RUPEES`),
+    card(lc.assignable, `Assignable · <b>lesser of the two</b>`),
+    card(lc.allocated, `Assigned to strategies · <b>${money(lc.free)} free</b>`, lc.over_allocated ? "warn" : ""),
+  ].join("");
+  panel.innerHTML = `<div class="cashcards">${cards}</div>`
+    + (lc.balance == null
+        ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
+        : lc.pool ? "" : `<p class="note">Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to cap what the bot may deploy, then assign it per strategy in the Live capital column.</p>`)
+    + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than is assignable.</p>` : "");
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.
