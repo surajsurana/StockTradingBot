@@ -1155,14 +1155,17 @@ const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type
 // closed trades. Deliberately NOT labelled "qualifies for live": the drift, cost, drawdown and
 // backtest-credibility checks are judged by a human, and Gate H blocks everything today anyway since
 // no live order path exists. "Gates met" is the honest claim; the tooltip spells out the rest.
+const PILOT_LABEL = {qualified: "Qualified", waiting: "Waiting", not_qualified: "Not qualified"};
 const pilotCell = p => {
   if(!p) return `<span class="note">—</span>`;
-  if(p.eligible) return `<span class="pill ok" title="The automated gates pass: verdict, ${p.days} paper days, ${p.trades} closed trades. NOT a clearance to trade -- the drift, cost, drawdown and backtest-credibility checks are still manual, and no live order path exists yet.">Gates met · ${p.allocation_pct}%</span>`;
-  const short = p.reasons.map(r => r.startsWith("Research Verdict") ? "verdict"
-    : r.includes("paper-trading days") ? `${p.days}/60 days`
-    : r.includes("paper trades") ? `${p.trades}/20 trades`
-    : r.includes("Deployment Status") ? "not paper trading" : "").filter(Boolean);
-  return `<span class="note" title="${esc(p.reasons.join(" "))}">${esc(short.join(" · ") || "blocked")}</span>`;
+  // the detail lives in the tooltip -- the column itself is one word, so the table stays scannable
+  const detail = p.eligible
+    ? `The automated gates pass: verdict, ${p.days} paper days, ${p.trades} closed trades. Pilot allocation ${p.allocation_pct}%. NOT a clearance to trade -- drift, cost, drawdown and backtest-credibility are still judged by hand, and no live order path exists yet.`
+    : p.state === "waiting"
+      ? `Accumulating: ${p.days}/60 paper days, ${p.trades}/20 closed trades. Nothing to decide -- this clears on its own.`
+      : p.reasons.join(" ") + " This needs a decision, not more time.";
+  const cls = p.state === "qualified" ? "pill ok" : p.state === "waiting" ? "pill" : "pill miss";
+  return `<span class="${cls}" title="${esc(detail)}">${esc(PILOT_LABEL[p.state] || "—")}</span>`;
 };
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
@@ -1176,7 +1179,7 @@ function buildRegHead(){
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option></select>`,
-    pilot: `<select id="reg-pilot"><option value="">All</option><option value="yes">Gates met</option><option value="no">Not yet</option></select>`,
+    pilot: `<select id="reg-pilot"><option value="">All</option><option value="qualified">Qualified</option><option value="waiting">Waiting</option><option value="not_qualified">Not qualified</option></select>`,
   })[k] || "";
   // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
   // sort arrow and column text sit at opposite ends of the column from the numbers under them.
@@ -1744,13 +1747,14 @@ function renderRegistry(s){
   const all = s.strategies || [];
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (pilotF === "yes") === !!(r.pilot && r.pilot.eligible)))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
     .sort((a,b) => { const k=REG_SORT.key;
       if(k==="capital"||k==="pnl"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="win_pct"){ const nx=winOf(a.wins,a.closed_trades), ny=winOf(b.wins,b.closed_trades); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="pilot"){ const sc=r=>{const p=r.pilot||{}; return p.eligible ? 1e9 : (p.days||0);};
+      if(k==="pilot"){ const sc=r=>{const p=r.pilot||{};
+          return p.state==="qualified" ? 1e9 : p.state==="waiting" ? (p.days||0) : -1;};
         return (sc(a)-sc(b))*REG_SORT.dir || a.name.localeCompare(b.name); }   // ready first, then closest to it
       if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });

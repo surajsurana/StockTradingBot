@@ -380,10 +380,22 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(rows, "paper-trading strategies must carry a pilot gate")
         for r in rows.values():
             p = r["pilot"]
-            self.assertEqual(set(p), {"eligible", "reasons", "allocation_pct", "days", "trades"})
+            self.assertEqual(set(p), {"eligible", "state", "reasons", "allocation_pct", "days", "trades"})
             self.assertEqual(p["eligible"], not p["reasons"])      # a blocked row always says why
+            self.assertIn(p["state"], ("qualified", "waiting", "not_qualified"))
+            self.assertEqual(p["eligible"], p["state"] == "qualified")
             if p["eligible"]:
                 self.assertEqual(p["allocation_pct"], 5.0)
+
+    def test_waiting_means_time_fixes_it_and_not_qualified_means_a_decision_does(self):
+        # the whole point of the three-way split: "waiting" is only short of days or trades, so it
+        # resolves on its own; "not_qualified" is a verdict or status problem that never will.
+        rows = {r["key"]: r for r in self.s["strategies"] if r.get("pilot")}
+        for r in rows.values():
+            p = r["pilot"]
+            blocked_on_judgement = any("Verdict" in x or "Deployment Status" in x for x in p["reasons"])
+            self.assertEqual(p["state"] == "not_qualified", blocked_on_judgement, r["key"])
+        self.assertEqual(rows["old"]["pilot"]["state"], "not_qualified")   # REJECT / ARCHIVED
 
     def test_the_live_gate_blocks_a_rejected_strategy_by_verdict(self):
         old = next(r for r in self.s["strategies"] if r["key"] == "old")   # REJECT / ARCHIVED

@@ -483,12 +483,22 @@ def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], no
     against that document, and today Gate H blocks everything anyway because no live order path
     exists. A column reading "qualifies for live" would be false; this reports only what code can
     check, and carries the shortfall so the row says what is actually missing."""
-    from deployment.pilot_live import check_pilot_eligibility
+    from deployment.base import DeploymentStatus, ResearchVerdict
+    from deployment.pilot_live import ELIGIBLE_RESEARCH_VERDICTS, backtest_is_impossible, check_pilot_eligibility
     days = _days_between(started, (now or datetime.now()).date().isoformat()) if started else 0
     trades = closed_trades or 0
     result = check_pilot_eligibility(record, paper_trading_days_elapsed=days or 0,
                                      paper_trading_trade_count=trades)
-    return {"eligible": result.eligible, "reasons": list(result.reasons),
+    # Three states, because "waiting" and "not qualified" need different actions: waiting resolves on
+    # its own as days and trades accumulate, while not-qualified needs a decision -- a backtest run, a
+    # reason recorded, or a verdict revisited. Computed from the record rather than parsed out of the
+    # reason strings, so rewording a message can never silently change what the dashboard claims.
+    verdict_ok = (record.research_verdict in ELIGIBLE_RESEARCH_VERDICTS
+                  and (record.research_verdict != ResearchVerdict.NOT_YET_EVALUATED
+                       or backtest_is_impossible(record)))
+    status_ok = record.deployment_status == DeploymentStatus.PAPER_TRADING
+    state = "qualified" if result.eligible else ("waiting" if verdict_ok and status_ok else "not_qualified")
+    return {"eligible": result.eligible, "state": state, "reasons": list(result.reasons),
             "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades}
 
 
