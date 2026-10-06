@@ -912,12 +912,35 @@ class TestPilotEligibility(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertTrue(any("Research Verdict" in r for r in result.reasons))
 
-    def test_not_eligible_on_an_unevaluated_verdict(self):
-        # never judged at all -- the opposite problem to INCONCLUSIVE, and still disqualifying
-        result = check_pilot_eligibility(self._record(verdict=ResearchVerdict.NOT_YET_EVALUATED),
-                                          paper_trading_days_elapsed=90, paper_trading_trade_count=30)
-        self.assertFalse(result.eligible)
-        self.assertTrue(any("Research Verdict" in r for r in result.reasons))
+    def test_unevaluated_is_eligible_only_when_a_backtest_is_recorded_as_impossible(self):
+        # 2026-10-06, per explicit direction, on the same 60/20 bar. The guard is the distinction
+        # between "cannot be backtested" (paper is the only evidence that will ever exist) and
+        # "nobody has run it yet" (go run it -- cheaper and better than risking money to find out).
+        unevaluated = self._record(verdict=ResearchVerdict.NOT_YET_EVALUATED)
+
+        blank = check_pilot_eligibility(unevaluated, paper_trading_days_elapsed=90,
+                                        paper_trading_trade_count=30)
+        self.assertFalse(blank.eligible)
+        self.assertTrue(any("impossible" in r for r in blank.reasons))
+
+        unevaluated.research_verdict_source = ("no backtest possible -- LLM judgment on historical "
+                                                "data cannot be honestly walk-forward tested")
+        stated = check_pilot_eligibility(unevaluated, paper_trading_days_elapsed=90,
+                                         paper_trading_trade_count=30)
+        self.assertTrue(stated.eligible)
+        self.assertEqual(stated.recommended_allocation_pct, 5.0)   # the same bar, not a reduced one
+
+    def test_an_unexplained_source_does_not_count_as_impossible(self):
+        # the guard is the stated impossibility, not merely that someone typed something
+        r = self._record(verdict=ResearchVerdict.NOT_YET_EVALUATED)
+        r.research_verdict_source = "pending review by the research desk"
+        self.assertFalse(check_pilot_eligibility(r, 90, 30).eligible)
+
+    def test_not_eligible_on_a_reject_even_when_a_backtest_is_impossible(self):
+        # REJECT is a decision, not an absence -- no amount of paper evidence reopens it here
+        r = self._record(verdict=ResearchVerdict.REJECT)
+        r.research_verdict_source = "no backtest possible"
+        self.assertFalse(check_pilot_eligibility(r, 90, 30).eligible)
 
     def test_the_day_and_trade_floors_are_the_agreed_numbers(self):
         # 60 days / 20 trades, agreed 2026-10-06. Pinned so a later edit to the constants has to be

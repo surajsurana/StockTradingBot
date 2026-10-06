@@ -122,9 +122,13 @@ class TestPoolE1OnTheStrategiesTab(unittest.TestCase):
                                     "entry_price": 100.0, "exit_price": 110.0, "quantity": 1.0, "pnl": 10.0}) + "\n")
         self.pool_e = build_pool_e(self.root, {}, usdinr=100.0, today=date(2026, 9, 22))
         self.pool_e1 = build_pool_e(self.root, {}, usdinr=100.0, today=date(2026, 9, 22), dirname="pool_e1")
+        # real enums, not their string reprs -- strategies_view() hands the record to
+        # deployment/pilot_live.py, which expects a genuine StrategyRecord
+        from deployment.base import DeploymentStatus, ResearchVerdict
         self.record = SimpleNamespace(strategy_key="crypto_trend_timing", display_name="Crypto Trend Timing",
-                                      strategy_id="SW-020", deployment_status="DeploymentStatus.PAPER_TRADING",
-                                      research_verdict="ResearchVerdict.PASS", primary_experiment_id="EXP-020",
+                                      strategy_id="SW-020", deployment_status=DeploymentStatus.PAPER_TRADING,
+                                      research_verdict=ResearchVerdict.PASS, primary_experiment_id="EXP-020",
+                                      research_verdict_source="",
                                       strategy_family="crypto research published strategy")
 
     def test_combined_pool_label_and_variant_tab(self):

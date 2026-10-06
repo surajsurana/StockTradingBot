@@ -1150,7 +1150,20 @@ document.getElementById("sell-go").addEventListener("click", async () => {
   finally{ btn.disabled = false; }
 });
 
-const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed"],["win_pct","Win %"],["verdict","Verdict"],["status","Status"],["experiment","Exp"],["days","Days"]];
+const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed"],["win_pct","Win %"],["verdict","Verdict"],["status","Status"],["pilot","Live gate"],["experiment","Exp"],["days","Days"]];
+// The AUTOMATED part of deployment/LIVE_PROMOTION_CRITERIA.md only -- verdict, 60 paper days, 20
+// closed trades. Deliberately NOT labelled "qualifies for live": the drift, cost, drawdown and
+// backtest-credibility checks are judged by a human, and Gate H blocks everything today anyway since
+// no live order path exists. "Gates met" is the honest claim; the tooltip spells out the rest.
+const pilotCell = p => {
+  if(!p) return `<span class="note">—</span>`;
+  if(p.eligible) return `<span class="pill ok" title="The automated gates pass: verdict, ${p.days} paper days, ${p.trades} closed trades. NOT a clearance to trade -- the drift, cost, drawdown and backtest-credibility checks are still manual, and no live order path exists yet.">Gates met · ${p.allocation_pct}%</span>`;
+  const short = p.reasons.map(r => r.startsWith("Research Verdict") ? "verdict"
+    : r.includes("paper-trading days") ? `${p.days}/60 days`
+    : r.includes("paper trades") ? `${p.trades}/20 trades`
+    : r.includes("Deployment Status") ? "not paper trading" : "").filter(Boolean);
+  return `<span class="note" title="${esc(p.reasons.join(" "))}">${esc(short.join(" · ") || "blocked")}</span>`;
+};
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
@@ -1163,6 +1176,7 @@ function buildRegHead(){
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option></select>`,
+    pilot: `<select id="reg-pilot"><option value="">All</option><option value="yes">Gates met</option><option value="no">Not yet</option></select>`,
   })[k] || "";
   // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
   // sort arrow and column text sit at opposite ends of the column from the numbers under them.
@@ -1170,11 +1184,11 @@ function buildRegHead(){
   head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => hcell(l, k, cell(k), alignOf[k] || "")).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
-  ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
+  ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
 }
 function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
   buildRegHead();
-  for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status"]) document.getElementById(id).value = filters[id] || "";
+  for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"]) document.getElementById(id).value = filters[id] || "";
   document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
 }
 function goLive(pool, kind, book){   // from a Strategies row: open Live day filtered to that pool and strategy
@@ -1725,17 +1739,19 @@ readRoute();
 function renderRegistry(s){
   buildRegHead();
   markSort(document.getElementById("reg-head"), REG_SORT);
-  markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status")});
-  const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status");
+  markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
+  const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
   const all = s.strategies || [];
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? r.pnl / r.capital * 100 : null;   // % return on capital allocated, null if never deployed
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (pilotF === "yes") === !!(r.pilot && r.pilot.eligible)))
     .sort((a,b) => { const k=REG_SORT.key;
       if(k==="capital"||k==="pnl"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="win_pct"){ const nx=winOf(a.wins,a.closed_trades), ny=winOf(b.wins,b.closed_trades); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }
+      if(k==="pilot"){ const sc=r=>{const p=r.pilot||{}; return p.eligible ? 1e9 : (p.days||0);};
+        return (sc(a)-sc(b))*REG_SORT.dir || a.name.localeCompare(b.name); }   // ready first, then closest to it
       if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
@@ -1752,7 +1768,7 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";

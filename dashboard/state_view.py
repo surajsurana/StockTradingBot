@@ -473,6 +473,25 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
+def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:
+    """The AUTOMATED part of the live-promotion bar for one strategy -- deployment/pilot_live.py's
+    check_pilot_eligibility(), which covers Gates A, B, C and I of deployment/LIVE_PROMOTION_CRITERIA.md
+    (verdict, 60 paper days, 20 closed trades, 5% allocation).
+
+    NECESSARY, NOT SUFFICIENT, and the dashboard must say so: the drift check, cost check, drawdown
+    ceiling, backtest-credibility review and the whole of operational readiness are judged by a human
+    against that document, and today Gate H blocks everything anyway because no live order path
+    exists. A column reading "qualifies for live" would be false; this reports only what code can
+    check, and carries the shortfall so the row says what is actually missing."""
+    from deployment.pilot_live import check_pilot_eligibility
+    days = _days_between(started, (now or datetime.now()).date().isoformat()) if started else 0
+    trades = closed_trades or 0
+    result = check_pilot_eligibility(record, paper_trading_days_elapsed=days or 0,
+                                     paper_trading_trade_count=trades)
+    return {"eligible": result.eligible, "reasons": list(result.reasons),
+            "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades}
+
+
 def _paper_trading_started(r) -> Optional[str]:
     """The date this strategy MOST RECENTLY moved into PAPER_TRADING, from
     the registry's own deployment_status_history (see
@@ -986,7 +1005,8 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
                     books: Optional[list] = None, pool_d: Optional[dict] = None,
                     pool_e: Optional[dict] = None, pool_g: Optional[dict] = None,
                     state_dir: str = "", d_trades: Optional[list] = None,
-                    pool_e1: Optional[dict] = None, pool_i: Optional[dict] = None) -> list:
+                    pool_e1: Optional[dict] = None, pool_i: Optional[dict] = None,
+                    now: Optional[datetime] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
     brief, capital allocated, total P&L to date, closed-trade count,
     reward:risk ratio, and the registry's verdict/status -- Pools B, C
@@ -1021,6 +1041,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         started = min(book_starts) if book_starts else _paper_trading_started(r)
         wins = sum(p["wins"] for p in pools_breakdown) if pools_breakdown else None
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
+                     "pilot": _pilot_gate(r, started, closed_trades, now),
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
                      "started": started, "closed_trades": closed_trades, "wins": wins,
@@ -1418,7 +1439,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "strategies": strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                       {b["key"] for b in summary["books"].get("F", [])},
                                       books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
-                                      state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1, pool_i=pool_i),
+                                      state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1, pool_i=pool_i,
+                                      now=now),
         "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise

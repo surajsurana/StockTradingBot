@@ -12,6 +12,7 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
+from deployment.base import DeploymentStatus, ResearchVerdict
 from dashboard.state_view import AGENTS, DESKS, FLOWS, SCHEDULE, build_dashboard_state
 from dashboard.server import is_authorized
 
@@ -68,10 +69,15 @@ def _tree():
     return state, logs
 
 
-def _record(key, name, sid, status="DeploymentStatus.PAPER_TRADING", verdict="ResearchVerdict.PASS",
-            family="swing_research published strategy", deployment_status_history=None):
+def _record(key, name, sid, status=DeploymentStatus.PAPER_TRADING, verdict=ResearchVerdict.PASS,
+            family="swing_research published strategy", deployment_status_history=None,
+            research_verdict_source=""):
+    """Uses the REAL enums, not their string reprs. The fixture used strings until 2026-10-06, which
+    silently diverged from production -- view code that called deployment/ helpers expecting a real
+    StrategyRecord blew up on `.value` only once such a call was added."""
     return SimpleNamespace(strategy_key=key, display_name=name, strategy_id=sid, deployment_status=status,
                            research_verdict=verdict, primary_experiment_id="EXP-001", strategy_family=family,
+                           research_verdict_source=research_verdict_source,
                            deployment_status_history=deployment_status_history or [])
 
 
@@ -81,7 +87,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.alpha_paper_trading_since = datetime(2026, 8, 15, 12, 0).timestamp()
         self.records = [_record("alpha", "Alpha", "SW-001", deployment_status_history=[
                             {"from_status": "RESEARCH", "to_status": "PAPER_TRADING", "timestamp": self.alpha_paper_trading_since, "reason": "test"}]),
-                        _record("old", "Old", "SW-000", status="DeploymentStatus.ARCHIVED", verdict="ResearchVerdict.REJECT"),
+                        _record("old", "Old", "SW-000", status=DeploymentStatus.ARCHIVED, verdict=ResearchVerdict.REJECT),
                         _record("crypto_trend_timing", "Crypto Trend Timing", "SW-020",
                                 family="crypto research published strategy"),
                         _record("portfolio_g", "Portfolio G (AI judgment book, crypto)", "SW-030",
@@ -366,6 +372,23 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(rows["ind"]["queue"]["in_progress"])
         self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
+
+    def test_every_strategy_row_carries_its_live_gate_and_what_is_blocking_it(self):
+        # the Strategies tab's "Live gate" column: the AUTOMATED part of LIVE_PROMOTION_CRITERIA.md
+        # (verdict, 60 paper days, 20 closed trades) computed per strategy, with the shortfall named.
+        rows = {r["key"]: r for r in self.s["strategies"] if r.get("pilot")}
+        self.assertTrue(rows, "paper-trading strategies must carry a pilot gate")
+        for r in rows.values():
+            p = r["pilot"]
+            self.assertEqual(set(p), {"eligible", "reasons", "allocation_pct", "days", "trades"})
+            self.assertEqual(p["eligible"], not p["reasons"])      # a blocked row always says why
+            if p["eligible"]:
+                self.assertEqual(p["allocation_pct"], 5.0)
+
+    def test_the_live_gate_blocks_a_rejected_strategy_by_verdict(self):
+        old = next(r for r in self.s["strategies"] if r["key"] == "old")   # REJECT / ARCHIVED
+        self.assertFalse(old["pilot"]["eligible"])
+        self.assertTrue(any("Research Verdict" in x for x in old["pilot"]["reasons"]))
 
     def test_completed_research_runs_are_listed_newest_first_across_every_lane(self):
         # 2026-10-05: a candidate disappears from the ranked table once it is promoted, so the queue's

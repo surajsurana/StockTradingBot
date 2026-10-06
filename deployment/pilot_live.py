@@ -28,15 +28,39 @@ MIN_PAPER_TRADING_TRADES = 20           # enough for the live sample to be more 
 DEFAULT_PILOT_ALLOCATION_PCT = 5.0      # config-driven, per explicit direction ("for example 5%")
 
 # Verdicts a strategy may hold and still be considered (2026-10-06, per explicit direction).
+#
 # INCONCLUSIVE is included deliberately. It does not mean "weak evidence" here: per
 # swing_research/acceptance_criteria.py it means the base run PASSED over full history, the
 # recent-period check REJECTED, and an independent robustness study materially DISAGREED with that
 # reject -- two valid tests pointing opposite ways, which that module calls "eligible for
 # reconsideration if future evidence resolves the conflict either way". Paper trading in the recent
 # period is that evidence, and it bears on exactly the dimension the conflict is about, so barring
-# INCONCLUSIVE outright would make paper-trading those strategies pointless. REJECT and
-# NOT_YET_EVALUATED remain excluded: one was decided against, the other was never judged.
-ELIGIBLE_RESEARCH_VERDICTS = (ResearchVerdict.PASS, ResearchVerdict.INCONCLUSIVE)
+# INCONCLUSIVE outright would make paper-trading those strategies pointless.
+#
+# NOT_YET_EVALUATED is included ONLY where a backtest is genuinely IMPOSSIBLE, never where one is
+# merely absent -- see _BACKTEST_IMPOSSIBLE_MARKERS. The two look identical in the registry but are
+# opposite situations: for an LLM-judgment book or a forward-evidence-only strategy, paper trading is
+# the only evidence that will ever exist, so a permanent bar means it can never go live however well
+# it does. For a strategy nobody has got round to testing, the answer is to run the backtest -- far
+# cheaper, and far better evidence, than risking money to find out.
+#
+# REJECT stays excluded outright: it was decided against.
+ELIGIBLE_RESEARCH_VERDICTS = (ResearchVerdict.PASS, ResearchVerdict.INCONCLUSIVE,
+                              ResearchVerdict.NOT_YET_EVALUATED)
+
+# A NOT_YET_EVALUATED record qualifies only if research_verdict_source SAYS a backtest is impossible.
+# Matched against text a human wrote on purpose (portfolio_g's reads "no backtest possible -- LLM
+# judgment on historical data cannot be honestly walk-forward tested"), so an unexplained blank --
+# which is what pead, portfolio_b and portfolio_c carry today -- does not quietly qualify.
+_BACKTEST_IMPOSSIBLE_MARKERS = ("no backtest possible", "cannot be backtested",
+                                "no historical backtest", "not backtestable")
+
+
+def backtest_is_impossible(record) -> bool:
+    """True when the record explicitly states a backtest cannot be run, rather than merely lacking
+    one. The distinction is the whole reason NOT_YET_EVALUATED is admissible at all."""
+    source = str(getattr(record, "research_verdict_source", "") or "").lower()
+    return any(marker in source for marker in _BACKTEST_IMPOSSIBLE_MARKERS)
 
 
 @dataclass
@@ -62,8 +86,10 @@ def check_pilot_eligibility(record: StrategyRecord, paper_trading_days_elapsed: 
     reasons = []
 
     if record.research_verdict not in ELIGIBLE_RESEARCH_VERDICTS:
-        allowed = " or ".join(v.value for v in ELIGIBLE_RESEARCH_VERDICTS)
-        reasons.append(f"Research Verdict is {record.research_verdict.value}, not {allowed}.")
+        reasons.append(f"Research Verdict is {record.research_verdict.value}, which is never eligible.")
+    elif record.research_verdict == ResearchVerdict.NOT_YET_EVALUATED and not backtest_is_impossible(record):
+        reasons.append("Research Verdict is NOT_YET_EVALUATED and nothing records that a backtest is "
+                        "impossible -- run the backtest rather than promoting on paper results alone.")
     if record.deployment_status != DeploymentStatus.PAPER_TRADING:
         reasons.append(f"Deployment Status is {record.deployment_status.value}, not PAPER_TRADING "
                         f"(a strategy must be actively paper trading before Pilot Live).")
