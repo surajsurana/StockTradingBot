@@ -38,10 +38,17 @@ POOL_F_DIRNAME = "pool_f"   # Pool A's twin with partial profit booking (2026-09
 
 
 def _read_json(path: str) -> Optional[dict]:
+    """None when the file is absent OR unreadable. Defence in depth: writers are atomic
+    (deployment/atomic_write.py), so a half-written file should no longer exist -- but one corrupt
+    book must degrade to "no data for that book" rather than raising through every caller and
+    blanking the dashboard, which is exactly what it did on 2026-10-06."""
     if not os.path.exists(path):
         return None
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
 
 
 def _read_jsonl(path: str) -> list:

@@ -32,9 +32,9 @@ def _load_registry(path: str = REGISTRY_PATH) -> dict:
 
 
 def _save_registry(registry: dict, path: str = REGISTRY_PATH) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({key: record.to_dict() for key, record in registry.items()}, f, indent=2)
+    # Atomic: a truncated registry loses every strategy's verdict and deployment status at once.
+    from deployment.atomic_write import write_json
+    write_json(path, {key: record.to_dict() for key, record in registry.items()})
 
 
 _STRATEGY_ID_PREFIX = "SW-"

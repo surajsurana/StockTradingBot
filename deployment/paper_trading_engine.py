@@ -150,10 +150,10 @@ def _load_portfolio(strategy_key: str) -> dict:
 
 
 def _save_portfolio(strategy_key: str, portfolio: dict) -> None:
-    path = _portfolio_path(strategy_key)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(portfolio, f, indent=2)
+    # Atomic: this file IS the book. A truncated write loses its positions and cash outright, and a
+    # reader catching the truncated moment took the whole dashboard down. See deployment/atomic_write.
+    from deployment.atomic_write import write_json
+    write_json(_portfolio_path(strategy_key), portfolio)
 
 
 def _append_trade(strategy_key: str, trade: Trade) -> None:
