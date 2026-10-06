@@ -168,6 +168,12 @@ tr.clickable{cursor:pointer}
 /* The net figure shown beside a gross profit that does not survive costs. */
 /* Marks a figure still shown gross because nothing has costed it yet. */
 .grossmark{font-size:9px;opacity:.7;vertical-align:super;margin-left:1px}
+/* A real action, not a footnote: the credential save sits under its own fields. */
+.primarybtn{font:inherit;font-size:14px;font-weight:600;padding:7px 14px;border:0;border-radius:5px;
+  background:var(--accent);color:#fff;cursor:pointer}
+.primarybtn:hover{filter:brightness(1.08)}
+.primarybtn[disabled]{opacity:.6;cursor:default}
+.credsave{display:flex;gap:10px;align-items:center;margin:8px 0 22px}
 .lifebtn:hover{color:var(--ink)}
 #life{overflow-x:hidden;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
 #life::backdrop{background:rgba(0,0,0,.35)}
@@ -897,7 +903,10 @@ function renderCredentials(){
        <span class="note">Same dashboard, same login. Your browser will warn once about the self-signed certificate — accept it and this page becomes editable.</span></p>`;
   const groups = {};
   (CREDS.credentials || []).forEach(c => { (groups[c.group] = groups[c.group] || []).push(c); });
-  list.innerHTML = Object.entries(groups).map(([group, items]) => `
+  // A Save button PER GROUP, directly under the fields it saves. One button at the foot of the page
+  // was a mistake: it sat below every table, nowhere near the boxes being typed into, and read as a
+  // footnote rather than the action.
+  list.innerHTML = Object.entries(groups).map(([group, items], gi) => `
     <h3>${esc(group)}</h3>
     <div class="tblwrap"><table><thead><tr><th>Credential</th><th>Status</th><th>Set a new value</th></tr></thead><tbody>
     ${items.map(c => `<tr>
@@ -905,34 +914,49 @@ function renderCredentials(){
       <td>${c.configured
             ? `<span class="pill ok">Configured</span> <span class="note">from ${esc(c.source)}${c.hint ? " · …" + esc(c.hint) : ""}</span>`
             : `<span class="pill miss">Not set</span>`}</td>
-      <td><input class="credinput" data-name="${esc(c.name)}" type="password" autocomplete="new-password"
+      <td><input class="credinput" data-group="${esc(group)}" data-name="${esc(c.name)}" type="password" autocomplete="new-password"
                  placeholder="${secure ? (c.configured ? "leave blank to keep" : "paste value") : "https only"}"
-                 ${secure ? "" : "disabled"} style="width:260px"></td></tr>`).join("")}
-    </tbody></table></div>`).join("")
-    + (secure ? `<p><button class="iconbtn" id="cred-save">Save credentials</button>
-         <span class="note" id="cred-msg">Blank fields are left unchanged. To remove one, type a single space.</span></p>` : "");
-  const btn = document.getElementById("cred-save");
-  if(btn) btn.addEventListener("click", saveCredentials);
+                 ${secure ? "" : "disabled"} style="width:280px"></td></tr>`).join("")}
+    </tbody></table></div>
+    ${secure ? `<p class="credsave"><button class="primarybtn" data-group="${esc(group)}">Save ${esc(group)} credentials</button>
+       <span class="note" id="cred-msg-${gi}">Blank fields are left unchanged. To remove one, type a single space.</span></p>` : ""}`).join("");
+  document.querySelectorAll("#cred-list .primarybtn").forEach(b =>
+    b.addEventListener("click", () => saveCredentials(b.dataset.group, b)));
+  // Enter in any field saves that field's own group, so the keyboard path matches the obvious one
+  document.querySelectorAll("#cred-list .credinput").forEach(i =>
+    i.addEventListener("keydown", e => {
+      if(e.key === "Enter"){
+        const b = [...document.querySelectorAll("#cred-list .primarybtn")].find(x => x.dataset.group === i.dataset.group);
+        if(b) b.click();
+      }
+    }));
 }
-async function saveCredentials(){
-  const btn = document.getElementById("cred-save"), msg = document.getElementById("cred-msg");
+async function saveCredentials(group, btn){
+  const msg = btn.parentElement.querySelector(".note");
+  const fields = [...document.querySelectorAll("#cred-list .credinput")].filter(i => i.dataset.group === group);
   const updates = {};
-  document.querySelectorAll("#cred-list .credinput").forEach(i => { if(i.value !== "") updates[i.dataset.name] = i.value; });
-  if(!Object.keys(updates).length){ msg.textContent = "Nothing entered."; return; }
-  btn.disabled = true; msg.textContent = "Saving…";
+  fields.forEach(i => { if(i.value !== "") updates[i.dataset.name] = i.value; });
+  if(!Object.keys(updates).length){ msg.textContent = "Nothing entered for " + group + "."; return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "Saving…";
   try {
     const res = await fetch("/api/credentials", {method:"POST", headers:{"Content-Type":"application/json"},
                                                  body: JSON.stringify({credentials: updates})});
     const body = await res.json();
     if(!body.ok) throw new Error(body.error || "refused");
     CREDS = {...CREDS, credentials: body.credentials};
-    // clear the inputs immediately: a secret should not sit in a form field after it is stored
-    document.querySelectorAll("#cred-list .credinput").forEach(i => { i.value = ""; });
+    fields.forEach(i => { i.value = ""; });   // a secret should not sit in a form field after storing
+    // Anything typed into ANOTHER group is still unsaved; the re-render would wipe it, which on a
+    // credentials form is the kind of silent data loss that makes people stop trusting the page.
+    const pending = {};
+    document.querySelectorAll("#cred-list .credinput").forEach(i => { if(i.value) pending[i.dataset.name] = i.value; });
     renderCredentials();
-    document.getElementById("cred-msg").textContent = `Saved ${body.saved.join(", ")}.`;
+    document.querySelectorAll("#cred-list .credinput").forEach(i => { if(pending[i.dataset.name]) i.value = pending[i.dataset.name]; });
+    const again = [...document.querySelectorAll("#cred-list .primarybtn")].find(x => x.dataset.group === group);
+    if(again) again.parentElement.querySelector(".note").textContent = `Saved ${body.saved.join(", ")}.`;
   } catch(err){
     msg.textContent = "Not saved: " + err.message;
-    btn.disabled = false;
+    btn.disabled = false; btn.textContent = label;
   }
 }
 function wireNetButtons(){
