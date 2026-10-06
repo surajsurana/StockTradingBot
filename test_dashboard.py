@@ -417,6 +417,57 @@ class TestBuildDashboardState(unittest.TestCase):
             self.assertEqual(p["state"] == "not_qualified", blocked_on_judgement, r["key"])
         self.assertEqual(rows["old"]["pilot"]["state"], "not_qualified")   # REJECT / ARCHIVED
 
+    def test_the_server_side_gate_recheck_reads_the_books_off_disk(self):
+        # /api/live/promote must not trust the gate the page displayed -- a tab can be hours stale, and
+        # the request body is only text a client chose to send. pilot_gate_for_key() is that recheck:
+        # it counts a strategy's own paper books itself, across every pool it runs in.
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        root = tempfile.mkdtemp()
+        record = StrategyRecord(strategy_key="twin", display_name="Twin", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        for pool, count, first in (("paper_trading", 12, "2026-01-05"), ("pool_f", 9, "2026-02-01")):
+            book = os.path.join(root, pool, "twin")
+            os.makedirs(book)
+            with open(os.path.join(book, "trades.jsonl"), "w", encoding="utf-8") as f:
+                for i in range(count):
+                    f.write(json.dumps({"entry_date": first, "pnl": 1.0}) + "\n")
+            with open(os.path.join(book, "daily_equity.jsonl"), "w", encoding="utf-8") as f:
+                f.write(json.dumps({"date": first, "equity": 100000}) + "\n")
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))
+        self.assertEqual(gate["trades"], 21)                    # BOTH books counted, not just Pool A
+        self.assertEqual(gate["days"], 147)                     # from the EARLIEST book's own start
+        self.assertTrue(gate["eligible"], gate["reasons"])
+
+    def test_the_recheck_ignores_the_live_book_so_the_gate_stays_about_paper(self):
+        # the live book sits a level deeper (live/paper_trading/<key>); counting its trades towards the
+        # paper bar would let a strategy's own live activity argue for its own promotion
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        root = tempfile.mkdtemp()
+        live_book = os.path.join(root, "live", "paper_trading", "solo")
+        os.makedirs(live_book)
+        with open(os.path.join(live_book, "trades.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(40):
+                f.write(json.dumps({"entry_date": "2026-01-01"}) + "\n")
+        record = StrategyRecord(strategy_key="solo", display_name="Solo", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))
+        self.assertEqual(gate["trades"], 0)
+        self.assertFalse(gate["eligible"])
+
+    def test_a_strategy_with_no_books_at_all_is_not_eligible(self):
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        record = StrategyRecord(strategy_key="ghost", display_name="Ghost", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        gate = pilot_gate_for_key(record, tempfile.mkdtemp(), now=datetime(2026, 6, 1))
+        self.assertEqual((gate["days"], gate["trades"]), (0, 0))
+        self.assertFalse(gate["eligible"])
+
     def test_the_live_gate_blocks_a_rejected_strategy_by_verdict(self):
         old = next(r for r in self.s["strategies"] if r["key"] == "old")   # REJECT / ARCHIVED
         self.assertFalse(old["pilot"]["eligible"])

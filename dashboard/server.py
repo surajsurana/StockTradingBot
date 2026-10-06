@@ -589,6 +589,59 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
                            "application/json")
             return
+        if parsed.path == "/api/live/promote":   # Strategies tab: promote to PILOT_LIVE, or back to paper
+            # The button is the FIRST of the four independent human acts that have to line up before a
+            # real order can happen (promote, fund, LIVE_TRADING=True, no kill switch). It is not a
+            # shortcut past any of the others, and it places nothing by itself.
+            #
+            # THE GATE IS RE-CHECKED HERE, not taken from the request. The page computed the same gate
+            # to decide whether to draw the button, but that page may be hours stale and the body is
+            # only text a client chose to send -- so what the browser believed is treated as a hint,
+            # and the registry on disk decides.
+            from dashboard.state_view import pilot_gate_for_key
+            from deployment.base import DeploymentStatus
+            from deployment.deployment_manager import set_deployment_status
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                key, target = str(body.get("key", "")), str(body.get("to", ""))
+                record = next((r for r in list_strategies() if r.strategy_key == key), None)
+                if record is None:
+                    raise ValueError(f"{key or 'that strategy'} is not in the deployment registry.")
+
+                if target == "PILOT_LIVE":
+                    gate = pilot_gate_for_key(record, STATE_DIR)
+                    if not gate["eligible"]:
+                        raise ValueError("The automated gates do not pass: " + " ".join(gate["reasons"]))
+                    reason = (f"Promoted to pilot live from the dashboard. Automated gates at promotion: "
+                              f"verdict {getattr(record.research_verdict, 'value', record.research_verdict)}, "
+                              f"{gate['days']} paper days, {gate['trades']} closed trades. "
+                              f"Remaining gates (drift, costs, drawdown, backtest credibility) were "
+                              f"judged by hand -- see deployment/LIVE_PROMOTION_CRITERIA.md.")
+                elif target == "PAPER_TRADING":
+                    # Demoting a strategy that still holds real positions would orphan them: the live
+                    # runner skips anything not PILOT_LIVE, so nobody would manage the exits. The kill
+                    # switch is the tool for stopping NEW orders while keeping the book managed.
+                    held = _open_live_positions(key)
+                    if held:
+                        raise ValueError(
+                            f"{key} still holds {held} live position(s). Demoting now would leave them "
+                            f"with no runner to exit them. Close them first, or engage the kill switch "
+                            f"({os.path.join(STATE_DIR, 'LIVE_TRADING_HALTED')}) to stop new orders "
+                            f"while the book is still managed.")
+                    reason = "Returned to paper trading from the dashboard."
+                else:
+                    raise ValueError("Target status must be PILOT_LIVE or PAPER_TRADING.")
+
+                # No force=True: deployment/base.py's transition map allows both of these moves, and
+                # anything it disallows is a move that should be made deliberately, not from a button.
+                set_deployment_status(key, DeploymentStatus(target), reason=reason)
+                self._send(HTTPStatus.OK, json.dumps({"ok": True, "status": target}).encode("utf-8"),
+                           "application/json")
+            except (ValueError, KeyError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
+            return
         if parsed.path == "/api/research/start":   # Strategies tab's "Start research" button: jump the queue
             import research_queue
             try:

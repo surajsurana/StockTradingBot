@@ -86,15 +86,20 @@ Related, and already flagged in `swing_research/research_roadmap.py`: the US Ove
 
 ## Gate H — The live path actually exists and is safe
 
-**None of this exists today.** `deployment/paper_trading_engine.py` — which runs all 24 paper strategies — contains no order-placement code at all. The real Kite path (`execution/execution_engine.py`, `LIVE_TRADING`) is wired only into `run_daily.py`, the older intraday pipeline whose strategies are all REJECT/ARCHIVED. `deployment/state/live/` does not exist on the VPS, and no strategy has ever held `PILOT_LIVE` or `PRODUCTION`.
+**Status 2026-10-06: partly built, and still closed end to end.** Three pieces now exist: `deployment/live_guard.py` (every real order must pass it; fails closed on `LIVE_TRADING` not being the boolean `True`, on the kill switch file, on a strategy that is not `PILOT_LIVE`/`PRODUCTION`, on pilot gates no longer met, on missing credentials, and on the hard caps), `deployment/live_allocations.py` (per-strategy slices of one real cash pool), and `deployment/live_executor.py` (places one real order through `execution/execution_engine.py`, logging the attempt before it is sent). `run_pool_live.py` runs the paper engine against a separate live book and reports the orders it WOULD place.
+
+**Nothing calls the executor yet**, so no order can reach a broker today: `run_pool_live.py` only reports intent, and `LIVE_TRADING` is `False` on the VPS with `LIVE_CAPITAL_POOL_RUPEES = 0`. Promotion and funding are now possible from the dashboard (`POST /api/live/promote` re-checks the automated gates server-side; the Live capital column assigns the pool), which makes two of the four independent human acts a button rather than an SSH session — the other two, turning `LIVE_TRADING` on and leaving the kill switch off, remain deliberately manual.
+
+For the record of what it replaced: `deployment/paper_trading_engine.py` — which runs all 24 paper strategies — contains no order-placement code at all. The real Kite path (`execution/execution_engine.py`, `LIVE_TRADING`) is wired only into `run_daily.py`, the older intraday pipeline whose strategies are all REJECT/ARCHIVED. `deployment/state/live/` does not exist on the VPS, and no strategy has ever held `PILOT_LIVE` or `PRODUCTION`.
 
 Before any real order:
 
-- [ ] A live order path exists from the paper pools, with the same signal → sizing → order flow as paper.
+- [x] A live order path exists from the paper pools, with the same signal → sizing → order flow as paper. `run_pool_live.py` runs the identical engine against a live book; sizing is `floor(min(cash, cap) × risk_pct / risk_per_share)`, unchanged, so percentages scale exactly.
+- [ ] **The executor is wired into the runner.** Built (`deployment/live_executor.py`) and tested structurally, but nothing calls it, so the runner still only reports intent. This is the remaining blocker on Gate H.
 - [ ] **Reconciliation**: broker positions and cash are compared against internal state every run, and a mismatch halts trading and alerts rather than continuing.
 - [ ] **Partial fills and rejections** are handled explicitly, not assumed away.
-- [ ] **Kill switch**: a single documented action that stops all live order placement without needing a code change or a working VPS session.
-- [ ] **Hard caps** enforced in code, not convention: max position size, max open exposure, max orders per day.
+- [x] **Kill switch**: `touch deployment/state/LIVE_TRADING_HALTED` on the VPS. Checked by `live_guard.py` on every single order, so it needs no code change, no restart and no working dashboard. Originally specified as: a single documented action that stops all live order placement without needing a code change or a working VPS session.
+- [x] **Hard caps** enforced in code, not convention: `LIVE_MAX_ORDER_VALUE_RUPEES` (₹5,000), `LIVE_MAX_EXPOSURE_RUPEES` (₹25,000) and `LIVE_MAX_ORDERS_PER_DAY` (20) in `live_guard.py`. A junk or missing value falls back to the default, never to unlimited.
 - [ ] **Alerting** on every live order, every rejection, and every reconciliation mismatch.
 - [ ] A dry run against the live path with `LIVE_TRADING = False` reproduces the paper engine's decisions exactly.
 - [ ] **Paper and live can run side by side for the same strategy.** They cannot today: `deployment_status` is a single value, so a strategy is either `PAPER_TRADING` or `PILOT_LIVE`, never both, and there is one state tree per strategy. `deployment/scheduler.py`'s `is_due_now()` already treats `PILOT_LIVE` as an active trading status, so the strategy keeps getting its daily run after promotion — but it runs one book, not two. Running both needs either a `live_enabled` flag alongside the status, or a second book under `deployment/state/live/<strategy>/`.
@@ -121,7 +126,7 @@ Before any real order:
 
 ## Current state against these gates (2026-10-06)
 
-No strategy passes. The binding constraints are Gate H (no live path exists at all) and Gate B (longest paper record is 50 days against a 60-day floor; most are 15–35; the US pair is 6 days). Gates D–G cannot yet be meaningfully evaluated for most of the book, which under this document's own rule is a FAIL rather than a pending.
+No strategy passes. The binding constraints are Gate H (the executor exists but nothing calls it, and reconciliation and the dual paper+live book are still unbuilt) and Gate B (longest paper record is 50 days against a 60-day floor; most are 15–35; the US pair is 6 days). Gates D–G cannot yet be meaningfully evaluated for most of the book, which under this document's own rule is a FAIL rather than a pending.
 
 The closest thing to a candidate is **Overnight Return Anomaly** — PASS, 170 closed trades, +1.6% over 30 days, the only strategy with a credible verdict, a real sample and a positive result at once. It clears Gate C comfortably and is blocked on Gate B (30 days, needs 60), Gate G (Sharpe 6.36 unexplained) and Gate H.
 

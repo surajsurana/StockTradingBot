@@ -533,6 +533,29 @@ def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], no
             "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades}
 
 
+def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None) -> dict:
+    """The same automated gate as _pilot_gate, recomputed for ONE strategy from the registry and that
+    strategy's own paper books on disk.
+
+    It exists so the promote endpoint can re-check the gate SERVER-SIDE instead of trusting what the
+    page displayed -- a browser tab can be hours stale, and the request body is just text a client
+    chose to send. Building the whole dashboard state inside that POST was the alternative, and it
+    would have made a promotion to real money depend on a live price fetch succeeding.
+
+    Every pool keeps its books at <state_dir>/<pool_dir>/<strategy_key>/, so one glob finds them all.
+    The live book is at <state_dir>/live/paper_trading/<key> -- a level deeper, so it does not match
+    here, which is what we want: the gate is about the PAPER record."""
+    import glob as _glob
+    trades, starts = 0, []
+    for book_dir in _glob.glob(os.path.join(state_dir, "*", record.strategy_key)):
+        book_trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
+        trades += len(book_trades)
+        started = _book_started(book_dir, book_trades)
+        if started:
+            starts.append(started)
+    return _pilot_gate(record, min(starts) if starts else _paper_trading_started(record), trades, now)
+
+
 def _paper_trading_started(r) -> Optional[str]:
     """The date this strategy MOST RECENTLY moved into PAPER_TRADING, from
     the registry's own deployment_status_history (see

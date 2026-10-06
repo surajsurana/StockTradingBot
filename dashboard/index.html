@@ -270,6 +270,10 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .sellbtn:hover{background:var(--accent);color:var(--accent-ink)}
 .calwrap{position:relative;display:inline-flex;align-items:center;gap:6px}
 .iconbtn{font:inherit;font-size:15px;padding:3px 8px;border:1px solid var(--rule);background:var(--card);border-radius:4px;cursor:pointer;line-height:1.2}.iconbtn.on{border-color:var(--accent);background:var(--chip)}
+/* An armed promote button: one more click moves a strategy towards real money, so it stops
+   looking like the rest of the row's furniture until it is dismissed or committed. */
+.iconbtn.promote{font-size:13px;padding:2px 6px;margin-left:6px}
+.iconbtn.promote.armed{border-color:var(--loss);color:var(--loss);font-weight:600}
 .pop{position:absolute;top:34px;left:0;z-index:5;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);font-size:12.5px}
 .pop[hidden]{display:none}
 .pop label{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -1161,20 +1165,70 @@ document.getElementById("sell-go").addEventListener("click", async () => {
 const REG_COLS = [["sid","ID"],["name","Strategy"],["pool","Pool"],["type","Type"],["started","Started"],["capital","Capital"],["pnl","Total P&L"],["pnl_pct","P&L %"],["closed_trades","Closed"],["win_pct","Win %"],["verdict","Verdict"],["status","Status"],["pilot","Live gate"],["experiment","Exp"],["days","Days"]];
 // The AUTOMATED part of deployment/LIVE_PROMOTION_CRITERIA.md only -- verdict, 60 paper days, 20
 // closed trades. Deliberately NOT labelled "qualifies for live": the drift, cost, drawdown and
-// backtest-credibility checks are judged by a human, and Gate H blocks everything today anyway since
-// no live order path exists. "Gates met" is the honest claim; the tooltip spells out the rest.
+// backtest-credibility checks are judged by a human. "Gates met" is the honest claim, and it is what
+// the Promote button beside it obeys; the tooltip spells out what the button does and does not mean.
 const PILOT_LABEL = {qualified: "Qualified", waiting: "Waiting", not_qualified: "Not qualified"};
-const pilotCell = p => {
+const pilotCell = (p, r) => {
   if(!p) return `<span class="note">—</span>`;
   // the detail lives in the tooltip -- the column itself is one word, so the table stays scannable
   const detail = p.eligible
-    ? `The automated gates pass: verdict, ${p.days} paper days, ${p.trades} closed trades. Pilot allocation ${p.allocation_pct}%. NOT a clearance to trade -- drift, cost, drawdown and backtest-credibility are still judged by hand, and no live order path exists yet.`
+    ? `The automated gates pass: verdict, ${p.days} paper days, ${p.trades} closed trades. Pilot allocation ${p.allocation_pct}%. NOT a clearance to trade -- drift, cost, drawdown and backtest-credibility are still judged by hand. Promoting makes this strategy eligible for capital; it places no orders by itself.`
     : p.state === "waiting"
       ? `Accumulating: ${p.days}/60 paper days, ${p.trades}/20 closed trades. Nothing to decide -- this clears on its own.`
       : p.reasons.join(" ") + " This needs a decision, not more time.";
   const cls = p.state === "qualified" ? "pill ok" : p.state === "waiting" ? "pill" : "pill miss";
-  return `<span class="${cls}" title="${esc(detail)}">${esc(PILOT_LABEL[p.state] || "—")}</span>`;
+  return `<span class="${cls}" title="${esc(detail)}">${esc(PILOT_LABEL[p.state] || "—")}</span>${promoteBtn(p, r)}`;
 };
+// The promotion control sits next to the gate it obeys, because the two belong together: the button
+// only exists where the pill reads Qualified. A strategy still Waiting or Not qualified has no button
+// at all rather than a disabled one -- there is nothing to click towards, and the pill already says
+// why. The server re-checks the gate regardless; this is the honest affordance, not the enforcement.
+//
+// It takes two clicks (the first arms it, the second commits) in place of a confirm() dialog, so a
+// mis-click on a dense table cannot move a strategy towards real money.
+const promoteBtn = (p, r) => {
+  if(!r) return "";
+  const ls = liveState(r.status);
+  if(ls === "Live")
+    return `<button class="iconbtn promote" data-key="${esc(r.key)}" data-to="PAPER_TRADING"
+      title="Return this strategy to paper trading. Refused while it holds live positions — nothing would be left to exit them.">To paper</button>`;
+  if(ls !== "Paper" || p.state !== "qualified") return "";
+  return `<button class="iconbtn promote" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
+    title="Promote to pilot live at ${esc(String(p.allocation_pct))}% allocation. This places no orders: it only makes the strategy eligible to be given capital. Real orders also need capital assigned, LIVE_TRADING on, and no kill switch.">Promote</button>`;
+};
+function wirePromoteButtons(){
+  document.querySelectorAll("#registry .promote").forEach(b => {
+    // Wire each button at most once. Two listeners on the same button would make ONE click run the
+    // handler twice -- arming it and then immediately committing -- which quietly turns the two-click
+    // safety into a one-click promotion. Cheap guard against an easy mistake.
+    if(b.dataset.wired === "1") return;
+    b.dataset.wired = "1";
+    b.addEventListener("click", async e => {
+      e.stopPropagation();                     // the row itself opens the strategy brief
+      const original = b.dataset.label || b.textContent;
+      b.dataset.label = original;
+      if(b.dataset.armed !== "1"){             // first click arms, second commits
+        b.dataset.armed = "1"; b.textContent = "Confirm?"; b.classList.add("armed");
+        clearTimeout(b._disarm);
+        b._disarm = setTimeout(() => { b.dataset.armed = "0"; b.textContent = original; b.classList.remove("armed"); }, 5000);
+        return;
+      }
+      clearTimeout(b._disarm);
+      b.disabled = true; b.textContent = "…";
+      try {
+        const res = await fetch("/api/live/promote", {method:"POST", headers:{"Content-Type":"application/json"},
+                                                      body: JSON.stringify({key: b.dataset.key, to: b.dataset.to})});
+        const body = await res.json();
+        if(!body.ok) throw new Error(body.error || "refused");
+      } catch(err){
+        alert("Not changed: " + err.message);
+        b.disabled = false; b.dataset.armed = "0"; b.textContent = original; b.classList.remove("armed");
+        return;
+      }
+      if(typeof load === "function") load();
+    });
+  });
+}
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
@@ -1846,7 +1900,7 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}</tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}</tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
@@ -1861,6 +1915,7 @@ function renderRegistry(s){
     document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(key)}"]`).forEach(tr => tr.hidden = open);
   };
   wireAllocInputs();
+  wirePromoteButtons();
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
     e.stopPropagation(); toggleExpand(btn.dataset.key);
   }));
