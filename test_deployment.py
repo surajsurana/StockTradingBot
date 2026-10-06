@@ -895,11 +895,39 @@ class TestPilotEligibility(unittest.TestCase):
         self.assertTrue(result.eligible)
         self.assertGreater(result.recommended_allocation_pct, 0)
 
-    def test_not_eligible_without_pass_verdict(self):
+    def test_inconclusive_is_eligible_on_the_same_bar_as_pass(self):
+        # 2026-10-06, per explicit direction. INCONCLUSIVE here means the base run PASSED and an
+        # independent robustness study disagreed with the recent-period REJECT -- a conflict
+        # acceptance_criteria.py itself calls reconsiderable once further evidence arrives. Paper
+        # trading IS that evidence, so excluding it would make paper-trading these strategies
+        # pointless.
         result = check_pilot_eligibility(self._record(verdict=ResearchVerdict.INCONCLUSIVE),
+                                          paper_trading_days_elapsed=90, paper_trading_trade_count=30)
+        self.assertTrue(result.eligible)
+        self.assertGreater(result.recommended_allocation_pct, 0)
+
+    def test_not_eligible_on_a_reject_verdict(self):
+        result = check_pilot_eligibility(self._record(verdict=ResearchVerdict.REJECT),
                                           paper_trading_days_elapsed=90, paper_trading_trade_count=30)
         self.assertFalse(result.eligible)
         self.assertTrue(any("Research Verdict" in r for r in result.reasons))
+
+    def test_not_eligible_on_an_unevaluated_verdict(self):
+        # never judged at all -- the opposite problem to INCONCLUSIVE, and still disqualifying
+        result = check_pilot_eligibility(self._record(verdict=ResearchVerdict.NOT_YET_EVALUATED),
+                                          paper_trading_days_elapsed=90, paper_trading_trade_count=30)
+        self.assertFalse(result.eligible)
+        self.assertTrue(any("Research Verdict" in r for r in result.reasons))
+
+    def test_the_day_and_trade_floors_are_the_agreed_numbers(self):
+        # 60 days / 20 trades, agreed 2026-10-06. Pinned so a later edit to the constants has to be
+        # a deliberate decision rather than a quiet drift.
+        import deployment.pilot_live as pl
+        self.assertEqual((pl.MIN_PAPER_TRADING_DAYS_ELAPSED, pl.MIN_PAPER_TRADING_TRADES), (60, 20))
+        self.assertEqual(pl.DEFAULT_PILOT_ALLOCATION_PCT, 5.0)
+        self.assertTrue(check_pilot_eligibility(self._record(), 60, 20).eligible)      # exactly at the floor
+        self.assertFalse(check_pilot_eligibility(self._record(), 59, 20).eligible)
+        self.assertFalse(check_pilot_eligibility(self._record(), 60, 19).eligible)
 
     def test_not_eligible_without_enough_paper_trading_days(self):
         result = check_pilot_eligibility(self._record(), paper_trading_days_elapsed=10,

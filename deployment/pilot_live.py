@@ -27,6 +27,17 @@ MIN_PAPER_TRADING_DAYS_ELAPSED = 60     # ~3 trading months, a floor not a guara
 MIN_PAPER_TRADING_TRADES = 20           # enough for the live sample to be more than anecdotal
 DEFAULT_PILOT_ALLOCATION_PCT = 5.0      # config-driven, per explicit direction ("for example 5%")
 
+# Verdicts a strategy may hold and still be considered (2026-10-06, per explicit direction).
+# INCONCLUSIVE is included deliberately. It does not mean "weak evidence" here: per
+# swing_research/acceptance_criteria.py it means the base run PASSED over full history, the
+# recent-period check REJECTED, and an independent robustness study materially DISAGREED with that
+# reject -- two valid tests pointing opposite ways, which that module calls "eligible for
+# reconsideration if future evidence resolves the conflict either way". Paper trading in the recent
+# period is that evidence, and it bears on exactly the dimension the conflict is about, so barring
+# INCONCLUSIVE outright would make paper-trading those strategies pointless. REJECT and
+# NOT_YET_EVALUATED remain excluded: one was decided against, the other was never judged.
+ELIGIBLE_RESEARCH_VERDICTS = (ResearchVerdict.PASS, ResearchVerdict.INCONCLUSIVE)
+
 
 @dataclass
 class PilotEligibilityResult:
@@ -50,8 +61,9 @@ def check_pilot_eligibility(record: StrategyRecord, paper_trading_days_elapsed: 
     """
     reasons = []
 
-    if record.research_verdict != ResearchVerdict.PASS:
-        reasons.append(f"Research Verdict is {record.research_verdict.value}, not PASS.")
+    if record.research_verdict not in ELIGIBLE_RESEARCH_VERDICTS:
+        allowed = " or ".join(v.value for v in ELIGIBLE_RESEARCH_VERDICTS)
+        reasons.append(f"Research Verdict is {record.research_verdict.value}, not {allowed}.")
     if record.deployment_status != DeploymentStatus.PAPER_TRADING:
         reasons.append(f"Deployment Status is {record.deployment_status.value}, not PAPER_TRADING "
                         f"(a strategy must be actively paper trading before Pilot Live).")
