@@ -447,7 +447,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div id="research-queue-view">
     <div id="lane-strip" class="lanestrip"></div>
     <div id="lane-filter" class="poolchips" role="group" aria-label="Research lane" style="margin:12px 0 10px"></div>
-    <div class="tblwrap"><table class="roadmaptbl"><thead><tr><th class="n">#</th><th>Candidate</th><th>Type</th><th>Lane</th><th>Holding</th><th>Direction</th><th class="n">Score</th><th>Profile</th><th>Route</th><th></th></tr></thead><tbody id="roadmap"></tbody></table></div>
+    <div class="tblwrap"><table class="roadmaptbl"><thead id="roadmap-head"></thead><tbody id="roadmap"></tbody></table></div>
     <details class="more"><summary id="deferred-summary">Waiting on data we don't have</summary><div class="tblwrap" style="margin-top:8px"><table><thead><tr><th>Candidate</th><th>Type</th><th>Lane</th><th>Blocked by</th></tr></thead><tbody id="deferred"></tbody></table></div></details>
   </div>
   <div id="research-results-view" hidden>
@@ -1290,14 +1290,44 @@ const RESEARCH_COLS = [["name","Strategy",false],["label","Lane",false],["resolv
                        ["verdict","Outcome",false],["status","Now",false],["trades","Trades",true],
                        ["cagr","CAGR",true],["sharpe","Sharpe",true],["max_dd","Max DD",true],
                        ["win_rate","Win rate",true],["exp_no","Experiment",true]];
+// The lane dropdown that appears in BOTH tables' Lane column. It drives the same RESEARCH_LANE the
+// chips above do -- one piece of state, three controls -- so the chips, the Next up filter and the
+// Results filter can never disagree about which lane you are looking at.
+const laneFilterControl = id => `<select id="${id}"><option value="">All lanes</option><option value="india">Indian markets</option><option value="crypto">Crypto</option><option value="us">US equity</option></select>`;
+function wireLaneSelect(id){
+  document.getElementById(id).addEventListener("change", e => {
+    RESEARCH_LANE = e.target.value || null; if(STATE) renderResearch(STATE);
+  });
+}
+
+// The Next up table's header, same Excel-style component as everywhere else. Profile (a bar chart)
+// and the action column have nothing to sort or filter by, so they stay plain.
+let ROADMAP_SORT = {key:"rank", dir:1};
+const ROADMAP_COLS = [["rank","#",true],["name","Candidate",false],["family","Type",false],["lane","Lane",false],
+                      ["holding_days_max","Holding",true],["direction","Direction",false],["score","Score",true],
+                      ["mode","Route",false]];
+function buildRoadmapHead(){
+  const head = document.getElementById("roadmap-head"); if(head.dataset.built) return;
+  head.dataset.built = "1";
+  const alignOf = {rank:"n", score:"n"};
+  const cells = ROADMAP_COLS.map(([k,l]) => hcell(l, k, k === "lane" ? laneFilterControl("queue-lane") : "", alignOf[k] || ""));
+  cells.splice(7, 0, `<th>Profile</th>`);          // between Score and Route, matching the row template
+  head.innerHTML = `<tr>${cells.join("")}<th></th></tr>`;
+  wireHeadPopovers(head);
+  head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => {
+    ROADMAP_SORT = {key:b.dataset.sort, dir: ROADMAP_SORT.key===b.dataset.sort ? -ROADMAP_SORT.dir : 1};
+    if(STATE) renderResearch(STATE); }));
+  wireLaneSelect("queue-lane");
+}
+
 // Same Excel-style header as the Live day / Orders / Strategies tables: the column name opens its
-// own filter, the arrow beside it sorts. Lane is deliberately NOT a column filter -- the chips above
-// already do that, with counts, and two controls for one axis would only drift apart.
+// own filter, the arrow beside it sorts.
 function buildResearchHead(){
   const head = document.getElementById("research-results-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
   const control = {
     name: `<input id="res-q" type="search" placeholder="find…" autocomplete="off">`,
+    label: laneFilterControl("res-lane"),
     resolved: `<select id="res-source"><option value="">All</option><option value="queue">From the queue</option><option value="earlier">Before the queue</option></select>`,
     verdict: `<select id="res-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="superseded">Superseded</option><option value="skipped">Skipped</option><option value="paper_trading_proposed">Paper proposed</option></select>`,
     status: `<select id="res-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option><option value="none">Never registered</option></select>`,
@@ -1310,6 +1340,7 @@ function buildResearchHead(){
     if(STATE) renderResearch(STATE); }));
   ["res-q","res-source","res-verdict","res-status"].forEach(id =>
     document.getElementById(id).addEventListener(id==="res-q" ? "input" : "change", () => { if(STATE) renderResearch(STATE); }));
+  wireLaneSelect("res-lane");
 }
 // What a row's Outcome column actually says -- a verdict for anything backtested, otherwise the
 // process outcome (superseded/skipped), so one filter covers both kinds of row.
@@ -1821,7 +1852,13 @@ function renderResearch(s){
     RESEARCH_LANE = b.dataset.lane || null; renderResearch(s);
   }));
 
-  const ready = rm.ready.filter(c => RESEARCH_LANE === null || c.lane === RESEARCH_LANE);
+  buildRoadmapHead();
+  const roadHead = document.getElementById("roadmap-head");
+  document.getElementById("queue-lane").value = RESEARCH_LANE || "";
+  markFilters(roadHead, {lane: RESEARCH_LANE});
+  markSort(roadHead, ROADMAP_SORT);
+  const ready = sortRows(rm.ready.filter(c => RESEARCH_LANE === null || c.lane === RESEARCH_LANE),
+                         ROADMAP_COLS, ROADMAP_SORT, "name");
   document.getElementById("roadmap").innerHTML = ready.length ? ready.map(c => `<tr><td class="n">${c.rank}</td><td><b>${esc(short(c.name))}</b><div class="note">${esc(c.authors)}, ${c.year}</div></td><td>${esc(short(c.family))}</td><td><b>${esc(laneName[c.lane]||c.lane)}</b><div class="note">${esc(c.horizon_lane)}</div></td><td class="holding" title="${esc(c.holding)}"><b>${esc(fmtHolding(c))}</b><div class="note">${esc(c.holding)}</div></td><td>${esc(short(c.direction).split(" ")[0])}</td><td class="n"><b>${(+c.score).toFixed(2)}</b></td><td>${bars(c.axes)}</td><td>${modeTag(c)}</td><td>${queueAction(c)}</td></tr>`).join("") : `<tr><td colspan="10" class="note">${rm.ready.length ? "no researchable candidates in this lane yet" : "roadmap not available"}</td></tr>`;
   document.querySelectorAll("#roadmap .startbtn").forEach(b => b.addEventListener("click", async () => {
     b.disabled = true; b.textContent = "Starting…";
@@ -1872,6 +1909,7 @@ function renderResearchResults(rm, laneName){
 
   buildResearchHead();
   const head = document.getElementById("research-results-head");
+  document.getElementById("res-lane").value = RESEARCH_LANE || "";
   const q = sel("res-q").toLowerCase().trim(), srcF = sel("res-source"),
         vF = sel("res-verdict"), stF = sel("res-status");
   const laneTotal = rows.length;
@@ -1880,7 +1918,7 @@ function renderResearchResults(rm, laneName){
     (!srcF || r.source === srcF) &&
     (!vF || researchOutcomeKey(r) === vF) &&
     (!stF || researchStatusKey(r) === stF));
-  markFilters(head, {name:q, resolved:srcF, verdict:vF, status:stF});
+  markFilters(head, {name:q, label:RESEARCH_LANE, resolved:srcF, verdict:vF, status:stF});
   markSort(head, RESEARCH_SORT);
   rows = sortRows(rows, RESEARCH_COLS, RESEARCH_SORT, "name");
   document.getElementById("research-count").textContent =
