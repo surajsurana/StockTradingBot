@@ -888,9 +888,13 @@ function renderCredentials(){
   const warn = document.getElementById("cred-warn"), list = document.getElementById("cred-list");
   if(!CREDS){ list.innerHTML = `<p class="note">Loading…</p>`; return; }
   const secure = !!CREDS.tls;
+  const key = new URLSearchParams(location.search).get("key") || "";
+  const secureUrl = `https://${location.hostname}:${CREDS.https_port || 8443}/${key ? "?key=" + encodeURIComponent(key) : ""}`;
   warn.innerHTML = secure
-    ? `<p class="note">This connection is encrypted. Credentials you enter here are stored on the server in <b>config/credentials.json</b> (owner-readable only, never committed) and are never sent back to this page.</p>`
-    : `<p class="note" style="color:var(--loss)"><b>Read-only on this connection.</b> You are on plain http, where anything typed would cross the network in cleartext. Reopen the dashboard on <b>https://${esc(location.hostname)}:${esc(String(CREDS.https_port || 8443))}/</b> to change credentials. The browser will warn about the self-signed certificate; that is expected.</p>`;
+    ? `<p class="note">Encrypted connection. Credentials are stored on the server in <b>config/credentials.json</b> (owner-readable only, never committed) and are never sent back to this page.</p>`
+    : `<p class="note" style="color:var(--loss)"><b>Read-only here.</b> This page is on plain http, where anything you typed would cross the network in cleartext.</p>
+       <p><a class="iconbtn" id="cred-secure" href="${esc(secureUrl)}">Open the secure page →</a>
+       <span class="note">Same dashboard, same login. Your browser will warn once about the self-signed certificate — accept it and this page becomes editable.</span></p>`;
   const groups = {};
   (CREDS.credentials || []).forEach(c => { (groups[c.group] = groups[c.group] || []).push(c); });
   list.innerHTML = Object.entries(groups).map(([group, items]) => `

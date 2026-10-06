@@ -503,6 +503,50 @@ class KiteBalanceCache:
             return self._value, self._error
 
 
+class StateCache:
+    """The built dashboard state, reused for a few seconds.
+
+    WHY. build_dashboard_state() re-reads every book's portfolio.json and its trades.jsonl IN FULL on
+    every call, then serialises about 2MB of JSON. The page polls every 15-60s, each open tab polls
+    independently, and the VPS has 458MB of RAM shared with several other services -- so the same
+    expensive rebuild was being done several times a minute for identical output. That is the memory
+    churn behind the dashboard being killed.
+
+    A few seconds of staleness is invisible on a page that polls every 15s anyway, and N open tabs
+    now cost the same as one. Prices are NOT cached here -- they have their own longer-lived cache --
+    so this only collapses duplicate rebuilds, it does not freeze the numbers.
+
+    Anything that changes state (promote, allocate, a research start) calls invalidate(), so an
+    action the user just took is never answered from a stale copy.
+    """
+
+    def __init__(self, ttl_seconds: float = 12.0):
+        self.ttl = ttl_seconds
+        self._entries = {}
+        self._lock = threading.Lock()
+
+    def get(self, key, build):
+        """Returns the cached payload for `key`, or builds it. The build happens OUTSIDE the lock so
+        a slow rebuild cannot block every other request; two racing builds for the same key is a
+        waste but never a corruption, and the window is a few seconds once a minute."""
+        now = time.time()
+        with self._lock:
+            hit = self._entries.get(key)
+            if hit and now - hit[0] < self.ttl:
+                return hit[1]
+        payload = build()
+        with self._lock:
+            self._entries[key] = (time.time(), payload)
+            if len(self._entries) > 8:          # bounded: one entry per mode, not per visitor
+                oldest = min(self._entries, key=lambda k: self._entries[k][0])
+                self._entries.pop(oldest, None)
+        return payload
+
+    def invalidate(self):
+        with self._lock:
+            self._entries.clear()
+
+
 class RoadmapCache:
     """swing_research/research_roadmap.py's build_roadmap() re-scores 30+
     candidates against the registry; cheap, but not per request."""
@@ -526,6 +570,7 @@ class RoadmapCache:
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
+    state_cache = StateCache()      # replaced in main(); here so the class is usable standalone
     price_cache: PriceCache = None
     roadmap_cache: RoadmapCache = RoadmapCache()
     balance_cache: KiteBalanceCache = KiteBalanceCache()
@@ -580,6 +625,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                               "cannot be assigned. " + balance_error}).encode("utf-8"),
                         "application/json")
                     return
+                self.state_cache.invalidate()
                 result = set_allocation(STATE_DIR, str(body.get("key", "")), body.get("rupees"),
                                         available_balance=min(pool, balance),
                                         open_live_positions=_open_live_positions(str(body.get("key", ""))))
@@ -613,6 +659,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 written = save(CONFIG_DIR, updates)
                 # The response carries STATUS only. A secret that went in never comes back out, so a
                 # stolen access key can break the bot's credentials but cannot read them.
+                self.state_cache.invalidate()
                 self._send(HTTPStatus.OK, json.dumps({"ok": True, "saved": written,
                                                       "credentials": status(CONFIG_DIR)}).encode("utf-8"),
                            "application/json")
@@ -678,6 +725,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
                 # No force=True: deployment/base.py's transition map allows both of these moves, and
                 # anything it disallows is a move that should be made deliberately, not from a button.
+                self.state_cache.invalidate()
                 set_deployment_status(key, DeploymentStatus(target), reason=reason)
                 self._send(HTTPStatus.OK, json.dumps({"ok": True, "status": target}).encode("utf-8"),
                            "application/json")
@@ -786,35 +834,53 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # simply empty.
             mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
             state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
-            prices, as_of = self.price_cache.snapshot()
-            crypto_prices, usdinr = self.price_cache.crypto_snapshot()
-            us_prices, _ = self.price_cache.us_snapshot()
-            macro_quotes = self.price_cache.macro_snapshot()
-            prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
-            registry = list_strategies()
-            import research_queue
-            state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
-                                          roadmap=self.roadmap_cache.get(), mode=mode,
-                                          research_queues={lane: research_queue.load(STATE_DIR, lane)
-                                                           for lane in research_queue.LANES},
-                                          kite_balance=self.balance_cache.get(),
-                                          crypto_prices=crypto_prices, usdinr=usdinr,
-                                          prev_close=prev_close, crypto_prev_close=crypto_prev_close,
-                                          us_prices=us_prices, us_prev_close=us_prev_close,
-                                          macro_quotes=macro_quotes,
-                                          groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
-                                          reports=_load_reports(STATE_DIR) if mode == "live" else None,
-                                          advice_params=_advice_params(query) if mode == "live" else None,
-                                          advice_done=_advice_done() if mode == "live" else None,
-                                          advice_results=_advice_results() if mode == "live" else None,
-                                          advice_extra=_advice_extra() if mode == "live" else None)
-            self._send(HTTPStatus.OK, json.dumps(state).encode("utf-8"), "application/json", extra)
+            # The Advice tab's what-if inputs change the answer, so they are part of the cache key.
+            # Everything else about a request produces identical output for a given mode.
+            advice = _advice_params(query) if mode == "live" else None
+            cache_key = (mode, json.dumps(advice, sort_keys=True) if advice else "")
+
+            def build_state():
+                return self._build_state(mode, state_root, advice, query)
+
+            payload = self.state_cache.get(cache_key, build_state)
+            self._send(HTTPStatus.OK, payload, "application/json", extra)
             return
         if parsed.path in ("/", "/index.html"):
             with open(INDEX_PATH, "rb") as f:
                 self._send(HTTPStatus.OK, f.read(), "text/html; charset=utf-8", extra)
             return
         self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
+
+    def _build_state(self, mode: str, state_root: str, advice, query) -> bytes:
+        """Builds and serialises the whole dashboard state. Called only on a cache miss.
+
+        Returns BYTES, not a dict: serialising once and caching the result means repeat requests skip
+        json.dumps on a ~2MB structure as well as the rebuild, and the cached object is a flat buffer
+        rather than a large nested graph the collector has to walk."""
+        prices, as_of = self.price_cache.snapshot()
+        crypto_prices, usdinr = self.price_cache.crypto_snapshot()
+        us_prices, _ = self.price_cache.us_snapshot()
+        macro_quotes = self.price_cache.macro_snapshot()
+        prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
+        registry = list_strategies()
+        import research_queue
+        state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
+                                      roadmap=self.roadmap_cache.get(), mode=mode,
+                                      research_queues={lane: research_queue.load(STATE_DIR, lane)
+                                                       for lane in research_queue.LANES},
+                                      kite_balance=self.balance_cache.get(),
+                                      crypto_prices=crypto_prices, usdinr=usdinr,
+                                      prev_close=prev_close, crypto_prev_close=crypto_prev_close,
+                                      us_prices=us_prices, us_prev_close=us_prev_close,
+                                      macro_quotes=macro_quotes,
+                                      groww=load_groww_snapshot(STATE_DIR) if mode == "live" else None,
+                                      reports=_load_reports(STATE_DIR) if mode == "live" else None,
+                                      advice_params=advice,
+                                      advice_done=_advice_done() if mode == "live" else None,
+                                      advice_results=_advice_results() if mode == "live" else None,
+                                      advice_extra=_advice_extra() if mode == "live" else None)
+        return json.dumps(state).encode("utf-8")
+
 
 
 TLS_CERT_PATH = os.path.join(STATE_DIR, "dashboard_tls_cert.pem")
@@ -881,6 +947,7 @@ def main():
     args = parser.parse_args()
 
     DashboardHandler.access_key = load_access_key()
+    DashboardHandler.state_cache = StateCache()
     DashboardHandler.price_cache = PriceCache(STATE_DIR)
     DashboardHandler.price_cache.start()
 
