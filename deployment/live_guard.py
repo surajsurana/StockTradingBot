@@ -53,9 +53,22 @@ class LiveOrderDecision:
     impossible by construction (see _refuse)."""
     allowed: bool
     reasons: list = field(default_factory=list)
+    # Gates that were deliberately bypassed by a recorded human override. Never silent: an order
+    # allowed only because somebody overrode a gate says so here, and the executor logs it.
+    overrides: list = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return self.allowed
+
+
+def _override_when(entry: dict) -> str:
+    """When the override was recorded, as a readable date. Falls back to the raw value rather than
+    guessing, since this ends up in an audit line."""
+    try:
+        from datetime import datetime
+        return datetime.fromtimestamp(float(entry.get("timestamp"))).strftime("%Y-%m-%d")
+    except (TypeError, ValueError, OSError):
+        return str(entry.get("timestamp", "date unknown"))
 
 
 def _refuse(*reasons: str) -> LiveOrderDecision:
@@ -102,6 +115,7 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
     strategy that drifts out of eligibility stops trading rather than coasting on an old decision.
     """
     from deployment.base import DeploymentStatus
+    from deployment.pilot_live import promotion_override
 
     reasons = []
 
@@ -126,9 +140,22 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
         reasons.append(f"Strategy deployment_status is {shown}, not PILOT_LIVE or PRODUCTION.")
 
     # 5. The promotion gates, re-checked per order rather than trusted from promotion day.
+    #
+    # UNLESS the promotion was a recorded manual override. Without this, overriding the gates at
+    # promotion time would appear to work and then silently refuse every order -- the worst outcome,
+    # because the strategy would look live and do nothing. The override is read from the registry's
+    # own status history, so it cannot be asserted by a caller; and it suppresses ONLY this check.
+    # LIVE_TRADING, the kill switch, credentials, deployment status and the hard caps all still
+    # apply, and the bypass is recorded on the decision rather than disappearing.
+    overrides = []
     if eligibility is not None and not getattr(eligibility, "eligible", False):
         why = "; ".join(getattr(eligibility, "reasons", []) or ["no reason given"])
-        reasons.append(f"Strategy no longer passes the pilot gates: {why}")
+        override = promotion_override(record)
+        if override:
+            overrides.append(f"Pilot gates bypassed by a manual override recorded at promotion "
+                             f"({_override_when(override)}). Gates not met: {why}")
+        else:
+            reasons.append(f"Strategy no longer passes the pilot gates: {why}")
 
     # 6. Hard caps.
     max_order = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
@@ -152,4 +179,6 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
     if placed >= max_orders:
         reasons.append(f"Already placed {placed} live orders today, at the cap of {max_orders}.")
 
-    return LiveOrderDecision(allowed=True) if not reasons else _refuse(*reasons)
+    if reasons:
+        return _refuse(*reasons)
+    return LiveOrderDecision(allowed=True, overrides=overrides)

@@ -787,10 +787,9 @@ function showFx(json){
     row("Price", "as the market quotes it", fc(a.price)) +
     row("Quantity", "", (+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})) +
     row("Value", `${fc(a.price)} × ${(+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})}`, fc(native)) +
-    row("Exchange rate", a.ccy === "USDT" ? "USDT treated 1:1 with the US dollar" : "USD/INR used for this book", "₹" + (+a.fx).toFixed(4)) +
+    row("Exchange rate", a.ccy === "USDT" ? "today's rate, USDT treated 1:1 with the dollar" : "today's rate, used for every row in this book", "₹" + (+a.fx).toFixed(4)) +
     `<tr class="total"><td>Amount</td><td class="note">${fc(native)} × ₹${(+a.fx).toFixed(4)}</td><td class="n">${money(a.amount)}</td></tr>` +
-    `</tbody></table>` +
-    `<p class="note">The price column stays in ${esc(a.ccy)} so it matches what the market shows; every amount, P&amp;L and total on the page is in rupees so the pools can be added together. The rate is the one this book was last valued at, not the rate on the day of the trade.</p>`;
+    `</tbody></table>`;
   document.getElementById("life").showModal();
 }
 document.addEventListener("click", e => { const b = e.target.closest(".fxbtn"); if(b){ e.stopPropagation(); showFx(b.dataset.fx); } });
@@ -825,7 +824,13 @@ function showNet(key){
       Open positions are treated as if sold today. Rates are in reporting/equity_costs.py; the income-tax slab is an assumption. The P&amp;L tab shows the same arithmetic for every book.</p>`;
   document.getElementById("life").showModal();
 }
-document.addEventListener("click", e => { const b = e.target.closest(".netbtn"); if(b){ e.stopPropagation(); showNet(b.dataset.key); } });
+function wireNetButtons(){
+  document.querySelectorAll("#registry .netbtn").forEach(b => {
+    if(b.dataset.wired === "1") return;
+    b.dataset.wired = "1";
+    b.addEventListener("click", e => { e.stopPropagation(); showNet(b.dataset.key); });
+  });
+}
 document.getElementById("life-close").addEventListener("click", () => document.getElementById("life").close());
 document.getElementById("life").addEventListener("click", e => { if(e.target.id === "life") e.target.close(); });
 const TAX_ITEMS = {
@@ -1264,9 +1269,16 @@ const promoteBtn = (p, r) => {
   if(ls === "Live")
     return `<button class="iconbtn promote" data-key="${esc(r.key)}" data-to="PAPER_TRADING"
       title="Return this strategy to paper trading. Refused while it holds live positions — nothing would be left to exit them.">To paper</button>`;
-  if(ls !== "Paper" || p.state !== "qualified") return "";
-  return `<button class="iconbtn promote" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
-    title="Promote to pilot live at ${esc(String(p.allocation_pct))}% allocation. This places no orders: it only makes the strategy eligible to be given capital. Real orders also need capital assigned, LIVE_TRADING on, and no kill switch.">Promote</button>`;
+  if(ls !== "Paper") return "";
+  // Shown whatever the gate says. The gate is a floor you set, and you keep the right to go past it
+  // -- but an override confirms with a different word and is written into the status history with
+  // the exact gates it skipped, so "live by override" is never indistinguishable from "live".
+  const ok = p.state === "qualified";
+  const why = ok
+    ? `Promote to pilot live at ${esc(String(p.allocation_pct))}% allocation. This places no orders: it only makes the strategy eligible to be given capital. Real orders also need capital assigned, LIVE_TRADING on, and no kill switch.`
+    : `OVERRIDE: this strategy does not meet the gates — ${esc(p.reasons.join(" "))} Promoting anyway is recorded in its history as a manual override, with the gates it skipped. It still places no orders by itself.`;
+  return `<button class="iconbtn promote${ok ? "" : " override"}" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
+    data-confirm="${ok ? "Confirm?" : "Override?"}" title="${why}">Promote</button>`;
 };
 function wirePromoteButtons(){
   document.querySelectorAll("#registry .promote").forEach(b => {
@@ -1280,7 +1292,7 @@ function wirePromoteButtons(){
       const original = b.dataset.label || b.textContent;
       b.dataset.label = original;
       if(b.dataset.armed !== "1"){             // first click arms, second commits
-        b.dataset.armed = "1"; b.textContent = "Confirm?"; b.classList.add("armed");
+        b.dataset.armed = "1"; b.textContent = b.dataset.confirm || "Confirm?"; b.classList.add("armed");
         clearTimeout(b._disarm);
         b._disarm = setTimeout(() => { b.dataset.armed = "0"; b.textContent = original; b.classList.remove("armed"); }, 5000);
         return;
@@ -1289,7 +1301,8 @@ function wirePromoteButtons(){
       b.disabled = true; b.textContent = "…";
       try {
         const res = await fetch("/api/live/promote", {method:"POST", headers:{"Content-Type":"application/json"},
-                                                      body: JSON.stringify({key: b.dataset.key, to: b.dataset.to})});
+                                                      body: JSON.stringify({key: b.dataset.key, to: b.dataset.to,
+                                                            override: b.classList.contains("override")})});
         const body = await res.json();
         if(!body.ok) throw new Error(body.error || "refused");
       } catch(err){
@@ -1988,6 +2001,7 @@ function renderRegistry(s){
   };
   wireAllocInputs();
   wirePromoteButtons();
+  wireNetButtons();
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
     e.stopPropagation(); toggleExpand(btn.dataset.key);
   }));

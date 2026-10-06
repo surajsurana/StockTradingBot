@@ -13,6 +13,7 @@ import os
 import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
 import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -20,6 +21,8 @@ from unittest.mock import patch
 
 import dashboard.server as srv
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+from deployment.live_guard import check_order_allowed
+from deployment.pilot_live import PROMOTION_OVERRIDE_MARKER, promotion_override
 
 
 def _record(key="alpha", status=DeploymentStatus.PAPER_TRADING, verdict=ResearchVerdict.PASS):
@@ -205,3 +208,107 @@ class TestItPlacesNothing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestManualOverride(PromoteEndpointCase):
+    """Promoting past the gates on purpose. Suraj asked for this: the gates are a floor he set, and
+    he keeps the right to go past his own floor. What is not optional is writing down what was
+    skipped."""
+
+    def test_override_promotes_a_strategy_that_fails_the_gates(self):
+        self.records = [_record()]
+        _write_book(self.root, "paper_trading", "alpha", 2, "2026-09-25")
+        status, body = self.post({"key": "alpha", "to": "PILOT_LIVE", "override": True})
+        self.assertEqual((status, body["ok"]), (200, True))
+        self.assertEqual(self.changes[0]["status"], DeploymentStatus.PILOT_LIVE)
+
+    def test_the_override_records_the_marker_and_the_exact_gates_it_skipped(self):
+        self.records = [_record()]
+        _write_book(self.root, "paper_trading", "alpha", 2, "2026-09-25")
+        self.post({"key": "alpha", "to": "PILOT_LIVE", "override": True})
+        reason = self.changes[0]["reason"]
+        self.assertIn(PROMOTION_OVERRIDE_MARKER, reason)
+        self.assertIn("Gates NOT met", reason)
+        self.assertIn("2 closed trades", reason)          # the evidence as it actually stood
+        self.assertIn("20", reason)                        # the trade floor it fell short of
+
+    def test_a_qualified_strategy_is_not_marked_as_an_override(self):
+        # passing override:true on a strategy that passes anyway must not stain its record
+        self.records = [_record()]
+        _write_book(self.root, "paper_trading", "alpha", 25, "2026-01-01")
+        self.post({"key": "alpha", "to": "PILOT_LIVE", "override": True})
+        self.assertNotIn(PROMOTION_OVERRIDE_MARKER, self.changes[0]["reason"])
+
+    def test_without_the_override_flag_a_failing_strategy_is_still_refused(self):
+        self.records = [_record()]
+        _write_book(self.root, "paper_trading", "alpha", 2, "2026-09-25")
+        for payload in ({"key": "alpha", "to": "PILOT_LIVE"},
+                        {"key": "alpha", "to": "PILOT_LIVE", "override": False},
+                        {"key": "alpha", "to": "PILOT_LIVE", "override": "yes"},    # not the boolean
+                        {"key": "alpha", "to": "PILOT_LIVE", "override": 1}):
+            status, _ = self.post(payload)
+            self.assertEqual(status, 400, payload)
+        self.assertEqual(self.changes, [])
+
+
+class TestTheOverrideSurvivesToOrderTime(unittest.TestCase):
+    """An override that promotes and is then ignored by the per-order guard would be the worst
+    outcome: the strategy would look live and silently do nothing."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.settings = SimpleNamespace(LIVE_TRADING=True, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t")
+        self.failing = SimpleNamespace(eligible=False, reasons=["Only 2 paper trades recorded."])
+
+    def _record_with(self, reason):
+        r = _record("alpha", DeploymentStatus.PILOT_LIVE)
+        r.deployment_status_history = [{"from_status": "paper_trading", "to_status": "pilot_live",
+                                        "timestamp": 1760000000.0, "reason": reason}]
+        return r
+
+    def _check(self, record):
+        return check_order_allowed(settings=self.settings, record=record, state_dir=self.d,
+                                   order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
+                                   orders_placed_today=0, eligibility=self.failing)
+
+    def test_an_overridden_strategy_may_still_place_orders(self):
+        decision = self._check(self._record_with(PROMOTION_OVERRIDE_MARKER + " promoted anyway"))
+        self.assertTrue(decision.allowed, decision.reasons)
+
+    def test_the_bypass_is_recorded_on_the_decision_never_silent(self):
+        decision = self._check(self._record_with(PROMOTION_OVERRIDE_MARKER + " promoted anyway"))
+        self.assertTrue(decision.overrides)
+        self.assertIn("Only 2 paper trades recorded.", " ".join(decision.overrides))
+
+    def test_a_normally_promoted_strategy_is_still_stopped_when_it_drifts_out(self):
+        decision = self._check(self._record_with("Promoted to pilot live from the dashboard."))
+        self.assertFalse(decision.allowed)
+        self.assertTrue(any("no longer passes the pilot gates" in r for r in decision.reasons))
+
+    def test_the_override_suppresses_only_the_gate_check(self):
+        # everything else still applies -- this is a bypass of one check, not of the guard
+        record = self._record_with(PROMOTION_OVERRIDE_MARKER + " promoted anyway")
+        off = SimpleNamespace(LIVE_TRADING=False, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t")
+        self.assertFalse(check_order_allowed(settings=off, record=record, state_dir=self.d,
+                                             order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
+                                             orders_placed_today=0, eligibility=self.failing).allowed)
+        huge = check_order_allowed(settings=self.settings, record=record, state_dir=self.d,
+                                   order_value_rupees=9_000_000.0, current_live_exposure_rupees=0.0,
+                                   orders_placed_today=0, eligibility=self.failing)
+        self.assertFalse(huge.allowed)
+        self.assertTrue(any("per-order cap" in r for r in huge.reasons))
+
+    def test_a_later_clean_promotion_clears_an_earlier_override(self):
+        r = _record("alpha", DeploymentStatus.PILOT_LIVE)
+        r.deployment_status_history = [
+            {"to_status": "pilot_live", "timestamp": 1.0, "reason": PROMOTION_OVERRIDE_MARKER + " x"},
+            {"to_status": "paper_trading", "timestamp": 2.0, "reason": "returned to paper"},
+            {"to_status": "pilot_live", "timestamp": 3.0, "reason": "promoted through the gates"}]
+        self.assertIsNone(promotion_override(r))
+        self.assertFalse(self._check(r).allowed)
+
+    def test_no_history_at_all_is_not_an_override(self):
+        r = _record("alpha", DeploymentStatus.PILOT_LIVE)
+        r.deployment_status_history = []
+        self.assertIsNone(promotion_override(r))
+        self.assertFalse(self._check(r).allowed)

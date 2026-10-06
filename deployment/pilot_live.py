@@ -63,6 +63,32 @@ def backtest_is_impossible(record) -> bool:
     return any(marker in source for marker in _BACKTEST_IMPOSSIBLE_MARKERS)
 
 
+# A promotion made deliberately in spite of the automated gates. Suraj asked for this on 2026-10-06:
+# the gates are a floor he set, and he keeps the right to go past his own floor on his own judgement.
+#
+# THE AUDIT TRAIL IS THE RECORD. The marker goes in the reason string that set_deployment_status()
+# already writes into deployment_status_history, so there is no second store that can drift out of
+# step with the registry, and no way to be live-by-override without that fact being written down
+# next to the gates it skipped.
+PROMOTION_OVERRIDE_MARKER = "[MANUAL OVERRIDE]"
+_LIVE_STATUS_VALUES = ("pilot_live", "production")
+
+
+def promotion_override(record) -> Optional[dict]:
+    """The override that put this strategy live, or None if it got there through the gates.
+
+    Only the MOST RECENT transition into a live status counts. A strategy demoted to paper and later
+    promoted cleanly is not still overridden, and one promoted cleanly then moved PILOT_LIVE ->
+    PRODUCTION is not retroactively overridden either -- what matters is how it stands now."""
+    for entry in reversed(list(getattr(record, "deployment_status_history", None) or [])):
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("to_status", "")).lower().split(".")[-1] not in _LIVE_STATUS_VALUES:
+            continue
+        return entry if PROMOTION_OVERRIDE_MARKER in str(entry.get("reason", "")) else None
+    return None
+
+
 @dataclass
 class PilotEligibilityResult:
     eligible: bool

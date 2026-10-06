@@ -601,6 +601,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             from dashboard.state_view import pilot_gate_for_key
             from deployment.base import DeploymentStatus
             from deployment.deployment_manager import set_deployment_status
+            from deployment.pilot_live import PROMOTION_OVERRIDE_MARKER
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
@@ -611,13 +612,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
                 if target == "PILOT_LIVE":
                     gate = pilot_gate_for_key(record, STATE_DIR)
-                    if not gate["eligible"]:
+                    evidence = (f"verdict {getattr(record.research_verdict, 'value', record.research_verdict)}, "
+                                f"{gate['days']} paper days, {gate['trades']} closed trades")
+                    if gate["eligible"]:
+                        reason = (f"Promoted to pilot live from the dashboard. Automated gates at "
+                                  f"promotion: {evidence}. Remaining gates (drift, costs, drawdown, "
+                                  f"backtest credibility) were judged by hand -- see "
+                                  f"deployment/LIVE_PROMOTION_CRITERIA.md.")
+                    elif body.get("override") is True:
+                        # The gates are a floor the user set, and he keeps the right to go past his
+                        # own floor. What is NOT optional is writing down what was skipped: the marker
+                        # is what deployment/pilot_live.promotion_override() later reads, so the
+                        # per-order guard honours this instead of silently refusing every order.
+                        reason = (f"{PROMOTION_OVERRIDE_MARKER} Promoted to pilot live from the "
+                                  f"dashboard in spite of the automated gates. Evidence at promotion: "
+                                  f"{evidence}. Gates NOT met: {' '.join(gate['reasons'])} "
+                                  f"Deliberate human decision; see deployment/LIVE_PROMOTION_CRITERIA.md.")
+                    else:
                         raise ValueError("The automated gates do not pass: " + " ".join(gate["reasons"]))
-                    reason = (f"Promoted to pilot live from the dashboard. Automated gates at promotion: "
-                              f"verdict {getattr(record.research_verdict, 'value', record.research_verdict)}, "
-                              f"{gate['days']} paper days, {gate['trades']} closed trades. "
-                              f"Remaining gates (drift, costs, drawdown, backtest credibility) were "
-                              f"judged by hand -- see deployment/LIVE_PROMOTION_CRITERIA.md.")
                 elif target == "PAPER_TRADING":
                     # Demoting a strategy that still holds real positions would orphan them: the live
                     # runner skips anything not PILOT_LIVE, so nobody would manage the exits. The kill
