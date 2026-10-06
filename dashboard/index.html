@@ -431,6 +431,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
+  <div id="alloc-panel" hidden></div>
   <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <div class="pager" id="reg-pager">
@@ -1170,6 +1171,45 @@ const pilotCell = p => {
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
+// Live capital: one real pool, sliced per strategy. The slice becomes that strategy's live capital,
+// and because sizing is floor(min(cash,cap) * risk_pct / risk_per_share) -- proportional to capital --
+// the percentages come out identical to paper. Live mode only; paper has its own virtual books.
+function renderAllocations(s){
+  const panel = document.getElementById("alloc-panel");
+  if(MODE !== "live"){ panel.hidden = true; return; }
+  panel.hidden = false;
+  const lc = s.live_capital || {pool:0, allocated:0, free:0, fundable:[]};
+  const rows = (lc.fundable || []).map(f => {
+    const gate = f.gate === "qualified" ? `<span class="pill ok">Qualified</span>`
+               : f.gate === "waiting" ? `<span class="pill">Waiting</span>`
+               : `<span class="note">—</span>`;
+    return `<tr><td><b>${esc(f.name)}</b><div class="note">paper capital ${f.paper_capital==null?"—":money(f.paper_capital)}</div></td>
+      <td>${gate}</td>
+      <td class="n"><input class="allocinput" data-key="${esc(f.key)}" type="number" min="0" step="100" value="${f.allocated||0}" style="width:120px"></td>
+      <td><button class="iconbtn allocsave" data-key="${esc(f.key)}">Save</button></td></tr>`;
+  }).join("");
+  const warn = lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than the pool holds. Reduce an allocation, or raise LIVE_CAPITAL_POOL_RUPEES to match what you have funded.</p>` : "";
+  panel.innerHTML = `<div class="cards" style="margin-bottom:10px">
+      ${advBox("Real cash pool", [["Funded", `<b>${money(lc.pool)}</b>`], ["Assigned", `<b>${money(lc.allocated)}</b>`], ["Free", `<b>${money(lc.free)}</b>`]])}
+    </div>${warn}
+    ${lc.pool ? "" : `<p class="note">No real capital funded yet. Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to what you have actually funded, then assign slices here.</p>`}
+    ${rows ? `<div class="tblwrap"><table><thead><tr><th>Strategy</th><th>Live gate</th><th class="n">Live capital</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="note">A strategy sizes positions off its assigned capital exactly as it sizes off its paper capital, so the percentages stay identical. Capital cannot be changed while a strategy holds open live positions.</p>`
+     : `<p class="note">No strategy is eligible to be funded yet.</p>`}`;
+  panel.querySelectorAll(".allocsave").forEach(b => b.addEventListener("click", async () => {
+    const key = b.dataset.key;
+    const input = panel.querySelector(`.allocinput[data-key="${CSS.escape(key)}"]`);
+    b.disabled = true; b.textContent = "Saving…";
+    try {
+      const res = await fetch("/api/live/allocate", {method:"POST", headers:{"Content-Type":"application/json"},
+                                                     body: JSON.stringify({key, rupees: Number(input.value)})});
+      const body = await res.json();
+      if(!body.ok) throw new Error(body.error || "refused");
+    } catch(e){ alert("Could not assign capital: " + e.message); b.disabled = false; b.textContent = "Save"; return; }
+    if(typeof load === "function") load();
+  }));
+}
+
 function buildRegHead(){
   const head = document.getElementById("reg-head"); if(head.dataset.built) return;
   head.dataset.built = "1";
@@ -1744,6 +1784,7 @@ function renderRegistry(s){
   markSort(document.getElementById("reg-head"), REG_SORT);
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
+  renderAllocations(s);
   // In Live mode only strategies actually running real money belong here. Showing all 34 with
   // blank capital and P&L made the Live view read as if everything were live but flat.
   const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live");

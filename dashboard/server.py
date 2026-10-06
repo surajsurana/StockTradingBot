@@ -67,6 +67,22 @@ def _advice_done():
     return load_done(STATE_DIR)
 
 
+def _open_live_positions(strategy_key: str) -> int:
+    """How many live positions a strategy currently holds. Capital may not be reassigned while it
+    holds any (see live_allocations.set_allocation). There are no live books yet, so this reads 0
+    today -- but it reads the real file rather than returning a constant, so it keeps telling the
+    truth once the live executor exists. Unreadable counts as "holds positions", refusing the
+    change, because sizing the rest of a position off new capital is the thing being prevented."""
+    path = os.path.join(STATE_DIR, "live", "paper_trading", strategy_key, "portfolio.json")
+    if not os.path.exists(path):
+        return 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            return len(json.load(f).get("positions") or {})
+    except (OSError, ValueError, AttributeError):
+        return 1
+
+
 def _advice_params(query: dict) -> dict:
     """What-if inputs from the Advice tab (monthly amount, yearly step-up, this month's deposit, return overrides)."""
     out = {}
@@ -485,6 +501,27 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
+        if parsed.path == "/api/live/allocate":   # Live view: assign real capital to one strategy
+            # Validation lives in deployment/live_allocations.py, not here -- this only supplies the
+            # facts it needs (the funded pool, and whether the strategy is currently flat) and
+            # reports its verdict. A refusal changes nothing.
+            from deployment.live_allocations import set_allocation
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                from config import settings
+                pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
+                result = set_allocation(STATE_DIR, str(body.get("key", "")), body.get("rupees"),
+                                        available_balance=pool,
+                                        open_live_positions=_open_live_positions(str(body.get("key", ""))))
+                payload = {"ok": result.ok, "allocations": result.allocations,
+                           "error": " ".join(result.reasons)}
+                self._send(HTTPStatus.OK if result.ok else HTTPStatus.BAD_REQUEST,
+                           json.dumps(payload).encode("utf-8"), "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
             return
         if parsed.path == "/api/research/start":   # Strategies tab's "Start research" button: jump the queue
             import research_queue
