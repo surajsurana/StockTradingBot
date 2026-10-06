@@ -547,6 +547,66 @@ class StateCache:
             self._entries.clear()
 
 
+class LiveRunner:
+    """Runs the live book on demand, in the background, one at a time.
+
+    IN THE BACKGROUND because the cycle calls an LLM and fetches market data -- tens of seconds. A
+    synchronous request would hold a connection open that long and time out in the browser on a slow
+    day, and this server has a handful of threads on a 458MB box.
+
+    ONE AT A TIME because two concurrent runs would both read the same book, both decide, and both
+    place orders against a balance each thought it had to itself -- the one way to double a position
+    without any individual check failing.
+
+    A DRY RUN IS FREE AND A LIVE RUN IS NOT, so they are the same code path with one explicit flag,
+    and the flag is carried from the request rather than defaulted anywhere in here.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._running = False
+        self._result = None
+        self._started_at = None
+        self._mode = ""
+
+    def status(self) -> dict:
+        with self._lock:
+            return {"running": self._running, "mode": self._mode,
+                    "started_at": self._started_at, "result": self._result}
+
+    def start(self, live: bool) -> dict:
+        with self._lock:
+            if self._running:
+                return {"ok": False, "error": f"A {self._mode} run is already going; wait for it to finish."}
+            self._running = True
+            self._mode = "live" if live else "dry"
+            self._started_at = datetime.now().isoformat(timespec="seconds")
+            self._result = None
+        threading.Thread(target=self._run, args=(live,), daemon=True).start()
+        return {"ok": True, "running": True, "mode": self._mode}
+
+    def _run(self, live: bool) -> None:
+        payload = {}
+        try:
+            from config import settings
+            from data.fetch_crypto import (CRYPTO_MAJORS, fetch_all_crypto_daily,
+                                           fetch_crypto_last_prices, fetch_usdinr_rate)
+            import run_pool_g_live as rpg
+            history = fetch_all_crypto_daily(CRYPTO_MAJORS, years=1.5)
+            payload = rpg.run_live(history, fetch_crypto_last_prices, settings.ANTHROPIC_API_KEY,
+                                   fetch_usdinr_rate(), dry_run=not live)
+        except Exception as e:                  # a failed run must never leave it stuck "running"
+            payload = {"status": "error", "reason": f"{type(e).__name__}: {e}"[:400]}
+        finally:
+            with self._lock:
+                self._running = False
+                self._result = payload
+            try:
+                DashboardHandler.state_cache.invalidate()   # the books moved
+            except Exception:
+                pass
+
+
 class CoinDCXBalanceCache:
     """The real INR balance at CoinDCX, cached, on exactly the same terms as the Kite one.
 
@@ -615,6 +675,7 @@ class RoadmapCache:
 class DashboardHandler(BaseHTTPRequestHandler):
     state_cache = StateCache()      # replaced in main(); here so the class is usable standalone
     coindcx_cache = CoinDCXBalanceCache()
+    live_runner = LiveRunner()
     price_cache: PriceCache = None
     roadmap_cache: RoadmapCache = RoadmapCache()
     balance_cache: KiteBalanceCache = KiteBalanceCache()
@@ -648,6 +709,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.OK, b'{"ok": true}', "application/json")
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
+            return
+        if parsed.path == "/api/live/run":   # Live view: run Pool G's live book on demand
+            # live=True is carried from the request and defaulted NOWHERE here. Even so it cannot
+            # place anything unless LIVE_TRADING is True and the kill switch is absent -- this starts
+            # the runner, it does not authorise it.
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                out = self.live_runner.start(live=body.get("live") is True)
+                self._send(HTTPStatus.OK if out.get("ok") else HTTPStatus.BAD_REQUEST,
+                           json.dumps(out).encode("utf-8"), "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
             return
         if parsed.path == "/api/live-settings":   # Settings tab: the numeric live-trading limits
             # Plain http is allowed here, unlike credentials: this carries no secret, and the same
@@ -890,6 +965,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.access_key and query.get("key", [""])[0] == self.access_key:
             extra["Set-Cookie"] = f"{COOKIE_NAME}={self.access_key}; Path=/; Max-Age=2592000; SameSite=Lax"
 
+        if parsed.path == "/api/live/run":
+            self._send(HTTPStatus.OK, json.dumps(self.live_runner.status()).encode("utf-8"),
+                       "application/json", extra)
+            return
         if parsed.path == "/api/credentials":
             # Status only -- which credentials are configured and where they came from, never a
             # value. Safe over plain http precisely because it carries nothing worth intercepting;
@@ -1026,6 +1105,7 @@ def main():
     DashboardHandler.access_key = load_access_key()
     DashboardHandler.state_cache = StateCache()
     DashboardHandler.coindcx_cache = CoinDCXBalanceCache()
+    DashboardHandler.live_runner = LiveRunner()
     DashboardHandler.price_cache = PriceCache(STATE_DIR)
     DashboardHandler.price_cache.start()
 

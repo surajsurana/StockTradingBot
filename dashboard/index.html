@@ -174,6 +174,7 @@ tr.clickable{cursor:pointer}
 .primarybtn:hover{filter:brightness(1.08)}
 .primarybtn[disabled]{opacity:.6;cursor:default}
 .credsave{display:flex;gap:10px;align-items:center;margin:8px 0 22px}
+.runner{display:flex;gap:10px;align-items:center;margin:14px 0 8px;flex-wrap:wrap}
 .lifebtn:hover{color:var(--ink)}
 #life{overflow-x:hidden;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
 #life::backdrop{background:rgba(0,0,0,.35)}
@@ -1523,6 +1524,74 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // in the table below -- only strategies already promoted to live can be given capital, and one that
 // is promoted but unfunded sizes every position to zero, so it holds nothing until funded.
 // This is just the pool summary; the per-strategy amounts are a column, not a second table.
+// Running the live book from the page rather than a terminal. A DRY RUN places nothing -- it runs
+// the real cycle, the real book and the real guard and reports what it would do -- so it needs no
+// ceremony. A LIVE run arms first, like the promote control, and even then cannot place anything
+// unless LIVE_TRADING is on and the kill switch is absent; this button starts the runner, it does
+// not authorise it.
+let RUNNER = null, RUNNER_POLL = null;
+const liveRunnerHtml = () => `
+  <div class="runner">
+    <button class="primarybtn" id="run-dry">Dry run — places nothing</button>
+    <button class="iconbtn promoteicon override" id="run-live" data-confirm="✓" title="Run the live book for real. Still requires LIVE_TRADING on and no kill switch.">L</button>
+    <span class="note" id="run-msg"></span>
+  </div>
+  <div id="run-out"></div>`;
+function wireLiveRunner(){
+  const dry = document.getElementById("run-dry"), live = document.getElementById("run-live");
+  if(!dry) return;
+  dry.addEventListener("click", () => startRun(false));
+  live.addEventListener("click", () => {
+    if(live.dataset.armed !== "1"){
+      live.dataset.armed = "1"; live.textContent = "✓"; live.classList.add("armed");
+      clearTimeout(live._d);
+      live._d = setTimeout(() => { live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed"); }, 5000);
+      return;
+    }
+    clearTimeout(live._d); live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed");
+    startRun(true);
+  });
+  pollRun();
+}
+async function startRun(live){
+  const msg = document.getElementById("run-msg");
+  msg.textContent = live ? "Starting the live run…" : "Starting the dry run…";
+  try {
+    const res = await fetch("/api/live/run", {method:"POST", headers:{"Content-Type":"application/json"},
+                                              body: JSON.stringify({live: !!live})});
+    const body = await res.json();
+    if(!body.ok) throw new Error(body.error || "refused");
+  } catch(err){ msg.textContent = "Not started: " + err.message; return; }
+  pollRun();
+}
+async function pollRun(){
+  clearTimeout(RUNNER_POLL);
+  try { RUNNER = await (await fetch("/api/live/run")).json(); } catch(e){ return; }
+  renderRun();
+  if(RUNNER.running) RUNNER_POLL = setTimeout(pollRun, 2500);
+}
+function renderRun(){
+  const msg = document.getElementById("run-msg"), out = document.getElementById("run-out");
+  if(!msg || !RUNNER) return;
+  if(RUNNER.running){
+    msg.textContent = `${RUNNER.mode === "live" ? "Live" : "Dry"} run in progress since ${esc(RUNNER.started_at || "")} — the model call takes a little while.`;
+    return;
+  }
+  const r = RUNNER.result;
+  if(!r){ msg.textContent = "Not run yet."; out.innerHTML = ""; return; }
+  msg.textContent = `Last ${esc(RUNNER.mode)} run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
+  const orders = r.orders || [], placed = r.placed || [];
+  if(!orders.length){ out.innerHTML = `<p class="note">No orders decided.</p>`; return; }
+  const byKey = {}; placed.forEach(p => { byKey[p.symbol + p.side] = p; });
+  out.innerHTML = `<div class="tblwrap"><table><thead><tr><th>Side</th><th>Coin</th><th class="n">Quantity</th><th class="n">Price (USDT)</th><th>Why</th><th>Result</th></tr></thead><tbody>
+    ${orders.map(o => { const p = byKey[o.symbol + o.side];
+      return `<tr><td class="${o.side === "BUY" ? "gain" : "loss"}"><b>${esc(o.side)}</b></td><td>${esc(o.symbol)}</td>
+        <td class="n">${o.quantity}</td><td class="n">${o.price}</td><td class="note">${esc(o.why)}</td>
+        <td>${!p ? `<span class="note">would place (nothing sent)</span>`
+                 : p.placed ? `<span class="pill ok">placed</span> <span class="note">${esc(p.order_id || "")}</span>`
+                            : `<span class="pill miss">not placed</span> <span class="note">${esc((p.reasons||[]).join(" "))}</span>`}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+}
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
   if(MODE !== "live"){ panel.hidden = true; return; }
@@ -1548,11 +1617,12 @@ function renderAllocations(s){
          ? `Crypto cash · <b>CoinDCX</b><br>${esc((lc.crypto_balance_error || "").slice(0, 70))}`
          : `Crypto cash · <b>CoinDCX</b> · INR wallet`, lc.crypto_balance == null ? "warn" : ""),
   ].join("");
-  panel.innerHTML = `<div class="cashcards">${cards}</div>`
+  panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveRunnerHtml()
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
         : lc.pool ? "" : `<p class="note">Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to cap what the bot may deploy, then assign it per strategy in the Live capital column.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than is assignable.</p>` : "");
+  wireLiveRunner();
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.
