@@ -468,6 +468,64 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual((gate["days"], gate["trades"]), (0, 0))
         self.assertFalse(gate["eligible"])
 
+    def test_every_ledger_row_says_which_currency_its_price_is_quoted_in(self):
+        # price is in the market's own currency, amount is in rupees -- the two numbers sit next to
+        # each other on the row, so the row has to carry enough for the page to label them
+        for a in self.s["ledger"]:
+            self.assertIn(a["ccy"], ("INR", "USD", "USDT"), a)
+            self.assertEqual(a["ccy"] == "INR", a["fx"] is None)   # a rupee row converts nothing
+            if a["fx"] is not None:
+                self.assertGreater(a["fx"], 0)
+
+    def test_a_us_row_quotes_price_in_dollars_and_amount_in_rupees(self):
+        us = [a for a in self.s["ledger"] if a.get("pool") == "Pool I"]
+        if not us:
+            self.skipTest("no Pool I rows in this fixture")
+        for a in us:
+            self.assertEqual(a["ccy"], "USD")
+            # the rupee amount must be the dollar value converted, not the dollar value relabelled
+            self.assertAlmostEqual(a["amount"], a["price"] * a["qty"] * a["fx"], delta=1.0)
+
+    def test_net_pnl_is_summed_from_the_pnl_tabs_own_lines_across_every_pool(self):
+        # the Strategies tab's new net breakdown must not be a second calculation: two views
+        # disagreeing about a strategy's profit is worse than not showing net at all
+        from dashboard.state_view import attach_net_pnl
+        rows = [{"key": "twin", "pnl": 900.0}, {"key": "lonely", "pnl": 10.0}, {"key": "nobook"}]
+        statement = [
+            {"key": "twin", "pool": "Pool A", "realised": 500.0, "unrealised": 100.0,
+             "charges": 60.0, "gst": 9.0, "tax": 30.0, "detail": {"stt": 40.0, "dp": 20.0}},
+            {"key": "twin", "pool": "Pool F", "realised": 300.0, "unrealised": 0.0,
+             "charges": 40.0, "gst": 7.0, "tax": 20.0, "detail": {"stt": 25.0, "dp": 15.0}},
+            {"key": "lonely", "pool": "Pool E", "realised": 10.0, "unrealised": 0.0,
+             "charges": 2.0, "gst": 0.0, "tax": 3.0, "detail": {"crypto_fee": 2.0}},
+        ]
+        attach_net_pnl(rows, statement)
+        twin = rows[0]["net"]
+        self.assertEqual(twin["gross"], 900.0)                 # matches the Total P&L column
+        self.assertEqual((twin["charges"], twin["gst"], twin["tax"]), (100.0, 16.0, 50.0))
+        self.assertEqual(twin["net"], 900.0 - 166.0)
+        self.assertEqual(twin["detail"], {"stt": 65.0, "dp": 35.0})   # components summed, not listed twice
+        self.assertEqual(sorted(twin["pools"]), ["Pool A", "Pool F"])
+        self.assertEqual(rows[1]["net"]["net"], 5.0)
+        # a strategy with no book gets NO block: "nothing to show" is not the same claim as "zero"
+        self.assertNotIn("net", rows[2])
+
+    def test_net_pnl_on_the_real_state_always_reconciles_with_the_pnl_tab(self):
+        by_key = {}
+        for line in self.s["statement"]:
+            agg = by_key.setdefault(line["key"], [0.0, 0.0])
+            agg[0] += line["realised"] + line["unrealised"]
+            agg[1] += line["charges"] + line["gst"] + line["tax"]
+        checked = 0
+        for r in self.s["strategies"]:
+            if not r.get("net"):
+                continue
+            gross, costs = by_key[r["key"]]
+            self.assertAlmostEqual(r["net"]["gross"], gross, places=1, msg=r["key"])
+            self.assertAlmostEqual(r["net"]["net"], gross - costs, places=1, msg=r["key"])
+            checked += 1
+        self.assertTrue(checked, "no strategy carried a net block")
+
     def test_the_live_gate_blocks_a_rejected_strategy_by_verdict(self):
         old = next(r for r in self.s["strategies"] if r["key"] == "old")   # REJECT / ARCHIVED
         self.assertFalse(old["pilot"]["eligible"])

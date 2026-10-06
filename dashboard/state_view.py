@@ -661,6 +661,40 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
     return out
 
 
+def attach_net_pnl(strategy_rows: list, statement: list) -> None:
+    """Gives each Strategies-tab row a `net` block: the same gross P&L the row already shows, with
+    what it actually costs to earn taken off.
+
+    THE NUMBERS COME FROM THE P&L TAB'S OWN LINES, not a second calculation. The two views disagreeing
+    about a strategy's profit would be worse than the Strategies tab not showing net at all, and a
+    strategy running in two pools has two statement lines that have to be summed, which is exactly the
+    arithmetic a reader does wrong by hand.
+
+    `charges` is broker and exchange cost (brokerage, STT, exchange, SEBI, stamp, DP, or the crypto
+    exchange fee), `gst` is the tax on those charges, and `tax` is income tax on the profit. Net is
+    gross minus all three. A strategy with no book anywhere gets no block at all rather than zeroes --
+    "nothing to show" and "zero profit" are different claims."""
+    by_key = {}
+    for line in statement:
+        agg = by_key.setdefault(line["key"], {"realised": 0.0, "unrealised": 0.0, "charges": 0.0,
+                                              "gst": 0.0, "tax": 0.0, "detail": {}, "pools": []})
+        for field in ("realised", "unrealised", "charges", "gst", "tax"):
+            agg[field] += float(line.get(field, 0) or 0)
+        for component, amount in (line.get("detail") or {}).items():
+            agg["detail"][component] = round(agg["detail"].get(component, 0.0) + float(amount or 0), 2)
+        agg["pools"].append(line["pool"])
+    for row in strategy_rows:
+        agg = by_key.get(row["key"])
+        if not agg:
+            continue
+        gross = agg["realised"] + agg["unrealised"]
+        costs = agg["charges"] + agg["gst"] + agg["tax"]
+        row["net"] = {"realised": round(agg["realised"], 2), "unrealised": round(agg["unrealised"], 2),
+                      "gross": round(gross, 2), "charges": round(agg["charges"], 2),
+                      "gst": round(agg["gst"], 2), "tax": round(agg["tax"], 2),
+                      "net": round(gross - costs, 2), "detail": agg["detail"], "pools": agg["pools"]}
+
+
 def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, registry_records: list,
                     state_dir: str = "", d_trades: Optional[list] = None, pool_e1: Optional[dict] = None,
                     pool_i: Optional[dict] = None) -> list:
@@ -1488,6 +1522,9 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                     books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                     state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1,
                                     pool_i=pool_i, now=now)
+    statement = statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir,
+                                d_trades, pool_e1=pool_e1, pool_i=pool_i)
+    attach_net_pnl(strategy_rows, statement)
     live_capital = live_capital_view(registry_records, kite_balance)
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
@@ -1506,7 +1543,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles, pool_e1=pool_e1,
                           pool_i=pool_i, us_prices=us_prices, us_prev_close=us_prev_close),
         "lifecycles": lifecycles,
-        "schedule": schedule, "registry": registry, "agents": agents_view(research_queues), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir, d_trades, pool_e1=pool_e1, pool_i=pool_i),
+        "schedule": schedule, "registry": registry, "agents": agents_view(research_queues), "desks": DESKS, "flows": FLOWS, "pools_info": POOLS_INFO, "my_portfolio": my_portfolio, "reports": reports_out, "industries": industry_view(my_portfolio), "advice": advice_out, "statement": statement,
         "strategies": strategy_rows,
         # Live capital: one real pool, sliced per strategy. Read from the canonical state directory
         # rather than the mode-specific one -- there is only ever one real pool, and it does not
@@ -1761,5 +1798,15 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         # Live day tape's P&L column toggles between total and today's -- pct_today is today's
         # move as a % of cost, the same way pct is the total move as a % of cost.
         r["pct_today"] = round(float(r["pnl_today"]) / cost * 100, 2) if r.get("pnl_today") is not None and cost > 0 else None
+    # Which currency each row's PRICE is quoted in, and the rate its rupee amount was converted at.
+    # Price and amount are in DIFFERENT currencies on a foreign row -- price stays in the currency the
+    # market quotes (converting it would make it uncomparable to a US quote screen), while amount,
+    # P&L and every total are in rupees so the pools can be added up. Without this the two numbers on
+    # one row look inconsistent; with it the page can label the price and show the conversion.
+    fx_of = {"Pool I": pool_i, "Pool E": pool_e, "Pool E1": pool_e1, "Pool G": pool_g}
+    for r in rows:
+        rate = float((fx_of.get(r.get("pool")) or {}).get("usdinr") or 0)
+        r["ccy"] = "USD" if r.get("pool") == "Pool I" else ("USDT" if rate else "INR")
+        r["fx"] = round(rate, 4) if rate else None            # None for a rupee row: nothing converted
     rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["symbol"] or ""), reverse=True)   # newest first; unstamped last within a day
     return rows

@@ -144,6 +144,10 @@ tr.clickable{cursor:pointer}
 .taxbtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
 .taxbtn:hover{color:var(--ink)}
 .lifebtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
+.fxbtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
+.fxbtn:hover{color:var(--ink)}
+.netbtn{all:unset;cursor:pointer;color:var(--accent);font-size:11px;padding:0 2px}
+.netbtn:hover{color:var(--ink)}
 .lifebtn:hover{color:var(--ink)}
 #life{overflow-x:hidden;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
 #life::backdrop{background:rgba(0,0,0,.35)}
@@ -178,6 +182,7 @@ select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .modeswitch button.on{background:var(--accent);color:var(--accent-ink)}
 .modeswitch button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 tr.total td{background:var(--band);font-weight:600;border-top:2px solid var(--rule)}
+tr.sub td{font-weight:600;border-top:1px solid var(--rule)}
 tr.tape-open td{background:color-mix(in srgb,var(--accent) 10%,var(--card));border-left:0}
 tr.tape-open td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tr.tape-closed td{background:color-mix(in srgb,var(--warn) 12%,var(--card))}
@@ -733,7 +738,7 @@ function renderTape(s){
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
   document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = TAPE_PNL_MODE==="today" ? a.pnl_today : a.pnl, pctV = TAPE_PNL_MODE==="today" ? a.pct_today : a.pct;
-    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
+    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 function showLife(id){
@@ -754,6 +759,73 @@ function showLife(id){
   document.getElementById("life").showModal();
 }
 document.addEventListener("click", e => { const b = e.target.closest(".lifebtn"); if(b){ e.stopPropagation(); showLife(b.dataset.life); } });
+// A foreign row quotes its PRICE in the market's own currency and its AMOUNT in rupees, because the
+// price has to stay comparable to a US quote screen while every total on the page has to add up in
+// one currency. Those are the two numbers sitting next to each other on the row, so the price gets a
+// symbol and the amount gets this breakdown -- otherwise the pair reads as an inconsistency.
+const CCY_SYMBOL = {USD: "$", USDT: "", INR: "₹"};
+// Price with its currency marked. USDT goes after the number (it is a ticker, not a symbol); $ and
+// the rupee sign go before, as they are written.
+const priceWithCcy = (v, ccy) => {
+  const n = (+v).toFixed(2);
+  if(ccy === "USDT") return n + " USDT";
+  return (CCY_SYMBOL[ccy] || "") + n;
+};
+// Marks the amount on a converted row. A rupee row gets nothing: there is no conversion to explain.
+const fxBtn = a => (a.fx && a.ccy && a.ccy !== "INR")
+  ? ` <button class="fxbtn" data-fx='${esc(JSON.stringify({ccy: a.ccy, fx: a.fx, qty: a.qty, price: a.price, amount: a.amount, symbol: a.symbol, pool: a.pool, action: a.action}))}' title="How this ${esc(a.ccy)} amount became rupees">ⓘ</button>`
+  : "";
+function showFx(json){
+  let a; try { a = JSON.parse(json); } catch(e){ return; }
+  const sym = CCY_SYMBOL[a.ccy] || "", unit = a.ccy === "USDT" ? " USDT" : "";
+  const fc = v => a.ccy === "USDT" ? (+v).toFixed(2) + " USDT" : sym + (+v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const native = (+a.price) * (+a.qty);
+  const row = (what, detail, value) => `<tr><td>${what}</td><td class="note">${detail}</td><td class="n">${value}</td></tr>`;
+  document.getElementById("life-body").innerHTML =
+    `<h3>${esc(a.symbol)} <span class="note">${esc(a.pool || "")} · ${esc(a.action || "")} · ${esc(a.ccy)} → rupees</span></h3>` +
+    `<table><tbody>` +
+    row("Price", "as the market quotes it", fc(a.price)) +
+    row("Quantity", "", (+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})) +
+    row("Value", `${fc(a.price)} × ${(+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})}`, fc(native)) +
+    row("Exchange rate", a.ccy === "USDT" ? "USDT treated 1:1 with the US dollar" : "USD/INR used for this book", "₹" + (+a.fx).toFixed(4)) +
+    `<tr class="total"><td>Amount</td><td class="note">${fc(native)} × ₹${(+a.fx).toFixed(4)}</td><td class="n">${money(a.amount)}</td></tr>` +
+    `</tbody></table>` +
+    `<p class="note">The price column stays in ${esc(a.ccy)} so it matches what the market shows; every amount, P&amp;L and total on the page is in rupees so the pools can be added together. The rate is the one this book was last valued at, not the rate on the day of the trade.</p>`;
+  document.getElementById("life").showModal();
+}
+document.addEventListener("click", e => { const b = e.target.closest(".fxbtn"); if(b){ e.stopPropagation(); showFx(b.dataset.fx); } });
+// Net P&L for one strategy. The Strategies tab's Total P&L is GROSS, like every tab except P&L --
+// this is the one place you can see, per strategy and at a glance, what is actually left after the
+// cost of earning it. The numbers come from the P&L tab's own statement lines, summed across every
+// pool the strategy runs in, so the two views can never disagree.
+const netBtn = r => r.net ? ` <button class="netbtn" data-key="${esc(r.key)}" title="What is left after charges and tax">ⓘ</button>` : "";
+function showNet(key){
+  const r = (STATE.strategies || []).find(x => x.key === key); if(!r || !r.net) return;
+  const n = r.net;
+  const line = (what, detail, amount, cls2 = "") =>
+    `<tr class="${cls2}"><td>${what}</td><td class="note">${detail}</td><td class="n ${cls2 === "total" ? cls(amount) : ""}">${money(amount, cls2 === "total")}</td></tr>`;
+  const rows = [
+    line("Booked", "profit on trades already closed", n.realised),
+    line("On open positions", "at the latest price, not yet booked", n.unrealised),
+    line("Gross profit", "what the Total P&L column shows", n.gross, "sub"),
+  ];
+  // one row per charge that actually applies, named the same way the P&L tab's breakup names it
+  Object.entries(n.detail || {}).filter(([, v]) => v).sort((a, b) => b[1] - a[1]).forEach(([k, v]) =>
+    rows.push(line((TAX_ITEMS[k] || [k])[0], (TAX_ITEMS[k] || ["", ""])[1], -v)));
+  if(n.gst) rows.push(line("GST", "18% on brokerage, exchange, SEBI and DP", -n.gst));
+  if(n.tax) rows.push(line("Income tax", "estimated on the profit above", -n.tax));
+  rows.push(line("Net profit", `after ${money(n.charges + n.gst + n.tax)} of charges and tax`, n.net, "total"));
+  const pct = n.gross ? (100 * n.net / n.gross) : null;
+  document.getElementById("life-body").innerHTML =
+    `<h3>${esc(r.name)} <span class="note">${esc(r.sid || "")} · ${esc((n.pools || []).join(", "))}</span></h3>` +
+    `<table><tbody>${rows.join("")}</tbody></table>` +
+    `<p class="note">${n.gross > 0 && pct != null
+        ? `Charges and tax take ${(100 - pct).toFixed(0)}% of this strategy's gross profit.`
+        : n.gross <= 0 ? "This strategy is not in gross profit, so charges deepen the loss rather than eating into a gain." : ""}
+      Open positions are treated as if sold today. Rates are in reporting/equity_costs.py; the income-tax slab is an assumption. The P&amp;L tab shows the same arithmetic for every book.</p>`;
+  document.getElementById("life").showModal();
+}
+document.addEventListener("click", e => { const b = e.target.closest(".netbtn"); if(b){ e.stopPropagation(); showNet(b.dataset.key); } });
 document.getElementById("life-close").addEventListener("click", () => document.getElementById("life").close());
 document.getElementById("life").addEventListener("click", e => { if(e.target.id === "life") e.target.close(); });
 const TAX_ITEMS = {
@@ -874,7 +946,7 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
-  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td title="${a.status==="Open"?"Still held -- P&L is unrealized":"Fully exited -- P&L is booked"}"><b>${esc(a.partial ? "Partial" : a.status)}</b></td><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${(+a.price).toFixed(2)}</td><td class="n amt">${inr(a.amount)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
+  document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td title="${a.status==="Open"?"Still held -- P&L is unrealized":"Fully exited -- P&L is booked"}"><b>${esc(a.partial ? "Partial" : a.status)}</b></td><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
     : `<tr><td colspan="12" class="note">No orders yet.</td></tr>`;
   document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
 }
@@ -1900,7 +1972,7 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}</tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}</tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
