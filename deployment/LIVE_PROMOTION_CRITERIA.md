@@ -14,11 +14,25 @@ Gates A–H are **factual** — they are either true or not, and most are alread
 
 ---
 
-## Gate A — The research verdict is PASS
+## Gate A — The research verdict permits it
 
-- [ ] `deployment/state/strategy_registry.json` shows `research_verdict == "PASS"` for this strategy.
-- [ ] The verdict is NOT `INCONCLUSIVE`, `REJECT`, or `NOT_YET_EVALUATED`.
+- [ ] `research_verdict` is `PASS` — **or** `INCONCLUSIVE`, under the higher bar below.
+- [ ] The verdict is NOT `REJECT` or `NOT_YET_EVALUATED`.
 - [ ] The registry verdict **agrees with the experiment's own `verdict.md`**. Where they differ, the disagreement is explained in writing before promotion.
+
+### INCONCLUSIVE is eligible, at roughly double the evidence
+
+`INCONCLUSIVE` in this program is not "weak evidence". `swing_research/acceptance_criteria.py` returns it for one specific situation: the base run **passed** over full history, the recent-period check **rejected**, and an independent robustness study **materially disagreed with that reject** — two methodologically valid tests pointing opposite ways, with the framework declining to invent a winner. That module's own docstring says such a strategy is "eligible for reconsideration if future evidence … resolves the conflict either way."
+
+Paper trading in the recent period *is* that kind of evidence, and it bears directly on the dimension the conflict is about. Blocking INCONCLUSIVE from ever going live would make paper-trading those strategies pointless, which is the opposite of why they are in paper.
+
+But the recent-period check that rejected used **years** of data. A few months of paper does not overturn it; it adds one data point on the robustness study's side. So:
+
+- [ ] For an `INCONCLUSIVE` strategy, Gates B and C are **doubled**: 6 complete holding cycles and 60 closed trades `← YOUR CALL`, rather than 3 and 30.
+- [ ] The paper result points the same way as the robustness study that created the conflict — i.e. it resolves the disagreement rather than sitting inside it.
+- [ ] Which test the paper evidence supports, and why, is written down at promotion.
+
+*Note:* `acceptance_criteria.py`'s docstring also says INCONCLUSIVE means "neither approved for paper trading nor permanently rejected", yet five INCONCLUSIVE strategies are in paper today. Practice has already — reasonably — diverged from that line. The docstring should be updated to match what is actually being done, rather than left contradicting it.
 
 *Why:* as of 2026-10-06 three `REJECT` strategies are still running in paper (Moving Average Pullback, Volume-Backed Breakout, VWAP Extension Exhaustion Fade), and the single best-looking paper number in the whole book — Portfolio G at +25.1% — has `NOT_YET_EVALUATED`, i.e. no backtest verdict at all. Attractive paper P&L and evidence are different things, and this gate is what keeps them apart.
 
@@ -78,11 +92,13 @@ Before any real order:
 - [ ] **Hard caps** enforced in code, not convention: max position size, max open exposure, max orders per day.
 - [ ] **Alerting** on every live order, every rejection, and every reconciliation mismatch.
 - [ ] A dry run against the live path with `LIVE_TRADING = False` reproduces the paper engine's decisions exactly.
+- [ ] **Paper and live can run side by side for the same strategy.** They cannot today: `deployment_status` is a single value, so a strategy is either `PAPER_TRADING` or `PILOT_LIVE`, never both, and there is one state tree per strategy. `deployment/scheduler.py`'s `is_due_now()` already treats `PILOT_LIVE` as an active trading status, so the strategy keeps getting its daily run after promotion — but it runs one book, not two. Running both needs either a `live_enabled` flag alongside the status, or a second book under `deployment/state/live/<strategy>/`.
 - [ ] Broker credentials and token refresh are verified working that morning (see the Kite subscription watchdog — the paid market-data app has lapsed before, on 2026-09-23).
 
 ## Gate I — Pilot sizing `← YOUR CALL`
 
 - [ ] Promote to `PILOT_LIVE`, never straight to `PRODUCTION`.
+- [ ] **The paper book keeps running in parallel.** The live book is not a replacement for it, it is measured against it: if live underperforms paper on the same signals, the gap is slippage and execution cost, which is exactly what paper cannot model and what most often kills a live strategy. Without the parallel paper book there is no way to tell "the edge decayed" from "our fills are bad". Note this does not work as built — see below.
 - [ ] Starting capital: **₹_____** or **___%** of that strategy's paper book, whichever is lower.
 - [ ] One strategy at a time. A second only after the first has cleared Gate J's review.
 - [ ] A written maximum total live exposure across all strategies: **₹_____**.
