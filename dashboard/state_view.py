@@ -1868,9 +1868,33 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
     # P&L and every total are in rupees so the pools can be added up. Without this the two numbers on
     # one row look inconsistent; with it the page can label the price and show the conversion.
     fx_of = {"Pool I": pool_i, "Pool E": pool_e, "Pool E1": pool_e1, "Pool G": pool_g}
+    # A CLOSED trade converts at the rate on the day it closed -- that is what it earned, and it
+    # stopped changing then. Anything still OPEN converts at today's rate, because that is genuinely
+    # what it is worth now. Converting a finished trade at today's rate (which is what this did
+    # before) let currency drift move a completed strategy's track record every day.
+    from data.usdinr_history import history_for, rate_on
+    fx_history = history_for(state_dir, refresh_if_stale=False) if state_dir else {}
     for r in rows:
-        rate = float((fx_of.get(r.get("pool")) or {}).get("usdinr") or 0)
-        r["ccy"] = "USD" if r.get("pool") == "Pool I" else ("USDT" if rate else "INR")
-        r["fx"] = round(rate, 4) if rate else None            # None for a rupee row: nothing converted
+        today_rate = float((fx_of.get(r.get("pool")) or {}).get("usdinr") or 0)
+        r["ccy"] = "USD" if r.get("pool") == "Pool I" else ("USDT" if today_rate else "INR")
+        if not today_rate:
+            r["fx"], r["fx_date"], r["fx_is_today"] = None, None, False   # a rupee row converts nothing
+            continue
+        closed_on = r.get("date") if r.get("status") == "Closed" else None
+        dated = rate_on(fx_history, closed_on, fallback=None) if closed_on else None
+        r["fx"] = round(dated if dated else today_rate, 4)
+        # The date the rate is FROM, so the page can show it. When the history has no quote for the
+        # exit day itself, rate_on() gives the last earlier one; naming the trade's own date would
+        # overstate what we know, so a fallback to today's rate is marked as today's.
+        r["fx_date"] = closed_on if dated else (today or date.today()).isoformat()
+        r["fx_is_today"] = dated is None
+        # The row was built at today's rate; restate its rupee figures at the rate actually used.
+        # pct is pnl/cost, a ratio, so a uniform rescale leaves it alone -- and it is already
+        # computed by this point anyway.
+        if dated and today_rate and dated != today_rate:
+            scale = dated / today_rate
+            for field in ("amount", "pnl"):
+                if r.get(field) is not None:
+                    r[field] = round(float(r[field]) * scale, 2)
     rows.sort(key=lambda r: (r["date"] or "", r["time"] or "", r["symbol"] or ""), reverse=True)   # newest first; unstamped last within a day
     return rows

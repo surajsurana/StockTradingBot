@@ -807,6 +807,27 @@ def _start_https_listener(host: str, port: int) -> None:
               f"main port is unaffected): {type(e).__name__}: {e}", flush=True)
 
 
+def _start_fx_history_refresher() -> None:
+    """Keeps data/usdinr_history.py's cache fresh in the background.
+
+    Off the request path on purpose: the ledger reads the cache without ever refreshing it, so a slow
+    or dead yfinance delays nothing a user is waiting for. A failed refresh leaves the previous cache
+    in place, and the ledger falls back to today's rate and marks the row.
+    """
+    import threading
+    from data import usdinr_history
+
+    def loop():
+        while True:
+            try:
+                usdinr_history.history_for(STATE_DIR, refresh_if_stale=True)
+            except Exception:
+                pass                       # a refresher that can kill the dashboard is worse than a stale rate
+            time.sleep(6 * 3600)
+
+    threading.Thread(target=loop, daemon=True).start()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8085)
@@ -821,6 +842,7 @@ def main():
     import threading
     threading.Thread(target=_start_https_listener, args=(args.host, args.https_port), daemon=True).start()
 
+    _start_fx_history_refresher()
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
     print(f"Dashboard on http://{args.host}:{args.port}/ "
           f"({'access key required' if DashboardHandler.access_key else 'OPEN -- no access key configured'})",

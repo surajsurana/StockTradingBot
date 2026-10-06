@@ -9,7 +9,8 @@ import json
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import date, datetime
+from unittest.mock import patch
 from types import SimpleNamespace
 
 from deployment.base import DeploymentStatus, ResearchVerdict
@@ -487,6 +488,39 @@ class TestBuildDashboardState(unittest.TestCase):
             self.assertEqual(a["ccy"], "USD")
             # the rupee amount must be the dollar value converted, not the dollar value relabelled
             self.assertAlmostEqual(a["amount"], a["price"] * a["qty"] * a["fx"], delta=1.0)
+
+    def test_every_row_says_which_days_rate_it_used(self):
+        for a in self.s["ledger"]:
+            self.assertIn("fx_date", a)
+            self.assertIn("fx_is_today", a)
+            if a["fx"] is None:
+                self.assertIsNone(a["fx_date"])            # a rupee row converts nothing
+            else:
+                self.assertTrue(a["fx_date"], a)
+
+    def test_a_closed_trade_locks_to_its_own_exit_date_rate_and_an_open_one_tracks_today(self):
+        # a finished trade stopped changing when it closed; converting it at today's rate let
+        # currency drift move a completed strategy's track record every day
+        from dashboard.state_view import _ledger
+        import dashboard.state_view as sv
+        history = {"2026-10-01": 80.0, "2026-10-02": 90.0}
+        pool_i = {"exists": True, "usdinr": 100.0, "books": [{
+            "key": "us1", "display_name": "US One",
+            "open_positions": [{"symbol": "AAA", "quantity": 2, "entry_price": 10.0,
+                                "entry_date": "2026-10-01", "unbooked_raw": 4.0}]}]}
+        with patch.object(sv, "history_for", return_value=history, create=True),              patch("data.usdinr_history.history_for", return_value=history),              patch.object(sv, "_read_jsonl", return_value=[
+                 {"symbol": "BBB", "quantity": 1, "entry_price": 10.0, "exit_price": 12.0,
+                  "entry_date": "2026-10-01", "exit_date": "2026-10-02", "pnl": 2.0}]):
+            rows = _ledger("x", [], {}, [], date(2026, 10, 6), pool_i=pool_i,
+                           us_prices={"AAA": 12.0}, us_prev_close={}, prices={}, crypto_prices={},
+                           crypto_prev_close={})
+        closed = next(r for r in rows if r["symbol"] == "BBB")
+        open_ = next(r for r in rows if r["symbol"] == "AAA")
+        self.assertEqual((closed["fx"], closed["fx_date"], closed["fx_is_today"]), (90.0, "2026-10-02", False))
+        self.assertEqual(closed["amount"], round(12.0 * 1 * 90.0, 2))     # restated at ITS rate
+        self.assertEqual(closed["pnl"], round(2.0 * 90.0, 2))
+        self.assertEqual((open_["fx"], open_["fx_is_today"]), (100.0, True))   # still open: today
+        self.assertEqual(open_["fx_date"], "2026-10-06")
 
     def test_net_pnl_is_summed_from_the_pnl_tabs_own_lines_across_every_pool(self):
         # the Strategies tab's new net breakdown must not be a second calculation: two views

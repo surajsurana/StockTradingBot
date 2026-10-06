@@ -151,18 +151,22 @@ tr.clickable{cursor:pointer}
 /* Promote control: a small coloured dot-button, green where the gates pass, amber where clicking
    would override them, grey-blue to send a live strategy back to paper. Armed state turns red and
    swaps the glyph for a tick, so the second click never looks like the first. */
-.promoteicon{all:unset;cursor:pointer;display:inline-block;width:19px;height:19px;line-height:19px;
-  text-align:center;border-radius:50%;font-size:10px;color:#fff;background:var(--gain)}
-.promoteicon.override{background:#b8860b}
-.promoteicon.demote{background:#5b7a99}
-.promoteicon.armed{background:var(--loss);font-size:12px}
+.promoteicon{all:unset;cursor:pointer;display:inline-block;width:20px;height:20px;line-height:20px;
+  text-align:center;border-radius:50%;font-size:11px;font-weight:700;color:#fff;letter-spacing:0;
+  background:linear-gradient(145deg,#34d399,#059669);box-shadow:0 1px 3px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.35);
+  transition:transform .12s ease,box-shadow .12s ease}
+.promoteicon.override{background:linear-gradient(145deg,#fbbf24,#b45309)}
+.promoteicon.demote{background:linear-gradient(145deg,#93b4d4,#44688c)}
+.promoteicon.armed{background:linear-gradient(145deg,#f87171,#b91c1c);font-size:12px}
 .promoteicon[disabled]{opacity:.5;cursor:default}
-.promoteicon:hover{filter:brightness(1.15)}
+.promoteicon:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.45)}
 /* The readiness score beside the gate word. */
 .score{display:inline-block;min-width:22px;padding:0 4px;border-radius:3px;font-size:11px;
   font-variant-numeric:tabular-nums;background:var(--chip);color:var(--ink)}
 .score.hi{background:var(--gain);color:#fff}
 .score.lo{opacity:.65}
+/* The net figure shown beside a gross profit that does not survive costs. */
+.netflip{font-size:10px;opacity:.9;white-space:nowrap}
 .lifebtn:hover{color:var(--ink)}
 #life{overflow-x:hidden;border:1px solid var(--rule);border-radius:8px;background:var(--card);color:var(--ink);padding:16px 18px;max-width:640px;width:calc(100% - 32px)}
 #life::backdrop{background:rgba(0,0,0,.35)}
@@ -788,8 +792,15 @@ const priceWithCcy = (v, ccy) => {
 };
 // Marks the amount on a converted row. A rupee row gets nothing: there is no conversion to explain.
 const fxBtn = a => (a.fx && a.ccy && a.ccy !== "INR")
-  ? ` <button class="fxbtn" data-fx='${esc(JSON.stringify({ccy: a.ccy, fx: a.fx, qty: a.qty, price: a.price, amount: a.amount, symbol: a.symbol, pool: a.pool, action: a.action}))}' title="How this ${esc(a.ccy)} amount became rupees">ⓘ</button>`
+  ? ` <button class="fxbtn" data-fx='${esc(JSON.stringify({ccy: a.ccy, fx: a.fx, fx_date: a.fx_date, fx_is_today: a.fx_is_today, qty: a.qty, price: a.price, amount: a.amount, symbol: a.symbol, pool: a.pool, action: a.action}))}' title="How this ${esc(a.ccy)} amount became rupees">ⓘ</button>`
   : "";
+// Which day's rate this row used, and why. A closed trade is fixed at the rate on the day it closed;
+// anything still open is worth today's rate. Saying which is which is the whole point of the row.
+function fxBasis(a){
+  const unit = a.ccy === "USDT" ? ", USDT treated 1:1 with the dollar" : "";
+  if(a.fx_is_today) return `today's rate (${a.fx_date})${unit}`;
+  return `rate on ${a.fx_date}, the day this trade closed${unit}`;
+}
 function showFx(json){
   let a; try { a = JSON.parse(json); } catch(e){ return; }
   const sym = CCY_SYMBOL[a.ccy] || "", unit = a.ccy === "USDT" ? " USDT" : "";
@@ -802,7 +813,7 @@ function showFx(json){
     row("Price", "as the market quotes it", fc(a.price)) +
     row("Quantity", "", (+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})) +
     row("Value", `${fc(a.price)} × ${(+a.qty).toLocaleString("en-IN", {maximumFractionDigits: 6})}`, fc(native)) +
-    row("Exchange rate", a.ccy === "USDT" ? "today's rate, USDT treated 1:1 with the dollar" : "today's rate, used for every row in this book", "₹" + (+a.fx).toFixed(4)) +
+    row("Exchange rate", fxBasis(a), "₹" + (+a.fx).toFixed(4)) +
     `<tr class="total"><td>Amount</td><td class="note">${fc(native)} × ₹${(+a.fx).toFixed(4)}</td><td class="n">${money(a.amount)}</td></tr>` +
     `</tbody></table>`;
   document.getElementById("life").showModal();
@@ -812,6 +823,14 @@ document.addEventListener("click", e => { const b = e.target.closest(".fxbtn"); 
 // this is the one place you can see, per strategy and at a glance, what is actually left after the
 // cost of earning it. The numbers come from the P&L tab's own statement lines, summed across every
 // pool the strategy runs in, so the two views can never disagree.
+// Total P&L is GROSS everywhere except the P&L tab. For most strategies that is a fair summary, but
+// a few earn a gross profit and still lose money once charges and tax come off -- and those are
+// exactly the ones that look like promotion candidates when the column is sorted by profit. Where
+// the two disagree in SIGN, the net is shown right next to the gross; nowhere else, so the column
+// stays quiet for the strategies where gross is the whole story.
+const netFlip = r => (r.net && r.pnl != null && (r.net.net < 0) !== (r.pnl < 0))
+  ? ` <span class="netflip ${cls(r.net.net)}" title="Gross ${money(r.pnl, true)}, but ${money(r.net.net, true)} after charges and tax. Click the info dot for the breakdown.">${money(r.net.net, true)} net</span>`
+  : "";
 const netBtn = r => r.net ? ` <button class="netbtn" data-key="${esc(r.key)}" title="What is left after charges and tax">ⓘ</button>` : "";
 function showNet(key){
   const r = (STATE.strategies || []).find(x => x.key === key); if(!r || !r.net) return;
@@ -1266,10 +1285,11 @@ const PILOT_LABEL = {qualified: "Qualified", waiting: "Waiting", not_qualified: 
 const SCORE_PART_LABEL = {verdict: "Research verdict", days: "Paper days", trades: "Closed trades",
                           net: "Profitable after charges and tax"};
 const SCORE_MAX = {verdict: 30, days: 15, trades: 15, net: 40};
+const ten = v => (v / 10).toFixed(1);
 function scoreDetail(p){
-  if(p.blocked) return `${p.score}/100 — ${p.blocked} A rejected strategy scores zero whatever else is true.`;
-  const parts = Object.keys(SCORE_MAX).map(k => `${SCORE_PART_LABEL[k]} ${p.parts[k]}/${SCORE_MAX[k]}`);
-  return `${p.score}/100 — ${parts.join("; ")}. Scores only the gates code can check; drift, drawdown and backtest credibility are judged by hand.`;
+  if(p.blocked) return `${ten(p.score)}/10 — ${p.blocked} A rejected strategy scores zero whatever else is true.`;
+  const parts = Object.keys(SCORE_MAX).map(k => `${SCORE_PART_LABEL[k]} ${ten(p.parts[k])}/${ten(SCORE_MAX[k])}`);
+  return `${ten(p.score)}/10 — ${parts.join("; ")}. Scores only the gates code can check; drift, drawdown and backtest credibility are judged by hand.`;
 }
 const pilotCell = (p, r) => {
   if(!p) return `<span class="note">—</span>`;
@@ -1280,8 +1300,9 @@ const pilotCell = (p, r) => {
       ? `Accumulating: ${p.days}/60 paper days, ${p.trades}/20 closed trades. Nothing to decide -- this clears on its own.`
       : p.reasons.join(" ") + " This needs a decision, not more time.";
   const cls = p.state === "qualified" ? "pill ok" : p.state === "waiting" ? "pill" : "pill miss";
-  const sc = p.score == null ? "" :
-    ` <span class="score ${p.score >= 80 ? "hi" : p.score >= 50 ? "mid" : "lo"}" title="${esc(scoreDetail(p))}">${p.score}</span>`;
+  const out10 = p.score == null ? null : p.score / 10;
+  const sc = out10 == null ? "" :
+    ` <span class="score ${out10 >= 8 ? "hi" : out10 >= 5 ? "mid" : "lo"}" title="${esc(scoreDetail(p))}">${out10.toFixed(1)}</span>`;
   return `<span class="${cls}" title="${esc(detail)}">${esc(PILOT_LABEL[p.state] || "—")}</span>${sc}`;
 };
 // The promotion control sits next to the gate it obeys, because the two belong together: the button
@@ -1296,7 +1317,7 @@ const promoteBtn = (p, r) => {
   const ls = liveState(r.status);
   if(ls === "Live")
     return `<button class="promoteicon demote" data-key="${esc(r.key)}" data-to="PAPER_TRADING" data-confirm="✓"
-      title="Return this strategy to paper trading. Refused while it holds live positions — nothing would be left to exit them.">◀</button>`;
+      title="Return this strategy to paper trading. Refused while it holds live positions — nothing would be left to exit them.">P</button>`;
   if(ls !== "Paper") return "";
   // Shown whatever the gate says. The gate is a floor you set, and you keep the right to go past it
   // -- but an override confirms with a different word and is written into the status history with
@@ -1306,7 +1327,7 @@ const promoteBtn = (p, r) => {
     ? `Promote to pilot live at ${esc(String(p.allocation_pct))}% allocation. This places no orders: it only makes the strategy eligible to be given capital. Real orders also need capital assigned, LIVE_TRADING on, and no kill switch.`
     : `OVERRIDE: this strategy does not meet the gates — ${esc(p.reasons.join(" "))} Promoting anyway is recorded in its history as a manual override, with the gates it skipped. It still places no orders by itself.`;
   return `<button class="promoteicon${ok ? "" : " override"}" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
-    data-confirm="✓" title="${why}">▶</button>`;
+    data-confirm="✓" title="${why}">P</button>`;
 };
 function wirePromoteButtons(){
   document.querySelectorAll("#registry .promoteicon").forEach(b => {
@@ -2015,7 +2036,7 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}${netFlip(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
