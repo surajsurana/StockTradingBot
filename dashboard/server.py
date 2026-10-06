@@ -34,6 +34,7 @@ Kept alive by cron (@reboot + a 5-minute watchdog), see the crontab.
 import argparse
 import json
 import os
+import ssl
 import sys
 import threading
 import time
@@ -106,6 +107,7 @@ def _load_reports(state_dir: str):
 
 
 LOGS_DIR = os.path.join(REPO_DIR, "logs")
+CONFIG_DIR = os.path.join(REPO_DIR, "config")
 INDEX_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 KEY_PATH = os.path.join(STATE_DIR, "dashboard_key.txt")
 PRICE_REFRESH_SECONDS = 300   # full yfinance refresh
@@ -589,6 +591,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
                            "application/json")
             return
+        if parsed.path == "/api/credentials":   # Settings tab: store broker API credentials
+            # REFUSED OVER PLAIN HTTP, deliberately and without an override. The dashboard is reachable
+            # at http://<vps>:8085 across the public internet; an API secret typed into that form
+            # would cross it in cleartext, which is precisely how keys get stolen. The same server
+            # already serves TLS on :8443, so the secure path exists -- this just insists on it.
+            if not self._is_tls():
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({
+                    "ok": False, "error": "Credentials can only be set over HTTPS. Reopen the "
+                                          "dashboard on https://<this-host>:8443/ and try again -- "
+                                          "sent over plain http they would cross the internet in "
+                                          "cleartext."}).encode("utf-8"), "application/json")
+                return
+            from deployment.credential_store import save, status
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                updates = body.get("credentials")
+                if not isinstance(updates, dict):
+                    raise ValueError("Nothing to save.")
+                written = save(CONFIG_DIR, updates)
+                # The response carries STATUS only. A secret that went in never comes back out, so a
+                # stolen access key can break the bot's credentials but cannot read them.
+                self._send(HTTPStatus.OK, json.dumps({"ok": True, "saved": written,
+                                                      "credentials": status(CONFIG_DIR)}).encode("utf-8"),
+                           "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
+            return
         if parsed.path == "/api/live/promote":   # Strategies tab: promote to PILOT_LIVE, or back to paper
             # The button is the FIRST of the four independent human acts that have to line up before a
             # real order can happen (promote, fund, LIVE_TRADING=True, no kill switch). It is not a
@@ -722,6 +753,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": f"{type(e).__name__}: {e}"}).encode("utf-8"),
                        "application/json")
 
+    def _is_tls(self) -> bool:
+        """True when this request arrived over the HTTPS listener. Read from the socket itself rather
+        than from a header: X-Forwarded-Proto and friends are set by whoever is talking to us."""
+        return isinstance(getattr(self, "connection", None), ssl.SSLSocket)
+
     def do_GET(self):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
@@ -732,6 +768,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.access_key and query.get("key", [""])[0] == self.access_key:
             extra["Set-Cookie"] = f"{COOKIE_NAME}={self.access_key}; Path=/; Max-Age=2592000; SameSite=Lax"
 
+        if parsed.path == "/api/credentials":
+            # Status only -- which credentials are configured and where they came from, never a
+            # value. Safe over plain http precisely because it carries nothing worth intercepting;
+            # the write side insists on TLS.
+            from deployment.credential_store import status
+            self._send(HTTPStatus.OK, json.dumps({
+                "credentials": status(CONFIG_DIR), "tls": self._is_tls(),
+                "https_port": getattr(DashboardHandler, "https_port", 8443),
+            }).encode("utf-8"), "application/json", extra)
+            return
         if parsed.path == "/api/state":
             # mode=live is a VIEW of deployment/state/live/ (the same layout
             # as the paper folders) -- it exists so the page's Live/Paper
@@ -794,7 +840,6 @@ def _start_https_listener(host: str, port: int) -> None:
               f"Generate a self-signed cert there to enable it (see dashboard/README or ARCHITECTURE.md).", flush=True)
         return
     try:
-        import ssl
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(certfile=TLS_CERT_PATH, keyfile=TLS_KEY_PATH)
         https_server = ThreadingHTTPServer((host, port), DashboardHandler)
@@ -842,6 +887,7 @@ def main():
     import threading
     threading.Thread(target=_start_https_listener, args=(args.host, args.https_port), daemon=True).start()
 
+    DashboardHandler.https_port = args.https_port
     _start_fx_history_refresher()
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
     print(f"Dashboard on http://{args.host}:{args.port}/ "
