@@ -498,6 +498,13 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
     crypto_balance, crypto_error = (coindcx_balance or (None, ""))
     allocations = load_allocations(STATE_DIR)
     allocated = round(sum(allocations.values()), 2)
+    # Split by the account the money would actually come from, so each card reports its own book
+    # rather than one combined figure that belongs to neither.
+    from deployment.venues import COINDCX, venue_of
+    by_key_record = {r.strategy_key: r for r in registry_records}
+    allocated_crypto = round(sum(v for k, v in allocations.items()
+                                 if k in by_key_record and venue_of(by_key_record[k]) == COINDCX), 2)
+    allocated_equity = round(allocated - allocated_crypto, 2)
     # What may actually be assigned is the LESSER of what you chose to deploy and what the account
     # holds. An unknown balance caps at 0 rather than falling back to the setting: capital must never
     # be assigned against a figure nobody could confirm.
@@ -515,7 +522,8 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
             "free": round(max(0.0, assignable - allocated), 2),
             "over_allocated": allocated > assignable, "strategies": rows,
             "crypto_balance": crypto_balance, "crypto_balance_error": crypto_error,
-            "assignable_crypto": assignable_crypto}
+            "assignable_crypto": assignable_crypto,
+            "allocated_crypto": allocated_crypto, "allocated_equity": allocated_equity}
 
 
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:

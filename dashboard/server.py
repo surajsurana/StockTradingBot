@@ -760,11 +760,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # equity balance (which this did) refuses funding that is sitting right there in the
                 # other account. The venue follows the strategy, not the dashboard.
                 record = next((r for r in list_strategies() if r.strategy_key == key), None)
-                from deployment.base import is_crypto_record
-                crypto = bool(record is not None and is_crypto_record(record))
-                venue = "CoinDCX" if crypto else "Kite"
-                balance, balance_error = (self.coindcx_cache.get() if crypto
-                                          else self.balance_cache.get())
+                if record is None:
+                    raise ValueError(f"{key or 'That strategy'} is not in the deployment registry.")
+                from deployment.venues import COINDCX, KITE, venue_of, venue_label
+                venue_id, venue = venue_of(record), venue_label(record)
+                if venue_id == COINDCX:
+                    balance, balance_error = self.coindcx_cache.get()
+                elif venue_id == KITE:
+                    balance, balance_error = self.balance_cache.get()
+                else:
+                    # No broker is wired for this market, so there is no account to fund it from.
+                    # Refusing is the only honest answer; defaulting to one would fund it from the
+                    # wrong account, which is the bug this replaced.
+                    raise ValueError(f"No broker is configured for {key}, so it cannot be funded.")
                 # Cap by the LESSER of what you chose to deploy and what that account actually holds.
                 # An unknown balance refuses new capital rather than falling back to the setting --
                 # assigning money we cannot confirm exists is exactly the mistake to avoid.

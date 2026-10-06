@@ -1617,19 +1617,22 @@ function renderAllocations(s){
   const card = (amount, source, cls) => `<div class="cashcard ${cls || ""}">
       <div class="amt${amount == null ? " none" : ""}">${amount == null ? "unavailable" : money(amount)}</div>
       <div class="src">${source}</div></div>`;
+  // TWO cards, one per account, because that is the actual shape of the money: rupees at Kite and
+  // rupees at CoinDCX are different pots that cannot fund each other. Everything else -- the cap,
+  // what is assignable, what is already assigned -- is derived from those two and belongs under
+  // them rather than competing with them for attention.
+  const pot = (amount, name, what, assignable, assigned, error, cls) => card(
+    amount,
+    amount == null
+      ? `Cash available · <b>${name}</b><br>${esc((error || "").slice(0, 70))}`
+      : `Cash available · <b>${name}</b>${what ? ` · ${what}` : ""}<br>`
+        + `${money(assignable)} assignable · ${money(assigned)} assigned`,
+    cls);
   const cards = [
-    card(lc.balance, lc.balance == null
-         ? `Cash available · <b>Kite</b><br>${esc((lc.balance_error || "").slice(0, 70))}`
-         : `Cash available · <b>Kite</b>`, lc.balance == null ? "warn" : "src"),
-    card(lc.pool, `Deployment cap · <b>your setting</b><br>LIVE_CAPITAL_POOL_RUPEES`),
-    card(lc.assignable, `Assignable to equity · <b>Kite, capped by your setting</b>`),
-    card(lc.assignable_crypto, `Assignable to crypto · <b>CoinDCX, capped by your setting</b>`),
-    card(lc.allocated, `Assigned to strategies · <b>${money(lc.free)} free</b>`, lc.over_allocated ? "warn" : ""),
-    // A SEPARATE pot. Rupees at Kite cannot buy crypto and rupees at CoinDCX cannot buy shares, so
-    // this sits on its own card rather than being folded into the equity cash figure above.
-    card(lc.crypto_balance, lc.crypto_balance == null
-         ? `Crypto cash · <b>CoinDCX</b><br>${esc((lc.crypto_balance_error || "").slice(0, 70))}`
-         : `Crypto cash · <b>CoinDCX</b> · INR wallet`, lc.crypto_balance == null ? "warn" : ""),
+    pot(lc.balance, "Kite", "Indian equities", lc.assignable, lc.allocated_equity,
+        lc.balance_error, lc.balance == null ? "warn" : "src"),
+    pot(lc.crypto_balance, "CoinDCX", "crypto", lc.assignable_crypto, lc.allocated_crypto,
+        lc.crypto_balance_error, lc.crypto_balance == null ? "warn" : ""),
   ].join("");
   panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveRunnerHtml()
     + (lc.balance == null
