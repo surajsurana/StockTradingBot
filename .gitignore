@@ -58,3 +58,4 @@ deployment/state/price_cache.json
 deployment/state/dashboard_tls_cert.pem
 deployment/state/dashboard_tls_key.pem
 config/credentials.json
+config/live_settings.json

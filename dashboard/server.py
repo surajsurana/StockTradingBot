@@ -649,6 +649,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"), "application/json")
             return
+        if parsed.path == "/api/live-settings":   # Settings tab: the numeric live-trading limits
+            # Plain http is allowed here, unlike credentials: this carries no secret, and the same
+            # access key already gates /api/live/allocate, which commits far more. The master switch
+            # (LIVE_TRADING) is deliberately NOT settable here -- see deployment/live_settings.py.
+            from deployment.live_settings import save as save_setting, status as setting_status
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                updates = body.get("settings")
+                if not isinstance(updates, dict):
+                    raise ValueError("Nothing to save.")
+                written = save_setting(CONFIG_DIR, updates)
+                self.state_cache.invalidate()          # the cap changes what the cards report
+                self._send(HTTPStatus.OK, json.dumps({"ok": True, "saved": written,
+                                                      "settings": setting_status(CONFIG_DIR)}).encode("utf-8"),
+                           "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
+            return
         if parsed.path == "/api/live/allocate":   # Live view: assign real capital to one strategy
             # Validation lives in deployment/live_allocations.py, not here -- this only supplies the
             # facts it needs (the funded pool, and whether the strategy is currently flat) and
@@ -657,8 +677,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
-                from config import settings
-                pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
+                from deployment.live_settings import setting as live_setting
+                pool = live_setting("LIVE_CAPITAL_POOL_RUPEES", CONFIG_DIR)
                 key = str(body.get("key", ""))
                 # WHICH ACCOUNT holds this strategy's money. Rupees at Kite cannot buy crypto and
                 # rupees at CoinDCX cannot buy shares, so capping a crypto allocation against the
@@ -875,8 +895,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             # value. Safe over plain http precisely because it carries nothing worth intercepting;
             # the write side insists on TLS.
             from deployment.credential_store import status
+            from deployment.live_settings import status as setting_status
             self._send(HTTPStatus.OK, json.dumps({
-                "credentials": status(CONFIG_DIR), "tls": self._is_tls(),
+                "credentials": status(CONFIG_DIR), "settings": setting_status(CONFIG_DIR),
+                "tls": self._is_tls(),
                 "https_port": getattr(DashboardHandler, "https_port", 8443),
             }).encode("utf-8"), "application/json", extra)
             return

@@ -479,14 +479,16 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
     (deployment/live_allocations.py). Read from the canonical state directory, not the mode-specific
     one -- there is only ever one real pool, and it does not change with which view you are looking at.
 
-    `pool` is config.settings.LIVE_CAPITAL_POOL_RUPEES: what you have actually funded and are willing
+    `pool` is the deployment cap set on the dashboard's Settings tab (falling back to
+    config.settings.LIVE_CAPITAL_POOL_RUPEES): what you have actually funded and are willing
     to deploy. It defaults to 0, so until it is deliberately set nothing can be allocated and the
     dashboard says so rather than leaving the question invisible."""
     from deployment.live_allocations import load as load_allocations
     from deployment.settings import STATE_DIR
     try:
-        from config import settings
-        pool = float(getattr(settings, "LIVE_CAPITAL_POOL_RUPEES", 0) or 0)
+        from deployment.live_settings import setting
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
+        pool = setting("LIVE_CAPITAL_POOL_RUPEES", config_dir)
     except Exception:
         pool = 0.0
     balance, balance_error = (kite_balance or (None, ""))

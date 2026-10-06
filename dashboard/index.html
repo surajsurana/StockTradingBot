@@ -485,6 +485,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-settings" hidden>
+  <h2>Live trading</h2>
+  <div id="limit-list"></div>
+
   <h2>Broker credentials</h2>
   <div id="cred-warn"></div>
   <div id="cred-list"></div>
@@ -887,8 +890,49 @@ async function loadCredentials(){
   try {
     const res = await fetch("/api/credentials");
     CREDS = await res.json();
-  } catch(e){ CREDS = {credentials: [], tls: false, error: String(e)}; }
+  } catch(e){ CREDS = {credentials: [], settings: [], tls: false, error: String(e)}; }
+  renderLimits();
   renderCredentials();
+}
+// The numeric live-trading limits. Editable on plain http, unlike credentials: nothing here is a
+// secret, and the same access key already gates capital allocation, which commits far more.
+function renderLimits(){
+  const box = document.getElementById("limit-list");
+  if(!box) return;
+  const items = (CREDS && CREDS.settings) || [];
+  if(!items.length){ box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="tblwrap"><table><thead><tr><th>Limit</th><th class="n">Current</th><th>Set a new value</th></tr></thead><tbody>
+    ${items.map(c => `<tr>
+      <td>${esc(c.label)}<div class="note">${esc(c.help)}</div></td>
+      <td class="n">${money(c.value)}${c.source ? `<div class="note">from ${esc(c.source)}</div>` : `<div class="note">not set</div>`}</td>
+      <td><input class="limitinput" data-name="${esc(c.name)}" type="number" min="${c.min}" max="${c.max}" step="100"
+                 placeholder="leave blank to keep" style="width:180px"></td></tr>`).join("")}
+    </tbody></table></div>
+    <p class="credsave"><button class="primarybtn" id="limit-save">Save limits</button>
+      <span class="note" id="limit-msg">Blank fields are left unchanged.</span></p>`;
+  document.getElementById("limit-save").addEventListener("click", saveLimits);
+  box.querySelectorAll(".limitinput").forEach(i =>
+    i.addEventListener("keydown", e => { if(e.key === "Enter") document.getElementById("limit-save").click(); }));
+}
+async function saveLimits(){
+  const btn = document.getElementById("limit-save"), msg = document.getElementById("limit-msg");
+  const updates = {};
+  document.querySelectorAll("#limit-list .limitinput").forEach(i => { if(i.value !== "") updates[i.dataset.name] = Number(i.value); });
+  if(!Object.keys(updates).length){ msg.textContent = "Nothing entered."; return; }
+  btn.disabled = true; btn.textContent = "Saving…";
+  try {
+    const res = await fetch("/api/live-settings", {method:"POST", headers:{"Content-Type":"application/json"},
+                                                   body: JSON.stringify({settings: updates})});
+    const body = await res.json();
+    if(!body.ok) throw new Error(body.error || "refused");
+    CREDS = {...CREDS, settings: body.settings};
+    renderLimits();
+    document.getElementById("limit-msg").textContent = "Saved. The Live view's cards update on the next refresh.";
+    if(typeof load === "function") load();
+  } catch(err){
+    msg.textContent = "Not saved: " + err.message;
+    btn.disabled = false; btn.textContent = "Save limits";
+  }
 }
 function renderCredentials(){
   const warn = document.getElementById("cred-warn"), list = document.getElementById("cred-list");
