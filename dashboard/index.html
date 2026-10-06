@@ -1171,48 +1171,57 @@ const pilotCell = p => {
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
-// Live capital: one real pool, sliced per strategy. The slice becomes that strategy's live capital,
-// and because sizing is floor(min(cash,cap) * risk_pct / risk_per_share) -- proportional to capital --
-// the percentages come out identical to paper. Live mode only; paper has its own virtual books.
+// Live capital: one real pool, sliced per strategy. The slice is assigned on the strategy's own row
+// in the table below -- only strategies already promoted to live can be given capital, and one that
+// is promoted but unfunded sizes every position to zero, so it holds nothing until funded.
+// This is just the pool summary; the per-strategy amounts are a column, not a second table.
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
   if(MODE !== "live"){ panel.hidden = true; return; }
   panel.hidden = false;
-  const lc = s.live_capital || {pool:0, allocated:0, free:0, fundable:[]};
-  const rows = (lc.fundable || []).map(f => {
-    const gate = f.gate === "qualified" ? `<span class="pill ok">Qualified</span>`
-               : f.gate === "waiting" ? `<span class="pill">Waiting</span>`
-               : `<span class="note">—</span>`;
-    return `<tr><td><b>${esc(f.name)}</b><div class="note">paper capital ${f.paper_capital==null?"—":money(f.paper_capital)}</div></td>
-      <td>${gate}</td>
-      <td class="n"><input class="allocinput" data-key="${esc(f.key)}" type="number" min="0" step="100" value="${f.allocated||0}" style="width:120px"></td>
-      <td><button class="iconbtn allocsave" data-key="${esc(f.key)}">Save</button></td></tr>`;
-  }).join("");
-  const warn = lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than the pool holds. Reduce an allocation, or raise LIVE_CAPITAL_POOL_RUPEES to match what you have funded.</p>` : "";
-  panel.innerHTML = `<div class="cards" style="margin-bottom:10px">
-      ${advBox("Real cash pool", [["Funded", `<b>${money(lc.pool)}</b>`], ["Assigned", `<b>${money(lc.allocated)}</b>`], ["Free", `<b>${money(lc.free)}</b>`]])}
-    </div>${warn}
-    ${lc.pool ? "" : `<p class="note">No real capital funded yet. Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to what you have actually funded, then assign slices here.</p>`}
-    ${rows ? `<div class="tblwrap"><table><thead><tr><th>Strategy</th><th>Live gate</th><th class="n">Live capital</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="note">A strategy sizes positions off its assigned capital exactly as it sizes off its paper capital, so the percentages stay identical. Capital cannot be changed while a strategy holds open live positions.</p>`
-     : `<p class="note">No strategy is eligible to be funded yet.</p>`}`;
-  panel.querySelectorAll(".allocsave").forEach(b => b.addEventListener("click", async () => {
+  const lc = s.live_capital || {pool:0, allocated:0, free:0};
+  const warn = lc.over_allocated
+    ? ` <b class="loss">More is assigned than the pool holds.</b>` : "";
+  panel.innerHTML = lc.pool
+    ? `<p class="note">Real cash pool: <b>${money(lc.pool)}</b> funded · <b>${money(lc.allocated)}</b> assigned · <b>${money(lc.free)}</b> free.${warn}</p>`
+    : `<p class="note">No real capital funded yet. Set <b>LIVE_CAPITAL_POOL_RUPEES</b> in config/settings.py on the VPS to what you have actually funded, then assign it per strategy in the Live capital column.</p>`;
+}
+
+// Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.
+const regCols = () => MODE === "live" ? [...REG_COLS, ["live_capital","Live capital"]] : REG_COLS;
+// An editable capital box on the strategy's own row. Only a strategy already promoted to live can
+// be funded: anything else has no business holding real money, and the ordering matters -- promote
+// through the gates first, then fund.
+function allocCell(r){
+  const amount = (ALLOC_BY_KEY[r.key] || 0);
+  if(liveState(r.status) !== "Live")
+    return `<span class="note" title="Only a strategy promoted to PILOT_LIVE or PRODUCTION can be given real capital.">—</span>`;
+  return `<span style="display:inline-flex;gap:4px;align-items:center">
+    <input class="allocinput" data-key="${esc(r.key)}" type="number" min="0" step="100" value="${amount}" style="width:100px">
+    <button class="iconbtn allocsave" data-key="${esc(r.key)}" title="Assign this much of the real cash pool">Save</button></span>`;
+}
+let ALLOC_BY_KEY = {};
+function wireAllocInputs(){
+  document.querySelectorAll("#registry .allocsave").forEach(b => b.addEventListener("click", async e => {
+    e.stopPropagation();                       // the row itself opens the strategy brief
     const key = b.dataset.key;
-    const input = panel.querySelector(`.allocinput[data-key="${CSS.escape(key)}"]`);
+    const input = document.querySelector(`#registry .allocinput[data-key="${CSS.escape(key)}"]`);
     b.disabled = true; b.textContent = "Saving…";
     try {
       const res = await fetch("/api/live/allocate", {method:"POST", headers:{"Content-Type":"application/json"},
                                                      body: JSON.stringify({key, rupees: Number(input.value)})});
       const body = await res.json();
       if(!body.ok) throw new Error(body.error || "refused");
-    } catch(e){ alert("Could not assign capital: " + e.message); b.disabled = false; b.textContent = "Save"; return; }
+    } catch(err){ alert("Could not assign capital: " + err.message); b.disabled = false; b.textContent = "Save"; return; }
     if(typeof load === "function") load();
   }));
+  document.querySelectorAll("#registry .allocinput").forEach(i =>
+    i.addEventListener("click", e => e.stopPropagation()));
 }
 
 function buildRegHead(){
-  const head = document.getElementById("reg-head"); if(head.dataset.built) return;
-  head.dataset.built = "1";
+  const head = document.getElementById("reg-head"); if(head.dataset.built === MODE) return;
+  head.dataset.built = MODE;
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
     pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option value="-">Not trading</option></select>`,
@@ -1224,7 +1233,7 @@ function buildRegHead(){
   // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
   // sort arrow and column text sit at opposite ends of the column from the numbers under them.
   const alignOf = {started:"n", capital:"n", pnl:"n", pnl_pct:"n", closed_trades:"c", win_pct:"c", days:"c"};
-  head.innerHTML = `<tr>${REG_COLS.map(([k,l]) => hcell(l, k, cell(k), alignOf[k] || "")).join("")}</tr>`;
+  head.innerHTML = `<tr>${regCols().map(([k,l]) => hcell(l, k, cell(k), alignOf[k] || "")).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
   ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
@@ -1785,6 +1794,7 @@ function renderRegistry(s){
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
   renderAllocations(s);
+  ALLOC_BY_KEY = Object.fromEntries(((s.live_capital || {}).strategies || []).map(x => [x.key, x.allocated]));
   // In Live mode only strategies actually running real money belong here. Showing all 34 with
   // blank capital and P&L made the Live view read as if everything were live but flat.
   const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live");
@@ -1815,12 +1825,12 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(r.pnl)}${r.pnl==null?"":" pnl-link"}">${r.pnl==null?"—":money(r.pnl,true)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}</tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? p.pnl / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.pnl)} pnl-link" data-pool="${esc(p.pool)}">${money(p.pnl,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("")
-    || `<tr><td colspan="${REG_COLS.length}" class="note">${MODE === "live"
+    || `<tr><td colspan="${regCols().length}" class="note">${MODE === "live"
          ? "No strategy is running real money yet. Everything is still in paper trading -- switch to Paper to see it."
          : "No strategies match these filters."}</td></tr>`;
   const toggleExpand = key => {
@@ -1829,6 +1839,7 @@ function renderRegistry(s){
     btn.textContent = open ? "▸" : "▾";
     document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(key)}"]`).forEach(tr => tr.hidden = open);
   };
+  wireAllocInputs();
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
     e.stopPropagation(); toggleExpand(btn.dataset.key);
   }));

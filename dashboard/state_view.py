@@ -497,23 +497,6 @@ def live_capital_view(registry_records: list) -> dict:
             "over_allocated": allocated > pool, "strategies": rows}
 
 
-def fundable_view(strategy_rows: list, allocations: dict) -> list:
-    """Strategies that could plausibly be given real capital: paper-trading ones whose live gate is
-    not a flat no, plus anything already funded (so an existing allocation can always be seen and
-    zeroed, even if its gate state has since changed). Deliberately NOT restricted to "qualified"
-    only -- that set is empty today, and capital has to be assignable before a strategy can be
-    taken live, not after."""
-    out = []
-    for r in strategy_rows:
-        allocated = allocations.get(r["key"], 0.0)
-        gate = (r.get("pilot") or {}).get("state")
-        if allocated or (r.get("status") == "PAPER_TRADING" and gate in ("qualified", "waiting")):
-            out.append({"key": r["key"], "name": r["name"], "pool": r.get("pool"),
-                        "paper_capital": r.get("capital"), "gate": gate, "allocated": allocated})
-    out.sort(key=lambda x: (x["gate"] != "qualified", x["name"]))
-    return out
-
-
 def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], now: Optional[datetime]) -> dict:
     """The AUTOMATED part of the live-promotion bar for one strategy -- deployment/pilot_live.py's
     check_pilot_eligibility(), which covers Gates A, B, C and I of deployment/LIVE_PROMOTION_CRITERIA.md
@@ -1475,8 +1458,6 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                                     state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1,
                                     pool_i=pool_i, now=now)
     live_capital = live_capital_view(registry_records)
-    live_capital["fundable"] = fundable_view(
-        strategy_rows, {s["key"]: s["allocated"] for s in live_capital["strategies"]})
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
