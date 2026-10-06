@@ -546,6 +546,36 @@ class TestBuildDashboardState(unittest.TestCase):
         # a strategy with no book gets NO block: "nothing to show" is not the same claim as "zero"
         self.assertNotIn("net", rows[2])
 
+    def test_each_pool_of_a_strategy_gets_its_own_net(self):
+        # the Strategies row shows net; its expanded per-pool sub-rows must too, or the same
+        # strategy reports two different profits depending on whether you expanded it
+        from dashboard.state_view import attach_net_pnl
+        rows = [{"key": "twin", "pnl": 900.0,
+                 "pools_breakdown": [{"pool": "Pool A", "pnl": 600.0}, {"pool": "Pool F", "pnl": 300.0}]}]
+        attach_net_pnl(rows, [
+            {"key": "twin", "pool": "Pool A", "realised": 600.0, "unrealised": 0.0,
+             "charges": 60.0, "gst": 9.0, "tax": 31.0, "detail": {}},
+            {"key": "twin", "pool": "Pool F", "realised": 300.0, "unrealised": 0.0,
+             "charges": 40.0, "gst": 7.0, "tax": 13.0, "detail": {}}])
+        self.assertEqual([p["net"] for p in rows[0]["pools_breakdown"]], [500.0, 240.0])
+        self.assertEqual(rows[0]["net"]["net"], 740.0)        # the row equals the sum of its pools
+
+    def test_a_pool_with_no_statement_line_gets_no_net_rather_than_a_zero(self):
+        from dashboard.state_view import attach_net_pnl
+        rows = [{"key": "k", "pnl": 10.0, "pools_breakdown": [{"pool": "Pool Z", "pnl": 10.0}]}]
+        attach_net_pnl(rows, [])
+        self.assertNotIn("net", rows[0]["pools_breakdown"][0])
+
+    def test_on_real_state_a_strategys_net_equals_the_sum_of_its_pool_nets(self):
+        checked = 0
+        for r in self.s["strategies"]:
+            pools = [p for p in (r.get("pools_breakdown") or []) if "net" in p]
+            if not r.get("net") or not pools:
+                continue
+            self.assertAlmostEqual(sum(p["net"] for p in pools), r["net"]["net"], places=1, msg=r["key"])
+            checked += 1
+        self.assertTrue(checked, "no strategy had per-pool nets to reconcile")
+
     def test_the_charge_breakdown_excludes_gst_and_total(self):
         # equity_costs.book_costs() returns detail with "gst" and "total" mixed in among the six real
         # components. Both are carried as their own fields, so letting them through the breakdown

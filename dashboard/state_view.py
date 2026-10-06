@@ -746,7 +746,19 @@ def attach_net_pnl(strategy_rows: list, statement: list) -> None:
                 continue
             agg["detail"][component] = round(agg["detail"].get(component, 0.0) + float(amount or 0), 2)
         agg["pools"].append(line["pool"])
+    # Per-pool nets too, so a strategy's expanded pool breakdown shows net per pool rather than
+    # falling back to gross on the sub-rows while the main row shows net -- the one place the two
+    # would visibly disagree about the same strategy.
+    by_pool = {}
+    for line in statement:
+        g = float(line.get("realised", 0) or 0) + float(line.get("unrealised", 0) or 0)
+        cost = sum(float(line.get(f, 0) or 0) for f in ("charges", "gst", "tax"))
+        by_pool[(line["key"], line["pool"])] = round(g - cost, 2)
     for row in strategy_rows:
+        for entry in row.get("pools_breakdown") or []:
+            net_for_pool = by_pool.get((row["key"], entry.get("pool")))
+            if net_for_pool is not None:
+                entry["net"] = net_for_pool
         agg = by_key.get(row["key"])
         if not agg:
             continue
