@@ -400,7 +400,9 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertTrue(rows, "paper-trading strategies must carry a pilot gate")
         for r in rows.values():
             p = r["pilot"]
-            self.assertEqual(set(p), {"eligible", "state", "reasons", "allocation_pct", "days", "trades"})
+            self.assertEqual(set(p), {"eligible", "state", "reasons", "allocation_pct", "days",
+                                      "trades", "backtest_impossible", "score", "parts", "blocked"})
+            self.assertTrue(0 <= p["score"] <= 100, p)
             self.assertEqual(p["eligible"], not p["reasons"])      # a blocked row always says why
             self.assertIn(p["state"], ("qualified", "waiting", "not_qualified"))
             self.assertEqual(p["eligible"], p["state"] == "qualified")
@@ -551,6 +553,59 @@ class TestBuildDashboardState(unittest.TestCase):
             self.assertAlmostEqual(r["net"]["net"], gross - costs, places=1, msg=r["key"])
             checked += 1
         self.assertTrue(checked, "no strategy carried a net block")
+
+    def test_the_promotion_score_is_dominated_by_whether_it_actually_makes_money(self):
+        # a strategy can have a PASS verdict, every paper day and every trade and still lose money
+        # after charges (SW-016 does). A score that weighted time heavily would call that nearly
+        # ready, which is the single most misleading thing this column could do.
+        from dashboard.state_view import promotion_score
+        full = {"days": 90, "trades": 40}
+        winner = promotion_score(full, {"net": 500.0}, "PASS")
+        loser = promotion_score(full, {"net": -500.0}, "PASS")
+        self.assertEqual(winner["score"], 100)
+        self.assertEqual(loser["score"], 60)                 # everything but profitability
+        self.assertEqual(loser["parts"]["net"], 0)
+
+    def test_a_rejected_verdict_scores_zero_however_good_the_paper_run(self):
+        from dashboard.state_view import promotion_score
+        got = promotion_score({"days": 900, "trades": 900}, {"net": 99999.0}, "REJECT")
+        self.assertEqual(got["score"], 0)
+        self.assertEqual(set(got["parts"].values()), {0})
+        self.assertIn("REJECT", got["blocked"])
+
+    def test_the_score_credits_time_and_trades_only_up_to_the_floor(self):
+        from dashboard.state_view import promotion_score
+        at_floor = promotion_score({"days": 60, "trades": 20}, {"net": 1.0}, "PASS")
+        far_past = promotion_score({"days": 600, "trades": 200}, {"net": 1.0}, "PASS")
+        self.assertEqual(at_floor["score"], far_past["score"])   # the floor is a floor, not a race
+        self.assertEqual(at_floor["score"], 100)
+        half = promotion_score({"days": 30, "trades": 10}, {"net": 1.0}, "PASS")
+        self.assertEqual((half["parts"]["days"], half["parts"]["trades"]), (7.5, 7.5))
+
+    def test_an_unevaluated_strategy_scores_on_the_verdict_only_where_a_backtest_is_impossible(self):
+        from dashboard.state_view import promotion_score
+        impossible = promotion_score({"days": 60, "trades": 20, "backtest_impossible": True},
+                                     {"net": 1.0}, "NOT_YET_EVALUATED")
+        merely_absent = promotion_score({"days": 60, "trades": 20, "backtest_impossible": False},
+                                        {"net": 1.0}, "NOT_YET_EVALUATED")
+        self.assertEqual(impossible["parts"]["verdict"], 15.0)
+        self.assertEqual(merely_absent["parts"]["verdict"], 0.0)
+
+    def test_a_strategy_that_never_traded_scores_zero_for_profitability(self):
+        from dashboard.state_view import promotion_score
+        got = promotion_score({"days": 0, "trades": 0}, None, "PASS")
+        self.assertEqual(got["score"], 30)                   # the verdict, and nothing else earned
+        self.assertEqual(got["parts"]["net"], 0)
+
+    def test_every_real_strategy_scores_within_range_and_adds_up(self):
+        for r in self.s["strategies"]:
+            p = r.get("pilot")
+            if not p:
+                continue
+            self.assertTrue(0 <= p["score"] <= 100, r["key"])
+            self.assertEqual(p["score"], round(sum(p["parts"].values())), r["key"])
+            if r["verdict"] == "REJECT":
+                self.assertEqual(p["score"], 0, r["key"])
 
     def test_the_live_gate_blocks_a_rejected_strategy_by_verdict(self):
         old = next(r for r in self.s["strategies"] if r["key"] == "old")   # REJECT / ARCHIVED

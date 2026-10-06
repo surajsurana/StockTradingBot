@@ -530,7 +530,8 @@ def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], no
     status_ok = record.deployment_status == DeploymentStatus.PAPER_TRADING
     state = "qualified" if result.eligible else ("waiting" if verdict_ok and status_ok else "not_qualified")
     return {"eligible": result.eligible, "state": state, "reasons": list(result.reasons),
-            "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades}
+            "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades,
+            "backtest_impossible": backtest_is_impossible(record)}
 
 
 def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None) -> dict:
@@ -664,6 +665,58 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
 # The charge components a breakdown may show, and nothing else. equity_costs puts "gst" and "total"
 # in the same dict; both are carried separately, so they must not also appear as components.
 CHARGE_COMPONENTS = ("brokerage", "stt", "exchange", "sebi", "stamp", "dp", "crypto_fee")
+
+from deployment.pilot_live import (MIN_PAPER_TRADING_DAYS_ELAPSED as MIN_PAPER_DAYS,
+                                   MIN_PAPER_TRADING_TRADES as MIN_PAPER_TRADES)
+
+# How the promotion score is split, out of 100. Net-of-costs carries the most because it is the one
+# component that says the strategy makes money rather than that it has been running long enough to
+# find out -- SW-016 has a PASS verdict, 20+ trades and nearly all its paper days, and still loses
+# money after charges, so a score that weighted time heavily would rank it as nearly ready.
+SCORE_WEIGHTS = {"verdict": 30, "days": 15, "trades": 15, "net": 40}
+
+
+def promotion_score(pilot: dict, net: Optional[dict], verdict: str) -> dict:
+    """How far one strategy has got through the gates that CODE can check, 0-100.
+
+    This is a readiness measure, not a recommendation and not a forecast. It scores Gates A, B, C and
+    E of deployment/LIVE_PROMOTION_CRITERIA.md (verdict, 60 paper days, 20 closed trades, positive
+    net of costs). Gates D, F and G -- drift, drawdown ceiling, backtest credibility -- are human
+    judgement and are deliberately absent rather than guessed at, so 100 means "nothing a computer
+    can check is outstanding", never "promote this".
+
+    A REJECT verdict scores zero outright whatever else is true: it was decided against, and letting
+    a long profitable paper run quietly out-vote that would turn the verdict into a suggestion."""
+    days, trades = pilot.get("days") or 0, pilot.get("trades") or 0
+    verdict = str(verdict or "").upper()
+    if verdict == "REJECT":
+        return {"score": 0, "parts": {"verdict": 0, "days": 0, "trades": 0, "net": 0},
+                "blocked": "Research verdict is REJECT."}
+    verdict_part = {"PASS": 1.0, "INCONCLUSIVE": 0.67}.get(verdict)
+    if verdict_part is None:                       # NOT_YET_EVALUATED, scored only where a backtest
+        verdict_part = 0.5 if pilot.get("backtest_impossible") else 0.0   # genuinely cannot be run
+    parts = {
+        "verdict": SCORE_WEIGHTS["verdict"] * verdict_part,
+        "days": SCORE_WEIGHTS["days"] * min(days / MIN_PAPER_DAYS, 1.0),
+        "trades": SCORE_WEIGHTS["trades"] * min(trades / MIN_PAPER_TRADES, 1.0),
+        # Binary, because Gate E is binary: a strategy is either ahead after costs or it is not.
+        # Scaling this by size of profit would let one big month outvote the gates.
+        "net": SCORE_WEIGHTS["net"] if (net or {}).get("net", 0) > 0 else 0,
+    }
+    return {"score": int(round(sum(parts.values()))),
+            "parts": {k: round(v, 1) for k, v in parts.items()},
+            "blocked": ""}
+
+
+def attach_promotion_score(strategy_rows: list) -> None:
+    """Puts a `score` on each row's pilot block. Runs AFTER attach_net_pnl, because the net-of-costs
+    component needs it; a row with no book scores its gates and takes zero for net, which is correct
+    -- a strategy that has never traded has not shown it can make money."""
+    for row in strategy_rows:
+        pilot = row.get("pilot")
+        if not pilot:
+            continue
+        pilot.update(promotion_score(pilot, row.get("net"), row.get("verdict", "")))
 
 
 def attach_net_pnl(strategy_rows: list, statement: list) -> None:
@@ -1535,6 +1588,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     statement = statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir,
                                 d_trades, pool_e1=pool_e1, pool_i=pool_i)
     attach_net_pnl(strategy_rows, statement)
+    attach_promotion_score(strategy_rows)
     live_capital = live_capital_view(registry_records, kite_balance)
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
