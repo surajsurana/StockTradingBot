@@ -3,7 +3,7 @@
     "key": "crypto_illiquidity_premium",
     "name": "Cryptocurrency Illiquidity Premium (Amihud-style)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "horizon_lane": "crypto"
   }
 }
