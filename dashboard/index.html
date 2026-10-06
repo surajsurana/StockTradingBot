@@ -1530,55 +1530,9 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // unless LIVE_TRADING is on and the kill switch is absent; this button starts the runner, it does
 // not authorise it.
 let RUNNER = null, RUNNER_POLL = null;
-const liveRunnerHtml = () => `
-  <div class="runner">
-    <button class="primarybtn" id="run-dry">Dry run — places nothing</button>
-    <button class="iconbtn promoteicon override" id="run-live" data-confirm="✓" title="Run the live book for real. Still requires LIVE_TRADING on and no kill switch.">L</button>
-    <span class="note" id="run-msg"></span>
-  </div>
+const liveOutcomeHtml = () => `
+  <div class="runner"><span class="note" id="run-msg"></span></div>
   <div id="run-out"></div>`;
-// "Settings tab" in a note should take you there rather than make you hunt for it.
-document.addEventListener("click", e => {
-  const a = e.target.closest(".golink");
-  if(!a) return;
-  e.preventDefault();
-  document.querySelector(`nav button[data-tab="${a.dataset.tab}"]`)?.click();
-});
-function wireLiveRunner(){
-  const dry = document.getElementById("run-dry"), live = document.getElementById("run-live");
-  if(!dry) return;
-  dry.addEventListener("click", () => startRun(false));
-  live.addEventListener("click", () => {
-    const msg = document.getElementById("run-msg");
-    if(live.dataset.armed !== "1"){
-      // An icon alone cannot say "are you sure" -- the tick meant nothing without this line, and it
-      // disarmed before you could read it.
-      live.dataset.armed = "1"; live.textContent = "✓"; live.classList.add("armed");
-      const was = msg.textContent;
-      msg.innerHTML = `<b style="color:var(--loss)">Click the tick again to run live.</b> Real orders, if LIVE_TRADING is on.`;
-      clearTimeout(live._d);
-      live._d = setTimeout(() => {
-        live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed");
-        msg.textContent = was;
-      }, 15000);
-      return;
-    }
-    clearTimeout(live._d); live.dataset.armed = "0"; live.textContent = "L"; live.classList.remove("armed");
-    startRun(true);
-  });
-  pollRun();
-}
-async function startRun(live){
-  const msg = document.getElementById("run-msg");
-  msg.textContent = live ? "Starting the live run…" : "Starting the dry run…";
-  try {
-    const res = await fetch("/api/live/run", {method:"POST", headers:{"Content-Type":"application/json"},
-                                              body: JSON.stringify({live: !!live})});
-    const body = await res.json();
-    if(!body.ok) throw new Error(body.error || "refused");
-  } catch(err){ msg.textContent = "Not started: " + err.message; return; }
-  pollRun();
-}
 async function pollRun(){
   clearTimeout(RUNNER_POLL);
   try { RUNNER = await (await fetch("/api/live/run")).json(); } catch(e){ return; }
@@ -1589,12 +1543,12 @@ function renderRun(){
   const msg = document.getElementById("run-msg"), out = document.getElementById("run-out");
   if(!msg || !RUNNER) return;
   if(RUNNER.running){
-    msg.textContent = `${RUNNER.mode === "live" ? "Live" : "Dry"} run in progress since ${esc(RUNNER.started_at || "")} — the model call takes a little while.`;
+    msg.textContent = `Live book running since ${esc(RUNNER.started_at || "")} — the model call takes a little while.`;
     return;
   }
   const r = RUNNER.result;
-  if(!r){ msg.textContent = "Not run yet."; out.innerHTML = ""; return; }
-  msg.textContent = `Last ${esc(RUNNER.mode)} run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
+  if(!r){ msg.textContent = "The live book has not run yet. It runs on its own schedule — nothing to press."; out.innerHTML = ""; return; }
+  msg.textContent = `Last run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
   const orders = r.orders || [], placed = r.placed || [], diverged = r.divergence || [];
   // A live run writes the book before placing, so anything refused leaves the book ahead of reality.
   // Until reconciliation exists, say so loudly rather than letting it pass as a normal refusal.
@@ -1642,12 +1596,12 @@ function renderAllocations(s){
     pot(lc.crypto_balance, "CoinDCX", "crypto", lc.assignable_crypto, lc.allocated_crypto,
         lc.crypto_balance_error, lc.crypto_balance == null ? "warn" : ""),
   ].join("");
-  panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveRunnerHtml()
+  panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveOutcomeHtml()
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
         : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
-  wireLiveRunner();
+  pollRun();
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.
