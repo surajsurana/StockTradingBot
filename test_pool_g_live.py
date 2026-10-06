@@ -127,6 +127,76 @@ class TestItNeverTouchesThePaperBook(unittest.TestCase):
             self.assertEqual(json.load(f)["cash"], 42.5)
 
 
+class TestADryRunLeavesNothingBehind(unittest.TestCase):
+    """run_pool_g_cycle() applies its decisions to the book and SAVES it before anything is placed.
+    So a run that places nothing would still leave the live book believing it holds positions that
+    were never bought -- and that book is what the live track record is read from."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000)
+        self.target = os.path.join(rpg.live_dir(self.d), "portfolio.json")
+
+    def _cycle_that_buys(self, *a, **k):
+        # stands in for the real cycle: writes a position into the book, as the real one does
+        import json as _json
+        os.makedirs(os.path.dirname(self.target), exist_ok=True)
+        with open(self.target, "w") as f:
+            _json.dump({"cash": 1.0, "positions": {"BTC": {"quantity": 0.0003}}}, f)
+        return {"status": "processed", "stopped": [], "sold": [],
+                "bought": [{"symbol": "BTC", "quantity": 0.0003, "price": 85_784.83}]}
+
+    def test_a_dry_run_restores_the_book_it_found(self):
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", side_effect=self._cycle_that_buys):
+            result = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS)
+        self.assertEqual(result["status"], "dry_run")
+        with open(self.target) as f:
+            book = json.load(f)
+        self.assertEqual(book["positions"], {})          # the phantom position is gone
+        self.assertAlmostEqual(book["cash"], 103.7, places=1)
+
+    def test_a_dry_run_on_a_book_that_did_not_exist_leaves_none(self):
+        # seeding happens inside the run, so a dry run must not leave a seeded book behind either
+        rpg._restore(self.target, None)
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", side_effect=self._cycle_that_buys):
+            rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS)
+        with open(self.target) as f:
+            self.assertEqual(json.load(f)["positions"], {})
+
+    def test_a_dry_run_still_reports_what_it_would_have_done(self):
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", side_effect=self._cycle_that_buys):
+            result = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS)
+        self.assertEqual([(o["side"], o["symbol"]) for o in result["orders"]], [("BUY", "BTC")])
+
+
+class TestDivergenceIsSurfacedNotSilent(unittest.TestCase):
+    """A live run writes the book before placing, so anything refused leaves the book ahead of
+    reality. Reconciliation is not built yet; the gap must at least be visible."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000)
+        self.cycle = {"status": "processed", "stopped": [], "sold": [],
+                      "bought": [{"symbol": "BTC", "quantity": 0.0003, "price": 85_784.83}]}
+
+    def _run(self, placed_ok):
+        def fake_place(**kw):
+            return SimpleNamespace(placed=placed_ok, order_id="o1" if placed_ok else "",
+                                   fill_price=1.0, reasons=[] if placed_ok else ["guard refused"])
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", return_value=self.cycle):
+            return rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                                place_fn=fake_place, dry_run=False)
+
+    def test_a_refused_order_is_reported_as_a_divergence(self):
+        result = self._run(placed_ok=False)
+        self.assertEqual(len(result["divergence"]), 1)
+        self.assertIn("guard refused", result["divergence"][0])
+        self.assertIn("BTC", result["divergence"][0])
+
+    def test_everything_placed_means_no_divergence(self):
+        self.assertEqual(self._run(placed_ok=True)["divergence"], [])
+
+
 class TestItRefusesRatherThanGuesses(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()

@@ -1580,10 +1580,17 @@ function renderRun(){
   const r = RUNNER.result;
   if(!r){ msg.textContent = "Not run yet."; out.innerHTML = ""; return; }
   msg.textContent = `Last ${esc(RUNNER.mode)} run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
-  const orders = r.orders || [], placed = r.placed || [];
-  if(!orders.length){ out.innerHTML = `<p class="note">No orders decided.</p>`; return; }
+  const orders = r.orders || [], placed = r.placed || [], diverged = r.divergence || [];
+  // A live run writes the book before placing, so anything refused leaves the book ahead of reality.
+  // Until reconciliation exists, say so loudly rather than letting it pass as a normal refusal.
+  const warn = diverged.length
+    ? `<p class="note" style="color:var(--loss)"><b>The live book and the exchange no longer agree.</b>
+       ${diverged.length} decision(s) were written into the book but not placed:
+       ${esc(diverged.join("; "))}. Reconcile before the next live run.</p>`
+    : "";
+  if(!orders.length){ out.innerHTML = warn + `<p class="note">No orders decided.</p>`; return; }
   const byKey = {}; placed.forEach(p => { byKey[p.symbol + p.side] = p; });
-  out.innerHTML = `<div class="tblwrap"><table><thead><tr><th>Side</th><th>Coin</th><th class="n">Quantity</th><th class="n">Price (USDT)</th><th>Why</th><th>Result</th></tr></thead><tbody>
+  out.innerHTML = warn + `<div class="tblwrap"><table><thead><tr><th>Side</th><th>Coin</th><th class="n">Quantity</th><th class="n">Price (USDT)</th><th>Why</th><th>Result</th></tr></thead><tbody>
     ${orders.map(o => { const p = byKey[o.symbol + o.side];
       return `<tr><td class="${o.side === "BUY" ? "gain" : "loss"}"><b>${esc(o.side)}</b></td><td>${esc(o.symbol)}</td>
         <td class="n">${o.quantity}</td><td class="n">${o.price}</td><td class="note">${esc(o.why)}</td>

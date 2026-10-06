@@ -66,6 +66,47 @@ def intended_orders(result: dict) -> list:
     return [o for o in orders if o["symbol"] and o["quantity"] and o["price"]]
 
 
+def _snapshot(path: str):
+    """The live book's exact bytes, or None if it does not exist yet."""
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _restore(path: str, blob) -> None:
+    """Puts the book back byte for byte. Used to make a dry run genuinely read-only.
+
+    THIS IS NOT FUSSINESS. run_pool_g_cycle() saves the portfolio as part of deciding -- it applies
+    its own decisions to the book and writes it BEFORE anything is placed. Without restoring, a run
+    that places nothing still leaves the live book believing it holds positions that were never
+    bought, and the book is the thing the live track record is read from."""
+    if blob is None:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return
+    tmp = path + ".restore"
+    with open(tmp, "wb") as f:
+        f.write(blob)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def _divergence(orders: list, placed: list) -> list:
+    """Decisions the book now records that no real order backs.
+
+    The cycle writes the book before placement, so anything the guard or the exchange refused leaves
+    the book ahead of reality. Reconciliation (not yet built) is the proper fix; until then this at
+    least makes the gap visible instead of silent."""
+    unplaced = [p for p in placed if not p.get("placed")]
+    return [f"{p['side']} {p['quantity']} {p['symbol']}: {' '.join(p.get('reasons') or ['not placed'])}"
+            for p in unplaced]
+
+
 def _ensure_book(path: str, starting_usdt: float) -> None:
     """Creates the live book on first run. NEVER resets an existing one: its cash and positions are
     the real, already-traded balance, and overwriting it would silently rewrite the live record."""
@@ -105,15 +146,20 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
 
     target = os.path.join(live_dir(state_dir), "portfolio.json")
     previous = pg_state.PORTFOLIO_G_STATE_DIR
+    before = None
     try:
         pg_state.PORTFOLIO_G_STATE_DIR = live_dir(state_dir)   # same redirection the paper pools use
         _ensure_book(target, round(float(allocated_inr) / float(usdinr), 4))
+        before = _snapshot(target)
         result = run_pool_g_cycle(fetch_data_fn, fetch_prices_fn, api_key, now=now)
     finally:
         pg_state.PORTFOLIO_G_STATE_DIR = previous              # always restored, even on an exception
 
     orders = intended_orders(result)
     if dry_run:
+        # The cycle already wrote its decisions into the book. Put it back: a run that places nothing
+        # must leave nothing behind, or "dry" would silently corrupt the live track record.
+        _restore(target, before)
         return {"status": "dry_run", "allocated_inr": allocated_inr, "engine": result,
                 "orders": orders, "placed": []}
 
@@ -130,8 +176,9 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
                         usdinr=usdinr, client=client, now=now)
         placed.append({**order, "placed": bool(outcome.placed), "order_id": outcome.order_id,
                        "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
+    diverged = _divergence(orders, placed)
     return {"status": result.get("status"), "allocated_inr": allocated_inr, "engine": result,
-            "orders": orders, "placed": placed}
+            "orders": orders, "placed": placed, "divergence": diverged}
 
 
 def main() -> None:
