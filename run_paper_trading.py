@@ -89,6 +89,7 @@ from deployment.paper_trading_engine import (
 from deployment.scheduler import is_due_now, strategies_due_now
 from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
+from swing_research.broker_costs import min_viable_notional
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
 # All five paper-trading strategies are End-of-Day: they need the full
@@ -338,6 +339,12 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
                 strategy_key, strategy, fetch_data_fn=lambda: data,
                 compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
                 force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
+            # A position too small to carry its own flat charges is skipped. The DP charge is
+            # Rs13.5 per scrip whatever the trade is worth, so the Rs3,532 median position these
+            # books were taking paid 0.45% in DP alone and 0.68% all in -- against the 0.2% the
+            # research that approved them assumed. Derived from the charge model, not chosen; see
+            # swing_research/broker_costs.py. Crypto and US pools pass their own value.
+                min_position_value_rupees=min_viable_notional(),
             )
         print(f"[{strategy_key}] {result}")
 

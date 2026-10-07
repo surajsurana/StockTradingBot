@@ -187,5 +187,42 @@ class TestRatesAreNotRestatedHere(unittest.TestCase):
             self.assertNotIn(f"= {rate}", body, f"rate {rate} restated instead of imported")
 
 
+class TestTheFloorIsActuallyWiredIn(unittest.TestCase):
+    """A derived floor that nothing passes is just a function nobody calls. These assert the two
+    rupee-equity runners and the research pipeline each apply it, since forgetting one is precisely
+    the failure mode that let Rs3,532 positions run for a month."""
+
+    def test_both_indian_equity_runners_size_against_the_charge_model(self):
+        for path in ("run_paper_trading.py", "run_pool_f.py"):
+            with open(path, encoding="utf-8") as f:
+                source = f.read()
+            self.assertIn("min_position_value_rupees=min_viable_notional()", source, path)
+
+    def test_the_walk_forward_applies_the_same_floor_by_default(self):
+        import inspect
+
+        from swing_research.research_director import run_walk_forward_generic
+        params = inspect.signature(run_walk_forward_generic).parameters
+        self.assertIsNone(params["min_trade_notional"].default)     # None means "derive it"
+        self.assertIs(params["charge_broker_costs"].default, True)
+
+    def test_the_backtest_engine_skips_a_trade_below_the_floor(self):
+        import inspect
+
+        from swing_research.backtesting_engine import simulate_portfolio
+        source = inspect.getsource(simulate_portfolio)
+        # both sizing sites -- the new entry and the pyramid add
+        self.assertEqual(source.count("if min_trade_notional and cost < min_trade_notional:"), 2)
+
+    def test_the_crypto_and_us_pools_keep_their_own_floor(self):
+        # min_viable_notional() is a RUPEE EQUITY figure: it is the DP charge divided by a budget.
+        # Applying it to a 1,000 USDT crypto book would stop that book trading entirely.
+        for path in ("run_pool_e.py", "run_pool_e1.py", "run_pool_i.py"):
+            with open(path, encoding="utf-8") as f:
+                source = f.read()
+            self.assertIn("min_position_value_rupees=5.0", source, path)
+            self.assertNotIn("min_viable_notional", source, path)
+
+
 if __name__ == "__main__":
     unittest.main()

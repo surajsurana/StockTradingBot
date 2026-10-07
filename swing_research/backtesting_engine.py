@@ -112,7 +112,8 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                         max_units_per_symbol: Optional[int] = None,
                         max_units_per_sector: int = 6, max_units_total: int = 10,
                         min_bars_required: int = 60,
-                        extra_columns_by_symbol: Optional[dict] = None) -> dict:
+                        extra_columns_by_symbol: Optional[dict] = None,
+                        min_trade_notional: float = 0.0) -> dict:
     """
     data: {symbol: DataFrame of daily OHLCV bars, full multi-year history}.
     strategy: a swing_research.base.Strategy (precompute + entry/pyramid/exit hooks).
@@ -250,6 +251,13 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
+            # A trade too small to carry its own flat charges is not worth taking. The DP charge is
+            # Rs13.5 per scrip however small the trade, so a Rs3,500 position pays 0.45% in DP alone
+            # -- see swing_research/broker_costs.py. Skipped, never scaled up: scaling up to clear
+            # the floor would silently spend several times the strategy's own risk budget on one
+            # position, and the honest answer is that this book is too small for this trade.
+            if min_trade_notional and cost < min_trade_notional:
+                continue
             if cost > (equity - capital_deployed()):
                 continue
 
@@ -301,6 +309,13 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
             if quantity <= 0:
                 continue
             cost = quantity * signal.entry_price
+            # A trade too small to carry its own flat charges is not worth taking. The DP charge is
+            # Rs13.5 per scrip however small the trade, so a Rs3,500 position pays 0.45% in DP alone
+            # -- see swing_research/broker_costs.py. Skipped, never scaled up: scaling up to clear
+            # the floor would silently spend several times the strategy's own risk budget on one
+            # position, and the honest answer is that this book is too small for this trade.
+            if min_trade_notional and cost < min_trade_notional:
+                continue
             if cost > (equity - capital_deployed()):
                 continue
 

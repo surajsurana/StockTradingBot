@@ -35,7 +35,7 @@ from research_lab.knowledge_base import KNOWLEDGE_BASE_PATH as INTRADAY_KB_PATH 
 from swing_research import benchmarks
 from swing_research.backtesting_engine import simulate_portfolio, simulate_portfolio_single_unit
 from swing_research.base import Strategy
-from swing_research.broker_costs import apply_broker_costs
+from swing_research.broker_costs import apply_broker_costs, min_viable_notional
 from swing_research.evidence_quality import compute_evidence_quality
 from swing_research.metrics import compute_holding_period_breakdown, compute_metrics
 from swing_research.published_research_analyst import PublishedStrategy
@@ -116,7 +116,8 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
                               extra_columns_by_symbol: Optional[dict] = None,
                               min_trades_total: int = 15, min_out_of_sample_trades: int = 3,
                               min_consistent_window_fraction: float = 0.5,
-                              charge_broker_costs: bool = True) -> dict:
+                              charge_broker_costs: bool = True,
+                              min_trade_notional: Optional[float] = None) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via research_lab.backtesting_engineer.walk_forward_split()
@@ -140,6 +141,10 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
     walk_forward_metrics = []
     all_trades_by_window = []
     broker_charges_total = 0.0
+    # A trade too small to carry its own flat charges is skipped rather than taken at a loss it
+    # cannot recover. Derived from the charge model, not chosen -- see broker_costs.py. Pass 0.0 to
+    # reproduce a pre-2026-10-07 experiment, which took every signal at any size.
+    notional_floor = min_viable_notional() if min_trade_notional is None else float(min_trade_notional)
 
     for w_start, w_end in windows:
         windowed_data = {
@@ -156,6 +161,7 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
             windowed_data, strategy, starting_capital, sector_map=sector_map,
             max_units_per_sector=max_units_per_sector, max_units_total=max_units_total,
             extra_columns_by_symbol=windowed_extra,
+            min_trade_notional=notional_floor,
         )
         # Pay what a real contract note takes. Until 2026-10-07 this step did not exist: friction was
         # modelled only as a percentage (execution_realism_engine.py's 0.1% one way), so the flat
@@ -187,6 +193,7 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
         "out_of_sample_metrics": out_of_sample_metrics, "out_of_sample_trades": out_of_sample_trades,
         "all_trades": all_trades, "windows": windows,
         "broker_charges_total": broker_charges_total, "broker_costs_charged": charge_broker_costs,
+        "min_trade_notional": notional_floor,
     }
 
 

@@ -23,6 +23,7 @@ Cron (weekdays, IST):
     33 9  * * 1-5  venv/bin/python run_pool_f.py --resolve-at-open  # fills queued at the open
 """
 
+from swing_research.broker_costs import min_viable_notional
 import argparse
 import datetime
 import os
@@ -87,6 +88,12 @@ def run_all(as_of: datetime.date = None, force: bool = False) -> None:
                 compute_extra_columns_fn=(lambda d, fn=extra_fn: fn(d)) if extra_fn else None,
                 as_of_date=as_of, force=force, execution_config=_execution_config(spec),
                 partial_booking=PARTIAL_BOOKING,
+            # A position too small to carry its own flat charges is skipped. The DP charge is
+            # Rs13.5 per scrip whatever the trade is worth, so the Rs3,532 median position these
+            # books were taking paid 0.45% in DP alone and 0.68% all in -- against the 0.2% the
+            # research that approved them assumed. Derived from the charge model, not chosen; see
+            # swing_research/broker_costs.py. Crypto and US pools pass their own value.
+                min_position_value_rupees=min_viable_notional(),
             )
             print(f"[{key}] Pool F: {result['status']} entries {len(result.get('new_entries', []))} "
                   f"exits {len(result.get('new_exits', []))} partial {len(result.get('new_partial_exits', []))} "
