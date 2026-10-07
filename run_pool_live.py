@@ -252,8 +252,12 @@ def _ensure_book(live_dir: str, strategy_key: str, allocated: float) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     import json
     with open(path, "w", encoding="utf-8") as f:
+        # DICTS, keyed by symbol -- the shape deployment/paper_trading_engine.py reads and every real
+        # paper book already stores. Seeding lists here made the very first run of any new live book
+        # die in _resolve_pending_fills with "'list' object has no attribute 'keys'", and
+        # portfolio.setdefault() could not save it because the key was present, just wrong.
         json.dump({"starting_capital": allocated, "cash": allocated, "positions": {},
-                   "pending_entries": [], "pending_exits": []}, f, indent=2)
+                   "pending_entries": {}, "pending_exits": {}}, f, indent=2)
 
 
 def main() -> None:

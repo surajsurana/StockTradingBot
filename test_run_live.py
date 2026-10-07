@@ -5,6 +5,7 @@ The requirement this serves: "click P in paper trading and allocate capital, the
 with real money. No additional step." Until this existed, only Pool G could place an order; a
 promoted Pool A strategy would have been eligible and then nothing would have run its book.
 """
+import os
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -266,6 +267,54 @@ class TestTheEquityPathCanActuallyTrade(unittest.TestCase):
         from swing_research.broker_costs import min_viable_notional
         self.assertAlmostEqual(rpl._engine_plan("ma_pullback")["min_value"], min_viable_notional())
         self.assertEqual(rpl._engine_plan("crypto_tsmom")["min_value"], 5.0)   # crypto keeps its own
+
+
+class TestAFreshLiveBookIsUsable(unittest.TestCase):
+    """The first run of a new live book died in _resolve_pending_fills with "'list' object has no
+    attribute 'keys'": _ensure_book seeded pending_entries/pending_exits as lists while the engine
+    reads them as dicts keyed by symbol. setdefault() could not rescue it -- the key was present,
+    just the wrong type -- so this would have broken the first live run of every pool except G,
+    which has its own adapter."""
+
+    def test_the_seeded_book_has_the_shape_the_engine_reads(self):
+        import json
+        import run_pool_live as rpl
+        d = tempfile.mkdtemp()
+        rpl._ensure_book(d, "alpha", 100_000.0)
+        with open(os.path.join(d, "alpha", "portfolio.json"), encoding="utf-8") as f:
+            book = json.load(f)
+        self.assertIsInstance(book["pending_entries"], dict)
+        self.assertIsInstance(book["pending_exits"], dict)
+        self.assertIsInstance(book["positions"], dict)
+        self.assertEqual(book["cash"], 100_000.0)
+
+    def test_it_matches_what_the_engine_itself_would_create(self):
+        import json
+        import deployment.paper_trading_engine as pte
+        import run_pool_live as rpl
+        d = tempfile.mkdtemp()
+        rpl._ensure_book(d, "alpha", 100_000.0)
+        with open(os.path.join(d, "alpha", "portfolio.json"), encoding="utf-8") as f:
+            seeded = json.load(f)
+        source = open(pte.__file__, encoding="utf-8").read()
+        self.assertIn('"pending_entries": {}, "pending_exits": {},', source)
+        for key in ("pending_entries", "pending_exits", "positions"):
+            self.assertIsInstance(seeded[key], dict, key)
+
+    def test_an_existing_book_is_never_overwritten(self):
+        import json
+        import run_pool_live as rpl
+        d = tempfile.mkdtemp()
+        rpl._ensure_book(d, "alpha", 100_000.0)
+        path = os.path.join(d, "alpha", "portfolio.json")
+        with open(path, encoding="utf-8") as f:
+            book = json.load(f)
+        book["cash"] = 42.0
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(book, f)
+        rpl._ensure_book(d, "alpha", 100_000.0)      # its cash is the real traded balance
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["cash"], 42.0)
 
 
 class TestOrdersCannotGoIntoAClosedMarket(unittest.TestCase):
