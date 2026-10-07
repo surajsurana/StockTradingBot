@@ -1043,6 +1043,62 @@ class TestAPromotedStrategyOnTheStrategiesTab(unittest.TestCase):
         self.assertEqual(self._rows("live")["portfolio_g"]["pool"], "-")
 
 
+class TestTheNotificationsTab(unittest.TestCase):
+    """An underfunded book produces no trades and no errors -- it looks exactly like a book that had
+    no signals. Suraj, the evening SW-016 went live with Rs10,000 against a Rs12,469 floor: "for
+    tomorrow i want to see the calls its makng and they dont pass due to capital not being enough."""
+
+    def _log(self, rows):
+        import json
+        d = tempfile.mkdtemp()
+        from deployment.live_executor import order_log_path
+        os.makedirs(d, exist_ok=True)
+        with open(order_log_path(d), "w", encoding="utf-8") as f:
+            for r in rows:
+                f.write(json.dumps(r) + chr(10))
+        return d
+
+    def test_a_decision_the_book_could_not_act_on_is_reported(self):
+        from dashboard.state_view import notifications_view
+        d = self._log([{"at": "2026-10-08T15:41:02", "stage": "not_taken", "strategy": "sw016",
+                        "symbol": "SBIN.NS", "side": "BUY", "quantity": 3, "value": 720,
+                        "reasons": ["Rs720 is below the Rs12,469 a trade needs"]}])
+        view = notifications_view(d)
+        self.assertEqual(view["count"], 1)
+        self.assertEqual(view["rows"][0]["symbol"], "SBIN.NS")
+
+    def test_a_guard_refusal_is_reported_in_the_same_timeline(self):
+        from dashboard.state_view import notifications_view
+        d = self._log([{"at": "2026-10-08T20:35:00", "stage": "refused", "strategy": "g",
+                        "reasons": ["The NSE is closed right now"]}])
+        self.assertEqual(notifications_view(d)["count"], 1)
+
+    def test_a_placed_order_is_not_a_notification(self):
+        """It happened. The Orders tab is where things that happened live; this tab is only for
+        things that did not."""
+        from dashboard.state_view import notifications_view
+        d = self._log([{"at": "2026-10-08T09:36:00", "stage": "accepted", "strategy": "sw016",
+                        "symbol": "SBIN.NS", "side": "BUY", "quantity": 94},
+                       {"at": "2026-10-08T09:36:01", "stage": "sent", "strategy": "sw016"}])
+        self.assertEqual(notifications_view(d)["count"], 0)
+
+    def test_causes_are_grouped_commonest_first(self):
+        # one recurring reason reads very differently from twenty unrelated ones
+        from dashboard.state_view import notifications_view
+        d = self._log([{"at": "2026-10-08T15:41:0%d" % i, "stage": "not_taken", "strategy": "sw016",
+                        "reasons": ["too small -- the book cannot carry it"]} for i in range(3)]
+                      + [{"at": "2026-10-08T20:35:00", "stage": "refused", "strategy": "g",
+                          "reasons": ["The NSE is closed"]}])
+        view = notifications_view(d)
+        self.assertEqual(view["by_reason"][0], {"reason": "too small", "count": 3})
+        self.assertEqual(view["by_reason"][1]["count"], 1)
+
+    def test_an_empty_log_is_not_an_error(self):
+        from dashboard.state_view import notifications_view
+        view = notifications_view(tempfile.mkdtemp())
+        self.assertEqual((view["count"], view["rows"], view["by_reason"]), (0, [], []))
+
+
 class TestNextResearchRun(unittest.TestCase):
     """Each lane's routine fires at midnight IST at the START of its own weekday -- moved there from
     19:00 on 2026-10-07 so an unattended run that takes hours happens while nobody is working."""

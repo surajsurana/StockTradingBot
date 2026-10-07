@@ -476,6 +476,35 @@ def _experiment_summary(exp_id: str) -> dict:
 from deployment.settings import STATE_DIR as STATE_DIR_CANONICAL
 
 
+def notifications_view(state_dir: str, limit: int = 200) -> dict:
+    """Everything the desk wanted to do and did not, newest first -- and why.
+
+    WHY THIS EXISTS. An underfunded book produces no trades and no errors: it looks exactly like a
+    book that simply had no signals. Suraj, on the evening SW-016 went live with Rs10,000 against a
+    Rs12,469 floor: "for tomorrow i want to see the calls its makng and they dont pass due to
+    capital not being enough." Without this the honest answer to "what happened today?" would be a
+    blank page, which is indistinguishable from nothing having happened.
+
+    Two kinds of miss, from one log so they share a timeline:
+      not_taken -- the strategy decided on it and the BOOK could not act (too small to cover its own
+                   charges, more than the cash, a stop too far from the price)
+      refused   -- the book acted and the GUARD stopped it before the broker saw it
+    An order that reached the broker and was rejected THERE is a third thing and already has its own
+    row in the Orders tab; it is not a notification, it is a trade that failed."""
+    rows = [r for r in live_orders_view(state_dir, limit=limit)
+            if str(r.get("stage")) in ("not_taken", "refused")]
+    by_reason = {}
+    for row in rows:
+        for reason in (row.get("reasons") or ["no reason recorded"]):
+            key = str(reason).split(" -- ")[0].strip()
+            by_reason[key] = by_reason.get(key, 0) + 1
+    return {"rows": rows, "count": len(rows),
+            # The headline: how many distinct things are standing in the way, commonest first. One
+            # recurring cause reads very differently from twenty unrelated ones.
+            "by_reason": [{"reason": k, "count": v}
+                          for k, v in sorted(by_reason.items(), key=lambda kv: -kv[1])]}
+
+
 def live_orders_view(state_dir: str, limit: int = 40) -> list:
     """The real order log -- every live order attempt, newest first.
 
@@ -1722,6 +1751,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         # rather than the mode-specific one -- there is only ever one real pool, and it does not
         # change depending on which view you are looking at.
         "live_capital": live_capital, "live_orders": live_orders,
+        "notifications": notifications_view(STATE_DIR_CANONICAL),
         "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise

@@ -281,6 +281,21 @@ def _min_quantity(fractional_quantities: bool) -> float:
     return 1e-6 if fractional_quantities else 1
 
 
+def _why_not_taken(quantity, cost: float, cash: float, min_value: float, min_qty) -> str:
+    """Why a signal the strategy decided on could not be acted on -- in the words the reader needs,
+    or "" when it can be. The three reasons are genuinely different problems: too small to cover its
+    own charges is a FUNDING problem, more than the cash is an ALLOCATION problem, and a zero
+    quantity is a price-versus-stop problem. Reporting them as one "skipped" would lose that."""
+    if quantity < min_qty:
+        return "position sized to zero -- the stop is too far from the price for this book"
+    if cost > cash:
+        return f"needs Rs{cost:,.0f} but only Rs{cash:,.0f} is left in the book"
+    if min_value and cost < min_value:
+        return (f"Rs{cost:,.0f} is below the Rs{min_value:,.0f} a trade needs to cover its own "
+                f"charges -- the book is too small for this strategy's position size")
+    return ""
+
+
 def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                             execution_config: ExecutionRealismConfig, target_date: date_type,
                             risk_pct_per_unit: float,
@@ -324,7 +339,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
     positions = portfolio["positions"]
     pending_entries = portfolio.get("pending_entries", {})
     pending_exits = portfolio.get("pending_exits", {})
-    new_entries, new_exits = [], []
+    new_entries, new_exits, not_taken = [], [], []
 
     def _cost_adjusted(symbol: str, side: str, raw_price: float, quantity: int) -> tuple:
         """Applies execution_config's cap/cost (both no-ops at defaults) --
@@ -394,7 +409,12 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                          * float(pending.get("size_multiplier", 1.0)), fractional_quantities)
         fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
         cost = fill_price * quantity
-        if quantity < _min_quantity(fractional_quantities) or cost > cash or cost < min_position_value_rupees:
+        skip = _why_not_taken(quantity, cost, cash, min_position_value_rupees,
+                              _min_quantity(fractional_quantities))
+        if skip:
+            not_taken.append({"symbol": symbol, "side": "BUY", "quantity": quantity,
+                              "price": fill_price, "value": round(cost, 2), "reason": skip,
+                              "date": target_date.isoformat()})
             continue
         cash -= cost + execution_config.brokerage_flat_rs
         positions[symbol] = {"entry_price": fill_price, "entry_date": target_date.isoformat(),
@@ -411,7 +431,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
     portfolio["positions"] = positions
     portfolio["pending_entries"] = pending_entries
     portfolio["pending_exits"] = pending_exits
-    return new_entries, new_exits
+    return new_entries, new_exits, not_taken
 
 
 def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_open_data_fn: Callable[[], dict],
@@ -464,14 +484,14 @@ def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_o
         return {"status": "processed", "as_of_date": target_date.isoformat(), "new_entries": [], "new_exits": []}
 
     data = fetch_open_data_fn()
-    new_entries, new_exits = _resolve_pending_fills(
+    new_entries, new_exits, not_taken = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
         fractional_quantities=getattr(strategy, "fractional_quantities", False),
     )
     _save_portfolio(strategy_key, portfolio)
 
     return {"status": "processed", "as_of_date": target_date.isoformat(),
-            "new_entries": new_entries, "new_exits": new_exits}
+            "new_entries": new_entries, "new_exits": new_exits, "not_taken": not_taken}
 
 
 def run_daily(strategy_key: str, strategy: Strategy,
@@ -578,6 +598,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # tomorrow's open" instead of the misleading "no signal today" a purely
     # fill-based view would otherwise show on the detection day.
     new_pending_entries, new_pending_exits = [], []
+    not_taken = []          # filled by the resolver below and by this run's own sizing
     # Per-open-position current mark-to-market snapshot (current price,
     # value, unrealized P&L) -- for reporting/Telegram, which should show
     # what a position is worth NOW, not just its entry price/stop-loss.
@@ -611,7 +632,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     # harmless no-op re-check, not a double-fill).
     fractional = getattr(strategy, "fractional_quantities", False)
     new_partial_exits = []
-    new_entries, new_exits = _resolve_pending_fills(
+    new_entries, new_exits, not_taken = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
         min_position_value_rupees, sizing_capital_cap, fractional_quantities=fractional,
     )
@@ -785,6 +806,16 @@ def run_daily(strategy_key: str, strategy: Strategy,
                                          / risk_per_share * getattr(signal, "size_multiplier", 1.0), fractional)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
                         cost = fill_price * quantity
+                        # WHY a decided signal was not taken. An underfunded book produces nothing
+                        # but these, and before 2026-10-07 they vanished silently -- so a book that
+                        # was working perfectly and a book that was too small to act looked
+                        # identical from outside: an empty day either way.
+                        skip = _why_not_taken(quantity, cost, cash, min_position_value_rupees,
+                                              _min_quantity(fractional))
+                        if skip:
+                            not_taken.append({"symbol": symbol, "side": "BUY", "quantity": quantity,
+                                              "price": fill_price, "value": round(cost, 2),
+                                              "reason": skip, "date": target_date.isoformat()})
                         if quantity >= _min_quantity(fractional) and cost <= cash and cost >= min_position_value_rupees:
                             cash -= cost + execution_config.brokerage_flat_rs
                             positions[symbol] = {
@@ -857,6 +888,10 @@ def run_daily(strategy_key: str, strategy: Strategy,
         "status": "processed", "as_of_date": target_date.isoformat(), "new_partial_exits": new_partial_exits,
         "new_entries": new_entries, "new_exits": new_exits,
         "new_pending_entries": new_pending_entries, "new_pending_exits": new_pending_exits,
+        # Signals the strategy decided on and the book could not act on, each with why. An
+        # underfunded book produces NOTHING ELSE, so without this a book that is working and a book
+        # that is too small to act are indistinguishable: an empty day either way.
+        "not_taken": not_taken,
         "open_positions": len(positions), "open_positions_detail": open_positions_detail,
         "cash": round(cash, 2), "mark_to_market_equity": round(mark_to_market_equity, 2),
         "daily_pnl": daily_pnl,

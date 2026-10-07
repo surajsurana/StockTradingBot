@@ -357,6 +357,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <button role="tab" aria-selected="false" data-tab="markets">Markets</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
+  <button role="tab" aria-selected="false" data-tab="notifications">Notifications<span id="notif-badge" class="pill due" hidden></span></button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="research">Research</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
@@ -381,6 +382,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   </div>
 </section>
 
+<section id="tab-notifications" hidden>
+  <h2>Notifications</h2>
+  <div class="tools"><span id="notif-count" class="note"></span></div>
+  <div id="notif-reasons" class="poolchips"></div>
+  <div class="tblwrap"><table><thead><tr><th>When</th><th>Strategy</th><th>Wanted to</th><th class="n">Value</th><th>Why it did not happen</th></tr></thead><tbody id="notif-rows"></tbody></table></div>
+</section>
 <section id="tab-orders" hidden>
   <h2>Orders</h2>
   <p class="note">Every order placed, across every pool and type — most recent first.</p>
@@ -628,7 +635,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); renderOrders(s); renderTeam(s); renderMarkets(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderLive(s); renderOrders(s); renderNotifications(s); renderTeam(s); renderMarkets(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -1140,6 +1147,33 @@ function wireOrdersPager(){
   document.getElementById("orders-prev").addEventListener("click", () => { ORDERS_PAGE--; if(STATE) renderOrders(STATE); });
   document.getElementById("orders-next").addEventListener("click", () => { ORDERS_PAGE++; if(STATE) renderOrders(STATE); });
 }
+// What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
+// and no errors -- it looks exactly like a book that had no signals -- so without this the honest
+// answer to "what happened today?" is a blank page, which says the wrong thing.
+function renderNotifications(s){
+  const n = s.notifications || {rows:[], count:0, by_reason:[]};
+  const badge = document.getElementById("notif-badge");
+  badge.hidden = !n.count;
+  badge.textContent = n.count > 99 ? "99+" : n.count;
+  document.getElementById("notif-count").textContent = n.count
+    ? `${n.count} decision${n.count===1?"":"s"} the desk could not act on`
+    : "Nothing was blocked — every decision the desk made was acted on.";
+  // Grouped by cause, commonest first: one recurring reason reads very differently from twenty
+  // unrelated ones, and tells you whether there is a single thing to fix.
+  document.getElementById("notif-reasons").innerHTML = (n.by_reason || [])
+    .map(r => `<span class="pchip static" title="${esc(r.reason)}">${esc(short(r.reason))} · ${r.count}</span>`).join("");
+  document.getElementById("notif-rows").innerHTML = (n.rows || []).map(r => {
+    const when = String(r.at || "").replace("T", " ").slice(0, 16);
+    const what = `${esc(r.side || "")} ${r.quantity ?? ""} ${esc(r.symbol || "")}`.trim();
+    const why = (r.reasons || []).join(" ");
+    const kind = r.stage === "refused" ? "the guard stopped it" : "the book could not act";
+    return `<tr><td class="n">${esc(when)}</td><td>${esc(r.strategy || "")}</td><td>${what || "—"}</td>`
+         + `<td class="n">${r.value == null ? "—" : money(r.value)}</td>`
+         + `<td><span class="pill due" title="${esc(kind)}">${esc(why)}</span></td></tr>`;
+  }).join("") || `<tr><td colspan="5" class="note">Nothing blocked.</td></tr>`;
+}
+const short = t => { t = String(t || ""); return t.length > 44 ? t.slice(0, 42) + "…" : t; };
+
 function renderOrders(s){
   buildOrdersHead();
   markSort(document.getElementById("orders-head"), ORDERS_SORT);

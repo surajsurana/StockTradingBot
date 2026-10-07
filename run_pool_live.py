@@ -33,7 +33,7 @@ whose track record is the thing being compared against.
 import argparse
 import os
 import sys
-from datetime import date as date_type
+from datetime import date as date_type, datetime
 from typing import Optional
 
 import deployment.paper_trading_engine as pte
