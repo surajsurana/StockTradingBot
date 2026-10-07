@@ -105,6 +105,26 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
         return {"status": "refused", "reason": f"{strategy_key} has no paper-trading spec to run."}
 
     live_dir = os.path.join(state_dir, "live", "paper_trading")
+    book_path = os.path.join(live_dir, strategy_key, "portfolio.json")
+
+    # BEFORE the cycle, not after -- see run_pool_g_live.py for the full reasoning. The engine writes
+    # its decisions into the book as part of deciding, so reconciling afterwards compares this run's
+    # own unplaced decisions against a broker that cannot know about them, and halts forever.
+    recon = {"ok": True, "problems": [], "notes": []}
+    if not dry_run and client is not None:
+        from deployment.reconciliation import reconcile_against_exchange
+        check = reconcile_against_exchange(book_path, client, now=now)
+        recon = {"ok": check.ok, "checked_at": check.checked_at, "problems": list(check.problems),
+                 "notes": list(check.notes),
+                 "positions": [{"symbol": p.symbol, "book": p.book_quantity,
+                                "exchange": p.exchange_quantity, "verdict": p.verdict}
+                               for p in check.positions]}
+        if not check.ok:
+            return {"status": "halted", "allocated": allocated, "orders": [], "placed": [],
+                    "reconciliation": recon,
+                    "reason": "The book and the broker disagree, so the strategy did not run. "
+                              + " ".join(check.problems)}
+
     previous = pte.PAPER_TRADING_STATE_DIR
     try:
         pte.PAPER_TRADING_STATE_DIR = live_dir       # same redirection run_pool_f.py uses
@@ -124,25 +144,6 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
 
     if settings is None:
         from config import settings as settings            # noqa: PLC0415
-
-    # RECONCILE BEFORE PLACING, for the same reason the crypto path does: the engine writes its
-    # decisions into the book as part of deciding, so by now the book may claim positions that were
-    # never filled. Acting on that unchecked is how a sell order for stock we do not own happens.
-    book_path = os.path.join(live_dir, strategy_key, "portfolio.json")
-    recon = {"ok": True, "problems": []}
-    if client is not None:
-        from deployment.reconciliation import reconcile_against_exchange
-        check = reconcile_against_exchange(book_path, client, now=now)
-        recon = {"ok": check.ok, "checked_at": check.checked_at, "problems": list(check.problems),
-                 "notes": list(check.notes),
-                 "positions": [{"symbol": p.symbol, "book": p.book_quantity,
-                                "exchange": p.exchange_quantity, "verdict": p.verdict}
-                               for p in check.positions]}
-        if not check.ok:
-            return {"status": "halted", "allocated": allocated, "engine": result, "orders": orders,
-                    "placed": [], "reconciliation": recon,
-                    "reason": "The book and the broker disagree, so no orders were placed. "
-                              + " ".join(check.problems)}
 
     place = place_fn
     if place is None:

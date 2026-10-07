@@ -182,6 +182,65 @@ class TestADryRunLeavesNothingBehind(unittest.TestCase):
         self.assertEqual([(o["side"], o["symbol"]) for o in result["orders"]], [("BUY", "BTC")])
 
 
+class TestReconciliationRunsBeforeTheCycle(unittest.TestCase):
+    """The bug this pins happened in production on 2026-10-07 and was self-perpetuating.
+
+    run_pool_g_cycle() applies its decisions to the book and SAVES it as part of deciding. With
+    reconciliation after the cycle, it compared THIS run's brand-new, unplaced decision against an
+    exchange that could not possibly know about it, declared a shortfall, and halted. The unplaced
+    position then stayed in the book forever, so every subsequent run halted too. One run with an
+    empty exchange permanently stopped the strategy."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000)
+        self.target = os.path.join(rpg.live_dir(self.d), "portfolio.json")
+
+    def _cycle_that_buys(self, *a, **k):
+        os.makedirs(os.path.dirname(self.target), exist_ok=True)
+        with open(self.target, "w") as f:
+            json.dump({"cash": 77.8, "starting_capital": 103.7,
+                       "positions": {"SOL": {"quantity": 0.219125}}}, f)
+        return {"status": "processed", "stopped": [], "sold": [],
+                "bought": [{"symbol": "SOL", "quantity": 0.219125, "price": 118.4}]}
+
+    def test_a_fresh_decision_is_not_mistaken_for_a_missing_position(self):
+        sent = []
+
+        def place(**kw):
+            sent.append(kw)
+            return SimpleNamespace(placed=True, order_id="o1", fill_price=118.4, reasons=[])
+
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", side_effect=self._cycle_that_buys):
+            out = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                               client=_Exchange(), place_fn=place, dry_run=False)
+        self.assertNotEqual(out["status"], "halted", out.get("reason"))
+        self.assertEqual(len(sent), 1)          # the order it just decided on DID go out
+
+    def test_a_genuinely_stale_book_still_halts_and_runs_no_cycle(self):
+        # a position from an EARLIER run that the exchange does not have is the real failure, and it
+        # must stop the strategy before it decides anything new on top of it
+        os.makedirs(os.path.dirname(self.target), exist_ok=True)
+        with open(self.target, "w") as f:
+            json.dump({"cash": 1.0, "positions": {"BTC": {"quantity": 0.5}}}, f)
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle") as cycle:
+            out = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                               client=_Exchange(), place_fn=lambda **kw: None, dry_run=False)
+        self.assertEqual(out["status"], "halted")
+        cycle.assert_not_called()               # nothing is decided on top of a wrong book
+
+    def test_a_settled_position_the_exchange_confirms_does_not_halt(self):
+        os.makedirs(os.path.dirname(self.target), exist_ok=True)
+        with open(self.target, "w") as f:
+            json.dump({"cash": 1.0, "positions": {"BTC": {"quantity": 0.5}}}, f)
+        exchange = _Exchange([{"currency": "BTC", "balance": 0.5, "locked_balance": 0.0}])
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle",
+                   return_value={"status": "processed", "stopped": [], "sold": [], "bought": []}):
+            out = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                               client=exchange, place_fn=lambda **kw: None, dry_run=False)
+        self.assertNotEqual(out["status"], "halted")
+
+
 class TestDivergenceIsSurfacedNotSilent(unittest.TestCase):
     """A live run writes the book before placing, so anything refused leaves the book ahead of
     reality. Reconciliation is not built yet; the gap must at least be visible."""
