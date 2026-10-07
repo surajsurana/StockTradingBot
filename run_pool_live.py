@@ -80,9 +80,32 @@ def intended_orders(result: dict) -> list:
     return orders
 
 
+def _engine_plan(strategy_key: str):
+    """How to run one strategy: its factory, its state folder, and the engine settings its pool uses.
+
+    Pool A/F and Pool E both run deployment/paper_trading_engine.run_daily(); they differ only in
+    where the books live, how fills are timed, and the sizing cap. Resolving that here is what lets a
+    single live runner serve both instead of each pool growing its own copy."""
+    spec = _SPECS_BY_KEY.get(strategy_key)
+    if spec is not None:
+        return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
+                "dirname": "paper_trading", "execution": None, "cap": None, "min_value": None}
+    try:
+        from run_pool_e import POOL_E_STARTING_CAPITAL_USDT, POOL_E_STRATEGIES
+    except Exception:
+        return None
+    entry = POOL_E_STRATEGIES.get(strategy_key)
+    if entry is None:
+        return None
+    factory, _symbols, extra_fn = entry
+    return {"factory": factory, "extra_fn": extra_fn, "dirname": "pool_e",
+            "execution": pte.ExecutionRealismConfig(fill_timing="same_day_close"),
+            "cap": POOL_E_STARTING_CAPITAL_USDT, "min_value": 5.0}
+
+
 def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None,
              force: bool = False, state_dir: str = STATE_DIR, settings=None, client=None,
-             place_fn=None, dry_run: bool = True, now=None) -> dict:
+             place_fn=None, dry_run: bool = True, now=None, usdinr: float = 0.0) -> dict:
     """
     Runs one strategy against its LIVE book and returns what it would do.
 
@@ -100,11 +123,16 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     if allocated <= 0:
         return {"status": "refused",
                 "reason": f"{strategy_key} has no live capital assigned -- assign it on the Live view first."}
-    spec = _SPECS_BY_KEY.get(strategy_key)
-    if spec is None:
-        return {"status": "refused", "reason": f"{strategy_key} has no paper-trading spec to run."}
+    # WHICH ENGINE CONFIGURATION this strategy runs under. Pool A/F and Pool E are the same engine
+    # with different settings and different state directories, so one runner serves both -- but it
+    # must use the right ones, or a crypto strategy would be run against the equity book's folder
+    # with the equity book's fill timing.
+    plan = _engine_plan(strategy_key)
+    if plan is None:
+        return {"status": "refused",
+                "reason": f"{strategy_key} has no live adapter -- no engine knows how to run it."}
 
-    live_dir = os.path.join(state_dir, "live", "paper_trading")
+    live_dir = os.path.join(state_dir, "live", plan["dirname"])
     book_path = os.path.join(live_dir, strategy_key, "portfolio.json")
 
     # BEFORE the cycle, not after -- see run_pool_g_live.py for the full reasoning. The engine writes
@@ -129,11 +157,18 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     try:
         pte.PAPER_TRADING_STATE_DIR = live_dir       # same redirection run_pool_f.py uses
         _ensure_book(live_dir, strategy_key, allocated)
-        extra_fn = spec.compute_extra_columns_fn
+        extra_fn = plan["extra_fn"]
+        engine_kwargs = {}
+        if plan["execution"] is not None:
+            engine_kwargs["execution_config"] = plan["execution"]
+        if plan["cap"] is not None:
+            engine_kwargs["sizing_capital_cap"] = plan["cap"]
+        if plan["min_value"] is not None:
+            engine_kwargs["min_position_value_rupees"] = plan["min_value"]
         result = pte.run_daily(
-            strategy_key, spec.strategy_factory(), fetch_data_fn=fetch_data_fn,
+            strategy_key, plan["factory"](), fetch_data_fn=fetch_data_fn,
             compute_extra_columns_fn=(lambda d, fn=extra_fn: fn(d)) if extra_fn else None,
-            as_of_date=as_of, force=force,
+            as_of_date=as_of, force=force, **engine_kwargs,
         )
     finally:
         pte.PAPER_TRADING_STATE_DIR = previous       # always restored, even on an exception
@@ -145,14 +180,28 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     if settings is None:
         from config import settings as settings            # noqa: PLC0415
 
+    # THE EXECUTOR FOLLOWS THE VENUE. This was hardcoded to the equity one, so a Pool E crypto
+    # strategy promoted here would have had its orders sent to Kite -- the right book, the wrong
+    # exchange, and nothing in the code to notice.
+    from deployment.venues import COINDCX, venue_of
+    venue = venue_of(record)
     place = place_fn
     if place is None:
-        from deployment.live_executor import place_live_order as place
+        if venue == COINDCX:
+            from deployment.crypto_executor import place_crypto_order as place
+        else:
+            from deployment.live_executor import place_live_order as place
     placed = []
     for order in orders:
-        outcome = place(settings=settings, record=record, state_dir=state_dir,
-                        symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
-                        reference_price=order.get("price"), strategy_key=strategy_key, now=now)
+        common = dict(settings=settings, record=record, state_dir=state_dir,
+                      symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
+                      strategy_key=strategy_key, now=now)
+        if venue == COINDCX:
+            # a crypto book prices in USDT and the caps are in rupees, so the executor needs the rate
+            outcome = place(reference_price_usdt=order.get("price"), usdinr=usdinr,
+                            client=client, **common)
+        else:
+            outcome = place(reference_price=order.get("price"), **common)
         placed.append({**order, "placed": bool(outcome.placed), "order_id": outcome.order_id,
                        "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
     unplaced = [p for p in placed if not p["placed"]]

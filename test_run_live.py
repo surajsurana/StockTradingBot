@@ -138,6 +138,63 @@ class TestDispatch(unittest.TestCase):
         self.assertIs(inspect.signature(run_live.run_all).parameters["dry_run"].default, True)
 
 
+class TestEveryCryptoStrategyCanActuallyTrade(unittest.TestCase):
+    """Pressing P on a crypto strategy must make it trade on CoinDCX. Before this, only Pool G had an
+    adapter: the six Pool E/E1 strategies would have been promoted, funded, and then refused with
+    "no spec" -- and if they HAD run, the shared runner hardcoded the equity executor, so their
+    orders would have gone to Kite. The right book, the wrong exchange, and nothing to notice."""
+
+    def test_every_PROMOTABLE_crypto_strategy_has_an_engine_plan(self):
+        # Scoped to what P can actually act on. A strategy still in RESEARCH cannot reach PILOT_LIVE
+        # at all -- the registry only allows RESEARCH -> PAPER_TRADING or ARCHIVED -- so having no
+        # live adapter for one is correct, not a gap. crypto_xs_momentum and crypto_vol_managed are
+        # both RESEARCH/REJECT and sit there deliberately.
+        from deployment.base import DeploymentStatus
+        from deployment.deployment_manager import list_strategies
+        from deployment.venues import COINDCX, venue_of
+        import run_pool_live as rpl
+        promotable = (DeploymentStatus.PAPER_TRADING, DeploymentStatus.PILOT_LIVE,
+                      DeploymentStatus.PRODUCTION)
+        missing = []
+        for r in list_strategies():
+            if venue_of(r) != COINDCX or r.strategy_key == "portfolio_g":
+                continue            # Pool G has its own adapter
+            if r.deployment_status not in promotable:
+                continue
+            if rpl._engine_plan(r.strategy_key) is None:
+                missing.append(r.strategy_key)
+        self.assertEqual(missing, [], f"crypto strategies you could promote but not run: {missing}")
+
+    def test_a_research_stage_strategy_cannot_be_promoted_anyway(self):
+        # the reason the test above is scoped the way it is
+        from deployment.base import DeploymentStatus, is_valid_transition
+        self.assertFalse(is_valid_transition(DeploymentStatus.RESEARCH, DeploymentStatus.PILOT_LIVE))
+
+    def test_a_pool_e_strategy_runs_against_its_own_folder_not_the_equity_one(self):
+        import run_pool_live as rpl
+        plan = rpl._engine_plan("crypto_tsmom")
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["dirname"], "pool_e")        # not paper_trading
+        self.assertIsNotNone(plan["execution"])            # same_day_close, as Pool E runs it
+
+    def test_an_equity_strategy_keeps_the_equity_folder_and_defaults(self):
+        import run_pool_live as rpl
+        plan = rpl._engine_plan("ma_pullback")
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan["dirname"], "paper_trading")
+        self.assertIsNone(plan["execution"])
+
+    def test_a_crypto_order_goes_to_the_crypto_executor_not_kite(self):
+        import run_pool_live as rpl
+        with open(rpl.__file__, encoding="utf-8") as f:
+            source = f.read()
+        body = source[source.index("    from deployment.venues import COINDCX, venue_of"):]
+        body = body[:body.index("placed = []")]
+        self.assertIn("place_crypto_order", body)
+        self.assertIn("place_live_order", body)
+        self.assertIn("venue == COINDCX", body)
+
+
 class TestAddingAPoolIsAnAdapter(unittest.TestCase):
     def test_the_dispatcher_names_only_pool_g_as_special(self):
         # every other pool shares one path; if that list grows, the shape has gone wrong

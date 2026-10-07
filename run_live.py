@@ -103,13 +103,27 @@ def run_one(record, rupees: float, *, settings, state_dir: str = STATE_DIR, dry_
                                client=client, dry_run=dry_run, now=now)
         return {"key": key, "venue": venue, "allocated": rupees, **out}
 
-    # Everything else runs the shared paper-trading engine against its own live book.
+    # Everything else runs the shared paper-trading engine against its own live book. The data it
+    # needs depends on the market, not the pool: a crypto strategy wants Binance candles, an equity
+    # one wants the NSE universe.
     import run_pool_live as adapter
-    from data.fetch_historical import fetch_all
-    from swing_research.universe import get_swing_universe
-    data = fetch_all(get_swing_universe(), period="2y")
+    usdinr = 0.0
+    if venue == COINDCX:
+        from data.fetch_crypto import fetch_all_crypto_daily, fetch_usdinr_rate
+        from run_pool_e import HISTORY_YEARS, POOL_E_STRATEGIES
+        entry = POOL_E_STRATEGIES.get(key)
+        if entry is None:
+            return {"key": key, "status": "refused",
+                    "reason": f"{key} is a crypto strategy with no engine entry, so it cannot run."}
+        data = fetch_all_crypto_daily(entry[1], years=HISTORY_YEARS)
+        usdinr = fetch_usdinr_rate()
+    else:
+        from data.fetch_historical import fetch_all
+        from swing_research.universe import get_swing_universe
+        data = fetch_all(get_swing_universe(), period="2y")
     out = adapter.run_live(key, fetch_data_fn=lambda d=data: d, state_dir=state_dir,
-                           settings=settings, client=client, dry_run=dry_run, now=now)
+                           settings=settings, client=client, dry_run=dry_run, now=now,
+                           usdinr=usdinr)
     return {"key": key, "venue": venue, "allocated": rupees, **out}
 
 
