@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
 from deployment.live_guard import (DEFAULT_MAX_LIVE_EXPOSURE_RUPEES, DEFAULT_MAX_ORDER_VALUE_RUPEES,
