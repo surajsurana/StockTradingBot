@@ -1634,3 +1634,40 @@ TURNOVER_LIQUIDITY = PublishedStrategy(
         "drawdown versus the paper's unconstrained long leg."
     ),
 )
+
+
+SHORT_TERM_REVERSAL_US = PublishedStrategy(
+    name="Short-Term Reversal (US)",
+    source_citation=SHORT_TERM_REVERSAL.source_citation,
+    mechanism=SHORT_TERM_REVERSAL.mechanism,
+    rules=SHORT_TERM_REVERSAL.rules,
+    variant_chosen=SHORT_TERM_REVERSAL.variant_chosen,
+    scope_reductions=(
+        "Same formation window, single-vintage holding, exit rule, protective stop and position "
+        "sizing adaptations as the India version (see SHORT_TERM_REVERSAL above for the full "
+        "reasoning) -- unchanged, none of it is India-specific. Long-only: this codebase has no "
+        "short-selling infrastructure for ANY market yet (not an NSE-specific gap -- the constraint "
+        "is this codebase's own execution layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS verdict (short_term_reversal, SW-008, live in "
+        "paper trading). Jegadeesh (1990) is itself a US-equity (NYSE/AMEX) study, so this is "
+        "closer to the paper's own native sample than the India application ever was -- but unlike "
+        "the Minervini and Cross-Sectional Momentum US ports, the roadmap's own expected-robustness "
+        "score for this one is low (3/10): short-term reversal is among the most heavily documented "
+        "DECAYED anomalies in US equities post-2000, concentrated in small/illiquid names, close to "
+        "the opposite of the S&P 500 large-cap universe this is the only US universe available. A "
+        "REJECT here would be a genuinely useful, cost-informed result about large-cap liquidity "
+        "provision, not a wasted cycle -- see the candidate's own evidence_sufficiency_note."
+    ),
+    assumptions_impact=(
+        SHORT_TERM_REVERSAL.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here. One market-specific "
+        "addition: this program's execution_realism_engine.py cost modelling is expected to matter "
+        "more here than for any prior US port, given the strategy's full monthly rotation and the "
+        "roadmap's own disclosed concern about transaction-cost sensitivity."
+    ),
+)

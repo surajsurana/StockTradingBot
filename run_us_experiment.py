@@ -60,6 +60,10 @@ RUNNERS = {
         lambda: _director().run_cross_sectional_momentum_us_experiment,
         "Cross-Sectional Momentum, US variant (the unmodified India Strategy class against the "
         "frozen S&P 500 universe)"),
+    "us_short_term_reversal": (
+        lambda: _director().run_short_term_reversal_us_experiment,
+        "Short-Term Reversal, US variant (the unmodified India Strategy class against the frozen "
+        "S&P 500 universe)"),
 }
 
 
