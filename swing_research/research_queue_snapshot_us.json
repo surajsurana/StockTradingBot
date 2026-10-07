@@ -4,6 +4,8 @@
     "name": "Short-Term Reversal (US)",
     "mode": "backtest",
     "in_progress": false,
+    "stale": false,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
