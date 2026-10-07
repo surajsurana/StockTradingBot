@@ -81,6 +81,24 @@ def run_one(record, rupees: float, *, settings, state_dir: str = STATE_DIR, dry_
         return {"key": key, "status": "refused",
                 "reason": f"No broker is wired for {key}'s market, so it cannot trade live."}
 
+    # A Kite access token expires overnight, so the one sitting in settings.py is stale by the time
+    # any scheduled run uses it. run_daily.py and monitor_positions.py have always refreshed it;
+    # this runner did not, which meant the equity path would have failed its very first real
+    # morning with an authentication error that looks nothing like the thing that caused it.
+    # Refreshed here, once, before anything reads a credential.
+    # Only when something will actually be sent: a dry run reads nothing that needs the session, and
+    # logging in to decide what we would have done is a network round trip for no reason.
+    if venue == KITE and not dry_run:
+        try:
+            from auth.kite_auto_login import ensure_fresh_kite_session
+            if not ensure_fresh_kite_session(settings):
+                return {"key": key, "status": "refused",
+                        "reason": "The Kite session could not be refreshed, so no equity order can "
+                                  "be placed. The access token expires daily."}
+        except Exception as e:
+            return {"key": key, "status": "refused",
+                    "reason": f"Refreshing the Kite session failed: {type(e).__name__}: {e}"}
+
     config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
     if client is None:
         try:
