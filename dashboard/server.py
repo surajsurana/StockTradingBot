@@ -841,6 +841,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
                 key, target = str(body.get("key", "")), str(body.get("to", ""))
+                # WHICH book goes live, for a strategy that runs in two. Validated against the
+                # runner's own list rather than trusted: a pool name the runner does not know would
+                # promote the strategy and then resolve to the default, which is the silent wrong
+                # answer this whole change exists to remove.
+                from run_pool_live import POOL_VARIANTS
+                pool = str(body.get("pool", "") or "").strip().upper()
+                if pool and pool not in POOL_VARIANTS:
+                    raise ValueError(f"{pool} is not a pool that can be promoted "
+                                     f"({', '.join(sorted(POOL_VARIANTS))}).")
                 record = next((r for r in list_strategies() if r.strategy_key == key), None)
                 if record is None:
                     raise ValueError(f"{key or 'that strategy'} is not in the deployment registry.")
@@ -849,8 +858,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     gate = pilot_gate_for_key(record, STATE_DIR)
                     evidence = (f"verdict {getattr(record.research_verdict, 'value', record.research_verdict)}, "
                                 f"{gate['days']} paper days, {gate['trades']} closed trades")
+                    which = f" Pool {pool} is the live book." if pool else ""
                     if gate["eligible"]:
-                        reason = (f"Promoted to pilot live from the dashboard. Automated gates at "
+                        reason = (f"Promoted to pilot live from the dashboard.{which} Automated gates at "
                                   f"promotion: {evidence}. Remaining gates (drift, costs, drawdown, "
                                   f"backtest credibility) were judged by hand -- see "
                                   f"deployment/LIVE_PROMOTION_CRITERIA.md.")
@@ -860,7 +870,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         # is what deployment/pilot_live.promotion_override() later reads, so the
                         # per-order guard honours this instead of silently refusing every order.
                         reason = (f"{PROMOTION_OVERRIDE_MARKER} Promoted to pilot live from the "
-                                  f"dashboard in spite of the automated gates. Evidence at promotion: "
+                                  f"dashboard in spite of the automated gates.{which} Evidence at promotion: "
                                   f"{evidence}. Gates NOT met: {' '.join(gate['reasons'])} "
                                   f"Deliberate human decision; see deployment/LIVE_PROMOTION_CRITERIA.md.")
                     else:
@@ -883,8 +893,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 # No force=True: deployment/base.py's transition map allows both of these moves, and
                 # anything it disallows is a move that should be made deliberately, not from a button.
                 self.state_cache.invalidate()
-                set_deployment_status(key, DeploymentStatus(target), reason=reason)
-                self._send(HTTPStatus.OK, json.dumps({"ok": True, "status": target}).encode("utf-8"),
+                set_deployment_status(key, DeploymentStatus(target), reason=reason,
+                                      live_pool=pool if target == "PILOT_LIVE" else None)
+                self._send(HTTPStatus.OK,
+                           json.dumps({"ok": True, "status": target, "pool": pool}).encode("utf-8"),
                            "application/json")
             except (ValueError, KeyError, OSError) as e:
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),

@@ -219,6 +219,41 @@ size it up so the first trade is meaningful." "Just widen the stop because real 
 different." Each is a reasonable-sounding sentence that destroys the comparison, and the damage is
 invisible: the live book still produces numbers, they just do not mean what you think.
 
+### Paper and Live are the same product, not two products
+
+**The Paper and Live views must be exact replicas of each other. Every tab, every column, every
+control, every number, in the same place, working the same way. The ONLY difference is whose money
+it is.**
+
+If Live is missing a tab, or shows a column Paper does not, or computes a figure differently, then
+you cannot put the two side by side — and putting the two side by side is the entire purpose of
+having both. A difference in the view is as corrosive as a difference in the engine: it does not
+change what the strategy did, it changes whether you can see that it did the same thing.
+
+This also keeps the system honest about emptiness. A pool with no live book shows as a pool with no
+live book — present, listed, empty — not as a missing tab. "Nothing here yet" and "this does not
+exist here" are different statements, and only one of them is true.
+
+Practically: when a tab, card, column or control is added to one mode, it is added to both in the
+same change. A view that only makes sense in one mode is a signal that the underlying thing differs
+between modes, which is itself the bug.
+
+### WHICH pool goes live
+
+18 strategies run in two pools at once — Pool A and Pool F, or Pool E and E1 — and those are
+different methods, not copies: Pool F books half the position at +5% and moves the stop to entry.
+Their results differ accordingly (ma_pullback: Pool A −₹9,845, Pool F −₹5,115).
+
+"Promote this strategy" is therefore not a complete instruction, and until 2026-10-07 the runner
+silently resolved it to Pool A — for ma_pullback, the worse book, chosen by nobody and recorded
+nowhere. That is this same rule being broken: if the system picks the variant for you, there is no
+answer to "which paper book is this live book's control?"
+
+So the choice is explicit. `StrategyRecord.live_pool` holds it, the Strategies tab shows a **P** on
+each pool's own row, and `run_pool_live._engine_plan()` runs that pool's actual configuration —
+Pool F live means partial booking is on. One pool per strategy may be live at a time, and the other
+pool's row says so rather than offering a button that would quietly replace it.
+
 ### How this is enforced
 
 - Both books run the SAME code: `deployment/paper_trading_engine.run_daily()`. The live runner

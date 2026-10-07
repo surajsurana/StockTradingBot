@@ -128,6 +128,19 @@ class StrategyRecord:
     research_verdict_source: str = ""   # e.g. exp_ids this verdict is based on, for traceability
     deployment_status: DeploymentStatus = DeploymentStatus.RESEARCH
     deployment_status_history: list = field(default_factory=list)   # [{status, timestamp, reason}]
+    # WHICH POOL IS LIVE (added 2026-10-07). 18 strategies run in two pools at once -- Pool A and
+    # Pool F, or Pool E and E1 -- and the two are genuinely different methods, not copies: Pool F
+    # books half the position at +5% and moves the stop to entry. Their results differ accordingly
+    # (ma_pullback: Pool A -Rs9,845, Pool F -Rs5,115).
+    #
+    # One deployment_status per strategy could not say WHICH of the two went live, so the runner
+    # silently resolved every promotion to Pool A -- for ma_pullback, the worse book, with nothing
+    # recording that a choice had been made at all. That also broke ARCHITECTURE.md's paper-to-live
+    # rule: if the system picks the variant for you, there is no answer to "which paper book is this
+    # live book's control?".
+    #
+    # Empty means the strategy's default pool, which is what every single-pool strategy has.
+    live_pool: str = ""
     notes: str = ""
     # Strategy metadata (added 2026-08-04, Phase 2 operationalization) --
     # declarative facts the scheduler (deployment/scheduler.py) reads to

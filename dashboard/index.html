@@ -1521,6 +1521,28 @@ const promoteBtn = (p, r) => {
   return `<button class="promoteicon${ok ? "" : " override"}" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
     data-confirm="✓" title="${why}">P</button>`;
 };
+// A P on each pool's own row, for the 18 strategies that run in two. Pool A and Pool F are different
+// methods -- F books half at +5% and moves the stop to entry -- so "promote this strategy" was never
+// a complete instruction, and the runner silently resolved it to Pool A. For ma_pullback that was the
+// worse book (-Rs9,845 against Pool F's -Rs5,115), chosen by nobody.
+const poolCode = label => (String(label || "").match(/Pool\s+([A-Z0-9]+)/) || [])[1] || "";
+const poolPromoteBtn = (p, r) => {
+  const code = poolCode(p.pool);
+  if(!code || !r) return "";
+  const live = liveState(r.status) === "Live";
+  const isThisOne = (r.live_pool || "") === code;
+  if(live)
+    return isThisOne
+      ? `<button class="promoteicon demote" data-key="${esc(r.key)}" data-to="PAPER_TRADING" data-pool="${esc(code)}"
+         data-confirm="✓" title="${esc(p.pool)} is the live book. Return it to paper trading.">P</button>`
+      : `<span class="note" title="${esc(r.live_pool ? "Pool " + r.live_pool : "another pool")} is the live book for this strategy; only one can be.">—</span>`;
+  const ok = (r.pilot || {}).state === "qualified";
+  const why = `Promote ${esc(p.pool)} specifically -- that exact book, with its own method -- to pilot live.`
+    + (ok ? " This places no orders by itself."
+          : ` OVERRIDE: the gates are not met (${esc(((r.pilot||{}).reasons||[]).join(" "))}), and promoting anyway is recorded in its history.`);
+  return `<button class="promoteicon${ok ? "" : " override"}" data-key="${esc(r.key)}" data-to="PILOT_LIVE"
+    data-pool="${esc(code)}" data-confirm="✓" title="${why}">P</button>`;
+};
 function wirePromoteButtons(){
   document.querySelectorAll("#registry .promoteicon").forEach(b => {
     // Wire each button at most once. Two listeners on the same button would make ONE click run the
@@ -1543,6 +1565,7 @@ function wirePromoteButtons(){
       try {
         const res = await fetch("/api/live/promote", {method:"POST", headers:{"Content-Type":"application/json"},
                                                       body: JSON.stringify({key: b.dataset.key, to: b.dataset.to,
+                                                            pool: b.dataset.pool || "",
                                                             override: b.classList.contains("override")})});
         const body = await res.json();
         if(!body.ok) throw new Error(body.error || "refused");
@@ -2250,7 +2273,7 @@ function renderRegistry(s){
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
     const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? (p.net == null ? p.pnl : p.net) / p.capital * 100 : null, pdays = daysSince(p.started);
-      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td></tr>`;
+      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td>${MODE === "live" ? "<td></td>" : ""}<td class="c">${poolPromoteBtn(p, r)}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("")
     || `<tr><td colspan="${regCols().length}" class="note">${MODE === "live"

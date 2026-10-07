@@ -50,7 +50,8 @@ def load(state_dir: str) -> dict:
 
 
 def record_status(state_dir: str, strategy_key: str, from_status: str, to_status: str,
-                  reason: str = "", when: Optional[float] = None) -> dict:
+                  reason: str = "", when: Optional[float] = None,
+                  live_pool: Optional[str] = None) -> dict:
     """Writes `strategy_key`'s new status and appends to its history. Returns the entry written.
 
     The history is kept HERE as well as the status, because the two must not drift: a promotion whose
@@ -63,7 +64,12 @@ def record_status(state_dir: str, strategy_key: str, from_status: str, to_status
     history = list(entry.get("history") or [])
     history.append({"from_status": from_status, "to_status": to_status,
                     "timestamp": when if when is not None else time.time(), "reason": reason})
-    current[strategy_key] = {"status": to_status, "history": history}
+    # live_pool belongs here for the same reason status does: which of a strategy's two books is the
+    # live one is what the machine is doing, not a fact about the research, and a deploy must not be
+    # able to reset it. None means "leave whatever was there" so an unrelated status change cannot
+    # quietly clear a pool choice made earlier.
+    entry_pool = entry.get("live_pool", "") if live_pool is None else str(live_pool or "")
+    current[strategy_key] = {"status": to_status, "history": history, "live_pool": entry_pool}
     write_json(overlay_path(state_dir), current, sort_keys=True)
     return current[strategy_key]
 
@@ -90,6 +96,9 @@ def apply_to(registry: dict, state_dir: str) -> dict:
                                                         DeploymentStatus.__members__ else raw)
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
+        pool = entry.get("live_pool")
+        if isinstance(pool, str) and pool:
+            record.live_pool = pool
         history = entry.get("history")
         if isinstance(history, list) and history:
             # The overlay's history is the live one: it holds the promotions that happened on this

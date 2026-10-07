@@ -186,7 +186,8 @@ def set_research_verdict(strategy_key: str, verdict: ResearchVerdict, source: st
 
 
 def set_deployment_status(strategy_key: str, new_status: DeploymentStatus, reason: str = "",
-                           force: bool = False, registry_path: str = REGISTRY_PATH) -> StrategyRecord:
+                           force: bool = False, registry_path: str = REGISTRY_PATH,
+                           live_pool: Optional[str] = None) -> StrategyRecord:
     """
     Records a strategy's deployment status. ALWAYS a manual, explicit call
     -- nothing in this program calls this automatically based on a
@@ -211,11 +212,15 @@ def set_deployment_status(strategy_key: str, new_status: DeploymentStatus, reaso
              "timestamp": time.time(), "reason": reason}
     record.deployment_status_history.append(entry)
     record.deployment_status = new_status
+    # WHICH of a strategy's books goes live, for the 18 that run in two. None leaves whatever was
+    # chosen before, so demoting and re-promoting does not silently reset the choice.
+    if live_pool is not None:
+        record.live_pool = str(live_pool or "")
     # Written to the UNTRACKED overlay, not the tracked registry, so a deploy cannot revert it.
     # The registry is still saved for everything else the record carries, and if the overlay write
     # fails the status change is refused rather than left looking applied until the next deploy.
     from deployment.status_overlay import record_status
     record_status(os.path.dirname(registry_path), strategy_key, entry["from_status"],
-                  entry["to_status"], reason, when=entry["timestamp"])
+                  entry["to_status"], reason, when=entry["timestamp"], live_pool=live_pool)
     _save_registry(registry, registry_path)
     return record

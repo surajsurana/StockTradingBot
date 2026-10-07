@@ -87,7 +87,16 @@ def intended_orders(result: dict) -> list:
     return orders
 
 
-def _engine_plan(strategy_key: str):
+# The pools a strategy can be promoted INTO, and what makes each one that pool. A pool is not a
+# folder: Pool F is Pool A's strategy with half the position booked at +5% and the stop moved to
+# entry, so running "Pool F live" means running that, not Pool A's book under another name.
+POOL_VARIANTS = {
+    "A": {"dirname": "paper_trading", "partial": False},
+    "F": {"dirname": "pool_f", "partial": True},
+}
+
+
+def _engine_plan(strategy_key: str, live_pool: str = ""):
     """How to run one strategy: its factory, its state folder, and the engine settings its pool uses.
 
     Pool A/F and Pool E both run deployment/paper_trading_engine.run_daily(); they differ only in
@@ -95,12 +104,23 @@ def _engine_plan(strategy_key: str):
     single live runner serve both instead of each pool growing its own copy."""
     spec = _SPECS_BY_KEY.get(strategy_key)
     if spec is not None:
+        # WHICH of its two books goes live is the promoter's choice, recorded on the record. Before
+        # 2026-10-07 this silently resolved to Pool A for every strategy, which for ma_pullback meant
+        # taking the worse variant live (-Rs9,845 against Pool F's -Rs5,115) with nothing anywhere
+        # saying a choice had been made.
+        variant = POOL_VARIANTS.get(str(live_pool or "").strip().upper())
+        if variant is not None:
+            from run_pool_f import PARTIAL_BOOKING
+            return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
+                    "dirname": variant["dirname"], "execution": None, "cap": None,
+                    "min_value": min_viable_notional(),
+                    "partial_booking": PARTIAL_BOOKING if variant["partial"] else None}
         # min_value: the same charge-derived floor run_paper_trading.py and run_pool_f.py apply.
         # Without it the LIVE equity book would take the Rs3,532 positions the paper books were
         # taking -- with real money, and paying the flat DP charge for real.
         return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
                 "dirname": "paper_trading", "execution": None, "cap": None,
-                "min_value": min_viable_notional()}
+                "min_value": min_viable_notional(), "partial_booking": None}
     try:
         from run_pool_e import POOL_E_STARTING_CAPITAL_USDT, POOL_E_STRATEGIES
     except Exception:
@@ -111,7 +131,7 @@ def _engine_plan(strategy_key: str):
     factory, _symbols, extra_fn = entry
     return {"factory": factory, "extra_fn": extra_fn, "dirname": "pool_e",
             "execution": pte.ExecutionRealismConfig(fill_timing="same_day_close"),
-            "cap": POOL_E_STARTING_CAPITAL_USDT, "min_value": 5.0}
+            "cap": POOL_E_STARTING_CAPITAL_USDT, "min_value": 5.0, "partial_booking": None}
 
 
 def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None,
@@ -143,7 +163,7 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     # with different settings and different state directories, so one runner serves both -- but it
     # must use the right ones, or a crypto strategy would be run against the equity book's folder
     # with the equity book's fill timing.
-    plan = _engine_plan(strategy_key)
+    plan = _engine_plan(strategy_key, getattr(record, "live_pool", ""))
     if plan is None:
         return {"status": "refused",
                 "reason": f"{strategy_key} has no live adapter -- no engine knows how to run it."}
@@ -183,6 +203,9 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
             engine_kwargs["sizing_capital_cap"] = plan["cap"]
         if plan["min_value"] is not None:
             engine_kwargs["min_position_value_rupees"] = plan["min_value"]
+        # Pool F IS partial booking. Omitting it would run Pool A's method against Pool F's book.
+        if plan.get("partial_booking") is not None:
+            engine_kwargs["partial_booking"] = plan["partial_booking"]
         if resolve_at_open:
             # THE EQUITY SIDE'S SECOND HALF. An Indian strategy decides after the close and queues
             # its entries for the next open, because that is when they can actually be bought. The

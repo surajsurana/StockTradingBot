@@ -1299,6 +1299,8 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         started = min(book_starts) if book_starts else _paper_trading_started(r)
         wins = sum(p["wins"] for p in pools_breakdown) if pools_breakdown else None
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
+                     # which of its books is the live one, for a strategy that runs in two
+                     "live_pool": getattr(r, "live_pool", "") or "",
                      "pilot": _pilot_gate(r, started, closed_trades, now),
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
