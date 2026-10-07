@@ -1743,6 +1743,22 @@ def _attach_lifecycles(rows: list) -> dict:
     return lifecycles
 
 
+def _live_fill_overrides(position: dict, derived_amount: float) -> dict:
+    """Rupee figures taken from the EXCHANGE where a real fill is recorded, not derived from the
+    USDT price and today's rate.
+
+    A live position carries `live_fill` -- the quantity the exchange actually bought, the INR price
+    it actually paid, the fee it actually charged. Deriving the amount instead (USDT price x today's
+    FX) produced Rs2,503 for a trade CoinDCX billed at Rs2,615.55: wrong quantity, wrong price,
+    no fee. Where the exchange has told us, the exchange wins."""
+    fill = position.get("live_fill") if isinstance(position, dict) else None
+    if not isinstance(fill, dict) or not fill.get("inr_value"):
+        return {"amount": round(derived_amount, 2)}
+    return {"amount": round(float(fill["inr_value"]), 2),
+            "fee": fill.get("fee_inr"), "order_id": fill.get("order_id"),
+            "inr_price": fill.get("inr_price"), "actual_fill": True}
+
+
 def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
             pool_e: Optional[dict] = None, d_open: Optional[list] = None,
             prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
@@ -1909,7 +1925,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
                      "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
                      "cost": p["entry_price"] * p["quantity"] * g_rate,
                      "note": p.get("reasoning", "") or "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
-                     "amount": round(p["entry_price"] * p["quantity"] * g_rate, 2)})
+                     **_live_fill_overrides(p, p["entry_price"] * p["quantity"] * g_rate)})
     for t in _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl")):
         qty = float(t.get("quantity", 0) or 0)
         rows.append({"date": t.get("exit_date"), "time": "", "action": "SELL", "symbol": t.get("symbol"),

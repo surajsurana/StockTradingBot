@@ -96,6 +96,48 @@ def _restore(path: str, blob) -> None:
     os.replace(tmp, path)
 
 
+def _record_fills(book_path: str, placed: list) -> list:
+    """Writes what the exchange ACTUALLY did back into the book.
+
+    The cycle sizes a position from its own decision -- 0.000308 BTC at the Binance price -- but the
+    exchange rounds the quantity to its own precision and fills at its own INR price plus a fee. The
+    book was keeping the decision, so it claimed 0.000308 BTC worth Rs2,503 while the account held
+    0.00031 BTC that cost Rs2,615.55. Two numbers for one trade, and the dashboard showed the wrong
+    one.
+
+    The position keeps its USDT accounting (that is what the strategy reasons in) and gains a
+    `live_fill` record of the real quantity, the real INR price, the real fee and the real total, so
+    every rupee figure shown anywhere can be the one the exchange charged."""
+    filled = [p for p in placed if p.get("placed") and p.get("fill_price")]
+    if not filled:
+        return []
+    import json as _json
+    from deployment.atomic_write import write_json
+    try:
+        book = _json.loads(open(book_path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return []
+    positions = book.get("positions") or {}
+    updated = []
+    for order in filled:
+        symbol = order.get("symbol")
+        position = positions.get(symbol)
+        if not isinstance(position, dict):
+            continue                  # a sell closed it; nothing left to annotate
+        actual = order.get("actual") or {}
+        quantity = actual.get("quantity") or position.get("quantity")
+        position["quantity"] = quantity          # the exchange's rounding is the truth
+        position["live_fill"] = {"inr_price": order.get("fill_price"),
+                                 "quantity": quantity,
+                                 "fee_inr": actual.get("fee_amount"),
+                                 "inr_value": actual.get("total"),
+                                 "order_id": order.get("order_id")}
+        updated.append(symbol)
+    if updated:
+        write_json(book_path, book)
+    return updated
+
+
 def _rollback_unplaced(book_path: str, before_blob, placed: list) -> list:
     """Undoes, in the book, every decision whose order did not actually reach the exchange.
 
@@ -253,13 +295,18 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
                         symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
                         reference_price_usdt=order["price"], strategy_key=POOL_G_KEY,
                         usdinr=usdinr, client=client, now=now)
+        raw = getattr(outcome, "raw", None) or {}
+        raw = raw if isinstance(raw, dict) else {}
         placed.append({**order, "placed": bool(outcome.placed), "order_id": outcome.order_id,
-                       "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
+                       "fill_price": outcome.fill_price, "reasons": list(outcome.reasons),
+                       "actual": {"quantity": raw.get("quantity"), "fee_amount": raw.get("fee_amount"),
+                                  "total": raw.get("total")}})
+    recorded = _record_fills(target, placed)
     reverted = _rollback_unplaced(target, before, placed)
     diverged = _divergence(orders, placed)
     return {"status": result.get("status"), "allocated_inr": allocated_inr, "engine": result,
             "orders": orders, "placed": placed, "divergence": diverged,
-            "reverted": reverted, "reconciliation": recon}
+            "reverted": reverted, "recorded": recorded, "reconciliation": recon}
 
 
 def main() -> None:

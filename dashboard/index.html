@@ -375,9 +375,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-orders" hidden>
-  <h2>Real money orders</h2>
-  <div id="run-msg" class="note"></div>
-  <div id="run-out"></div>
+  <div id="run-msg"></div>
 
   <h2>Orders</h2>
   <p class="note">Every order placed, across every pool and type — most recent first.</p>
@@ -1536,33 +1534,18 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // not authorise it.
 let RUNNER = null, RUNNER_POLL = null;
 function renderRun(){
-  const msg = document.getElementById("run-msg"), out = document.getElementById("run-out");
+  const msg = document.getElementById("run-msg");
   if(!msg) return;
-  // The ORDER LOG is the record, not whatever this page happened to start. Every live run is fired
-  // by cron now, so a page that only knew about its own runs showed "not run yet" while real orders
-  // had been attempted hours earlier.
-  const rows = (STATE && STATE.live_orders) || [];
-  if(!rows.length){
-    msg.textContent = "No live order has been attempted yet. The live books run on their own schedule.";
-    out.innerHTML = "";
-    return;
-  }
-  const last = rows[0];
-  msg.textContent = `Last live order attempt: ${esc(String(last.at || "").replace("T", " ").slice(0, 16))}`;
-  const pill = stage => stage === "accepted" ? `<span class="pill ok">placed</span>`
-    : stage === "sent" ? `<span class="pill">sent</span>`
-    : `<span class="pill miss">${esc(stage)}</span>`;
-  out.innerHTML = `<div class="tblwrap"><table><thead><tr><th>When</th><th>Side</th><th>Coin</th>
-      <th class="n">Quantity</th><th class="n">Value</th><th class="n">Fee</th><th>Result</th></tr></thead><tbody>
-    ${rows.map(r => `<tr>
-      <td class="n narrow">${esc(String(r.at || "").replace("T", " ").slice(0, 16))}</td>
-      <td class="${r.side === "BUY" ? "gain" : "loss"}"><b>${esc(r.side || "")}</b></td>
-      <td>${esc(r.symbol || "")}</td>
-      <td class="n">${r.quantity == null ? "—" : r.quantity}</td>
-      <td class="n">${r.value == null ? "—" : money(r.value)}</td>
-      <td class="n note">${r.fee == null ? "—" : money(r.fee)}</td>
-      <td>${pill(r.stage || "")} <span class="note">${esc((r.reasons || []).join(" ") || r.order_id || "")}</span></td>
-    </tr>`).join("")}</tbody></table></div>`;
+  // A successful live order already appears in the Orders table below as a position, so listing it
+  // again was pure duplication. What the table below CANNOT show is an order that never became a
+  // position -- refused by the guard, rejected by the exchange, or failed outright -- and that is
+  // the only thing worth saying here.
+  const bad = ((STATE && STATE.live_orders) || [])
+    .filter(r => ["refused", "failed", "rejected"].includes(r.stage));
+  if(!bad.length){ msg.innerHTML = ""; return; }
+  const recent = bad.slice(0, 5);
+  msg.innerHTML = `<p class="note" style="color:var(--loss)"><b>${bad.length} live order attempt(s) did not go through.</b>
+    ${recent.map(r => `${esc(String(r.at || "").replace("T", " ").slice(0, 16))} ${esc(r.side || "")} ${esc(r.symbol || "")} — ${esc((r.reasons || []).join(" ").slice(0, 160))}`).join("<br>")}</p>`;
 }
 
 function renderAllocations(s){
