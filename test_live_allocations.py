@@ -156,5 +156,79 @@ class TestTheModuleCannotTrade(unittest.TestCase):
             self.assertNotIn(forbidden, source, forbidden)
 
 
+class TestEachBrokerHoldsItsOwnMoney(unittest.TestCase):
+    """Kite and CoinDCX are separate accounts. Rupees at Kite cannot buy crypto and rupees at CoinDCX
+    cannot buy shares, so what is assigned at one has no bearing on what can be assigned at the
+    other. Summing them together refused a Rs10,000 Kite allocation because Rs10,000 sat assigned at
+    CoinDCX -- money in a different account that the Kite order could never have drawn on."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000,
+                       same_venue_keys={"portfolio_g"})
+
+    def test_an_allocation_at_one_broker_does_not_block_the_other(self):
+        out = set_allocation(self.d, "overnight_return_anomaly", 10_000,
+                             available_balance=10_500,              # Kite's balance
+                             same_venue_keys={"overnight_return_anomaly"})
+        self.assertTrue(out.ok, out.reasons)
+        self.assertEqual(out.allocations["overnight_return_anomaly"], 10_000)
+        self.assertEqual(out.allocations["portfolio_g"], 10_000)    # untouched
+
+    def test_two_strategies_at_the_SAME_broker_do_compete(self):
+        out = set_allocation(self.d, "alpha", 8_000, available_balance=10_000,
+                             same_venue_keys={"portfolio_g", "alpha"})
+        self.assertFalse(out.ok)
+        self.assertIn("at this broker", " ".join(out.reasons))
+
+    def test_the_refusal_names_the_broker_so_it_is_not_mistaken_for_the_cap(self):
+        out = set_allocation(self.d, "beta", 50_000, available_balance=10_500,
+                             same_venue_keys={"beta"})
+        self.assertFalse(out.ok)
+        self.assertIn("available balance", " ".join(out.reasons))
+
+    def test_without_a_venue_set_every_allocation_still_competes(self):
+        # the old behaviour, kept for callers that genuinely have one pool
+        out = set_allocation(self.d, "alpha", 8_000, available_balance=10_000)
+        self.assertFalse(out.ok)
+
+
+class TestTheDeploymentCapIsItsOwnLimit(unittest.TestCase):
+    """How much real money you are willing to have deployed IN TOTAL is a different fact from what
+    one broker holds. Folding them into one number made a refusal by the cap look like an empty
+    account, and sent you to the broker instead of to Settings."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000,
+                       same_venue_keys={"portfolio_g"}, deployment_cap=10_000)
+
+    def test_the_cap_counts_every_broker(self):
+        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
+                             same_venue_keys={"overnight_return_anomaly"}, deployment_cap=10_000)
+        self.assertFalse(out.ok)
+        joined = " ".join(out.reasons)
+        self.assertIn("deployment cap", joined)
+        self.assertIn("Raise it under Settings", joined)
+
+    def test_raising_the_cap_lets_it_through(self):
+        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
+                             same_venue_keys={"overnight_return_anomaly"}, deployment_cap=25_000)
+        self.assertTrue(out.ok, out.reasons)
+
+    def test_a_cap_refusal_is_worded_differently_from_a_balance_refusal(self):
+        cap = set_allocation(self.d, "x", 5_000, available_balance=10_500,
+                             same_venue_keys={"x"}, deployment_cap=10_000)
+        bal = set_allocation(self.d, "y", 50_000, available_balance=10_500,
+                             same_venue_keys={"y"}, deployment_cap=10_000_000)
+        self.assertIn("deployment cap", " ".join(cap.reasons))
+        self.assertNotIn("deployment cap", " ".join(bal.reasons))
+
+    def test_no_cap_given_means_only_the_broker_balance_governs(self):
+        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
+                             same_venue_keys={"overnight_return_anomaly"})
+        self.assertTrue(out.ok, out.reasons)
+
+
 if __name__ == "__main__":
     unittest.main()

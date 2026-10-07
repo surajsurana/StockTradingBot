@@ -773,9 +773,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     # Refusing is the only honest answer; defaulting to one would fund it from the
                     # wrong account, which is the bug this replaced.
                     raise ValueError(f"No broker is configured for {key}, so it cannot be funded.")
-                # Cap by the LESSER of what you chose to deploy and what that account actually holds.
-                # An unknown balance refuses new capital rather than falling back to the setting --
-                # assigning money we cannot confirm exists is exactly the mistake to avoid.
+                # The account's balance and the deployment cap are checked SEPARATELY, against
+                # different things: the balance against what is assigned AT THIS BROKER, the cap
+                # against what is deployed everywhere. Folding them into one number meant CoinDCX
+                # allocations refused Kite ones, and a refusal by the cap looked like an empty
+                # account. An unknown balance still refuses new capital rather than falling back to
+                # the setting -- assigning money we cannot confirm exists is the mistake to avoid.
                 if balance is None:
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({
                         "ok": False, "error": f"Cannot confirm the {venue} balance right now, so "
@@ -783,8 +786,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         "application/json")
                     return
                 self.state_cache.invalidate()
+                peers = {r.strategy_key for r in list_strategies() if venue_of(r) == venue_id}
                 result = set_allocation(STATE_DIR, key, body.get("rupees"),
-                                        available_balance=min(pool, balance),
+                                        available_balance=balance, same_venue_keys=peers,
+                                        deployment_cap=pool,
                                         open_live_positions=_open_live_positions(key))
                 payload = {"ok": result.ok, "allocations": result.allocations,
                            "error": " ".join(result.reasons)}

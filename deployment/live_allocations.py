@@ -79,8 +79,17 @@ def _save(state_dir: str, allocations: dict) -> None:
     os.replace(tmp, _path(state_dir))
 
 
-def total_allocated(state_dir: Optional[str], excluding: str = "") -> float:
-    return round(sum(v for k, v in load(state_dir).items() if k != excluding), 2)
+def total_allocated(state_dir: Optional[str], excluding: str = "",
+                    only: Optional[set] = None) -> float:
+    """Rupees assigned, across every strategy or only the ones named in `only`.
+
+    `only` exists because the money is NOT one pool. Kite and CoinDCX are separate accounts: rupees
+    at Kite cannot buy crypto and rupees at CoinDCX cannot buy shares, so what is assigned at one
+    venue has no bearing on what can be assigned at the other. Summing them together refused a
+    Rs10,000 Kite allocation because Rs10,000 was assigned at CoinDCX -- money in a different account
+    entirely."""
+    return round(sum(v for k, v in load(state_dir).items()
+                     if k != excluding and (only is None or k in only)), 2)
 
 
 def unallocated(state_dir: Optional[str], available_balance: float) -> float:
@@ -93,7 +102,8 @@ def unallocated(state_dir: Optional[str], available_balance: float) -> float:
 
 
 def set_allocation(state_dir: str, strategy_key: str, rupees, *, available_balance,
-                   open_live_positions: int = 0) -> AllocationResult:
+                   open_live_positions: int = 0, same_venue_keys: Optional[set] = None,
+                   deployment_cap: Optional[float] = None) -> AllocationResult:
     """
     Assigns `rupees` of the real cash pool to one strategy. Returns the full allocation map on
     success, and on failure changes nothing and explains why.
@@ -129,11 +139,29 @@ def set_allocation(state_dir: str, strategy_key: str, rupees, *, available_balan
                         "changed while a strategy is flat -- otherwise the rest of a position sizes off "
                         "different capital from the part already filled, and from paper.")
 
-    others = total_allocated(state_dir, excluding=key)
+    # TWO SEPARATE LIMITS, because they are two different facts.
+    #
+    # The ACCOUNT holds the money, and there is one account per venue. Only what is assigned at THIS
+    # venue competes for it. Counting every venue's allocations against one account's balance refused
+    # a Rs10,000 Kite allocation because Rs10,000 sat assigned at CoinDCX -- a different account,
+    # holding different money, that the Kite order could never have drawn on.
+    others = total_allocated(state_dir, excluding=key, only=same_venue_keys)
     if amount + others > balance:
-        reasons.append(f"Assigning Rs{amount:,.0f} would take the total allocated to "
+        at_venue = " at this broker" if same_venue_keys is not None else ""
+        reasons.append(f"Assigning Rs{amount:,.0f} would take the total allocated{at_venue} to "
                         f"Rs{amount + others:,.0f}, over the available balance of Rs{balance:,.0f} "
-                        f"(Rs{others:,.0f} is already assigned to other strategies).")
+                        f"(Rs{others:,.0f} is already assigned to other strategies{at_venue}).")
+
+    # The DEPLOYMENT CAP is the other fact: how much real money you are willing to have deployed in
+    # total, whichever account it sits in. That one IS global, and it is the number on the Settings
+    # tab -- so when it is what refuses an allocation, the message says so and points there, rather
+    # than blaming a broker balance that is perfectly adequate.
+    if deployment_cap is not None:
+        everywhere = total_allocated(state_dir, excluding=key)
+        if amount + everywhere > float(deployment_cap):
+            reasons.append(f"Assigning Rs{amount:,.0f} would take the total deployed across all "
+                            f"brokers to Rs{amount + everywhere:,.0f}, over your deployment cap of "
+                            f"Rs{float(deployment_cap):,.0f}. Raise it under Settings.")
 
     if reasons:
         return AllocationResult(False, reasons, load(state_dir))
