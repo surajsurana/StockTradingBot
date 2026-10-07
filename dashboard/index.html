@@ -1771,9 +1771,9 @@ function renderMine(s){
 let REP_SUB = null, REP_POOL = null;   // REP_SUB null = the row of report pills; REP_POOL = pool filter (paper mode)
 let RESEARCH_LANE = null;              // Research tab lane filter; null = all three queues in one ranking
 let RESEARCH_VIEW = "queue";           // Research tab sub-view: "queue" (what's next) or "results" (what finished)
-let RESEARCH_SORT = {key:"exp_no", dir:-1};   // newest experiment first, same default the list arrives in
+let RESEARCH_SORT = {key:"resolved", dir:-1};   // most recently finished first
 let RESEARCH_PAGE = 1, RESEARCH_PAGE_SIZE = 50, RESEARCH_LAST_SIG = null;
-const RESEARCH_COLS = [["name","Strategy",false],["label","Lane",false],["resolved","Finished",false],
+const RESEARCH_COLS = [["resolved","Date",false],["name","Strategy",false],["label","Lane",false],
                        ["verdict","Outcome",false],["status","Now",false],["trades","Trades",true],
                        ["cagr","CAGR",true],["sharpe","Sharpe",true],["max_dd","Max DD",true],
                        ["win_rate","Win rate",true],["exp_no","Experiment",true]];
@@ -2325,8 +2325,13 @@ function renderResearch(s){
   const laneRun = Object.fromEntries(lanes.map(l => [l.lane, (l.next_run || {}).label || ""]));
   // Each lane runs on its own day, so a queued row quotes ITS lane's next run, not one global one.
   const nextRun = c => laneRun[c.lane] || (rm.next_run || {}).label || "";
+  // How long a claim has been held, for the two places that have to tell the difference between
+  // "running" and "ran away". A lane fires once a week, so a dead routine's lock outlives its run.
+  const heldDays = c => Math.floor((c.queue || {}).claimed_days_ago || 0);
   const queueAction = c => c.queue && c.queue.state === "current"
-    ? c.queue.in_progress
+    ? c.queue.stale
+      ? `<span class="pill due" title="The routine that claimed this ${heldDays(c)} days ago never reported back, so it is treated as gone -- the next run of this lane will record it as abandoned and move on">Stalled · ${heldDays(c)}d</span>`
+      : c.queue.in_progress
       ? `<span class="pill ok" title="Locked -- research is already under way, so this can no longer be bumped">Researching now</span>`
       : `<span class="pill" title="Queued but not started yet -- the Strategy Implementer picks it up ${esc(nextRun(c))}; until then it is still free to be bumped by a better-ranked candidate, or by picking a different one">Queued · ${esc(nextRun(c).split(",")[0])}</span>`
     : c.queue && c.queue.state === "resolved"
@@ -2339,9 +2344,12 @@ function renderResearch(s){
   // The three queues at a glance -- one line each, including a lane with nothing researchable yet.
   document.getElementById("lane-strip").innerHTML = lanes.map(l => {
     const cur = l.current;
-    const state = cur ? (cur.queue.in_progress ? "live" : "queued") : "";
+    const state = cur ? (cur.queue.stale ? "" : cur.queue.in_progress ? "live" : "queued") : "";
+    const laneWhen = cur && cur.queue.stale
+      ? `Stalled · claimed ${heldDays(cur)}d ago, never reported back`
+      : cur && cur.queue.in_progress ? "Researching now" : "Queued · starts " + esc(laneRun[(l || {}).lane]);
     const what = cur
-      ? `<div class="lc">${esc(short(cur.name))}</div><div class="lw">${cur.queue.in_progress ? "Researching now" : "Queued · starts " + esc(laneRun[l.lane])}</div>`
+      ? `<div class="lc">${esc(short(cur.name))}</div><div class="lw">${laneWhen}</div>`
       : `<div class="lc none">${l.ready ? "Nothing picked up yet" : "Nothing researchable yet"}</div><div class="lw">${l.ready ? l.ready + " ready · next run " + esc(laneRun[l.lane]) : l.deferred + " waiting on data we don't have"}</div>`;
     return `<div class="ln ${state}"><div class="lt">${esc(l.label)}</div>${what}</div>`;
   }).join("");
@@ -2422,7 +2430,14 @@ function renderResearchResults(rm, laneName){
     (!stF || researchStatusKey(r) === stF));
   markFilters(head, {name:q, label:RESEARCH_LANE, resolved:srcF, verdict:vF, status:stF});
   markSort(head, RESEARCH_SORT);
-  rows = sortRows(rows, RESEARCH_COLS, RESEARCH_SORT, "name");
+  if(RESEARCH_SORT.key === "resolved"){
+    const expNo = r => { const m = /(\d+)/.exec(r.experiment_id || r.exp_no || ""); return m ? +m[1] : -1; };
+    rows = rows.slice().sort((a, b) =>
+      (String(a.resolved || "").localeCompare(String(b.resolved || "")) || expNo(a) - expNo(b))
+      * RESEARCH_SORT.dir);
+  } else {
+    rows = sortRows(rows, RESEARCH_COLS, RESEARCH_SORT, "name");
+  }
   document.getElementById("research-count").textContent =
     rows.length === laneTotal ? `${laneTotal}` : `${rows.length} of ${laneTotal}`;
   // Reset to page 1 only when the filtered/sorted set itself changes, not on every price refresh.
@@ -2438,7 +2453,7 @@ function renderResearchResults(rm, laneName){
   document.getElementById("research-prev").disabled = RESEARCH_PAGE <= 1;
   document.getElementById("research-next").disabled = RESEARCH_PAGE >= totalPages;
 
-  document.getElementById("research-results").innerHTML = pageRows.map(r => `<tr><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${when(r)}</td><td>${verdictPill(r)}</td><td>${nowCell(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
+  document.getElementById("research-results").innerHTML = pageRows.map(r => `<tr><td>${when(r)}</td><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${verdictPill(r)}</td><td>${nowCell(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
   const empty = document.getElementById("research-results-empty");
   empty.hidden = rows.length > 0;
   if(!rows.length) empty.textContent = !(rm.results || []).length

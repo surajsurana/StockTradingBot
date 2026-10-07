@@ -2,8 +2,9 @@
 import tempfile
 import unittest
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import research_queue
 from research_queue import advance, load, mark_in_progress, resolve, start_now
 
 
@@ -266,7 +267,9 @@ class TestBuildSnapshot(unittest.TestCase):
         advance(d, _roadmap(["alpha"]), now=datetime(2026, 10, 1))
         snap = build_snapshot(d, self._roadmap_with_lane("alpha", "ALPHA", "crypto"))
         self.assertEqual(snap, {"current": {"key": "alpha", "name": "ALPHA", "mode": "backtest",
-                                            "in_progress": False, "horizon_lane": "crypto"}})
+                                            "in_progress": False, "horizon_lane": "crypto",
+                                       # a lock that is not held is neither stale nor aged
+                                       "stale": False, "claimed_days_ago": None}})
 
     def test_in_progress_flag_is_carried_through(self):
         from research_queue import build_snapshot
@@ -359,6 +362,54 @@ class TestLanes(unittest.TestCase):
         # The india lane's own snapshot must stay empty -- nothing was ever queued there.
         snap_india = build_snapshot(d, {"all_scored": []}, lane="india")
         self.assertIsNone(snap_india["current"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestAStaleLockDoesNotBlockTheLaneForever(unittest.TestCase):
+    """This happened. The crypto lane sat locked on crypto_illiquidity_premium from 2026-10-04 to
+    2026-10-07: a routine claimed it, died without calling resolve(), and the lock had no other way
+    out. Every later fire saw in_progress and did nothing, while the dashboard said "Researching
+    now" for three days about a run that was long gone."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def _claimed(self, days_ago):
+        when = datetime.now() - timedelta(days=days_ago)
+        return {"key": "k", "started": when.date().isoformat(), "started_by": "auto",
+                "in_progress": True, "in_progress_since": when.isoformat(timespec="seconds"),
+                "mode": "backtest"}
+
+    def test_a_fresh_claim_is_not_stale(self):
+        self.assertFalse(research_queue.lock_is_stale(self._claimed(0.2)))
+
+    def test_a_claim_older_than_the_limit_is_stale(self):
+        self.assertTrue(research_queue.lock_is_stale(self._claimed(research_queue.STALE_LOCK_DAYS + 1)))
+
+    def test_an_unclaimed_candidate_is_never_stale(self):
+        self.assertFalse(research_queue.lock_is_stale({"key": "k", "in_progress": False}))
+        self.assertFalse(research_queue.lock_is_stale(None))
+
+    def test_age_falls_back_to_started_when_there_is_no_claim_stamp(self):
+        # the entry that was actually stuck predates in_progress_since
+        old = {"key": "k", "started": "2026-10-04", "in_progress": True}
+        self.assertGreater(research_queue.lock_age_days(old, datetime(2026, 10, 7)), 2.5)
+
+    def test_a_stale_lock_is_recorded_as_abandoned_not_silently_dropped(self):
+        data = {"current": self._claimed(5), "history": []}
+        research_queue._save(self.d, data, "crypto")
+        research_queue._abandon(self.d, research_queue.load(self.d, "crypto"), "crypto")
+        after = research_queue.load(self.d, "crypto")
+        self.assertIsNone(after["current"])
+        self.assertEqual(after["history"][-1]["outcome"], "abandoned")
+        self.assertIn("never reported back", after["history"][-1]["note"])
+
+    def test_start_now_is_blocked_by_a_live_claim_but_not_a_stale_one(self):
+        self.assertTrue(research_queue.lock_is_stale(self._claimed(10)))
+        self.assertFalse(research_queue.lock_is_stale(self._claimed(0.5)))
 
 
 if __name__ == "__main__":

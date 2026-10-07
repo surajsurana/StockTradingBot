@@ -82,6 +82,16 @@ def _record(key, name, sid, status=DeploymentStatus.PAPER_TRADING, verdict=Resea
                            deployment_status_history=deployment_status_history or [])
 
 
+# One scored crypto candidate in the shape roadmap_view reads -- shared by the stale-lock tests.
+def _scored_crypto(key, name):
+    cand = SimpleNamespace(key=key, name=name, factor_family="Momentum", year=2020, authors="A & B",
+                           typical_holding_period="1 month", direction="Long only",
+                           known_strengths="s", known_weaknesses="w", horizon_lane="crypto",
+                           market="Global", holding_days_min=7, holding_days_max=30)
+    return SimpleNamespace(candidate=cand, total_score=8.0, axis_scores={"academic_evidence": 8.0},
+                           feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])
+
+
 class TestBuildDashboardState(unittest.TestCase):
     def setUp(self):
         self.state_dir, self.logs_dir = _tree()
@@ -336,7 +346,8 @@ class TestBuildDashboardState(unittest.TestCase):
         s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                   roadmap=roadmap, research_queues={"india": queue})
         rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
-        self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False, "mode": "backtest"})
+        self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False, "stale": False,
+                          "claimed_days_ago": None, "mode": "backtest"})
         self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
         self.assertIsNone(rows["untouched"])
 
@@ -346,7 +357,8 @@ class TestBuildDashboardState(unittest.TestCase):
         s2 = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
                                    roadmap=roadmap, research_queues={"india": queue})
         rows2 = {c["key"]: c["queue"] for c in s2["roadmap"]["ready"]}
-        self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True, "mode": "backtest"})
+        self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True,
+                          "stale": False, "claimed_days_ago": None, "mode": "backtest"})
 
     def test_each_lane_reads_its_own_queue_not_indias(self):
         # 2026-10-03: the Research tab used to read only research_queue.json (India), so the crypto lane's
@@ -371,8 +383,35 @@ class TestBuildDashboardState(unittest.TestCase):
         rows = {c["key"]: c for c in s["roadmap"]["ready"]}
         self.assertEqual([rows[k]["lane"] for k in ("ind", "cry", "usa")], ["india", "crypto", "us"])
         self.assertTrue(rows["ind"]["queue"]["in_progress"])
-        self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "mode": "backtest"})
+        self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "stale": False,
+                          "claimed_days_ago": None, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
+
+    def test_a_claim_nobody_came_back_from_reads_as_stalled_not_as_running(self):
+        """The crypto lane said "Researching now" for three days about a cloud run that had died on
+        2026-10-04. The page was not wrong about the flag -- it was wrong about what the flag meant,
+        because nothing measured how long the claim had been held."""
+        roadmap = {"researchable_now": [_scored_crypto("cry", "Crypto one")],
+                   "deferred_pending_data": [], "weights": {}}
+        queues = {"crypto": {"current": {"key": "cry", "in_progress": True,
+                                         "in_progress_since": "2026-10-04T19:05:00"}, "history": []}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None,
+                                  now=datetime(2026, 10, 7, 9, 0), roadmap=roadmap,
+                                  research_queues=queues)
+        q = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}["cry"]
+        self.assertTrue(q["stale"])
+        self.assertAlmostEqual(q["claimed_days_ago"], 2.58, places=1)
+
+    def test_a_claim_made_today_is_not_stalled(self):
+        roadmap = {"researchable_now": [_scored_crypto("cry", "Crypto one")],
+                   "deferred_pending_data": [], "weights": {}}
+        queues = {"crypto": {"current": {"key": "cry", "in_progress": True,
+                                         "in_progress_since": "2026-10-07T07:00:00"}, "history": []}}
+        s = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None,
+                                  now=datetime(2026, 10, 7, 9, 0), roadmap=roadmap,
+                                  research_queues=queues)
+        q = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}["cry"]
+        self.assertFalse(q["stale"])
 
     def test_an_unknown_kite_balance_assigns_nothing_rather_than_trusting_the_setting(self):
         # a stale access token is routine, so a failed balance fetch must not read as "the account is

@@ -143,8 +143,13 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane:
     dropped these (roadmap_view's `taken`); the queue simply never did."""
     now = now or datetime.now()
     data = load(state_dir, lane)
-    if data["current"] and data["current"].get("in_progress"):
+    if data["current"] and data["current"].get("in_progress") and not lock_is_stale(data["current"], now):
         return None
+    if data["current"] and data["current"].get("in_progress"):
+        # The routine that claimed this is gone. Record it as abandoned rather than silently
+        # dropping it, so the lane's history says what happened to the week it cost.
+        _abandon(state_dir, data, lane, now)
+        data = load(state_dir, lane)
     if data["current"] and data["current"].get("started_by") == "manual":
         return None
     resolved = _resolved_keys(data) | set(exclude or ())
@@ -181,7 +186,10 @@ def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] =
     lane = lane_of(match.candidate)
     data = load(state_dir, lane)
     if data["current"] and data["current"].get("in_progress"):
-        raise ValueError(f"already researching {data['current']['key']}")
+        if not lock_is_stale(data["current"], now):
+            raise ValueError(f"already researching {data['current']['key']}")
+        _abandon(state_dir, data, lane, now)
+        data = load(state_dir, lane)
     if key in _resolved_keys(data):
         raise ValueError(f"{key!r} was already resolved")
     if data["current"] is not None and data["current"]["key"] == key:
@@ -194,6 +202,43 @@ def start_now(state_dir: str, key: str, roadmap: dict, now: Optional[datetime] =
     return _set_current(state_dir, data, match.candidate.key, match.candidate.name, "manual", mode, now, lane)
 
 
+# How long a claimed candidate may stay locked before the lock is treated as abandoned.
+#
+# WHY THERE IS A LIMIT AT ALL. The lock exists so a run in progress is not interrupted, and it is
+# released by resolve() when the routine finishes. But a routine that dies -- a sandbox that loses
+# the network, a crash, a cloud run that never reports back -- never calls resolve(), and the lock
+# has no other way out. The crypto lane sat locked on crypto_illiquidity_premium from 2026-10-04 to
+# 2026-10-07 for exactly that reason: every later fire saw in_progress and did nothing, and the
+# dashboard said "Researching now" for three days about a run that had long since died.
+#
+# Two days is comfortably longer than any real run (each lane fires three times in one night) and
+# short enough that one dead routine costs one week, not every week after it.
+STALE_LOCK_DAYS = 2
+
+
+def lock_age_days(current: Optional[dict], now: Optional[datetime] = None) -> Optional[float]:
+    """How long `current` has been claimed, in days, or None if it is not claimed or has no date."""
+    if not current or not current.get("in_progress"):
+        return None
+    stamp = current.get("in_progress_since") or current.get("started")
+    if not stamp:
+        return None
+    try:
+        started = datetime.fromisoformat(str(stamp))
+    except ValueError:
+        try:
+            started = datetime.combine(date.fromisoformat(str(stamp)[:10]), datetime.min.time())
+        except ValueError:
+            return None
+    return max(0.0, ((now or datetime.now()) - started).total_seconds() / 86400.0)
+
+
+def lock_is_stale(current: Optional[dict], now: Optional[datetime] = None) -> bool:
+    """True when a claim has been held so long that the routine holding it must be gone."""
+    age = lock_age_days(current, now)
+    return age is not None and age >= STALE_LOCK_DAYS
+
+
 def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None, lane: str = "india") -> None:
     """Called the instant a candidate is claimed (research_queue_github_sync.py, on seeing its
     `research/<key>` branch appear on GitHub) -- locks `current` so advance()/start_now() can no
@@ -204,6 +249,24 @@ def mark_in_progress(state_dir: str, key: str, now: Optional[datetime] = None, l
     if not data["current"] or data["current"]["key"] != key:
         raise ValueError(f"{key!r} is not the current candidate")
     data["current"]["in_progress"] = True
+    # stamped so staleness is measured from the CLAIM, not from when the candidate was picked
+    data["current"]["in_progress_since"] = now.isoformat(timespec="seconds")
+    _save(state_dir, data, lane)
+
+
+def _abandon(state_dir: str, data: dict, lane: str, now: Optional[datetime] = None) -> None:
+    """Moves a stale claim into history as `abandoned` and clears `current`, so the lane can move on.
+
+    Recorded, never silently dropped: a week of research was lost and the history is the only place
+    that will ever say so."""
+    now = now or datetime.now()
+    current = data.get("current") or {}
+    entry = dict(current)
+    entry.update({"resolved": now.date().isoformat(), "outcome": "abandoned",
+                  "experiment_id": None, "branch": None,
+                  "note": f"claimed {lock_age_days(current, now):.1f} days ago and never reported back"})
+    data.setdefault("history", []).append(entry)
+    data["current"] = None
     _save(state_dir, data, lane)
 
 
@@ -231,6 +294,8 @@ def build_snapshot(state_dir: str, roadmap: dict, lane: str = "india") -> dict:
         "name": match.name if match else current["key"],
         "mode": current.get("mode", "backtest"),
         "in_progress": bool(current.get("in_progress")),
+        "stale": lock_is_stale(current),
+        "claimed_days_ago": lock_age_days(current),
         "horizon_lane": match.horizon_lane if match else None,
     }}
 

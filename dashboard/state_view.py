@@ -1429,7 +1429,13 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     def queue_status(c):
         current, resolved = per_lane[lane_of(c)]
         if c.key == current.get("key"):
-            return {"state": "current", "in_progress": bool(current.get("in_progress")), "mode": current.get("mode", "backtest")}
+            # `stale` matters to the reader: a lane fires once a week, so a routine that died on
+            # Tuesday leaves the lock standing until the next Tuesday clears it. Without this the
+            # page claims research is under way for days after the run it refers to is gone.
+            from research_queue import lock_age_days, lock_is_stale
+            return {"state": "current", "in_progress": bool(current.get("in_progress")),
+                    "stale": lock_is_stale(current, now), "claimed_days_ago": lock_age_days(current, now),
+                    "mode": current.get("mode", "backtest")}
         if c.key in resolved:
             h = resolved[c.key]
             return {"state": "resolved", "outcome": h["outcome"], "experiment_id": h.get("experiment_id")}
