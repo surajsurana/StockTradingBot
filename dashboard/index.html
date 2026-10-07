@@ -18,6 +18,37 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;mar
 .status{color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-left:auto;font-size:13px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .dot.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
+/* The shell: a left rail of destinations, content beside it. The rail collapses to a horizontal
+   strip on a narrow screen rather than eating half of it. */
+.shell{display:grid;grid-template-columns:184px minmax(0,1fr);gap:0 26px;align-items:start}
+.shellmain{min-width:0}
+nav#sidenav{display:flex;flex-direction:column;gap:2px;position:sticky;top:18px;
+  border-right:1px solid var(--rule);padding-right:14px;margin-bottom:18px}
+nav#sidenav button{text-align:left;border:1px solid transparent;background:transparent;border-radius:5px;padding:8px 11px}
+nav#sidenav button:hover{background:var(--band)}
+nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+@media (max-width:860px){
+  .shell{grid-template-columns:minmax(0,1fr)}
+  nav#sidenav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--rule);
+    padding:0 0 10px;position:static}
+}
+/* A round control in the header -- the bell and the avatar read as one family. */
+.iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:50%;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center}
+.iconround:hover{border-color:var(--accent)}
+#profile-btn{font-size:12px;font-weight:600;letter-spacing:.3px}
+#bell-dot{position:absolute;top:4px;right:5px;width:9px;height:9px;border-radius:50%;
+  background:var(--warn);box-shadow:0 0 0 2px var(--card)}
+#tab-notifications td.nowrap, #tab-notifications th{white-space:nowrap}
+#tab-notifications td:last-child{white-space:normal}
+.profile{position:relative;display:inline-flex}
+.profilemenu{position:absolute;right:0;top:40px;z-index:40;min-width:160px;background:var(--card);
+  border:1px solid var(--rule);border-radius:6px;padding:5px;box-shadow:0 6px 20px rgba(0,0,0,.14);
+  display:flex;flex-direction:column;gap:2px}
+.profilemenu button{text-align:left;font:inherit;padding:8px 11px;border:0;border-radius:4px;
+  background:transparent;color:var(--ink);cursor:pointer;width:100%}
+.profilemenu button:hover{background:var(--band)}
 nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
 .todaybar{margin-left:auto;display:inline-flex;align-items:center;gap:10px;padding:7px 14px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px}
 .todaybar[hidden]{display:none}
@@ -349,23 +380,32 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <span id="asof">loading…</span>
     <span id="prices"></span>
     <span id="refresh"></span>
+    <button id="bell" class="iconround" data-tab="notifications" aria-selected="false"
+            title="What the desk wanted to do and could not">&#128276;<span id="bell-dot" hidden></span></button>
+    <span class="profile">
+      <button id="profile-btn" class="iconround" aria-haspopup="true" aria-expanded="false"
+              title="Account">SS</button>
+      <span class="profilemenu" id="profile-menu" hidden>
+        <button data-tab="settings" aria-selected="false">Settings</button>
+      </span>
+    </span>
   </div>
 </header>
 <p id="modenote" class="note" hidden></p>
-<nav role="tablist">
+<div class="shell">
+<nav role="tablist" id="sidenav">
   <button role="tab" aria-selected="true" data-tab="team">The team</button>
   <button role="tab" aria-selected="false" data-tab="markets">Markets</button>
   <button role="tab" aria-selected="false" data-tab="live">Live day</button>
   <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
-  <button role="tab" aria-selected="false" data-tab="notifications">Notifications<span id="notif-badge" class="pill due" hidden></span></button>
   <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
   <button role="tab" aria-selected="false" data-tab="research">Research</button>
   <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
   <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
   <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
-  <button role="tab" aria-selected="false" data-tab="settings">Settings</button>
   <span class="todaybar" id="todaybar" hidden></span>
 </nav>
+<main class="shellmain">
 <div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
 <p id="error" class="err" hidden></p>
 
@@ -386,7 +426,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <h2>Notifications</h2>
   <div class="tools"><span id="notif-count" class="note"></span></div>
   <div id="notif-reasons" class="poolchips"></div>
-  <div class="tblwrap"><table><thead><tr><th>When</th><th>Strategy</th><th>Wanted to</th><th class="n">Value</th><th>Why it did not happen</th></tr></thead><tbody id="notif-rows"></tbody></table></div>
+  <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>Strategy</th><th>Pool</th><th>Type</th><th>Wanted to</th><th class="n">Rate</th><th class="n">Value</th><th>Why it did not happen</th></tr></thead><tbody id="notif-rows"></tbody></table></div>
 </section>
 <section id="tab-orders" hidden>
   <h2>Orders</h2>
@@ -529,6 +569,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <p class="note" id="research-results-empty" hidden></p>
   </div>
 </section>
+</main>
+</div><!-- /shell -->
 </div>
 
 <dialog id="sell"><h3 id="sell-title"></h3><p class="jb" id="sell-sub"></p>
@@ -593,8 +635,8 @@ function syncTicker(){
   if(!tb.hidden && tb.offsetWidth) t.style.width = tb.offsetWidth + "px";
 }
 window.addEventListener("resize", syncTicker);
-document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-selected", x===b));
+document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
   document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
   syncTicker();
@@ -603,13 +645,30 @@ document.querySelectorAll("nav button").forEach(b => b.addEventListener("click",
   // trading data, and the state payload is already ~2MB rebuilt on every poll
   if(b.dataset.tab === "settings" && typeof loadCredentials === "function") loadCredentials();
 }));
+// Opening the bell is what marks them read -- deliberately on OPEN, not on a timer, so a
+// notification cannot be cleared by a page that happened to be left open.
+document.getElementById("bell").addEventListener("click", markNotificationsRead);
+
+(function wireProfile(){
+  const btn = document.getElementById("profile-btn"), menu = document.getElementById("profile-menu");
+  const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  btn.addEventListener("click", e => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    btn.setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  menu.addEventListener("click", close);                       // picking an item closes it
+  document.addEventListener("click", close);                   // so does clicking anywhere else
+  document.addEventListener("keydown", e => { if(e.key === "Escape") close(); });
+})();
+
 // Advice is about the real Groww money, so it exists only in Live mode; Reports exists in both, with different reports.
 function syncLiveTabs(){
   const btn = document.getElementById("tab-btn-advice");
   btn.hidden = MODE !== "live";
-  if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('nav button[data-tab="team"]').click();
+  if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('[data-tab="team"]').click();
 }
-try { const t = localStorage.getItem("desk.tab"); if (t && !((t === "advice") && MODE !== "live")) document.querySelector(`nav button[data-tab="${t}"]`)?.click(); } catch(e){}
+try { const t = localStorage.getItem("desk.tab"); if (t && !((t === "advice") && MODE !== "live")) document.querySelector(`[data-tab="${t}"]`)?.click(); } catch(e){}
 syncLiveTabs();
 
 async function load(){
@@ -1147,14 +1206,30 @@ function wireOrdersPager(){
   document.getElementById("orders-prev").addEventListener("click", () => { ORDERS_PAGE--; if(STATE) renderOrders(STATE); });
   document.getElementById("orders-next").addEventListener("click", () => { ORDERS_PAGE++; if(STATE) renderOrders(STATE); });
 }
+// UNREAD is "arrived since you last looked", remembered per browser. The alternative -- a badge
+// showing the total -- never clears, so it stops meaning anything within a day and you learn to
+// ignore it. Opening the bell marks everything currently showing as seen.
+const NOTIF_SEEN_KEY = "desk.notifSeen";
+const notifSeen = () => { try { return localStorage.getItem(NOTIF_SEEN_KEY) || ""; } catch(e){ return ""; } };
+const newestAt = n => (n.rows || []).reduce((m, r) => String(r.at || "") > m ? String(r.at) : m, "");
+function markUnread(n){
+  const dot = document.getElementById("bell-dot");
+  if(!dot) return;
+  const newest = newestAt(n);
+  dot.hidden = !newest || newest <= notifSeen();
+}
+function markNotificationsRead(){
+  try { localStorage.setItem(NOTIF_SEEN_KEY, newestAt((STATE || {}).notifications || {})); } catch(e){}
+  const dot = document.getElementById("bell-dot");
+  if(dot) dot.hidden = true;
+}
+
 // What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
 // and no errors -- it looks exactly like a book that had no signals -- so without this the honest
 // answer to "what happened today?" is a blank page, which says the wrong thing.
 function renderNotifications(s){
   const n = s.notifications || {rows:[], count:0, by_reason:[]};
-  const badge = document.getElementById("notif-badge");
-  badge.hidden = !n.count;
-  badge.textContent = n.count > 99 ? "99+" : n.count;
+  markUnread(n);
   document.getElementById("notif-count").textContent = n.count
     ? `${n.count} decision${n.count===1?"":"s"} the desk could not act on`
     : "Nothing was blocked — every decision the desk made was acted on.";
@@ -1163,16 +1238,19 @@ function renderNotifications(s){
   document.getElementById("notif-reasons").innerHTML = (n.by_reason || [])
     .map(r => `<span class="pchip static" title="${esc(r.reason)}">${esc(short(r.reason))} · ${r.count}</span>`).join("");
   document.getElementById("notif-rows").innerHTML = (n.rows || []).map(r => {
-    const when = String(r.at || "").replace("T", " ").slice(0, 16);
-    const what = `${esc(r.side || "")} ${r.quantity ?? ""} ${esc(r.symbol || "")}`.trim();
-    const why = (r.reasons || []).join(" ");
+    const [day, clock] = String(r.at || "").split("T");
     const kind = r.stage === "refused" ? "the guard stopped it" : "the book could not act";
-    return `<tr><td class="n">${esc(when)}</td><td>${esc(r.strategy || "")}</td><td>${what || "—"}</td>`
+    return `<tr><td class="n nowrap">${esc(ddmmyy(day))}</td><td class="n nowrap">${esc((clock||"").slice(0,5))}</td>`
+         + `<td>${esc(r.name || r.strategy || "")}</td><td class="nowrap">${esc(r.pool || "—")}</td><td class="nowrap">${esc(r.type || "—")}</td>`
+         + `<td class="nowrap">${esc(r.side || "")} ${r.quantity ?? ""} ${esc(r.symbol || "")}</td>`
+         + `<td class="n">${r.rate == null ? "—" : money(r.rate)}</td>`
          + `<td class="n">${r.value == null ? "—" : money(r.value)}</td>`
-         + `<td><span class="pill due" title="${esc(kind)}">${esc(why)}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="5" class="note">Nothing blocked.</td></tr>`;
+         + `<td><span class="pill due" title="${esc(kind)}">${esc((r.reasons || []).join(" "))}</span></td></tr>`;
+  }).join("") || `<tr><td colspan="9" class="note">Nothing blocked.</td></tr>`;
 }
 const short = t => { t = String(t || ""); return t.length > 44 ? t.slice(0, 42) + "…" : t; };
+// ddmmyy, per Suraj. ISO reads as a machine's date; this is the one people write by hand here.
+const ddmmyy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : (iso || "—"); };
 
 function renderOrders(s){
   buildOrdersHead();
@@ -1715,13 +1793,13 @@ function buildRegHead(){
 function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
   buildRegHead();
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"]) document.getElementById(id).value = filters[id] || "";
-  document.querySelector('nav button[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
+  document.querySelector('[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
 }
 function goLive(pool, kind, book){   // from a Strategies row: open Live day filtered to that pool and strategy
   buildTapeHead();
   document.getElementById("tape-pool").value = pool || "";
   document.getElementById("tape-kind").value = kind || "";
-  document.querySelector('nav button[data-tab="live"]').click();
+  document.querySelector('[data-tab="live"]').click();
   if(STATE) renderTape(STATE);        // rebuilds the Strategy dropdown for this pool/type scope...
   document.getElementById("tape-book").value = book || "";
   if(STATE) renderTape(STATE);        // ...then this pass can select the book and apply it
@@ -1916,12 +1994,12 @@ function readRoute(){
   if(!m) return false;
   if(m[1] === "advice" && MODE !== "live") return false;
   REP_SUB = m[1] === "reports" ? (m[2] || null) : REP_SUB;
-  document.querySelector(`nav button[data-tab="${m[1]}"]`).click();
+  document.querySelector(`[data-tab="${m[1]}"]`).click();
   return true;
 }
 function goReport(rep){
   REP_SUB = rep || null;
-  if(currentTab() !== "reports") document.querySelector('nav button[data-tab="reports"]').click();
+  if(currentTab() !== "reports") document.querySelector('[data-tab="reports"]').click();
   pushRoute(); if(STATE) renderReports(STATE); window.scrollTo(0, 0);
 }
 document.getElementById("rep-pills").addEventListener("click", e => { const b = e.target.closest("[data-rep]"); if(b) goReport(b.dataset.rep); });

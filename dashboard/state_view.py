@@ -476,6 +476,17 @@ def _experiment_summary(exp_id: str) -> dict:
 from deployment.settings import STATE_DIR as STATE_DIR_CANONICAL
 
 
+def _default_pool_label(record) -> str:
+    """The pool a strategy runs in when it has not been promoted to a specific one."""
+    fixed = {"portfolio_b": "Pool B", "portfolio_c": "Pool C", "pool_d_vwap_fade": "Pool D",
+             "portfolio_g": "Pool G"}.get(record.strategy_key)
+    if fixed:
+        return fixed
+    if is_us_equity_record(record):
+        return "Pool I"
+    return "Pool E" if is_crypto_record(record) else "Pool A"
+
+
 def notifications_view(state_dir: str, limit: int = 200) -> dict:
     """Everything the desk wanted to do and did not, newest first -- and why.
 
@@ -491,8 +502,31 @@ def notifications_view(state_dir: str, limit: int = 200) -> dict:
       refused   -- the book acted and the GUARD stopped it before the broker saw it
     An order that reached the broker and was rejected THERE is a third thing and already has its own
     row in the Orders tab; it is not a notification, it is a trade that failed."""
-    rows = [r for r in live_orders_view(state_dir, limit=limit)
+    rows = [dict(r) for r in live_orders_view(state_dir, limit=limit)
             if str(r.get("stage")) in ("not_taken", "refused")]
+    # The log stores a strategy KEY, which is not what anyone reading this wants to see. Its name,
+    # pool and type come from the registry, and the rate is what a value divided by a quantity is --
+    # computed here rather than in the page, so the page has nothing to get wrong.
+    from deployment.deployment_manager import list_strategies
+    from deployment.venues import venue_of
+    meta = {}
+    for record in list_strategies():
+        pool = getattr(record, "live_pool", "") or ""
+        meta[record.strategy_key] = {
+            "name": getattr(record, "display_name", record.strategy_key),
+            "pool": f"Pool {pool}" if pool else _default_pool_label(record),
+            "type": "Crypto" if is_crypto_record(record) or venue_of(record) == "coindcx"
+                    else "US Equity" if is_us_equity_record(record) else "Swing"}
+    for row in rows:
+        info = meta.get(row.get("strategy")) or {}
+        row["name"] = info.get("name", row.get("strategy"))
+        row["pool"] = info.get("pool", "")
+        row["type"] = info.get("type", "")
+        try:
+            qty, value = float(row.get("quantity") or 0), float(row.get("value") or 0)
+            row["rate"] = round(value / qty, 2) if qty else row.get("price")
+        except (TypeError, ValueError):
+            row["rate"] = row.get("price")
     by_reason = {}
     for row in rows:
         for reason in (row.get("reasons") or ["no reason recorded"]):
