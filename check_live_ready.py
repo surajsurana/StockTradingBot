@@ -63,7 +63,11 @@ def main() -> int:
     from deployment.live_settings import setting as live_setting
 
     try:
-        cap = live_setting("LIVE_CAPITAL_POOL_RUPEES", settings_module=settings)
+        # config_dir matters: the deployment cap is set on the dashboard and lives in the credential
+        # store, not in settings.py. Without it this read Rs0 and reported a cap nobody had set.
+        import os
+        config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
+        cap = live_setting("LIVE_CAPITAL_POOL_RUPEES", config_dir, settings_module=settings)
     except Exception:
         cap = None
 
