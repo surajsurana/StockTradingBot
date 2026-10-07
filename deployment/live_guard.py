@@ -35,7 +35,7 @@ conservative defaults, all applied to every order.
 
 import os
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 KILL_SWITCH_FILENAME = "LIVE_TRADING_HALTED"
@@ -195,7 +195,25 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
         else:
             reasons.append(f"Strategy no longer passes the pilot gates: {why}")
 
-    # 6. Hard caps.
+    # 6. The market has to be open, for a venue that has opening hours.
+    #
+    # Crypto trades around the clock, so this is a no-op at CoinDCX. NSE does not: the live runner's
+    # cron fired at 08:35 and 20:35 IST, set when the only live book was crypto, and both are outside
+    # 09:15-15:30. An equity strategy promoted on those timings would have decided correctly and then
+    # sent an order into a closed exchange every single day.
+    #
+    # It is checked HERE, in the one place every real order passes, rather than left to the cron
+    # being right -- a cron line is a thing that can be edited by someone who does not know this.
+    # A missing or unreadable clock reads as closed: refusing a tradeable minute costs one run,
+    # placing into a closed market costs a rejected order and a book that no longer matches reality.
+    if str(broker or DEFAULT_BROKER).lower() == "kite":
+        from deployment.scheduler import is_market_open
+        market_now = now if isinstance(now, datetime) else None
+        if not is_market_open(market_now):
+            reasons.append("The NSE is closed right now, so an equity order cannot be placed "
+                           "(trading hours are 09:15-15:30 IST on a weekday).")
+
+    # 7. Hard caps.
     max_order = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
     max_exposure = _setting(settings, "LIVE_MAX_EXPOSURE_RUPEES", DEFAULT_MAX_LIVE_EXPOSURE_RUPEES)
     max_orders = _setting(settings, "LIVE_MAX_ORDERS_PER_DAY", DEFAULT_MAX_ORDERS_PER_DAY)

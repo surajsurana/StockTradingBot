@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from deployment.venues import COINDCX, exchange_symbol
+
 # A position matches if book and exchange agree within this fraction of the book's own quantity.
 # 0.5% absorbs fee-in-kind and rounding without hiding a real shortfall.
 RELATIVE_TOLERANCE = 0.005
@@ -118,13 +120,21 @@ def reconcile(book_positions: dict, exchange_quantities: dict,
 
 
 def reconcile_against_exchange(book_path: str, client, symbols: Optional[list] = None,
-                               now: Optional[datetime] = None) -> Reconciliation:
+                               now: Optional[datetime] = None, venue: str = COINDCX) -> Reconciliation:
     """Reads the book and the exchange and compares them.
+
+    `venue` decides how instruments are spelled on each side. The books use the research convention
+    (RELIANCE.NS); Kite trades RELIANCE. Both sides are put through the same translation before being
+    compared -- comparing the raw spellings read "the book holds 40 but the exchange reports 0" for
+    every equity position, which would have halted every equity run the first time one went live.
+    It defaults to COINDCX, the only venue that had a live book when this was written, and for which
+    the translation is the identity.
 
     ANY failure to establish the facts returns ok=False. Not knowing whether the book is right is not
     the same as it being right, and the caller's next step is placing real orders."""
     try:
-        book_positions = load_book_positions(book_path)
+        book_positions = {exchange_symbol(k, venue): v
+                          for k, v in load_book_positions(book_path).items()}
     except (OSError, ValueError) as e:
         return Reconciliation(ok=False, checked_at=(now or datetime.now()).isoformat(timespec="seconds"),
                               problems=[f"Could not read the live book, so nothing can be verified: {e}"],
@@ -139,13 +149,13 @@ def reconcile_against_exchange(book_path: str, client, symbols: Optional[list] =
     exchange = {}
     for row in rows or []:
         try:
-            currency = str(row.get("currency", "")).upper()
+            currency = exchange_symbol(row.get("currency", ""), venue)
             # free + locked: a coin committed to a resting sell order is still held, and excluding it
             # would read as a shortfall the moment the book tries to exit a position.
             exchange[currency] = float(row.get("balance", 0) or 0) + float(row.get("locked_balance", 0) or 0)
         except (TypeError, ValueError, AttributeError):
             continue
     if symbols:
-        wanted = {str(s).upper() for s in symbols}
+        wanted = {exchange_symbol(s, venue) for s in symbols}
         exchange = {k: v for k, v in exchange.items() if k in wanted}
     return reconcile(book_positions, exchange, now=now)

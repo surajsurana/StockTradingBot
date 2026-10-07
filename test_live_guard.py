@@ -8,6 +8,7 @@ because a live-trading guard whose failure mode is "allow" is worse than no guar
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
@@ -29,12 +30,18 @@ def _record(status=DeploymentStatus.PILOT_LIVE):
                           research_verdict=ResearchVerdict.PASS, deployment_status=status)
 
 
+# A fixed in-hours timestamp. Since 2026-10-07 the guard refuses an equity order outside the NSE's
+# 09:15-15:30, so a test that leaves the clock to chance passes before half past three and fails
+# after it. Market hours have their own tests; these are about the other switches.
+IN_HOURS = datetime(2026, 10, 7, 11, 0)
+
+
 def _check(settings=None, record=None, state_dir=None, value=1_000.0, exposure=0.0,
-           placed=0, eligibility=None):
+           placed=0, eligibility=None, now=IN_HOURS):
     return check_order_allowed(settings=settings or _settings(), record=record or _record(),
                                state_dir=state_dir or tempfile.mkdtemp(),
                                order_value_rupees=value, current_live_exposure_rupees=exposure,
-                               orders_placed_today=placed, eligibility=eligibility)
+                               orders_placed_today=placed, eligibility=eligibility, now=now)
 
 
 class TestTheHappyPathIsNarrow(unittest.TestCase):

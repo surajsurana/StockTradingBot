@@ -1,6 +1,6 @@
 {
  "source": "yfinance Ticker.get_earnings_dates() -- reported rows only, date component only",
- "fetched_at": "2026-09-07",
+ "fetched_at": "2026-10-07",
  "symbol_count": 437,
  "dates_by_symbol": {
   "360ONE.NS": [

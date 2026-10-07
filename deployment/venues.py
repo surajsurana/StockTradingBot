@@ -48,6 +48,32 @@ def venue_of(record) -> str:
     return KITE
 
 
+# How each venue spells an instrument. The books use the research side's convention -- yfinance's
+# RELIANCE.NS -- while Kite trades RELIANCE. Order placement already strips the suffix
+# (execution/execution_engine.py), but reconciliation compared the two spellings directly and read
+# "the book holds 40 but the exchange reports 0" for every equity position it checked, which would
+# have halted every equity run the first time one was promoted. CoinDCX needs no translation: the
+# books hold BTC and the exchange reports BTC.
+#
+# Here rather than in reconciliation.py because it is the same kind of fact as which broker executes
+# an order, and keeping both in one place is what stops a second, disagreeing answer growing.
+EXCHANGE_SUFFIXES = (".NS", ".BO")
+
+
+def exchange_symbol(symbol: str, venue: str) -> str:
+    """How `venue` spells the instrument the books call `symbol`.
+
+    Applied to BOTH sides of a comparison, never one, so the comparison is like-for-like whichever
+    convention each side happens to use."""
+    text = str(symbol or "").strip().upper()
+    if venue != KITE:
+        return text
+    for suffix in EXCHANGE_SUFFIXES:
+        if text.endswith(suffix):
+            return text[: -len(suffix)]
+    return text
+
+
 def is_crypto_venue(record) -> bool:
     return venue_of(record) == COINDCX
 

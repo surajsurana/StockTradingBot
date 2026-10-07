@@ -37,6 +37,7 @@ from datetime import date as date_type
 from typing import Optional
 
 import deployment.paper_trading_engine as pte
+from swing_research.broker_costs import min_viable_notional
 from deployment.base import DeploymentStatus
 from deployment.deployment_manager import list_strategies
 from deployment.live_allocations import allocation_for
@@ -62,21 +63,27 @@ def eligible_strategies(state_dir: str = STATE_DIR) -> list:
 
 
 def intended_orders(result: dict) -> list:
-    """The orders this run WOULD place, read off the engine's own result. Entries and exits that the
-    engine queued for the next open count too -- they are decisions already made."""
+    """The orders this run decided on, each marked with whether it can actually be SENT yet.
+
+    A filled entry or exit has a real price and a real quantity, so it can be placed now. A QUEUED
+    one has neither: a next-day-open entry is sized from tomorrow's open, which does not exist yet,
+    so `quantity` is None and there is nothing to send. They are still reported, because they are
+    decisions already made and the dashboard should show them -- but `placeable` is False, and the
+    runner must not hand them to an executor. Before 2026-10-07 it did, which on the equity side
+    meant every after-close run tried to buy a None quantity at a None price."""
     orders = []
     for entry in result.get("new_entries", []) or []:
         orders.append({"side": "BUY", "symbol": entry.get("symbol"), "quantity": entry.get("quantity"),
-                       "price": entry.get("entry_price"), "when": "filled"})
+                       "price": entry.get("entry_price"), "when": "filled", "placeable": True})
     for exit_ in result.get("new_exits", []) or []:
         orders.append({"side": "SELL", "symbol": exit_.get("symbol"), "quantity": exit_.get("quantity"),
-                       "price": exit_.get("exit_price"), "when": "filled"})
+                       "price": exit_.get("exit_price"), "when": "filled", "placeable": True})
     for pending in result.get("new_pending_entries", []) or []:
         orders.append({"side": "BUY", "symbol": pending.get("symbol"), "quantity": pending.get("quantity"),
-                       "price": None, "when": "next open"})
+                       "price": None, "when": "next open", "placeable": False})
     for pending in result.get("new_pending_exits", []) or []:
         orders.append({"side": "SELL", "symbol": pending.get("symbol"), "quantity": pending.get("quantity"),
-                       "price": None, "when": "next open"})
+                       "price": None, "when": "next open", "placeable": False})
     return orders
 
 
@@ -88,8 +95,12 @@ def _engine_plan(strategy_key: str):
     single live runner serve both instead of each pool growing its own copy."""
     spec = _SPECS_BY_KEY.get(strategy_key)
     if spec is not None:
+        # min_value: the same charge-derived floor run_paper_trading.py and run_pool_f.py apply.
+        # Without it the LIVE equity book would take the Rs3,532 positions the paper books were
+        # taking -- with real money, and paying the flat DP charge for real.
         return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
-                "dirname": "paper_trading", "execution": None, "cap": None, "min_value": None}
+                "dirname": "paper_trading", "execution": None, "cap": None,
+                "min_value": min_viable_notional()}
     try:
         from run_pool_e import POOL_E_STARTING_CAPITAL_USDT, POOL_E_STRATEGIES
     except Exception:
@@ -105,7 +116,8 @@ def _engine_plan(strategy_key: str):
 
 def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None,
              force: bool = False, state_dir: str = STATE_DIR, settings=None, client=None,
-             place_fn=None, dry_run: bool = True, now=None, usdinr: float = 0.0) -> dict:
+             place_fn=None, dry_run: bool = True, now=None, usdinr: float = 0.0,
+             resolve_at_open: bool = False) -> dict:
     """
     Runs one strategy against its LIVE book and returns what it would do.
 
@@ -119,6 +131,10 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     if record.deployment_status not in (DeploymentStatus.PILOT_LIVE, DeploymentStatus.PRODUCTION):
         return {"status": "refused",
                 "reason": f"{strategy_key} is {record.deployment_status.value}, not PILOT_LIVE or PRODUCTION."}
+    # Resolved here rather than just before placing, because reconciliation needs it too: the venue
+    # says both which broker executes and how that broker spells an instrument.
+    from deployment.venues import COINDCX, venue_of
+    venue = venue_of(record)
     allocated = allocation_for(state_dir, strategy_key)
     if allocated <= 0:
         return {"status": "refused",
@@ -141,7 +157,9 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     recon = {"ok": True, "problems": [], "notes": []}
     if not dry_run and client is not None:
         from deployment.reconciliation import reconcile_against_exchange
-        check = reconcile_against_exchange(book_path, client, now=now)
+        # venue decides how instruments are spelled on each side: the book holds RELIANCE.NS while
+        # Kite reports RELIANCE, and comparing those raw would halt every equity run on day one.
+        check = reconcile_against_exchange(book_path, client, now=now, venue=venue)
         recon = {"ok": check.ok, "checked_at": check.checked_at, "problems": list(check.problems),
                  "notes": list(check.notes),
                  "positions": [{"symbol": p.symbol, "book": p.book_quantity,
@@ -165,11 +183,24 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
             engine_kwargs["sizing_capital_cap"] = plan["cap"]
         if plan["min_value"] is not None:
             engine_kwargs["min_position_value_rupees"] = plan["min_value"]
-        result = pte.run_daily(
-            strategy_key, plan["factory"](), fetch_data_fn=fetch_data_fn,
-            compute_extra_columns_fn=(lambda d, fn=extra_fn: fn(d)) if extra_fn else None,
-            as_of_date=as_of, force=force, **engine_kwargs,
-        )
+        if resolve_at_open:
+            # THE EQUITY SIDE'S SECOND HALF. An Indian strategy decides after the close and queues
+            # its entries for the next open, because that is when they can actually be bought. The
+            # after-close run therefore has nothing to send; this run is where a queued decision
+            # becomes a real order, priced and sized against today's actual Open. Crypto never
+            # takes this path -- it fills same-day-close, so its orders are placeable immediately.
+            # No signal detection happens here, so it cannot decide anything new.
+            result = pte.resolve_pending_fills_at_open(
+                strategy_key, plan["factory"](), fetch_open_data_fn=fetch_data_fn,
+                as_of_date=as_of,
+                **({"execution_config": plan["execution"]} if plan["execution"] is not None else {}),
+            )
+        else:
+            result = pte.run_daily(
+                strategy_key, plan["factory"](), fetch_data_fn=fetch_data_fn,
+                compute_extra_columns_fn=(lambda d, fn=extra_fn: fn(d)) if extra_fn else None,
+                as_of_date=as_of, force=force, **engine_kwargs,
+            )
     finally:
         pte.PAPER_TRADING_STATE_DIR = previous       # always restored, even on an exception
     orders = intended_orders(result)
@@ -183,8 +214,6 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
     # THE EXECUTOR FOLLOWS THE VENUE. This was hardcoded to the equity one, so a Pool E crypto
     # strategy promoted here would have had its orders sent to Kite -- the right book, the wrong
     # exchange, and nothing in the code to notice.
-    from deployment.venues import COINDCX, venue_of
-    venue = venue_of(record)
     place = place_fn
     if place is None:
         if venue == COINDCX:
@@ -193,6 +222,8 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
             from deployment.live_executor import place_live_order as place
     placed = []
     for order in orders:
+        if not order.get("placeable", True):
+            continue          # queued for the next open; it becomes an order when it has a price
         common = dict(settings=settings, record=record, state_dir=state_dir,
                       symbol=order["symbol"], side=order["side"], quantity=order["quantity"],
                       strategy_key=strategy_key, now=now)

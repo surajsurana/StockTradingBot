@@ -267,9 +267,14 @@ class TestTheOverrideSurvivesToOrderTime(unittest.TestCase):
         return r
 
     def _check(self, record):
+        # An explicit in-hours timestamp: these tests are about the promotion override, and since
+        # 2026-10-07 the guard also refuses equity orders outside 09:15-15:30, so leaving the clock
+        # to chance would make them pass or fail depending on what time the suite was run.
+        from datetime import datetime
         return check_order_allowed(settings=self.settings, record=record, state_dir=self.d,
                                    order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
-                                   orders_placed_today=0, eligibility=self.failing)
+                                   orders_placed_today=0, eligibility=self.failing,
+                                   now=datetime(2026, 10, 7, 11, 0))
 
     def test_an_overridden_strategy_may_still_place_orders(self):
         decision = self._check(self._record_with(PROMOTION_OVERRIDE_MARKER + " promoted anyway"))

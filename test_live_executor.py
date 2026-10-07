@@ -47,10 +47,17 @@ class _FakeEngine:
         return self.result
 
 
+# A fixed in-hours timestamp. Since 2026-10-07 the guard refuses an equity order outside the NSE's
+# 09:15-15:30, so leaving the clock to chance would make this whole file pass before half past three
+# and fail after it. These tests are about what the executor does with a broker's answer.
+IN_HOURS = datetime(2026, 10, 7, 11, 0)
+
+
 def _place(state_dir, engine=None, settings=None, record=None, **over):
     kwargs = dict(settings=settings or _settings(), record=record or _record(), state_dir=state_dir,
                   symbol="RELIANCE.NS", side="BUY", quantity=10, reference_price=100.0,
-                  strategy_key="alpha", engine=engine if engine is not None else _FakeEngine())
+                  strategy_key="alpha", now=IN_HOURS,
+                  engine=engine if engine is not None else _FakeEngine())
     kwargs.update(over)
     return place_live_order(**kwargs)
 

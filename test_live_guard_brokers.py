@@ -9,6 +9,7 @@ the deployment-status check, the pilot gates and the caps without restating any 
 import os
 import tempfile
 import unittest
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -44,10 +45,16 @@ BOTH = SimpleNamespace(LIVE_TRADING=True, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t
                        COINDCX_API_KEY="ck", COINDCX_API_SECRET="cs")
 
 
+# A fixed in-hours timestamp. Since 2026-10-07 the guard refuses an equity order outside the NSE's
+# 09:15-15:30, so a test that leaves the clock to chance passes before half past three and fails
+# after it. Market hours have their own tests; these are about the other switches.
+IN_HOURS = datetime(2026, 10, 7, 11, 0)
+
+
 def _check(settings, broker, state_dir, **over):
     kwargs = dict(settings=settings, record=_record(), state_dir=state_dir,
                   order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
-                  orders_placed_today=0, broker=broker)
+                  orders_placed_today=0, broker=broker, now=IN_HOURS)
     kwargs.update(over)
     return check_order_allowed(**kwargs)
 
@@ -86,7 +93,7 @@ class TestEachBrokerChecksItsOwnCredentials(unittest.TestCase):
     def test_omitting_the_broker_keeps_the_old_kite_behaviour(self):
         decision = check_order_allowed(settings=KITE_ONLY, record=_record(), state_dir=self.d,
                                        order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
-                                       orders_placed_today=0)
+                                       orders_placed_today=0, now=IN_HOURS)
         self.assertTrue(decision.allowed, decision.reasons)
         self.assertEqual(DEFAULT_BROKER, "kite")
 

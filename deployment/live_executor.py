@@ -104,6 +104,10 @@ def place_live_order(*, settings, record, state_dir: str, symbol: str, side: str
         current_live_exposure_rupees=current_live_exposure_rupees,
         orders_placed_today=orders_placed_today(state_dir, now.date().isoformat()),
         eligibility=eligibility,
+        # The SAME clock the rest of this call uses. The guard refuses an equity order outside NSE
+        # hours, so letting it read its own wall clock would let the two disagree about what time
+        # it is -- and would make every caller that passes  silently untestable.
+        now=now,
     )
     if not decision.allowed:
         try:

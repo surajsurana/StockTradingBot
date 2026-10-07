@@ -210,5 +210,148 @@ class TestAddingAPoolIsAnAdapter(unittest.TestCase):
             self.assertNotIn(forbidden, code, forbidden)
 
 
+class TestTheEquityPathCanActuallyTrade(unittest.TestCase):
+    """Pressing P on an Indian strategy must make it trade on Kite. Three things stood between it and
+    that on 2026-10-07, each of which would otherwise have been discovered with real money at stake."""
+
+    def test_a_queued_entry_is_reported_but_never_sent(self):
+        """An Indian strategy decides after the close and queues its entries for the next open,
+        because that is when they can be bought. A queued entry has no price and no quantity yet --
+        it is sized from tomorrow's open. intended_orders() used to emit those as orders anyway, so
+        the after-close run would have tried to buy a None quantity at a None price."""
+        import run_pool_live as rpl
+        orders = rpl.intended_orders({
+            "new_entries": [{"symbol": "ACME.NS", "quantity": 40, "entry_price": 310.0}],
+            "new_pending_entries": [{"symbol": "BETA.NS", "stop_loss": 90.0}],
+            "new_pending_exits": [{"symbol": "GAMMA.NS"}],
+        })
+        by_symbol = {o["symbol"]: o for o in orders}
+        self.assertTrue(by_symbol["ACME.NS"]["placeable"])
+        self.assertFalse(by_symbol["BETA.NS"]["placeable"])      # still reported...
+        self.assertFalse(by_symbol["GAMMA.NS"]["placeable"])
+        self.assertIsNone(by_symbol["BETA.NS"]["quantity"])      # ...because there is nothing to send
+
+    def test_only_placeable_orders_reach_the_executor(self):
+        import run_pool_live as rpl
+        with open(rpl.__file__, encoding="utf-8") as f:
+            source = f.read()
+        body = source[source.index("    placed = []"):source.index("unplaced = [")]
+        self.assertIn('if not order.get("placeable", True):', body)
+
+    def test_resolve_at_open_is_how_a_queued_entry_becomes_an_order(self):
+        import run_pool_live as rpl
+        seen = {}
+
+        def fake_resolve(key, strategy, **kw):
+            seen["key"] = key
+            return {"status": "processed", "new_entries": [], "new_exits": []}
+
+        def must_not_run(*a, **kw):
+            raise AssertionError("resolve-at-open must not detect new signals")
+
+        d = tempfile.mkdtemp()
+        set_allocation(d, "ma_pullback", 50_000, available_balance=100_000)
+        with patch.object(rpl.pte, "resolve_pending_fills_at_open", side_effect=fake_resolve), \
+             patch.object(rpl.pte, "run_daily", side_effect=must_not_run), \
+             patch.object(rpl, "list_strategies", return_value=[_rec("ma_pullback")]):
+            out = rpl.run_live("ma_pullback", fetch_data_fn=lambda: {}, state_dir=d,
+                               dry_run=True, resolve_at_open=True)
+        self.assertEqual(seen.get("key"), "ma_pullback")
+        self.assertEqual(out["status"], "dry_run")
+
+    def test_the_live_equity_book_gets_the_same_notional_floor_as_the_paper_one(self):
+        # otherwise the live book takes the Rs3,532 positions the paper books were taking, with real
+        # money, paying the flat DP charge for real
+        import run_pool_live as rpl
+        from swing_research.broker_costs import min_viable_notional
+        self.assertAlmostEqual(rpl._engine_plan("ma_pullback")["min_value"], min_viable_notional())
+        self.assertEqual(rpl._engine_plan("crypto_tsmom")["min_value"], 5.0)   # crypto keeps its own
+
+
+class TestOrdersCannotGoIntoAClosedMarket(unittest.TestCase):
+    """The live cron fired at 08:35 and 20:35 IST, set when the only live book was crypto. Both are
+    outside the NSE's 09:15-15:30. Checked in the guard rather than left to the cron being right."""
+
+    def _decision(self, when, broker):
+        from deployment.live_guard import check_order_allowed
+        d = tempfile.mkdtemp()
+        with patch("deployment.live_guard._credential", return_value="x"):
+            return check_order_allowed(settings=SETTINGS, record=_rec("alpha"), state_dir=d,
+                                       order_value_rupees=10_000, current_live_exposure_rupees=0,
+                                       orders_placed_today=0, now=when, broker=broker)
+
+    def test_an_equity_order_outside_market_hours_is_refused(self):
+        from datetime import datetime
+        for when in (datetime(2026, 10, 7, 8, 35), datetime(2026, 10, 7, 20, 35),
+                     datetime(2026, 10, 10, 11, 0)):          # a Saturday
+            decision = self._decision(when, "kite")
+            self.assertFalse(decision.allowed, when)
+            self.assertTrue(any("NSE is closed" in r for r in decision.reasons), decision.reasons)
+
+    def test_an_equity_order_inside_market_hours_passes_this_check(self):
+        from datetime import datetime
+        decision = self._decision(datetime(2026, 10, 7, 11, 0), "kite")
+        self.assertFalse(any("NSE is closed" in r for r in decision.reasons), decision.reasons)
+
+    def test_crypto_is_never_gated_on_market_hours(self):
+        from datetime import datetime
+        for when in (datetime(2026, 10, 7, 3, 0), datetime(2026, 10, 11, 23, 0)):
+            decision = self._decision(when, "coindcx")
+            self.assertFalse(any("NSE is closed" in r for r in decision.reasons), decision.reasons)
+
+
+class TestTheBookAndTheBrokerSpellSymbolsDifferently(unittest.TestCase):
+    """The books hold RELIANCE.NS; Kite reports RELIANCE. reconcile() key-matched the two, so every
+    equity position read as "the book holds 40 but the exchange reports 0" -- which halts the run."""
+
+    def _book(self, positions):
+        import json
+        import os
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "portfolio.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"positions": positions}, f)
+        return path
+
+    def test_the_two_spellings_reconcile(self):
+        from deployment.reconciliation import reconcile_against_exchange
+        from deployment.venues import KITE
+        book = self._book({"RELIANCE.NS": {"quantity": 40}})
+        client = SimpleNamespace(balances=lambda: [{"currency": "RELIANCE", "balance": 40}])
+        self.assertTrue(reconcile_against_exchange(book, client, venue=KITE).ok)
+
+    def test_a_real_shortfall_is_still_caught(self):
+        from deployment.reconciliation import reconcile_against_exchange
+        from deployment.venues import KITE
+        book = self._book({"RELIANCE.NS": {"quantity": 40}})
+        client = SimpleNamespace(balances=lambda: [{"currency": "RELIANCE", "balance": 10}])
+        self.assertFalse(reconcile_against_exchange(book, client, venue=KITE).ok)
+
+    def test_crypto_is_unaffected_by_the_translation(self):
+        from deployment.reconciliation import reconcile_against_exchange
+        from deployment.venues import COINDCX
+        book = self._book({"BTC": {"quantity": 0.00031}})
+        client = SimpleNamespace(balances=lambda: [{"currency": "BTC", "balance": 0.00031}])
+        self.assertTrue(reconcile_against_exchange(book, client, venue=COINDCX).ok)
+
+
+class TestOneCronLinePerMarket(unittest.TestCase):
+    def test_a_venue_filter_runs_only_that_market(self):
+        from deployment.venues import COINDCX, KITE
+        d = tempfile.mkdtemp()
+        for key in ("alpha", "portfolio_g"):
+            set_allocation(d, key, 10_000, available_balance=100_000)
+        records = [_rec("alpha"), _rec("portfolio_g", "AI judgment book (crypto, Pool G)")]
+        with patch.object(run_live, "list_strategies", return_value=records), \
+             patch.object(run_live, "run_one",
+                          side_effect=lambda r, a, **kw: {"key": r.strategy_key, "status": "dry_run"}):
+            equity = run_live.run_all(settings=SETTINGS, state_dir=d, venues={KITE})
+            crypto = run_live.run_all(settings=SETTINGS, state_dir=d, venues={COINDCX})
+            both = run_live.run_all(settings=SETTINGS, state_dir=d)
+        self.assertEqual([r["key"] for r in equity], ["alpha"])
+        self.assertEqual([r["key"] for r in crypto], ["portfolio_g"])
+        self.assertEqual(sorted(r["key"] for r in both), ["alpha", "portfolio_g"])
+
+
 if __name__ == "__main__":
     unittest.main()

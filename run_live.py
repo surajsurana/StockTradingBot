@@ -70,7 +70,7 @@ def _client_for(venue: str, settings, config_dir: str):
 
 
 def run_one(record, rupees: float, *, settings, state_dir: str = STATE_DIR, dry_run: bool = True,
-            client=None, now=None) -> dict:
+            client=None, now=None, resolve_at_open: bool = False) -> dict:
     """Runs ONE promoted, funded strategy end to end and reports what happened.
 
     dry_run=True is the default everywhere in this file: the whole path runs -- engine, book,
@@ -123,11 +123,12 @@ def run_one(record, rupees: float, *, settings, state_dir: str = STATE_DIR, dry_
         data = fetch_all(get_swing_universe(), period="2y")
     out = adapter.run_live(key, fetch_data_fn=lambda d=data: d, state_dir=state_dir,
                            settings=settings, client=client, dry_run=dry_run, now=now,
-                           usdinr=usdinr)
+                           usdinr=usdinr, resolve_at_open=resolve_at_open)
     return {"key": key, "venue": venue, "allocated": rupees, **out}
 
 
-def run_all(*, settings=None, state_dir: str = STATE_DIR, dry_run: bool = True, now=None) -> list:
+def run_all(*, settings=None, state_dir: str = STATE_DIR, dry_run: bool = True, now=None,
+            venues=None, resolve_at_open: bool = False) -> list:
     """Every eligible strategy, one after another.
 
     One failing strategy must not stop the others: a crash in one pool's engine is reported against
@@ -137,9 +138,14 @@ def run_all(*, settings=None, state_dir: str = STATE_DIR, dry_run: bool = True, 
         from config import settings as settings            # noqa: PLC0415
     results = []
     for record, rupees in eligible(state_dir):
+        # `venues` lets one cron line serve one market. The two markets keep different hours --
+        # crypto trades around the clock, the NSE does not -- so they cannot share a schedule, and
+        # a run that woke for equities should not also re-run every crypto book.
+        if venues and venue_of(record) not in venues:
+            continue
         try:
             results.append(run_one(record, rupees, settings=settings, state_dir=state_dir,
-                                   dry_run=dry_run, now=now))
+                                   dry_run=dry_run, now=now, resolve_at_open=resolve_at_open))
         except Exception as e:
             results.append({"key": record.strategy_key, "status": "error",
                             "reason": f"{type(e).__name__}: {e}"[:300]})
@@ -150,9 +156,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Run every promoted, funded strategy's live book.")
     ap.add_argument("--live", action="store_true",
                     help="actually place the orders (without this nothing is sent)")
+    ap.add_argument("--market", choices=["all", "equity", "crypto"], default="all",
+                    help="which market to run; the two keep different hours, so they run on "
+                         "different schedules")
+    ap.add_argument("--resolve-at-open", action="store_true",
+                    help="place the entries a previous after-close run queued, priced against "
+                         "today's real open (equities only -- crypto fills same day)")
     args = ap.parse_args()
 
-    results = run_all(dry_run=not args.live)
+    venues = {"equity": {KITE}, "crypto": {COINDCX}}.get(args.market)
+    results = run_all(dry_run=not args.live, venues=venues,
+                      resolve_at_open=args.resolve_at_open)
     if not results:
         print("Nothing to run: no strategy is both promoted to live and funded.")
         return
