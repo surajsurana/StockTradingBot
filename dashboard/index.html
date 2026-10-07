@@ -375,8 +375,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-orders" hidden>
-  <div id="run-msg"></div>
-
   <h2>Orders</h2>
   <p class="note">Every order placed, across every pool and type — most recent first.</p>
   <div class="tools"><span id="orders-count" class="note"></span></div>
@@ -1165,7 +1163,6 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
-  renderRun();
   document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td title="${a.status==="Open"?"Still held -- P&L is unrealized":"Fully exited -- P&L is booked"}"><b>${esc(a.partial ? "Partial" : a.status)}</b></td><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
     : `<tr><td colspan="12" class="note">No orders yet.</td></tr>`;
   document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
@@ -1557,21 +1554,6 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // unless LIVE_TRADING is on and the kill switch is absent; this button starts the runner, it does
 // not authorise it.
 let RUNNER = null, RUNNER_POLL = null;
-function renderRun(){
-  const msg = document.getElementById("run-msg");
-  if(!msg) return;
-  // A successful live order already appears in the Orders table below as a position, so listing it
-  // again was pure duplication. What the table below CANNOT show is an order that never became a
-  // position -- refused by the guard, rejected by the exchange, or failed outright -- and that is
-  // the only thing worth saying here.
-  const bad = ((STATE && STATE.live_orders) || [])
-    .filter(r => ["refused", "failed", "rejected"].includes(r.stage));
-  if(!bad.length){ msg.innerHTML = ""; return; }
-  const recent = bad.slice(0, 5);
-  msg.innerHTML = `<p class="note" style="color:var(--loss)"><b>${bad.length} live order attempt(s) did not go through.</b>
-    ${recent.map(r => `${esc(String(r.at || "").replace("T", " ").slice(0, 16))} ${esc(r.side || "")} ${esc(r.symbol || "")} — ${esc((r.reasons || []).join(" ").slice(0, 160))}`).join("<br>")}</p>`;
-}
-
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
   if(MODE !== "live"){ panel.hidden = true; return; }
