@@ -161,5 +161,42 @@ class TestItChangesNothing(unittest.TestCase):
             self.assertNotIn(f", {mode})", code, mode)
 
 
+class TestTheCommandLineActuallyRuns(unittest.TestCase):
+    """check_live_ready.py shipped with a NameError in main() and every test still passed, because
+    nothing imported it and nothing called it. A command whose entry point is never executed is a
+    command that is only tested by the person running it on the server."""
+
+    def _run(self, reports, cash=None):
+        import io as _io
+        from contextlib import redirect_stdout
+        import check_live_ready as cli
+        buf = _io.StringIO()
+        with patch.object(cli, "_broker_cash", return_value=cash or {"kite": 10_500.0, "coindcx": 7_384.0}),              patch.object(cli, "check_all", return_value=reports), redirect_stdout(buf):
+            code = cli.main()
+        return code, buf.getvalue()
+
+    def test_it_runs_and_says_only_money_is_left(self):
+        code, out = self._run([_check(cash=500.0)])
+        self.assertEqual(code, 0)
+        self.assertIn("WAITING ON MONEY", out)
+        self.assertIn("only thing stopping", out)
+
+    def test_a_configuration_fault_exits_nonzero(self):
+        bare = SimpleNamespace(LIVE_TRADING=False, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t")
+        code, out = self._run([_check(settings=bare)])
+        self.assertEqual(code, 1)
+        self.assertIn("BLOCKED", out)
+        self.assertIn("set up wrong", out)
+
+    def test_nothing_promoted_is_not_an_error(self):
+        code, out = self._run([])
+        self.assertEqual(code, 0)
+        self.assertIn("No strategy is promoted", out)
+
+    def test_an_unreadable_balance_prints_rather_than_crashes(self):
+        code, out = self._run([_check(cash=None)], cash={"kite": None, "coindcx": 7_384.0})
+        self.assertIn("not readable", out)
+
+
 if __name__ == "__main__":
     unittest.main()

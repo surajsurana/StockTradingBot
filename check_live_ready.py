@@ -65,8 +65,7 @@ def main() -> int:
     print("Broker cash:", ", ".join(
         f"{v}: " + (f"Rs{c:,.0f}" if c is not None else "not readable") for v, c in sorted(cash.items()))
         or "none readable")
-    if cap is not None:
-        print(f"Deployment cap: Rs{cap:,.0f}\n")
+    print()
 
     reports = check_all(settings=settings, broker_cash=cash)
     if not reports:
