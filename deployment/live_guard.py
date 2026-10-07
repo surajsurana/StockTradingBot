@@ -75,18 +75,24 @@ def _credential(settings, state_dir: str, name: str) -> str:
 
 # Conservative defaults. They are floors on caution, not recommendations: the real numbers belong in
 # config/settings.py on the VPS, and anything absent falls back to these rather than to "unlimited".
-# THE PER-ORDER CAP IS A PERCENTAGE, NOT A RUPEE FIGURE (changed 2026-10-07).
+# THE PER-ORDER CAP IS A PERCENTAGE OF THE STRATEGY'S OWN CAPITAL (changed 2026-10-07).
 #
 # It was Rs5,000, chosen when the only live book was crypto and a position was about Rs2,600. An
 # equity position cannot open below Rs12,469, so the same number that was generous for one venue
-# refused every order the other could ever produce -- and would have gone on doing so one order at a
-# time, reading as bad luck rather than as a setting. Any absolute cap has that failure built in: it
+# refused every order the other could ever produce. Any absolute cap has that failure built in: it
 # is a guess about capital, and it is wrong the moment capital changes.
 #
-# What the cap is actually for is catching a SIZING BUG -- an order far larger than the strategy
-# intended. That is inherently relative to the book, so the cap is too. At 50% a tenfold sizing error
-# is caught on any book of any size, in any currency, for ever, with nothing to re-tune.
-DEFAULT_MAX_ORDER_PCT_OF_CAPITAL = 0.50
+# THE SIZE OF THE NUMBER IS MEASURED, NOT CHOSEN. Across 419 real paper trades the largest position
+# any strategy ever took was 56.8% of its book (ma_pullback; volume_backed_breakout reached 40.6%),
+# against a median of 3.7%. A cap must sit above everything the strategies legitimately do, or it
+# silently blocks real trades -- which is exactly the mistake being corrected here, and an arbitrary
+# 50% would have repeated it against ma_pullback. 80% clears the observed maximum with room, and
+# still catches the thing a cap is FOR: a sizing bug an order of magnitude out.
+#
+# IT IS NOT A SIZING CONTROL. Position size is set by the strategy's own risk budget and is already
+# proportional to capital -- see FUND ALLOCATION in ARCHITECTURE.md. This is a backstop, and a
+# backstop that binds in normal operation is a bug.
+DEFAULT_MAX_ORDER_PCT_OF_CAPITAL = 0.80
 
 # An optional ABSOLUTE ceiling on top, for someone who wants one. Zero/absent means "no absolute
 # ceiling, the percentage governs" -- deliberately not a rupee default, because a rupee default is

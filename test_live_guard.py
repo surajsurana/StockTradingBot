@@ -118,9 +118,9 @@ class TestEachSwitchBlocksOnItsOwn(unittest.TestCase):
 
 class TestCaps(unittest.TestCase):
     def test_order_value_over_the_cap_blocks(self):
-        # FUNDED is Rs10,000 and the default cap is 50%, so Rs5,000 is the per-order ceiling here
-        self.assertFalse(_check(value=5_000.01).allowed)
-        self.assertTrue(_check(value=5_000.0).allowed)          # exactly at the cap is allowed
+        cap = DEFAULT_MAX_ORDER_PCT_OF_CAPITAL * FUNDED
+        self.assertFalse(_check(value=cap + 0.01).allowed)
+        self.assertTrue(_check(value=cap).allowed)              # exactly at the cap is allowed
 
     def test_exposure_cap_counts_the_order_being_placed(self):
         # 24,500 already out plus a 1,000 order is over the 25,000 ceiling -- the new order counts
@@ -155,10 +155,14 @@ class TestCaps(unittest.TestCase):
     def test_the_cap_scales_with_the_book_instead_of_being_re_tuned(self):
         """The whole point. The same setting governs a Rs10,000 crypto book and a Rs2.4 lakh equity
         one, and neither needs a number changed when the other is funded."""
-        self.assertTrue(_check(funded=10_000.0, value=5_000.0).allowed)
-        self.assertFalse(_check(funded=10_000.0, value=5_001.0).allowed)
-        self.assertTrue(_check(funded=240_607.0, value=12_496.0).allowed)    # the real equity order
-        self.assertFalse(_check(funded=240_607.0, value=130_000.0).allowed)  # a 10x sizing bug
+        self.assertTrue(_check(funded=10_000.0, value=8_000.0).allowed)
+        self.assertFalse(_check(funded=10_000.0, value=8_001.0).allowed)
+        big = _settings(LIVE_MAX_EXPOSURE_RUPEES=1_000_000.0)
+        self.assertTrue(_check(settings=big, funded=240_607.0, value=12_496.0).allowed)
+        # 56.8% of the book is the largest position ever observed in paper -- it must still pass,
+        # or the backstop is quietly acting as a sizing control
+        self.assertTrue(_check(settings=big, funded=240_607.0, value=0.568 * 240_607.0).allowed)
+        self.assertFalse(_check(settings=big, funded=240_607.0, value=240_000.0).allowed)
 
     def test_an_unknown_allocation_refuses_rather_than_lifting_the_cap(self):
         """Fail closed. "Cannot work out the cap" must never resolve to "there is no cap"."""
@@ -220,6 +224,43 @@ class TestTheModuleCannotTrade(unittest.TestCase):
         for forbidden in ("import requests", "from execution", "import execution",
                           "kiteconnect", "place_order"):
             self.assertNotIn(forbidden, source, forbidden)
+
+
+class TestTheProportionalityRule(unittest.TestCase):
+    """ARCHITECTURE.md, FUND ALLOCATION: a live book behaves as a scaled copy of its paper book, so
+    everything that decides how much to trade is a PERCENTAGE of that book's own capital, never a
+    rupee amount. This has been got wrong more than once; these tests are what stop it recurring."""
+
+    def test_the_same_order_percentage_is_allowed_on_any_book_size(self):
+        # 30% of the book passes whether the book is Rs5,000 or Rs25 lakh -- that IS the rule
+        big = _settings(LIVE_MAX_EXPOSURE_RUPEES=10_000_000.0)
+        for capital in (5_000.0, 100_000.0, 240_607.0, 2_500_000.0):
+            self.assertTrue(_check(settings=big, funded=capital, value=0.30 * capital).allowed,
+                            f"30% of Rs{capital:,.0f} was refused")
+
+    def test_the_same_order_percentage_is_refused_on_any_book_size(self):
+        big = _settings(LIVE_MAX_EXPOSURE_RUPEES=10_000_000.0)
+        for capital in (5_000.0, 100_000.0, 240_607.0, 2_500_000.0):
+            self.assertFalse(_check(settings=big, funded=capital, value=0.95 * capital).allowed,
+                             f"95% of Rs{capital:,.0f} was allowed")
+
+    def test_the_backstop_clears_the_largest_position_ever_observed(self):
+        """A backstop that binds in normal operation is a bug. 56.8% of book is the real maximum
+        across 419 paper trades (ma_pullback), so the cap must sit above it."""
+        from deployment.live_guard import DEFAULT_MAX_ORDER_PCT_OF_CAPITAL
+        self.assertGreater(DEFAULT_MAX_ORDER_PCT_OF_CAPITAL, 0.568)
+
+    def test_no_rupee_denominated_cap_is_applied_by_default(self):
+        """The absolute ceiling is opt-in. A rupee default is the thing that broke: it is a guess
+        about capital, and wrong the moment capital changes."""
+        from deployment.live_guard import DEFAULT_MAX_ORDER_VALUE_RUPEES
+        self.assertEqual(DEFAULT_MAX_ORDER_VALUE_RUPEES, 0.0)
+
+    def test_the_rule_is_written_down_where_the_next_person_will_look(self):
+        with open("ARCHITECTURE.md", encoding="utf-8") as f:
+            doc = f.read()
+        self.assertIn("## FUND ALLOCATION", doc)
+        self.assertIn("PERCENTAGE OF THAT BOOK'S OWN CAPITAL", doc)
 
 
 if __name__ == "__main__":

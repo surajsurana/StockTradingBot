@@ -403,5 +403,66 @@ class TestOneCronLinePerMarket(unittest.TestCase):
         self.assertEqual(sorted(r["key"] for r in both), ["alpha", "portfolio_g"])
 
 
+class TestPaperAndLiveRunTheSameStrategy(unittest.TestCase):
+    """ARCHITECTURE.md, PAPER TO LIVE: nothing about how a strategy works may change when it is
+    promoted. A paper book is evidence about a live book only if the live book is the same thing;
+    change anything in between and you have months of data about a strategy you no longer trade.
+
+    These are the assertions that make that checkable rather than merely intended."""
+
+    def test_the_live_runner_uses_the_same_engine_as_paper(self):
+        import run_pool_live as rpl
+        with open(rpl.__file__, encoding="utf-8") as f:
+            source = f.read()
+        self.assertIn("pte.run_daily(", source)              # the paper engine itself
+        self.assertNotIn("def _live_strategy", source)       # no live-only variant anywhere
+
+    def test_an_equity_strategy_gets_the_same_factory_paper_uses(self):
+        import run_pool_live as rpl
+        from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
+        spec = next(s for s in PAPER_TRADING_STRATEGY_SPECS if s.strategy_key == "ma_pullback")
+        plan = rpl._engine_plan("ma_pullback")
+        self.assertIs(plan["factory"], spec.strategy_factory)
+        self.assertIs(plan["extra_fn"], spec.compute_extra_columns_fn)
+
+    def test_the_risk_budget_is_never_overridden_for_live(self):
+        """Sizing comes from the Strategy class itself, so there is nowhere for a live-only risk
+        budget to live. The formula appears in the module docstring, which is documentation, not an
+        override -- so only executable lines are checked."""
+        import ast
+        import run_pool_live as rpl
+        with open(rpl.__file__, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        assigned = {t.id for node in ast.walk(tree) if isinstance(node, ast.Assign)
+                    for t in node.targets if isinstance(t, ast.Name)}
+        kwargs = {kw.arg for node in ast.walk(tree) if isinstance(node, ast.Call) for kw in node.keywords}
+        for forbidden in ("risk_pct_per_unit", "max_units_total", "max_units_per_sector"):
+            self.assertNotIn(forbidden, assigned | kwargs, forbidden)
+
+    def test_the_notional_floor_is_the_same_on_both_sides(self):
+        """A floor on one side only would make the two books incomparable -- the exact failure this
+        rule exists to prevent."""
+        import run_pool_live as rpl
+        from swing_research.broker_costs import min_viable_notional
+        self.assertAlmostEqual(rpl._engine_plan("ma_pullback")["min_value"], min_viable_notional())
+        for path in ("run_paper_trading.py", "run_pool_f.py"):
+            with open(path, encoding="utf-8") as f:
+                self.assertIn("min_position_value_rupees=min_viable_notional()", f.read(), path)
+
+    def test_a_crypto_live_book_keeps_pool_es_own_settings(self):
+        import run_pool_live as rpl
+        import run_pool_e
+        plan = rpl._engine_plan("crypto_tsmom")
+        self.assertEqual(plan["cap"], run_pool_e.POOL_E_STARTING_CAPITAL_USDT)
+        self.assertEqual(plan["execution"].fill_timing, "same_day_close")   # as Pool E runs it
+        self.assertEqual(plan["min_value"], 5.0)
+
+    def test_the_rule_is_written_down(self):
+        with open("ARCHITECTURE.md", encoding="utf-8") as f:
+            doc = f.read()
+        self.assertIn("## PAPER TO LIVE", doc)
+        self.assertIn("nothing about how it works may change", doc)
+
+
 if __name__ == "__main__":
     unittest.main()

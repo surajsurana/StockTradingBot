@@ -202,6 +202,89 @@ This means `main.py` never needs to know *how* a strategy decides — it just
 calls `generate_signal()` on every strategy in the active list and passes
 whatever comes back to the risk manager.
 
+## PAPER TO LIVE — nothing about the strategy may change
+
+**When a strategy is promoted from paper to live, nothing about how it works may change. Not the
+entry or exit logic, not the risk budget, not the stop, not the fill timing, not the position-sizing
+formula, not the universe, not the cost model. The ONLY thing that changes is how much capital it
+has and that the orders are real.**
+
+The reason is the whole reason paper trading exists. A paper book is evidence about a live book only
+if the live book is the same thing. Change anything in between and the paper record stops being
+evidence about what you are now running — you have months of data about a strategy you are no longer
+trading, and no data about the one you are. Paper trading becomes a ritual rather than a test.
+
+This is easy to violate with good intentions. "Just for the live test, cap it to one position." "Just
+size it up so the first trade is meaningful." "Just widen the stop because real money feels
+different." Each is a reasonable-sounding sentence that destroys the comparison, and the damage is
+invisible: the live book still produces numbers, they just do not mean what you think.
+
+### How this is enforced
+
+- Both books run the SAME code: `deployment/paper_trading_engine.run_daily()`. The live runner
+  (`run_pool_live.py`) only redirects the state directory — it does not pass a different strategy,
+  a different risk budget or different engine settings.
+- The engine configuration a live book gets is asserted to match the paper one, per pool, by test.
+- The notional floor applies to paper and live identically. It was added to both in the same change
+  for exactly this reason: a floor on one side only would have made the two incomparable.
+
+### If a strategy genuinely needs changing
+
+Change it in PAPER, and let the paper record restart from there. A changed strategy is a new
+strategy with no track record, and the honest thing is to say so rather than to carry the old
+record forward as though it still applied.
+
+## FUND ALLOCATION — the proportionality rule
+
+**A live book must behave as a scaled copy of its paper book. Everything that decides how much to
+trade is expressed as a PERCENTAGE OF THAT BOOK'S OWN CAPITAL, never as a rupee amount.**
+
+This has been got wrong more than once, each time by writing down a rupee figure that was correct for
+whatever was funded that week, so it is written here rather than rediscovered.
+
+### Why
+
+Position size comes from the strategy's own risk budget:
+
+```
+quantity = capital x risk_pct_per_unit / risk_per_share
+```
+
+That is linear in capital, so a book of any size takes the same position *as a share of itself*. A
+strategy that puts 6% of a Rs1,00,000 paper book into a trade puts 6% of a Rs5,000 live book into the
+same trade — Rs300. Live is then a faithful small-scale replica of paper, and the two are comparable.
+Any rupee-denominated limit layered on top breaks that: it binds on one book size and not another,
+so the live book stops being a replica and its results stop meaning anything.
+
+### What this forbids
+
+- A per-order cap in rupees. It was `LIVE_MAX_ORDER_VALUE_RUPEES = 5_000`, sized for crypto's
+  ~Rs2,600 positions, and it refused *every* equity order because an equity position cannot open
+  below Rs12,469. It is now `LIVE_MAX_ORDER_PCT_OF_CAPITAL`, a fraction of what that strategy holds.
+- A total-exposure ceiling separate from the deployment cap. Two numbers that must agree is a trap;
+  they drift and the stricter one silently wins. Exposure defaults to the deployment cap.
+- Any new limit expressed in rupees. If you are about to write one, it belongs as a percentage.
+
+### What this does NOT forbid
+
+Two absolute figures are legitimate, because they describe the *world*, not the strategy:
+
+- **The deployment cap** (`LIVE_CAPITAL_POOL_RUPEES`). This is "the most real money I am willing to
+  deploy". It is an amount you actually have, so it is an amount.
+- **The notional floor** (`swing_research/broker_costs.min_viable_notional()`, ~Rs12,469). The DP
+  charge is a flat Rs13.5 per scrip whatever the trade is worth, so the size at which a trade can
+  carry its own charges is an absolute figure. It deliberately breaks proportionality, and that is
+  the point: it is the system saying *this book is too small to trade economically* rather than
+  trading anyway at a guaranteed loss. A Rs5,000 book will take no trades, and that is correct.
+
+### Calibrating a percentage limit
+
+Measure it, do not pick it. Across 419 real paper trades the largest position any strategy took was
+**56.8%** of its book (ma_pullback; volume_backed_breakout reached 40.6%) against a median of 3.7%.
+A backstop set at an arbitrary 50% would have blocked real ma_pullback trades — the same class of
+mistake, one layer up. The per-order cap is therefore 80%: above everything observed, still catching
+a sizing bug an order of magnitude out. **A backstop that binds in normal operation is a bug.**
+
 ## Risk rules (starting point — tune later)
 - Max risk per trade: 1% of capital (distance from entry to stop-loss sized accordingly)
 - Max concurrent open positions: configurable (start with 5)
