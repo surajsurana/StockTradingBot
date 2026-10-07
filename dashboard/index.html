@@ -212,11 +212,11 @@ tr.total td{background:var(--band);font-weight:600;border-top:2px solid var(--ru
 tr.sub td{font-weight:600;border-top:1px solid var(--rule)}
 /* Balance sheet: one column of figures, right-aligned and fixed, so every number lines
    up however long its label runs. */
-table.stmt{table-layout:fixed;width:100%;max-width:720px}
-table.stmt td.bslabel{width:auto;white-space:normal;line-height:1.45}
-table.stmt td.n{width:150px;white-space:nowrap;font-variant-numeric:tabular-nums}
-table.stmt tr.bshead td{padding-top:14px;border-bottom:1px solid var(--rule)}
-table.stmt tr.total td{border-top:2px solid var(--rule)}
+#st-bs-wrap table{table-layout:fixed;width:100%;max-width:720px}
+#st-bs-wrap td.bslabel{width:auto;white-space:normal;line-height:1.45}
+#st-bs-wrap td.n{width:150px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#st-bs-wrap tr.bshead td{padding-top:14px;border-bottom:1px solid var(--rule)}
+#st-bs-wrap tr.total td{border-top:2px solid var(--rule)}
 tr.tape-open td{background:color-mix(in srgb,var(--accent) 10%,var(--card));border-left:0}
 tr.tape-open td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tr.tape-closed td{background:color-mix(in srgb,var(--warn) 12%,var(--card))}

@@ -913,8 +913,9 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
     for l in out:
         for k in ("capital", "cash", "deployed", "realised", "unrealised", "charges", "gst", "tax",
                   "tds", "tds_projected"):
-            if l[k] is not None:
-                l[k] = round(l[k], 2)
+            value = l.get(k)
+            if value is not None:
+                l[k] = round(value, 2)
         l["detail"] = {k: round(v, 2) for k, v in l["detail"].items()}
     return out
 
