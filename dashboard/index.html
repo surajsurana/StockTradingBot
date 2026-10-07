@@ -210,6 +210,13 @@ select:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .modeswitch button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 tr.total td{background:var(--band);font-weight:600;border-top:2px solid var(--rule)}
 tr.sub td{font-weight:600;border-top:1px solid var(--rule)}
+/* Balance sheet: one column of figures, right-aligned and fixed, so every number lines
+   up however long its label runs. */
+table.stmt{table-layout:fixed;width:100%;max-width:720px}
+table.stmt td.bslabel{width:auto;white-space:normal;line-height:1.45}
+table.stmt td.n{width:150px;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.stmt tr.bshead td{padding-top:14px;border-bottom:1px solid var(--rule)}
+table.stmt tr.total td{border-top:2px solid var(--rule)}
 tr.tape-open td{background:color-mix(in srgb,var(--accent) 10%,var(--card));border-left:0}
 tr.tape-open td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tr.tape-closed td{background:color-mix(in srgb,var(--warn) 12%,var(--card))}
@@ -1044,7 +1051,7 @@ const TAX_ITEMS = {
   dp: ["DP charge", "₹13.5 per scrip sold from demat"],
   stt: ["STT", "Delivery 0.1% on buy and sell; intraday 0.025% on sell"],
   stamp: ["Stamp duty", "Buy side: delivery 0.015%, intraday 0.003%"],
-  crypto_fee: ["Exchange fee and spread", "0.30% plus 10 bps, each side"],
+  crypto_fee: ["Exchange fee and spread", "the exchange's actual fee where it has charged one; 0.30% plus 10 bps a side modelled for legs not yet traded"],
 };
 function showTax(idx){
   const set = idx === "all" ? ST_VIEW : [ST_VIEW[+idx]].filter(Boolean); if(!set.length) return;
@@ -1071,8 +1078,15 @@ function showTax(idx){
   // the deductions would double-count, but leaving it out entirely hides real cash you cannot spend
   // until the refund -- so it is shown, clearly marked, under its own heading.
   if(sumK("tds") > 0){
-    rows.push(line(["Not a cost — withheld and refundable", ""], null, "subt"));
-    rows.push(line(["TDS on crypto sales", "1% of each sale value (s.194S), credited against the income tax above when you file"], sumK("tds")));
+    rows.push(line([sumK("tds") > 0 ? "Not a cost — withheld and refundable"
+                                   : "Not a cost — and not withheld yet", ""], null, "subt"));
+    const tdsDone = sumK("tds"), tdsIf = sumK("tds_projected");
+    if(tdsDone > 0)
+      rows.push(line(["TDS on crypto sales", "1% of each sale value (s.194S), credited against the income tax above when you file"], tdsDone));
+    else if(tdsIf > 0)
+      // nothing has been sold, so nothing has been withheld; saying otherwise describes money that
+      // is still sitting in the account
+      rows.push(line(["TDS if sold today", "1% of sale value (s.194S) — not withheld yet, nothing has been sold"], tdsIf));
   }
   const title = set.length === 1 ? `${esc(set[0].pool)} · ${esc(set[0].name)}` : `Selection (${set.length} books)`;
   document.getElementById("life-body").innerHTML = `<h3>Tax and charges <span class="note">${title}</span></h3><table><thead><tr><th>Item</th><th>Basis</th><th class="n">Amount</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
@@ -1704,12 +1718,16 @@ function renderStatement(s){
   document.getElementById("st-note").textContent = "Tax & charges is everything deducted from the gross profit: broker and exchange charges, GST and income tax; click the ⓘ for the breakup and rates. These are estimates for reporting: paper trades still fill at raw prices and every other tab shows gross. Crypto is converted to rupees at today's USD/INR. Rates are set in reporting/equity_costs.py; the intraday slab rate is an assumption. Crypto TDS (1% of each sale) is withheld but refundable, so it is NOT deducted here — it is shown in the ⓘ breakup and on the balance sheet below.";
 
   const cash = sum("cash"), dep = sum("deployed"), unr = sum("unrealised"), cap = sum("capital"), rea = sum("realised"), ct = sum("charges") + sum("gst") + sum("tax");
-  const bs = (label, n, opts={}) => `<tr class="${opts.total?"total":""}"><td${opts.indent?' style="padding-left:24px"':""}>${label}</td>${amt(n, !!opts.signed)}</tr>`;
+  const bs = (label, n, opts={}) => `<tr class="${opts.total ? "total" : ""}${opts.head ? " bshead" : ""}">`
+    + `<td class="bslabel"${opts.indent ? ' style="padding-left:26px"' : ""}>${label}</td>`
+    + (opts.head ? `<td class="n"></td>` : amt(n, !!opts.signed)) + `</tr>`;
   document.getElementById("st-bs").innerHTML =
-    `<tr><td colspan="2"><b>Assets</b></td></tr>` + bs("Cash", cash, {indent:1}) + bs("Open positions at market value", dep + unr, {indent:1}) + bs("Total assets", cash + dep + unr, {total:1}) +
-    `<tr><td colspan="2"><b>Funded by</b></td></tr>` + bs("Capital allocated", cap, {indent:1}) + bs("Realised profit", rea, {indent:1, signed:1}) + bs("Unrealised profit", unr, {indent:1, signed:1}) + bs("Total", cap + rea + unr, {total:1}) +
+    bs("<b>Assets</b>", null, {head:1}) + bs("Cash", cash, {indent:1}) + bs("Open positions at market value", dep + unr, {indent:1}) + bs("Total assets", cash + dep + unr, {total:1}) +
+    bs("<b>Funded by</b>", null, {head:1}) + bs("Capital allocated", cap, {indent:1}) + bs("Realised profit", rea, {indent:1, signed:1}) + bs("Unrealised profit", unr, {indent:1, signed:1}) + bs("Total", cap + rea + unr, {total:1}) +
     bs("Less: charges, GST and tax (estimated)", -ct, {indent:1, signed:1}) + bs("Net worth after charges and tax", cap + rea + unr - ct, {total:1}) +
-    (anyTds ? bs("TDS withheld on crypto sales — your cash, refundable at ITR, not a cost above", sum("tds"), {indent:1}) : "");
+    (sum("tds") > 0 ? bs("TDS withheld on crypto sales — your cash, refundable at ITR, not a cost above", sum("tds"), {indent:1}) : "")
+    + (sum("tds") <= 0 && sum("tds_projected") > 0
+        ? bs("TDS if the open crypto were sold today — nothing withheld yet", sum("tds_projected"), {indent:1}) : "");
 }
 let MINE_SORT = {key:"value", dir:-1};
 const MINE_COLS = [["symbol","Symbol",""],["quantity","Qty","n"],["avg_price","Avg cost","n"],["invested","Invested","n"],["price","Price","n"],

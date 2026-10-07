@@ -21,15 +21,30 @@ from swing_research.crypto_costs import INDIA_VDA_TAX_RATE, INDIA_VDA_TDS_RATE, 
 POOL_G_DIRNAME = "pool_g"
 
 
-def _ledger(raw: float, buy_value: float, sell_value: float, model: CryptoCostModel, tax_rate: float) -> dict:
+def _ledger(raw: float, buy_value: float, sell_value: float, model: CryptoCostModel, tax_rate: float,
+            actual_buy_fee_usdt: Optional[float] = None, sold: bool = True) -> dict:
+    """Costs for one position or trade.
+
+    `actual_buy_fee_usdt` REPLACES the modelled entry fee where the exchange has told us what it
+    really charged. The model assumes 0.30% plus 10bps a side; CoinDCX charged 0.5% plus GST on the
+    first real trade. Using a model when a receipt exists is a choice to be wrong on purpose.
+
+    `sold` says whether the sell leg has actually happened. TDS is 1% of a SALE -- on a position
+    still open nothing has been withheld, so reporting it as withheld describes money that is still
+    in the account. It is still projected for the P&L estimate, but labelled as projected."""
     fees = model.round_trip_cost(buy_value, sell_value)
+    if actual_buy_fee_usdt is not None:
+        # keep the modelled SELL leg (it has not happened) and swap the entry leg for the receipt
+        modelled_buy = model.round_trip_cost(buy_value, 0.0)
+        fees = fees - modelled_buy + float(actual_buy_fee_usdt)
     tax = max(raw, 0.0) * tax_rate
+    tds = sell_value * INDIA_VDA_TDS_RATE
     return {"raw": raw, "fees": fees, "pre_tax": raw - fees, "tax": tax, "post_tax": raw - fees - tax,
-            "tds": sell_value * INDIA_VDA_TDS_RATE}
+            "tds": tds if sold else 0.0, "tds_projected": tds}
 
 
 def _sum(ledgers: list) -> dict:
-    keys = ("raw", "fees", "pre_tax", "tax", "post_tax", "tds")
+    keys = ("raw", "fees", "pre_tax", "tax", "post_tax", "tds", "tds_projected")
     return {k: round(sum(l[k] for l in ledgers), 2) for k in keys}
 
 
@@ -47,7 +62,13 @@ def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, t
     for symbol, p in positions.items():
         entry, qty = float(p["entry_price"]), float(p["quantity"])
         price = float(prices.get(symbol, entry))
-        led = _ledger((price - entry) * qty, entry * qty, price * qty, model, tax_rate)
+        # The real fee, where the exchange charged one, converted back to the book's own USDT terms.
+        fill = p.get("live_fill") if isinstance(p, dict) else None
+        actual_fee = None
+        if isinstance(fill, dict) and fill.get("fee_inr") and usdinr:
+            actual_fee = float(fill["fee_inr"]) / float(usdinr)
+        led = _ledger((price - entry) * qty, entry * qty, price * qty, model, tax_rate,
+                      actual_buy_fee_usdt=actual_fee, sold=False)
         open_ledgers.append(led)
         open_rows.append({"symbol": symbol, "quantity": qty, "entry_price": entry, "price": price,
                           "priced": symbol in prices, "entry_date": p.get("entry_date"), "reasoning": p.get("reasoning", ""),
