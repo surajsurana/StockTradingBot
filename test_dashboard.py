@@ -93,6 +93,20 @@ def _scored_crypto(key, name):
 
 
 class TestBuildDashboardState(unittest.TestCase):
+    def test_assignable_is_simply_what_each_broker_holds(self):
+        """The global deployment cap was removed on 2026-10-07: how much is deployed is decided
+        strategy by strategy, and an allocation cannot exceed its own broker's balance anyway."""
+        from dashboard.state_view import live_capital_view
+        view = live_capital_view([], kite_balance=(10_500.0, ""), coindcx_balance=(7_384.0, ""))
+        self.assertEqual(view["assignable"], 10_500.0)
+        self.assertEqual(view["assignable_crypto"], 7_384.0)
+
+    def test_an_unknown_balance_still_assigns_nothing(self):
+        from dashboard.state_view import live_capital_view
+        view = live_capital_view([], kite_balance=(None, "token expired"), coindcx_balance=(7_384.0, ""))
+        self.assertEqual(view["assignable"], 0.0)
+        self.assertEqual(view["assignable_crypto"], 7_384.0)
+
     def setUp(self):
         self.state_dir, self.logs_dir = _tree()
         self.alpha_paper_trading_since = datetime(2026, 8, 15, 12, 0).timestamp()
@@ -424,15 +438,6 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(lc["free"], 0.0)
         self.assertIn("stale", lc["balance_error"])
 
-    def test_assignable_is_the_lesser_of_the_funded_pool_and_the_real_balance(self):
-        from unittest.mock import patch
-        from dashboard.state_view import live_capital_view
-        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 50_000, create=True):
-            rich = live_capital_view(self.records, kite_balance=(500_000.0, ""))
-            self.assertEqual(rich["assignable"], 50_000.0)      # capped by what you chose to deploy
-            poor = live_capital_view(self.records, kite_balance=(10_000.0, ""))
-            self.assertEqual(poor["assignable"], 10_000.0)      # capped by what is actually there
-
     def test_a_real_fill_is_reported_in_rupees_not_as_a_usdt_conversion(self):
         # the trade happened ON an INR market at a known INR price; showing the USDT reference and
         # deriving rupees described a conversion that never took place, at a price we did not pay
@@ -511,13 +516,6 @@ class TestBuildDashboardState(unittest.TestCase):
                                      coindcx_balance=(10_000.0, ""))
         self.assertEqual(view["assignable"], 500.0)             # equity capped by Kite
         self.assertEqual(view["assignable_crypto"], 10_000.0)   # crypto capped by CoinDCX
-
-    def test_each_venue_is_still_capped_by_the_deployment_setting(self):
-        from dashboard.state_view import live_capital_view
-        with patch("config.settings.LIVE_CAPITAL_POOL_RUPEES", 2_000, create=True):
-            view = live_capital_view(self.records, kite_balance=(500.0, ""),
-                                     coindcx_balance=(10_000.0, ""))
-        self.assertEqual(view["assignable_crypto"], 2_000.0)    # your setting is the lower of the two
 
     def test_over_allocation_is_judged_per_account_not_against_a_combined_total(self):
         # Rs10,000 correctly assigned to a crypto strategy was flagged "more is assigned than is

@@ -511,18 +511,12 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
     (deployment/live_allocations.py). Read from the canonical state directory, not the mode-specific
     one -- there is only ever one real pool, and it does not change with which view you are looking at.
 
-    `pool` is the deployment cap set on the dashboard's Settings tab (falling back to
-    config.settings.LIVE_CAPITAL_POOL_RUPEES): what you have actually funded and are willing
-    to deploy. It defaults to 0, so until it is deliberately set nothing can be allocated and the
-    dashboard says so rather than leaving the question invisible."""
+    `pool` is simply what the broker accounts hold between them. There is no separate deployment
+    cap: how much is deployed is decided strategy by strategy in the Live Capital column, and an
+    allocation cannot exceed its own broker's balance, so a second global ceiling over the same
+    decision added nothing but a number to keep in sync (removed 2026-10-07)."""
     from deployment.live_allocations import load as load_allocations
     from deployment.settings import STATE_DIR
-    try:
-        from deployment.live_settings import setting
-        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
-        pool = setting("LIVE_CAPITAL_POOL_RUPEES", config_dir)
-    except Exception:
-        pool = 0.0
     balance, balance_error = (kite_balance or (None, ""))
     # CoinDCX is a SEPARATE pot of money, not part of the equity balance. Adding the two would read
     # as one deployable pool, when in fact rupees at Kite cannot buy crypto and rupees at CoinDCX
@@ -544,11 +538,11 @@ def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
     # buy crypto and rupees at CoinDCX cannot buy shares. One combined figure would say a crypto
     # strategy can be funded from the equity account, which is how a Rs10,000 CoinDCX balance ended
     # up being refused against a Rs500 Kite one.
-    assignable = 0.0 if balance is None else round(min(pool, float(balance)), 2)
-    assignable_crypto = 0.0 if crypto_balance is None else round(min(pool, float(crypto_balance)), 2)
+    assignable = 0.0 if balance is None else round(float(balance), 2)
+    assignable_crypto = 0.0 if crypto_balance is None else round(float(crypto_balance), 2)
     names = {r.strategy_key: getattr(r, "display_name", r.strategy_key) for r in registry_records}
     rows = [{"key": k, "name": names.get(k, k), "allocated": v} for k, v in sorted(allocations.items())]
-    return {"pool": round(pool, 2), "allocated": allocated,
+    return {"pool": round(assignable + assignable_crypto, 2), "allocated": allocated,
             "balance": None if balance is None else round(float(balance), 2),
             "balance_error": balance_error, "assignable": assignable,
             "free": round(max(0.0, assignable - allocated), 2),

@@ -27,13 +27,14 @@ STORE_FILENAME = "live_settings.json"
 
 # name -> (label, minimum, maximum, help). The maximum is a sanity bound, not a policy: it is there so
 # a fat-fingered extra zero is refused rather than silently accepted on a money ceiling.
-KNOWN_SETTINGS = {
-    "LIVE_CAPITAL_POOL_RUPEES": (
-        "Deployment cap", 0.0, 10_000_000.0,
-        "The most the bot may ever deploy, across all strategies. Nothing can be assigned above it, "
-        "and each strategy is additionally capped by what its own broker account actually holds. "
-        "Zero means nothing can be allocated at all."),
-}
+# Nothing is settable here today. LIVE_CAPITAL_POOL_RUPEES -- a global "deployment cap" -- was
+# removed on 2026-10-07 as a redundant layer: what is deployed is ALREADY decided strategy by
+# strategy in the Live Capital column, and no allocation can exceed what its own broker account
+# actually holds. A second global ceiling over the same decision only has to be kept in sync with it,
+# and twice in one evening it refused allocations that were perfectly fundable. The remaining
+# controls are independent of each other rather than duplicates: the broker balance, the per-strategy
+# allocation, the per-order percentage cap, LIVE_TRADING, and the kill switch.
+KNOWN_SETTINGS = {}
 
 
 def store_path(config_dir: str) -> str:

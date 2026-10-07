@@ -84,10 +84,6 @@ class TestEachBlockerIsFoundAndClassified(unittest.TestCase):
         r = _check(cash=None)
         self.assertTrue(any(b.kind == CONFIG and "could not be read" in b.detail for b in r.blockers))
 
-    def test_the_deployment_cap_is_money(self):
-        r = _check(rupees=200_000.0, cap=10_000.0)
-        self.assertTrue(any(b.kind == MONEY and "deployment cap" in b.detail for b in r.blockers))
-
     def test_a_market_with_no_broker_stops_everything_else_being_reported(self):
         r = _check(_rec("minervini_us", "us_equity"))
         self.assertEqual(len(r.blockers), 1)       # no point listing caps for a book that cannot trade

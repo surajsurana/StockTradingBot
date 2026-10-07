@@ -102,8 +102,8 @@ def unallocated(state_dir: Optional[str], available_balance: float) -> float:
 
 
 def set_allocation(state_dir: str, strategy_key: str, rupees, *, available_balance,
-                   open_live_positions: int = 0, same_venue_keys: Optional[set] = None,
-                   deployment_cap: Optional[float] = None) -> AllocationResult:
+                   open_live_positions: int = 0,
+                   same_venue_keys: Optional[set] = None) -> AllocationResult:
     """
     Assigns `rupees` of the real cash pool to one strategy. Returns the full allocation map on
     success, and on failure changes nothing and explains why.
@@ -151,17 +151,6 @@ def set_allocation(state_dir: str, strategy_key: str, rupees, *, available_balan
         reasons.append(f"Assigning Rs{amount:,.0f} would take the total allocated{at_venue} to "
                         f"Rs{amount + others:,.0f}, over the available balance of Rs{balance:,.0f} "
                         f"(Rs{others:,.0f} is already assigned to other strategies{at_venue}).")
-
-    # The DEPLOYMENT CAP is the other fact: how much real money you are willing to have deployed in
-    # total, whichever account it sits in. That one IS global, and it is the number on the Settings
-    # tab -- so when it is what refuses an allocation, the message says so and points there, rather
-    # than blaming a broker balance that is perfectly adequate.
-    if deployment_cap is not None:
-        everywhere = total_allocated(state_dir, excluding=key)
-        if amount + everywhere > float(deployment_cap):
-            reasons.append(f"Assigning Rs{amount:,.0f} would take the total deployed across all "
-                            f"brokers to Rs{amount + everywhere:,.0f}, over your deployment cap of "
-                            f"Rs{float(deployment_cap):,.0f}. Raise it under Settings.")
 
     if reasons:
         return AllocationResult(False, reasons, load(state_dir))

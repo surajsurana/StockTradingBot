@@ -193,41 +193,31 @@ class TestEachBrokerHoldsItsOwnMoney(unittest.TestCase):
         self.assertFalse(out.ok)
 
 
-class TestTheDeploymentCapIsItsOwnLimit(unittest.TestCase):
-    """How much real money you are willing to have deployed IN TOTAL is a different fact from what
-    one broker holds. Folding them into one number made a refusal by the cap look like an empty
-    account, and sent you to the broker instead of to Settings."""
+class TestThereIsNoGlobalDeploymentCap(unittest.TestCase):
+    """Removed 2026-10-07. How much is deployed is already decided strategy by strategy, and no
+    allocation can exceed its own broker's balance, so a second global ceiling over the same decision
+    only had to be kept in sync with it -- and twice in one evening it refused allocations that were
+    perfectly fundable."""
 
-    def setUp(self):
-        self.d = tempfile.mkdtemp()
-        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000,
-                       same_venue_keys={"portfolio_g"}, deployment_cap=10_000)
+    def test_set_allocation_takes_no_cap_argument(self):
+        import inspect
 
-    def test_the_cap_counts_every_broker(self):
-        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
-                             same_venue_keys={"overnight_return_anomaly"}, deployment_cap=10_000)
-        self.assertFalse(out.ok)
-        joined = " ".join(out.reasons)
-        self.assertIn("deployment cap", joined)
-        self.assertIn("Raise it under Settings", joined)
+        from deployment.live_allocations import set_allocation
+        self.assertNotIn("deployment_cap", inspect.signature(set_allocation).parameters)
 
-    def test_raising_the_cap_lets_it_through(self):
-        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
-                             same_venue_keys={"overnight_return_anomaly"}, deployment_cap=25_000)
-        self.assertTrue(out.ok, out.reasons)
+    def test_it_is_not_settable_anywhere(self):
+        from deployment.live_settings import KNOWN_SETTINGS
+        self.assertNotIn("LIVE_CAPITAL_POOL_RUPEES", KNOWN_SETTINGS)
 
-    def test_a_cap_refusal_is_worded_differently_from_a_balance_refusal(self):
-        cap = set_allocation(self.d, "x", 5_000, available_balance=10_500,
-                             same_venue_keys={"x"}, deployment_cap=10_000)
-        bal = set_allocation(self.d, "y", 50_000, available_balance=10_500,
-                             same_venue_keys={"y"}, deployment_cap=10_000_000)
-        self.assertIn("deployment cap", " ".join(cap.reasons))
-        self.assertNotIn("deployment cap", " ".join(bal.reasons))
-
-    def test_no_cap_given_means_only_the_broker_balance_governs(self):
-        out = set_allocation(self.d, "overnight_return_anomaly", 10_000, available_balance=10_500,
-                             same_venue_keys={"overnight_return_anomaly"})
-        self.assertTrue(out.ok, out.reasons)
+    def test_the_brokers_own_balance_is_the_only_ceiling(self):
+        d = tempfile.mkdtemp()
+        set_allocation(d, "portfolio_g", 10_000, available_balance=10_000,
+                       same_venue_keys={"portfolio_g"})
+        ok = set_allocation(d, "overnight_return_anomaly", 10_000, available_balance=10_500,
+                            same_venue_keys={"overnight_return_anomaly"})
+        self.assertTrue(ok.ok, ok.reasons)          # the exact case that was refused
+        over = set_allocation(d, "beta", 11_000, available_balance=10_500, same_venue_keys={"beta"})
+        self.assertFalse(over.ok)                   # you still cannot assign money you do not have
 
 
 if __name__ == "__main__":

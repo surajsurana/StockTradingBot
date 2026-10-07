@@ -263,12 +263,21 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
                        "cannot be worked out and no order may be placed.")
     max_order, max_order_label = min(caps)
 
+    # Total exposure bounds ITSELF: it cannot exceed what has been assigned, and what has been
+    # assigned cannot exceed what the brokers hold. A separate global ceiling over the same decision
+    # was removed on 2026-10-07 -- it duplicated the per-strategy allocation and twice refused
+    # allocations that were perfectly fundable. An explicit LIVE_MAX_EXPOSURE_RUPEES still applies
+    # if someone sets one.
     max_exposure = _setting(settings, "LIVE_MAX_EXPOSURE_RUPEES", DEFAULT_MAX_LIVE_EXPOSURE_RUPEES)
     if max_exposure <= 0:
-        from deployment.live_settings import setting as _stored
-        max_exposure = _stored("LIVE_CAPITAL_POOL_RUPEES", CONFIG_DIR, settings_module=settings)
+        try:
+            from deployment.live_allocations import total_allocated
+            from deployment.settings import STATE_DIR as _STATE_DIR
+            max_exposure = total_allocated(_STATE_DIR)
+        except Exception:
+            max_exposure = 0.0
     if max_exposure <= 0:
-        max_exposure = float("inf")      # nothing has been funded, so the allocation check governs
+        max_exposure = float("inf")      # nothing assigned yet; the allocation check governs
     max_orders = _setting(settings, "LIVE_MAX_ORDERS_PER_DAY", DEFAULT_MAX_ORDERS_PER_DAY)
 
     try:

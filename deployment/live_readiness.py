@@ -152,10 +152,6 @@ def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optio
         add(Blocker(MONEY, f"Rs{out.allocated:,.0f} is assigned but the {venue} account holds "
                            f"Rs{broker_cash:,.0f}.",
                     f"Add Rs{out.allocated - broker_cash:,.0f} to the {venue} account."))
-    if deployment_cap is not None and out.allocated > deployment_cap:
-        add(Blocker(MONEY, f"Rs{out.allocated:,.0f} is assigned but the deployment cap is "
-                           f"Rs{deployment_cap:,.0f}.",
-                    "Raise the deployment cap under Settings."))
 
     # 5. The caps, against the size this strategy would ACTUALLY trade.
     #

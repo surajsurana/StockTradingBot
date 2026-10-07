@@ -752,8 +752,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
-                from deployment.live_settings import setting as live_setting
-                pool = live_setting("LIVE_CAPITAL_POOL_RUPEES", CONFIG_DIR)
                 key = str(body.get("key", ""))
                 # WHICH ACCOUNT holds this strategy's money. Rupees at Kite cannot buy crypto and
                 # rupees at CoinDCX cannot buy shares, so capping a crypto allocation against the
@@ -789,7 +787,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 peers = {r.strategy_key for r in list_strategies() if venue_of(r) == venue_id}
                 result = set_allocation(STATE_DIR, key, body.get("rupees"),
                                         available_balance=balance, same_venue_keys=peers,
-                                        deployment_cap=pool,
                                         open_live_positions=_open_live_positions(key))
                 payload = {"ok": result.ok, "allocations": result.allocations,
                            "error": " ".join(result.reasons)}
