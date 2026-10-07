@@ -1,9 +1,11 @@
 {
   "current": {
-    "key": "crypto_illiquidity_premium",
-    "name": "Cryptocurrency Illiquidity Premium (Amihud-style)",
+    "key": "crypto_idiosyncratic_volatility",
+    "name": "Cryptocurrency Idiosyncratic Volatility Factor",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
+    "stale": false,
+    "claimed_days_ago": null,
     "horizon_lane": "crypto"
   }
 }
