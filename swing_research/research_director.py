@@ -35,6 +35,7 @@ from research_lab.knowledge_base import KNOWLEDGE_BASE_PATH as INTRADAY_KB_PATH 
 from swing_research import benchmarks
 from swing_research.backtesting_engine import simulate_portfolio, simulate_portfolio_single_unit
 from swing_research.base import Strategy
+from swing_research.broker_costs import apply_broker_costs
 from swing_research.evidence_quality import compute_evidence_quality
 from swing_research.metrics import compute_holding_period_breakdown, compute_metrics
 from swing_research.published_research_analyst import PublishedStrategy
@@ -114,7 +115,8 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
                               max_units_per_sector: int = 6, max_units_total: int = 10,
                               extra_columns_by_symbol: Optional[dict] = None,
                               min_trades_total: int = 15, min_out_of_sample_trades: int = 3,
-                              min_consistent_window_fraction: float = 0.5) -> dict:
+                              min_consistent_window_fraction: float = 0.5,
+                              charge_broker_costs: bool = True) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via research_lab.backtesting_engineer.walk_forward_split()
@@ -137,6 +139,7 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
     windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
     walk_forward_metrics = []
     all_trades_by_window = []
+    broker_charges_total = 0.0
 
     for w_start, w_end in windows:
         windowed_data = {
@@ -154,6 +157,15 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
             max_units_per_sector=max_units_per_sector, max_units_total=max_units_total,
             extra_columns_by_symbol=windowed_extra,
         )
+        # Pay what a real contract note takes. Until 2026-10-07 this step did not exist: friction was
+        # modelled only as a percentage (execution_realism_engine.py's 0.1% one way), so the flat
+        # Rs13.5-per-scrip DP charge was invisible and the whole Indian book was accepted on
+        # economics that do not exist -- live trades were paying 0.68% a round trip, not 0.2%.
+        # charge_broker_costs=False restores the old, wrong numbers, for comparing against a
+        # pre-2026-10-07 experiment and nothing else.
+        if charge_broker_costs:
+            result = apply_broker_costs(result)
+            broker_charges_total += result["broker_charges"]["total"]
         metrics = compute_metrics(result["trades"], starting_capital, result["trading_calendar"],
                                    daily_equity=result["daily_equity"])
         walk_forward_metrics.append(metrics)
@@ -174,6 +186,7 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
         "verdict": verdict, "walk_forward_metrics": consistency_metrics,
         "out_of_sample_metrics": out_of_sample_metrics, "out_of_sample_trades": out_of_sample_trades,
         "all_trades": all_trades, "windows": windows,
+        "broker_charges_total": broker_charges_total, "broker_costs_charged": charge_broker_costs,
     }
 
 
