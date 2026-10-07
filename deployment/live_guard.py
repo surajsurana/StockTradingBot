@@ -75,8 +75,28 @@ def _credential(settings, state_dir: str, name: str) -> str:
 
 # Conservative defaults. They are floors on caution, not recommendations: the real numbers belong in
 # config/settings.py on the VPS, and anything absent falls back to these rather than to "unlimited".
-DEFAULT_MAX_ORDER_VALUE_RUPEES = 5_000.0
-DEFAULT_MAX_LIVE_EXPOSURE_RUPEES = 25_000.0
+# THE PER-ORDER CAP IS A PERCENTAGE, NOT A RUPEE FIGURE (changed 2026-10-07).
+#
+# It was Rs5,000, chosen when the only live book was crypto and a position was about Rs2,600. An
+# equity position cannot open below Rs12,469, so the same number that was generous for one venue
+# refused every order the other could ever produce -- and would have gone on doing so one order at a
+# time, reading as bad luck rather than as a setting. Any absolute cap has that failure built in: it
+# is a guess about capital, and it is wrong the moment capital changes.
+#
+# What the cap is actually for is catching a SIZING BUG -- an order far larger than the strategy
+# intended. That is inherently relative to the book, so the cap is too. At 50% a tenfold sizing error
+# is caught on any book of any size, in any currency, for ever, with nothing to re-tune.
+DEFAULT_MAX_ORDER_PCT_OF_CAPITAL = 0.50
+
+# An optional ABSOLUTE ceiling on top, for someone who wants one. Zero/absent means "no absolute
+# ceiling, the percentage governs" -- deliberately not a rupee default, because a rupee default is
+# the thing that just broke.
+DEFAULT_MAX_ORDER_VALUE_RUPEES = 0.0
+
+# Total exposure defaults to the deployment cap -- the number already set on the dashboard, meaning
+# "the most the bot may ever deploy". A second, separate ceiling that has to agree with it is a
+# configuration trap: they drift apart and the stricter one silently wins.
+DEFAULT_MAX_LIVE_EXPOSURE_RUPEES = 0.0
 DEFAULT_MAX_ORDERS_PER_DAY = 20
 
 
@@ -138,7 +158,8 @@ def _setting(settings, name: str, default):
 def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees: float,
                         current_live_exposure_rupees: float, orders_placed_today: int,
                         eligibility=None, now: Optional[date] = None,
-                        broker: str = DEFAULT_BROKER) -> LiveOrderDecision:
+                        broker: str = DEFAULT_BROKER,
+                        allocated_rupees: float = 0.0) -> LiveOrderDecision:
     """
     The single entry point. Every argument is supplied by the caller rather than read from global
     state here, so this stays pure and fully testable without a broker, a VPS or a clock.
@@ -214,8 +235,34 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
                            "(trading hours are 09:15-15:30 IST on a weekday).")
 
     # 7. Hard caps.
-    max_order = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
+    # The per-order cap, as a fraction of what THIS strategy was funded with. A caller that cannot
+    # say how much that is gets the absolute ceiling only -- it may not guess, because guessing a
+    # capital figure is exactly the mistake the percentage exists to remove.
+    pct = _setting(settings, "LIVE_MAX_ORDER_PCT_OF_CAPITAL", DEFAULT_MAX_ORDER_PCT_OF_CAPITAL)
+    absolute = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
+    caps = []
+    try:
+        funded = float(allocated_rupees or 0)
+    except (TypeError, ValueError):
+        funded = 0.0
+    if funded > 0 and pct > 0:
+        caps.append((pct * funded, f"{pct:.0%} of the Rs{funded:,.0f} assigned to it"))
+    if absolute > 0:
+        caps.append((absolute, f"the absolute per-order ceiling of Rs{absolute:,.0f}"))
+    if not caps:
+        # FAIL CLOSED. No funded capital and no absolute ceiling means the cap cannot be computed,
+        # and "cannot compute the cap" must never resolve to "there is no cap". A caller that omits
+        # the allocation is a bug, and the right outcome of that bug is a refused order.
+        return _refuse("The capital assigned to this strategy is not known, so the per-order cap "
+                       "cannot be worked out and no order may be placed.")
+    max_order, max_order_label = min(caps)
+
     max_exposure = _setting(settings, "LIVE_MAX_EXPOSURE_RUPEES", DEFAULT_MAX_LIVE_EXPOSURE_RUPEES)
+    if max_exposure <= 0:
+        from deployment.live_settings import setting as _stored
+        max_exposure = _stored("LIVE_CAPITAL_POOL_RUPEES", CONFIG_DIR, settings_module=settings)
+    if max_exposure <= 0:
+        max_exposure = float("inf")      # nothing has been funded, so the allocation check governs
     max_orders = _setting(settings, "LIVE_MAX_ORDERS_PER_DAY", DEFAULT_MAX_ORDERS_PER_DAY)
 
     try:
@@ -228,10 +275,11 @@ def check_order_allowed(*, settings, record, state_dir: str, order_value_rupees:
     if not value > 0:
         reasons.append(f"Order value {value} is not a positive number.")
     if value > max_order:
-        reasons.append(f"Order value Rs{value:,.0f} exceeds the per-order cap of Rs{max_order:,.0f}.")
+        reasons.append(f"Order value Rs{value:,.0f} exceeds the per-order cap of "
+                       f"Rs{max_order:,.0f} ({max_order_label}).")
     if exposure + max(value, 0.0) > max_exposure:
         reasons.append(f"Order would take live exposure to Rs{exposure + value:,.0f}, "
-                        f"over the cap of Rs{max_exposure:,.0f}.")
+                        f"over the deployment cap of Rs{max_exposure:,.0f}.")
     if placed >= max_orders:
         reasons.append(f"Already placed {placed} live orders today, at the cap of {max_orders}.")
 

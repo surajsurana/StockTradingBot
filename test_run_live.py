@@ -327,7 +327,8 @@ class TestOrdersCannotGoIntoAClosedMarket(unittest.TestCase):
         with patch("deployment.live_guard._credential", return_value="x"):
             return check_order_allowed(settings=SETTINGS, record=_rec("alpha"), state_dir=d,
                                        order_value_rupees=10_000, current_live_exposure_rupees=0,
-                                       orders_placed_today=0, now=when, broker=broker)
+                                       orders_placed_today=0, now=when, broker=broker,
+                                       allocated_rupees=50_000.0)
 
     def test_an_equity_order_outside_market_hours_is_refused(self):
         from datetime import datetime

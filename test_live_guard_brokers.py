@@ -54,7 +54,8 @@ IN_HOURS = datetime(2026, 10, 7, 11, 0)
 def _check(settings, broker, state_dir, **over):
     kwargs = dict(settings=settings, record=_record(), state_dir=state_dir,
                   order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
-                  orders_placed_today=0, broker=broker, now=IN_HOURS)
+                  orders_placed_today=0, broker=broker, now=IN_HOURS,
+                  allocated_rupees=10_000.0)
     kwargs.update(over)
     return check_order_allowed(**kwargs)
 
@@ -93,7 +94,8 @@ class TestEachBrokerChecksItsOwnCredentials(unittest.TestCase):
     def test_omitting_the_broker_keeps_the_old_kite_behaviour(self):
         decision = check_order_allowed(settings=KITE_ONLY, record=_record(), state_dir=self.d,
                                        order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
-                                       orders_placed_today=0, now=IN_HOURS)
+                                       orders_placed_today=0, now=IN_HOURS,
+                                       allocated_rupees=10_000.0)
         self.assertTrue(decision.allowed, decision.reasons)
         self.assertEqual(DEFAULT_BROKER, "kite")
 

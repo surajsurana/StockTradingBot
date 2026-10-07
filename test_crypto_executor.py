@@ -10,6 +10,8 @@ import json
 import os
 import tempfile
 import unittest
+
+from deployment.live_allocations import set_allocation
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -76,6 +78,10 @@ class _Client:
 
 
 def _place(state_dir, client=None, **over):
+    # The guard now sizes its per-order cap from the strategy's own allocation, and a book
+    # with none fails closed. These tests are about what the executor does with a broker's
+    # answer, so the book is funded.
+    set_allocation(state_dir, "alpha", 100_000.0, available_balance=1_000_000.0)
     kwargs = dict(settings=_settings(), record=_record(), state_dir=state_dir, symbol="BTC",
                   side="BUY", quantity=0.0003, reference_price_usdt=USDT_PRICE,
                   strategy_key="portfolio_g", usdinr=USDINR,

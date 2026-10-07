@@ -162,18 +162,29 @@ def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optio
     # A per-order cap below the smallest position the engine can open refuses every order the
     # strategy will ever produce -- and does it one order at a time, so it reads as bad luck rather
     # than a setting. This is the check that would have saved the first live equity week.
-    max_order = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
+    from deployment.live_guard import DEFAULT_MAX_ORDER_PCT_OF_CAPITAL
+    pct = _setting(settings, "LIVE_MAX_ORDER_PCT_OF_CAPITAL", DEFAULT_MAX_ORDER_PCT_OF_CAPITAL)
+    absolute = _setting(settings, "LIVE_MAX_ORDER_VALUE_RUPEES", DEFAULT_MAX_ORDER_VALUE_RUPEES)
+    max_order = min([c for c in (pct * out.allocated if pct > 0 else 0, absolute) if c > 0],
+                    default=0.0)
     max_exposure = _setting(settings, "LIVE_MAX_EXPOSURE_RUPEES", DEFAULT_MAX_LIVE_EXPOSURE_RUPEES)
+    if max_exposure <= 0 and deployment_cap:
+        max_exposure = float(deployment_cap)
+    if max_exposure <= 0:
+        max_exposure = float("inf")
     floor = _min_position(venue)
-    if floor and max_order < floor:
-        add(Blocker(CONFIG, f"The per-order cap is Rs{max_order:,.0f} but this venue will not open a "
-                            f"position below Rs{floor:,.0f}, so every order would be refused.",
-                    f"Set LIVE_MAX_ORDER_VALUE_RUPEES to at least Rs{floor:,.0f}."))
+    if max_order and floor and max_order < floor:
+        add(Blocker(CONFIG, f"The per-order cap works out at Rs{max_order:,.0f} but this venue will "
+                            f"not open a position below Rs{floor:,.0f}, so every order would be "
+                            f"refused.",
+                    f"Raise LIVE_MAX_ORDER_PCT_OF_CAPITAL, or assign more capital -- the cap is "
+                    f"{pct:.0%} of what the strategy holds."))
     natural = _natural_position(out.strategy_key, out.allocated)
-    if natural and natural > max_order:
+    if natural and max_order and natural > max_order:
         add(Blocker(CONFIG, f"At Rs{out.allocated:,.0f} this strategy would open about "
                             f"Rs{natural:,.0f} per position, over the Rs{max_order:,.0f} per-order cap.",
-                    f"Set LIVE_MAX_ORDER_VALUE_RUPEES to at least Rs{natural:,.0f}."))
+                    f"Raise LIVE_MAX_ORDER_PCT_OF_CAPITAL above "
+                    f"{natural / out.allocated:.0%}." if out.allocated else ""))
     if out.allocated > max_exposure:
         add(Blocker(CONFIG, f"Rs{out.allocated:,.0f} is assigned but total live exposure is capped at "
                             f"Rs{max_exposure:,.0f}, so it would stop part-way in.",

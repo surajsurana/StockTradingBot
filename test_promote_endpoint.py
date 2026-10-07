@@ -274,7 +274,10 @@ class TestTheOverrideSurvivesToOrderTime(unittest.TestCase):
         return check_order_allowed(settings=self.settings, record=record, state_dir=self.d,
                                    order_value_rupees=1000.0, current_live_exposure_rupees=0.0,
                                    orders_placed_today=0, eligibility=self.failing,
-                                   now=datetime(2026, 10, 7, 11, 0))
+                                   now=datetime(2026, 10, 7, 11, 0),
+                                   # the per-order cap is a fraction of the book, and an unfunded
+                                   # one fails closed; these tests are about the promotion override
+                                   allocated_rupees=100_000.0)
 
     def test_an_overridden_strategy_may_still_place_orders(self):
         decision = self._check(self._record_with(PROMOTION_OVERRIDE_MARKER + " promoted anyway"))

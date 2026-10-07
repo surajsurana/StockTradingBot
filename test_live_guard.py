@@ -13,15 +13,17 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
-from deployment.live_guard import (DEFAULT_MAX_LIVE_EXPOSURE_RUPEES, DEFAULT_MAX_ORDER_VALUE_RUPEES,
+from deployment.live_guard import (DEFAULT_MAX_ORDER_PCT_OF_CAPITAL, DEFAULT_MAX_ORDER_VALUE_RUPEES,
                                    DEFAULT_MAX_ORDERS_PER_DAY, KILL_SWITCH_FILENAME,
                                    check_order_allowed, kill_switch_engaged, kill_switch_path)
 
 
 def _settings(**over):
+    # No absolute per-order ceiling by default, matching the shipped default: since 2026-10-07 the
+    # per-order cap is a percentage of the book, and an absolute rupee figure is an optional extra
+    # for someone who wants one. Tests that care about the absolute ceiling set it themselves.
     base = dict(LIVE_TRADING=True, KITE_API_KEY="key", KITE_ACCESS_TOKEN="token",
-                LIVE_MAX_ORDER_VALUE_RUPEES=5_000.0, LIVE_MAX_EXPOSURE_RUPEES=25_000.0,
-                LIVE_MAX_ORDERS_PER_DAY=20)
+                LIVE_MAX_EXPOSURE_RUPEES=25_000.0, LIVE_MAX_ORDERS_PER_DAY=20)
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -37,12 +39,21 @@ def _record(status=DeploymentStatus.PILOT_LIVE):
 IN_HOURS = datetime(2026, 10, 7, 11, 0)
 
 
+# A funded book for the cap arithmetic to work on. Since 2026-10-07 the per-order cap is a FRACTION
+# of what the strategy was assigned, not a rupee figure -- a rupee figure is a guess about capital
+# and is wrong the moment capital changes, which is how a Rs5,000 cap came to refuse every equity
+# order. Rs10,000 assigned at the 50% default gives a Rs5,000 per-order cap, so the numbers these
+# tests were written around still read the same.
+FUNDED = 10_000.0
+
+
 def _check(settings=None, record=None, state_dir=None, value=1_000.0, exposure=0.0,
-           placed=0, eligibility=None, now=IN_HOURS):
+           placed=0, eligibility=None, now=IN_HOURS, funded=FUNDED):
     return check_order_allowed(settings=settings or _settings(), record=record or _record(),
                                state_dir=state_dir or tempfile.mkdtemp(),
                                order_value_rupees=value, current_live_exposure_rupees=exposure,
-                               orders_placed_today=placed, eligibility=eligibility, now=now)
+                               orders_placed_today=placed, eligibility=eligibility, now=now,
+                               allocated_rupees=funded)
 
 
 class TestTheHappyPathIsNarrow(unittest.TestCase):
@@ -107,13 +118,15 @@ class TestEachSwitchBlocksOnItsOwn(unittest.TestCase):
 
 class TestCaps(unittest.TestCase):
     def test_order_value_over_the_cap_blocks(self):
+        # FUNDED is Rs10,000 and the default cap is 50%, so Rs5,000 is the per-order ceiling here
         self.assertFalse(_check(value=5_000.01).allowed)
         self.assertTrue(_check(value=5_000.0).allowed)          # exactly at the cap is allowed
 
     def test_exposure_cap_counts_the_order_being_placed(self):
-        # 24,500 already out plus a 1,000 order is over 25,000 -- the new order must be included
-        self.assertFalse(_check(value=1_000.0, exposure=24_500.0).allowed)
-        self.assertTrue(_check(value=500.0, exposure=24_500.0).allowed)
+        # 24,500 already out plus a 1,000 order is over the 25,000 ceiling -- the new order counts
+        s = _settings(LIVE_MAX_EXPOSURE_RUPEES=25_000.0)
+        self.assertFalse(_check(settings=s, value=1_000.0, exposure=24_500.0).allowed)
+        self.assertTrue(_check(settings=s, value=500.0, exposure=24_500.0).allowed)
 
     def test_daily_order_count_cap_blocks_at_the_limit_not_after_it(self):
         self.assertTrue(_check(placed=19).allowed)
@@ -125,19 +138,38 @@ class TestCaps(unittest.TestCase):
 
     def test_absent_cap_settings_fall_back_to_the_conservative_defaults(self):
         s = _settings()
-        for name in ("LIVE_MAX_ORDER_VALUE_RUPEES", "LIVE_MAX_EXPOSURE_RUPEES", "LIVE_MAX_ORDERS_PER_DAY"):
+        for name in ("LIVE_MAX_EXPOSURE_RUPEES", "LIVE_MAX_ORDERS_PER_DAY"):
             delattr(s, name)
-        self.assertTrue(_check(settings=s, value=DEFAULT_MAX_ORDER_VALUE_RUPEES).allowed)
-        self.assertFalse(_check(settings=s, value=DEFAULT_MAX_ORDER_VALUE_RUPEES + 1).allowed)
+        cap = DEFAULT_MAX_ORDER_PCT_OF_CAPITAL * FUNDED
+        self.assertTrue(_check(settings=s, value=cap).allowed)
+        self.assertFalse(_check(settings=s, value=cap + 1).allowed)
         self.assertFalse(_check(settings=s, placed=DEFAULT_MAX_ORDERS_PER_DAY).allowed)
-        self.assertFalse(_check(settings=s, value=1.0,
-                                exposure=DEFAULT_MAX_LIVE_EXPOSURE_RUPEES).allowed)
 
     def test_a_garbage_cap_setting_falls_back_rather_than_disabling_the_cap(self):
         # the dangerous reading of a bad config would be "no cap" -- it must be "the default cap"
+        cap = DEFAULT_MAX_ORDER_PCT_OF_CAPITAL * FUNDED
         for junk in ("lots", None, "", -1):
-            s = _settings(LIVE_MAX_ORDER_VALUE_RUPEES=junk)
-            self.assertFalse(_check(settings=s, value=DEFAULT_MAX_ORDER_VALUE_RUPEES + 1).allowed, repr(junk))
+            s = _settings(LIVE_MAX_ORDER_PCT_OF_CAPITAL=junk)
+            self.assertFalse(_check(settings=s, value=cap + 1).allowed, repr(junk))
+
+    def test_the_cap_scales_with_the_book_instead_of_being_re_tuned(self):
+        """The whole point. The same setting governs a Rs10,000 crypto book and a Rs2.4 lakh equity
+        one, and neither needs a number changed when the other is funded."""
+        self.assertTrue(_check(funded=10_000.0, value=5_000.0).allowed)
+        self.assertFalse(_check(funded=10_000.0, value=5_001.0).allowed)
+        self.assertTrue(_check(funded=240_607.0, value=12_496.0).allowed)    # the real equity order
+        self.assertFalse(_check(funded=240_607.0, value=130_000.0).allowed)  # a 10x sizing bug
+
+    def test_an_unknown_allocation_refuses_rather_than_lifting_the_cap(self):
+        """Fail closed. "Cannot work out the cap" must never resolve to "there is no cap"."""
+        d = _check(funded=0.0)      # and no absolute ceiling set, so nothing is left to bound it
+        self.assertFalse(d.allowed)
+        self.assertTrue(any("not known" in r for r in d.reasons), d.reasons)
+
+    def test_an_absolute_ceiling_still_applies_when_someone_sets_one(self):
+        s = _settings(LIVE_MAX_ORDER_VALUE_RUPEES=2_000.0)
+        self.assertFalse(_check(settings=s, funded=240_607.0, value=2_001.0).allowed)
+        self.assertTrue(_check(settings=s, funded=240_607.0, value=2_000.0).allowed)
 
     def test_unreadable_numbers_refuse_rather_than_raise(self):
         for bad in ("abc", None, object()):

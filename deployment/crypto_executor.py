@@ -105,6 +105,7 @@ def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: s
     INR books are thinner than the global ones, and a market order in a thin book can fill a long way
     from the price the decision assumed. `limit_buffer_pct` is how far through to price it.
     """
+    from deployment.live_allocations import allocation_for
     from deployment.live_guard import check_order_allowed
 
     now = now or datetime.now()
@@ -175,7 +176,11 @@ def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: s
         settings=settings, record=record, state_dir=state_dir, order_value_rupees=order_value,
         current_live_exposure_rupees=current_live_exposure_rupees,
         orders_placed_today=orders_placed_today(state_dir, today),
-        eligibility=eligibility, broker=BROKER)
+        eligibility=eligibility,
+        # How much this strategy was funded with, so the guard's per-order cap can be a fraction of
+        # it rather than a rupee figure that is a guess about capital -- and wrong the moment capital
+        # changes, which is how a Rs5,000 cap came to refuse every equity order.
+        allocated_rupees=allocation_for(state_dir, strategy_key), broker=BROKER)
     if not decision.allowed:
         return refuse(decision.reasons, extra={"value": round(order_value, 2)})
 

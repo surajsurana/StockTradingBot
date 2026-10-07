@@ -99,16 +99,22 @@ class TestTheCapsAreCheckedAgainstWhatItWouldActuallyTrade(unittest.TestCase):
     position the engine can open refuses every order the strategy will ever produce -- one at a time,
     so it reads as bad luck rather than a setting."""
 
-    def test_a_per_order_cap_below_the_notional_floor_is_a_fault(self):
-        from swing_research.broker_costs import min_viable_notional
-        tight = SimpleNamespace(LIVE_TRADING=True, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t",
-                                LIVE_MAX_ORDER_VALUE_RUPEES=5_000.0,
-                                LIVE_MAX_EXPOSURE_RUPEES=5_000_000.0)
-        r = _check(settings=tight)
-        hit = [b for b in r.blockers if "per-order cap" in b.detail and "below Rs" in b.detail]
-        self.assertTrue(hit)
+    def test_a_cap_that_works_out_below_the_notional_floor_is_a_fault(self):
+        """The per-order cap is a percentage, so it can only fall below the floor when the book is
+        small -- and then it refuses every order the engine can produce, one at a time."""
+        tiny = SimpleNamespace(LIVE_TRADING=True, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t",
+                               LIVE_MAX_ORDER_PCT_OF_CAPITAL=0.02,     # 2% of Rs200,000 = Rs4,000
+                               LIVE_MAX_EXPOSURE_RUPEES=5_000_000.0)
+        r = _check(settings=tiny)
+        hit = [b for b in r.blockers if "will not open a position below" in b.detail]
+        self.assertTrue(hit, [b.detail for b in r.blockers])
         self.assertEqual(hit[0].kind, CONFIG)
-        self.assertIn(f"{min_viable_notional():,.0f}", hit[0].fix)
+
+    def test_the_default_percentage_cap_clears_the_floor_on_a_real_book(self):
+        # 50% of Rs240,607 is Rs120,303, comfortably above the Rs12,469 floor -- the point of making
+        # it a percentage is that this needs no tuning per book
+        r = _check(rupees=240_607.0, natural=12_469.0)
+        self.assertEqual([b.detail for b in r.of_kind(CONFIG)], [])
 
     def test_a_per_order_cap_below_this_strategys_own_position_size_is_a_fault(self):
         tight = SimpleNamespace(LIVE_TRADING=True, KITE_API_KEY="k", KITE_ACCESS_TOKEN="t",

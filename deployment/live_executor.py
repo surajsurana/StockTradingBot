@@ -93,6 +93,7 @@ def place_live_order(*, settings, record, state_dir: str, symbol: str, side: str
     `reference_price` is the price the strategy's decision was based on; the execution engine prices
     its LIMIT through the market from it. `engine` is injectable so tests never construct a real one.
     """
+    from deployment.live_allocations import allocation_for
     from deployment.live_guard import check_order_allowed
 
     now = now or datetime.now()
@@ -104,6 +105,10 @@ def place_live_order(*, settings, record, state_dir: str, symbol: str, side: str
         current_live_exposure_rupees=current_live_exposure_rupees,
         orders_placed_today=orders_placed_today(state_dir, now.date().isoformat()),
         eligibility=eligibility,
+        # How much this strategy was funded with, so the guard's per-order cap can be a fraction of
+        # it rather than a rupee figure that is a guess about capital -- and wrong the moment capital
+        # changes, which is how a Rs5,000 cap came to refuse every equity order.
+        allocated_rupees=allocation_for(state_dir, strategy_key),
         # The SAME clock the rest of this call uses. The guard refuses an equity order outside NSE
         # hours, so letting it read its own wall clock would let the two disagree about what time
         # it is -- and would make every caller that passes  silently untestable.

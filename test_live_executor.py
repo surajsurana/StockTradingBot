@@ -10,6 +10,8 @@ import json
 import os
 import tempfile
 import unittest
+
+from deployment.live_allocations import set_allocation
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -54,6 +56,10 @@ IN_HOURS = datetime(2026, 10, 7, 11, 0)
 
 
 def _place(state_dir, engine=None, settings=None, record=None, **over):
+    # The guard now sizes its per-order cap from the strategy's own allocation, and a book
+    # with none fails closed. These tests are about what the executor does with a broker's
+    # answer, so the book is funded.
+    set_allocation(state_dir, "alpha", 100_000.0, available_balance=1_000_000.0)
     kwargs = dict(settings=settings or _settings(), record=record or _record(), state_dir=state_dir,
                   symbol="RELIANCE.NS", side="BUY", quantity=10, reference_price=100.0,
                   strategy_key="alpha", now=IN_HOURS,
