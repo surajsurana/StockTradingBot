@@ -1754,9 +1754,20 @@ def _live_fill_overrides(position: dict, derived_amount: float) -> dict:
     fill = position.get("live_fill") if isinstance(position, dict) else None
     if not isinstance(fill, dict) or not fill.get("inr_value"):
         return {"amount": round(derived_amount, 2)}
+    # The trade happened ON an INR market at a known INR price. Showing the USDT reference price and
+    # deriving rupees from today's FX described a conversion that never took place -- and quoted a
+    # price we did not pay. Where there is a real fill the row IS a rupee row.
+    fee = float(fill.get("fee_inr") or 0)
     return {"amount": round(float(fill["inr_value"]), 2),
-            "fee": fill.get("fee_inr"), "order_id": fill.get("order_id"),
-            "inr_price": fill.get("inr_price"), "actual_fill": True}
+            "price": fill.get("inr_price"), "ccy": "INR", "fx": None, "fx_date": None,
+            "fx_is_today": False,
+            "fee": round(fee, 2),
+            # CoinDCX charges a fee and 18% GST on that fee, and reports only the total. Splitting it
+            # back out lets the page show the same three lines the exchange's own order screen does.
+            "fee_base": round(fee / 1.18, 2) if fee else 0.0,
+            "fee_gst": round(fee - fee / 1.18, 2) if fee else 0.0,
+            "order_value": round(float(fill["inr_value"]) - fee, 2),
+            "order_id": fill.get("order_id"), "actual_fill": True}
 
 
 def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,

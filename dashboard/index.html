@@ -814,7 +814,31 @@ const priceWithCcy = (v, ccy) => {
   return (CCY_SYMBOL[ccy] || "") + n;
 };
 // Marks the amount on a converted row. A rupee row gets nothing: there is no conversion to explain.
-const fxBtn = a => (a.fx && a.ccy && a.ccy !== "INR")
+// A row with a real exchange fill gets the exchange's OWN breakdown, not a currency conversion --
+// the trade happened on an INR market, so there is nothing to convert and a conversion popup would
+// describe something that never happened.
+const fillBtn = a => a.actual_fill
+  ? ` <button class="fxbtn" data-fill='${esc(JSON.stringify({symbol: a.symbol, pool: a.pool, action: a.action, qty: a.qty, price: a.price, order_value: a.order_value, fee_base: a.fee_base, fee_gst: a.fee_gst, fee: a.fee, amount: a.amount, order_id: a.order_id}))}' title="What the exchange actually charged">ⓘ</button>`
+  : "";
+function showFill(json){
+  let a; try { a = JSON.parse(json); } catch(e){ return; }
+  const row = (what, detail, amount, cls2 = "") =>
+    `<tr class="${cls2}"><td>${what}</td><td class="note">${detail}</td><td class="n">${amount}</td></tr>`;
+  document.getElementById("life-body").innerHTML =
+    `<h3>${esc(a.symbol)} <span class="note">${esc(a.pool || "")} · ${esc(a.action || "")} · filled on the INR market</span></h3>` +
+    `<table><tbody>` +
+    row("Quantity", "", a.qty) +
+    row("Price", "average price the order actually filled at", money(a.price)) +
+    row("Order value", `${a.qty} × ${money(a.price)}`, money(a.order_value), "sub") +
+    row("Exchange fee", "CoinDCX trading fee", money(a.fee_base)) +
+    row("GST on fee", "18% of the fee", money(a.fee_gst)) +
+    `<tr class="total"><td>Total</td><td class="note">what left the account</td><td class="n">${money(a.amount)}</td></tr>` +
+    (a.order_id ? row("Order", "CoinDCX order id", esc(a.order_id)) : "") +
+    `</tbody></table>`;
+  document.getElementById("life").showModal();
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-fill]"); if(b){ e.stopPropagation(); showFill(b.dataset.fill); } });
+const fxBtn = a => a.actual_fill ? fillBtn(a) : (a.fx && a.ccy && a.ccy !== "INR")
   ? ` <button class="fxbtn" data-fx='${esc(JSON.stringify({ccy: a.ccy, fx: a.fx, fx_date: a.fx_date, fx_is_today: a.fx_is_today, qty: a.qty, price: a.price, amount: a.amount, symbol: a.symbol, pool: a.pool, action: a.action}))}' title="How this ${esc(a.ccy)} amount became rupees">ⓘ</button>`
   : "";
 // Which day's rate this row used, and why. A closed trade is fixed at the rate on the day it closed;

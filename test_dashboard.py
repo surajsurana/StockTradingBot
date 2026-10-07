@@ -394,6 +394,35 @@ class TestBuildDashboardState(unittest.TestCase):
             poor = live_capital_view(self.records, kite_balance=(10_000.0, ""))
             self.assertEqual(poor["assignable"], 10_000.0)      # capped by what is actually there
 
+    def test_a_real_fill_is_reported_in_rupees_not_as_a_usdt_conversion(self):
+        # the trade happened ON an INR market at a known INR price; showing the USDT reference and
+        # deriving rupees described a conversion that never took place, at a price we did not pay
+        from dashboard.state_view import _live_fill_overrides
+        position = {"live_fill": {"inr_price": 8_387_793.3, "quantity": 0.00031,
+                                  "fee_inr": 15.34, "inr_value": 2615.56, "order_id": "2910327372"}}
+        out = _live_fill_overrides(position, derived_amount=2519.46)
+        self.assertEqual(out["amount"], 2615.56)       # not the derived figure
+        self.assertEqual(out["price"], 8_387_793.3)    # the INR price paid, not the USDT reference
+        self.assertEqual(out["ccy"], "INR")
+        self.assertIsNone(out["fx"])                   # nothing was converted
+        self.assertTrue(out["actual_fill"])
+
+    def test_the_fee_is_split_into_fee_and_gst_the_way_the_exchange_reports_it(self):
+        # CoinDCX charges a fee plus 18% GST on it and reports only the total (Rs15.34); its own
+        # order screen shows Rs13.00 + Rs2.34, and the dashboard must agree line for line
+        from dashboard.state_view import _live_fill_overrides
+        out = _live_fill_overrides({"live_fill": {"inr_price": 8_387_793.3, "quantity": 0.00031,
+                                                  "fee_inr": 15.34, "inr_value": 2615.56}}, 0.0)
+        self.assertEqual(out["fee_base"], 13.00)
+        self.assertEqual(out["fee_gst"], 2.34)
+        self.assertAlmostEqual(out["order_value"], 2600.22, places=1)
+        self.assertAlmostEqual(out["order_value"] + out["fee"], out["amount"], places=1)
+
+    def test_a_position_with_no_real_fill_still_derives_as_before(self):
+        from dashboard.state_view import _live_fill_overrides
+        out = _live_fill_overrides({"quantity": 1.0}, derived_amount=2519.46)
+        self.assertEqual(out, {"amount": 2519.46})     # paper books are untouched
+
     def test_the_order_log_is_exposed_so_cron_runs_are_visible(self):
         # every live run is fired by cron, so a page that only knew about runs it had started itself
         # showed "not run yet" while real orders had been attempted hours earlier
