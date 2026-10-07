@@ -771,12 +771,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     # Refusing is the only honest answer; defaulting to one would fund it from the
                     # wrong account, which is the bug this replaced.
                     raise ValueError(f"No broker is configured for {key}, so it cannot be funded.")
-                # The account's balance and the deployment cap are checked SEPARATELY, against
-                # different things: the balance against what is assigned AT THIS BROKER, the cap
-                # against what is deployed everywhere. Folding them into one number meant CoinDCX
-                # allocations refused Kite ones, and a refusal by the cap looked like an empty
-                # account. An unknown balance still refuses new capital rather than falling back to
-                # the setting -- assigning money we cannot confirm exists is the mistake to avoid.
+                # Only what is assigned AT THIS BROKER competes for this broker's balance. Summing
+                # every venue's allocations against one account meant CoinDCX allocations refused
+                # Kite ones. An unknown balance refuses new capital outright -- assigning money we
+                # cannot confirm exists is the mistake to avoid.
                 if balance is None:
                     self._send(HTTPStatus.BAD_REQUEST, json.dumps({
                         "ok": False, "error": f"Cannot confirm the {venue} balance right now, so "

@@ -30,12 +30,12 @@ def _rec(key="alpha", family="swing_research published strategy", status=Deploym
                           research_verdict=ResearchVerdict.PASS, deployment_status=status)
 
 
-def _check(record=None, rupees=200_000.0, settings=LIVE, cash=1_000_000.0, cap=None, natural=12_500.0):
+def _check(record=None, rupees=200_000.0, settings=LIVE, cash=1_000_000.0, natural=12_500.0):
     with patch("deployment.live_readiness._natural_position", return_value=natural), \
          patch("deployment.credential_store.credential",
                side_effect=lambda name, d, s: getattr(s, name, "")):
         return check(record or _rec(), rupees, settings=settings, state_dir=tempfile.mkdtemp(),
-                     broker_cash=cash, now=datetime(2026, 10, 7, 11, 0), deployment_cap=cap)
+                     broker_cash=cash, now=datetime(2026, 10, 7, 11, 0))
 
 
 class TestTheSentenceThisExistsToProduce(unittest.TestCase):

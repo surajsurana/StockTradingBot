@@ -60,16 +60,6 @@ def _coindcx_cash(settings):
 
 def main() -> int:
     from config import settings
-    from deployment.live_settings import setting as live_setting
-
-    try:
-        # config_dir matters: the deployment cap is set on the dashboard and lives in the credential
-        # store, not in settings.py. Without it this read Rs0 and reported a cap nobody had set.
-        import os
-        config_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config")
-        cap = live_setting("LIVE_CAPITAL_POOL_RUPEES", config_dir, settings_module=settings)
-    except Exception:
-        cap = None
 
     cash = _broker_cash(settings)
     print("Broker cash:", ", ".join(
@@ -78,7 +68,7 @@ def main() -> int:
     if cap is not None:
         print(f"Deployment cap: Rs{cap:,.0f}\n")
 
-    reports = check_all(settings=settings, broker_cash=cash, deployment_cap=cap)
+    reports = check_all(settings=settings, broker_cash=cash)
     if not reports:
         print("No strategy is promoted to live, so nothing is expected to trade.")
         return 0

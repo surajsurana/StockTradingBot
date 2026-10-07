@@ -93,7 +93,7 @@ def _natural_position(strategy_key: str, rupees: float) -> Optional[float]:
 
 
 def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optional[float] = None,
-          now: Optional[datetime] = None, deployment_cap: Optional[float] = None) -> Readiness:
+          now: Optional[datetime] = None) -> Readiness:
     """Everything standing between this strategy and a real order, newest facts first.
 
     `broker_cash` is what the venue's account actually holds; None means "not read", which is itself
@@ -164,9 +164,9 @@ def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optio
     max_order = min([c for c in (pct * out.allocated if pct > 0 else 0, absolute) if c > 0],
                     default=0.0)
     max_exposure = _setting(settings, "LIVE_MAX_EXPOSURE_RUPEES", DEFAULT_MAX_LIVE_EXPOSURE_RUPEES)
-    if max_exposure <= 0 and deployment_cap:
-        max_exposure = float(deployment_cap)
     if max_exposure <= 0:
+        # Exposure bounds itself: it cannot exceed what has been assigned, and what has been assigned
+        # cannot exceed what the brokers hold. The separate global cap was removed on 2026-10-07.
         max_exposure = float("inf")
     floor = _min_position(venue)
     if max_order and floor and max_order < floor:
@@ -195,7 +195,7 @@ def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optio
 
 
 def check_all(*, settings=None, state_dir: Optional[str] = None, broker_cash: Optional[dict] = None,
-              now: Optional[datetime] = None, deployment_cap: Optional[float] = None) -> list:
+              now: Optional[datetime] = None) -> list:
     """Every promoted strategy, funded or not -- an unfunded one is exactly the case worth reporting."""
     from deployment.base import DeploymentStatus
     from deployment.deployment_manager import list_strategies
@@ -212,6 +212,5 @@ def check_all(*, settings=None, state_dir: Optional[str] = None, broker_cash: Op
         if record.deployment_status not in (DeploymentStatus.PILOT_LIVE, DeploymentStatus.PRODUCTION):
             continue
         out.append(check(record, allocation_for(state_dir, record.strategy_key), settings=settings,
-                         state_dir=state_dir, broker_cash=cash.get(venue_of(record)), now=now,
-                         deployment_cap=deployment_cap))
+                         state_dir=state_dir, broker_cash=cash.get(venue_of(record)), now=now))
     return out

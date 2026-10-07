@@ -1734,7 +1734,7 @@ function renderAllocations(s){
   panel.innerHTML = `<div class="cashcards">${cards}</div>`
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
-        : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
+        : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>Neither broker account has a readable balance, so nothing can be assigned.</b> Check the API credentials under the profile menu.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
 }
 
