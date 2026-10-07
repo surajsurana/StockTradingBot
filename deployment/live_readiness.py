@@ -169,12 +169,13 @@ def check(record, rupees: float, *, settings, state_dir: str, broker_cash: Optio
         # cannot exceed what the brokers hold. The separate global cap was removed on 2026-10-07.
         max_exposure = float("inf")
     floor = _min_position(venue)
-    if max_order and floor and max_order < floor:
-        add(Blocker(CONFIG, f"The per-order cap works out at Rs{max_order:,.0f} but this venue will "
-                            f"not open a position below Rs{floor:,.0f}, so every order would be "
-                            f"refused.",
-                    f"Raise LIVE_MAX_ORDER_PCT_OF_CAPITAL, or assign more capital -- the cap is "
-                    f"{pct:.0%} of what the strategy holds."))
+    # NOT "is the cap below the floor". The cap is a PERCENTAGE of capital, so on a small book it is
+    # always below the floor -- and on a small book the floor is what stops the trade anyway, which
+    # the money blocker below says far more usefully ("assign about RsX"). Reporting both made a
+    # funding problem read as a misconfiguration, so the whole strategy showed as BLOCKED and sent
+    # you to a setting when the answer was capital.
+    #
+    # The cap is only a FAULT when it would block a position that would otherwise be fine.
     natural = _natural_position(out.strategy_key, out.allocated)
     if natural and max_order and natural > max_order:
         add(Blocker(CONFIG, f"At Rs{out.allocated:,.0f} this strategy would open about "
