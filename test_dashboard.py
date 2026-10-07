@@ -394,6 +394,36 @@ class TestBuildDashboardState(unittest.TestCase):
             poor = live_capital_view(self.records, kite_balance=(10_000.0, ""))
             self.assertEqual(poor["assignable"], 10_000.0)      # capped by what is actually there
 
+    def test_the_order_log_is_exposed_so_cron_runs_are_visible(self):
+        # every live run is fired by cron, so a page that only knew about runs it had started itself
+        # showed "not run yet" while real orders had been attempted hours earlier
+        from dashboard.state_view import live_orders_view
+        from deployment.live_executor import order_log_path
+        d = tempfile.mkdtemp()
+        with open(order_log_path(d), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"at": "2026-10-07T08:35:01", "stage": "sent", "symbol": "SOL",
+                                "side": "BUY", "quantity": 0.21, "value": 2500.0}) + "\n")
+            f.write(json.dumps({"at": "2026-10-07T08:35:02", "stage": "accepted", "symbol": "SOL",
+                                "side": "BUY", "quantity": 0.21, "order_id": "cd-9"}) + "\n")
+        rows = live_orders_view(d)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["stage"], "accepted")        # newest first
+        self.assertEqual(rows[1]["stage"], "sent")
+
+    def test_one_unreadable_log_line_does_not_hide_the_rest(self):
+        from dashboard.state_view import live_orders_view
+        from deployment.live_executor import order_log_path
+        d = tempfile.mkdtemp()
+        with open(order_log_path(d), "w", encoding="utf-8") as f:
+            f.write('{"at": "2026-10-07T08:35:01", "stage": "sent", "symbol": "SOL"}\n')
+            f.write("{ truncated\n")
+            f.write('{"at": "2026-10-07T08:35:02", "stage": "accepted", "symbol": "SOL"}\n')
+        self.assertEqual(len(live_orders_view(d)), 2)
+
+    def test_no_order_log_is_an_empty_list_not_an_error(self):
+        from dashboard.state_view import live_orders_view
+        self.assertEqual(live_orders_view(tempfile.mkdtemp()), [])
+
     def test_the_crypto_cash_is_reported_separately_from_the_equity_cash(self):
         # rupees at Kite cannot buy crypto and rupees at CoinDCX cannot buy shares, so summing them
         # into one "available" figure would overstate what any single order can actually draw on

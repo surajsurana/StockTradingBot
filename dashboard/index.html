@@ -1541,44 +1541,33 @@ async function pollRun(){
 }
 function renderRun(){
   const msg = document.getElementById("run-msg"), out = document.getElementById("run-out");
-  if(!msg || !RUNNER) return;
-  if(RUNNER.running){
-    msg.textContent = `Live book running since ${esc(RUNNER.started_at || "")} — the model call takes a little while.`;
+  if(!msg) return;
+  // The ORDER LOG is the record, not whatever this page happened to start. Every live run is fired
+  // by cron now, so a page that only knew about its own runs showed "not run yet" while real orders
+  // had been attempted hours earlier.
+  const rows = (STATE && STATE.live_orders) || [];
+  if(!rows.length){
+    msg.textContent = "No live order has been attempted yet. The live books run on their own schedule.";
+    out.innerHTML = "";
     return;
   }
-  const r = RUNNER.result;
-  if(!r){ msg.textContent = "The live book has not run yet. It runs on its own schedule — nothing to press."; out.innerHTML = ""; return; }
-  msg.textContent = `Last run: ${esc(r.status || "")}` + (r.reason ? ` — ${esc(r.reason)}` : "");
-  const orders = r.orders || [], placed = r.placed || [], diverged = r.divergence || [];
-  // Reconciliation runs before any order is placed. A failure HALTS the run, so it is the first
-  // thing shown -- the orders below it were decided but deliberately not sent.
-  const rec = r.reconciliation || null;
-  const halted = rec && rec.ok === false
-    ? `<p class="note" style="color:var(--loss)"><b>Halted: the book and the exchange disagree.</b>
-       ${esc((rec.problems || []).join(" "))} No orders were placed. Nothing has been changed automatically —
-       the book is left exactly as it was so the cause stays visible.</p>`
-    : "";
-  const recNote = rec && rec.ok && (rec.notes || []).length
-    ? `<p class="note">Reconciled against the exchange at ${esc(rec.checked_at || "")}. ${esc(rec.notes.join(" "))}</p>`
-    : (rec && rec.ok ? `<p class="note">Book and exchange agreed at ${esc(rec.checked_at || "")}.</p>` : "");
-  // A live run writes the book before placing, so anything refused leaves the book ahead of reality.
-  // Until reconciliation exists, say so loudly rather than letting it pass as a normal refusal.
-  const warn = halted + recNote + (diverged.length ? "" : "") + (diverged.length
-    ? `<p class="note" style="color:var(--loss)"><b>The live book and the exchange no longer agree.</b>
-       ${diverged.length} decision(s) were written into the book but not placed:
-       ${esc(diverged.join("; "))}. Reconcile before the next live run.</p>`
-    : "");
-  if(!orders.length){ out.innerHTML = warn + `<p class="note">No orders decided.</p>`; return; }
-  const byKey = {}; placed.forEach(p => { byKey[p.symbol + p.side] = p; });
-  out.innerHTML = warn + `<div class="tblwrap"><table><thead><tr><th>Side</th><th>Coin</th><th class="n">Quantity</th><th class="n">Price (USDT)</th><th>Why</th><th>Result</th></tr></thead><tbody>
-    ${orders.map(o => { const p = byKey[o.symbol + o.side];
-      return `<tr><td class="${o.side === "BUY" ? "gain" : "loss"}"><b>${esc(o.side)}</b></td><td>${esc(o.symbol)}</td>
-        <td class="n">${o.quantity}</td><td class="n">${o.price}</td><td class="note">${esc(o.why)}</td>
-        <td>${!p ? `<span class="note">would place (nothing sent)</span>`
-                 : p.placed ? `<span class="pill ok">placed</span> <span class="note">${esc(p.order_id || "")}</span>`
-                            : `<span class="pill miss">not placed</span> <span class="note">${esc((p.reasons||[]).join(" "))}</span>`}</td></tr>`;
-    }).join("")}</tbody></table></div>`;
+  const last = rows[0];
+  msg.textContent = `Last live order attempt: ${esc(String(last.at || "").replace("T", " ").slice(0, 16))}`;
+  const pill = stage => stage === "accepted" ? `<span class="pill ok">placed</span>`
+    : stage === "sent" ? `<span class="pill">sent</span>`
+    : `<span class="pill miss">${esc(stage)}</span>`;
+  out.innerHTML = `<div class="tblwrap"><table><thead><tr><th>When</th><th>Side</th><th>Coin</th>
+      <th class="n">Quantity</th><th class="n">Value</th><th>Result</th></tr></thead><tbody>
+    ${rows.map(r => `<tr>
+      <td class="n narrow">${esc(String(r.at || "").replace("T", " ").slice(0, 16))}</td>
+      <td class="${r.side === "BUY" ? "gain" : "loss"}"><b>${esc(r.side || "")}</b></td>
+      <td>${esc(r.symbol || "")}</td>
+      <td class="n">${r.quantity == null ? "—" : r.quantity}</td>
+      <td class="n">${r.value == null ? "—" : money(r.value)}</td>
+      <td>${pill(r.stage || "")} <span class="note">${esc((r.reasons || []).join(" ") || r.order_id || "")}</span></td>
+    </tr>`).join("")}</tbody></table></div>`;
 }
+
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
   if(MODE !== "live"){ panel.hidden = true; return; }
@@ -1612,7 +1601,7 @@ function renderAllocations(s){
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
         : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
-  pollRun();
+  renderRun();
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.

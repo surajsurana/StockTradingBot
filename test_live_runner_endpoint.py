@@ -54,7 +54,7 @@ class TestItAlwaysFinishes(unittest.TestCase):
     def test_a_crash_inside_the_run_clears_the_running_flag(self):
         # a run stuck "running" would block every later run with no way to clear it but a restart
         runner = LiveRunner()
-        with patch("run_pool_g_live.run_live", side_effect=RuntimeError("boom")):
+        with patch("run_pool_g_live.run_live", side_effect=RuntimeError("boom")),              patch("data.fetch_crypto.fetch_all_crypto_daily", return_value={}),              patch("data.fetch_crypto.fetch_usdinr_rate", return_value=96.42):
             runner.start(live=False)
             status = self._wait(runner)
         self.assertFalse(status["running"])
@@ -63,7 +63,7 @@ class TestItAlwaysFinishes(unittest.TestCase):
 
     def test_a_crash_leaves_it_startable_again(self):
         runner = LiveRunner()
-        with patch("run_pool_g_live.run_live", side_effect=RuntimeError("boom")):
+        with patch("run_pool_g_live.run_live", side_effect=RuntimeError("boom")),              patch("data.fetch_crypto.fetch_all_crypto_daily", return_value={}),              patch("data.fetch_crypto.fetch_usdinr_rate", return_value=96.42):
             runner.start(live=False)
             self._wait(runner)
         self.assertTrue(runner.start(live=False)["ok"])

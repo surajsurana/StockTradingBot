@@ -473,6 +473,38 @@ def _experiment_summary(exp_id: str) -> dict:
     return {}
 
 
+from deployment.settings import STATE_DIR as STATE_DIR_CANONICAL
+
+
+def live_orders_view(state_dir: str, limit: int = 40) -> list:
+    """The real order log -- every live order attempt, newest first.
+
+    THIS IS THE RECORD THAT MATTERS. It is written by the executor itself, fsynced before each order
+    is sent, and it survives restarts. The dashboard used to show only what its own in-page button
+    had started, which meant a run fired by cron -- which is now every run -- was invisible: the page
+    said "not run yet" while real orders had been attempted hours earlier.
+
+    Each row is one attempt: `stage` is sent / accepted / rejected / failed / refused, and a refusal
+    carries the guard's own reasons."""
+    from deployment.live_executor import order_log_path
+    rows = []
+    path = order_log_path(state_dir)
+    if not os.path.exists(path):
+        return rows
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except ValueError:
+                    continue          # one unreadable line must not hide the rest of the log
+    except OSError:
+        return []
+    return list(reversed(rows))[:limit]
+
+
 def live_capital_view(registry_records: list, kite_balance: tuple = (None, ""),
                       coindcx_balance: tuple = (None, "")) -> dict:
     """The one real cash pool and how much of it each strategy has been assigned
@@ -1626,6 +1658,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     attach_net_pnl(strategy_rows, statement)
     attach_promotion_score(strategy_rows)
     live_capital = live_capital_view(registry_records, kite_balance, coindcx_balance)
+    live_orders = live_orders_view(STATE_DIR_CANONICAL)
     g_rate = pool_g.get("usdinr") or 0
     overall = dict(summary["overall"])   # built by reporting/pool_summary.py (post-tax for crypto -- the Telegram basis; the dashboard tabs show gross)
     overall["capital"] = round(sum(p["capital"] for p in pools.values()) + pool_d["capital"]
@@ -1648,7 +1681,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         # Live capital: one real pool, sliced per strategy. Read from the canonical state directory
         # rather than the mode-specific one -- there is only ever one real pool, and it does not
         # change depending on which view you are looking at.
-        "live_capital": live_capital,
+        "live_capital": live_capital, "live_orders": live_orders,
         "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise
