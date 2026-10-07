@@ -626,6 +626,14 @@ class TestBuildDashboardState(unittest.TestCase):
             # the rupee amount must be the dollar value converted, not the dollar value relabelled
             self.assertAlmostEqual(a["amount"], a["price"] * a["qty"] * a["fx"], delta=1.0)
 
+    def test_a_filled_row_keeps_its_rupee_identity_through_the_fx_stamping(self):
+        # the fx loop runs after rows are built and would stamp USDT and a rate back over a trade
+        # that happened on an INR market -- the exact thing the fill record exists to correct
+        for a in self.s["ledger"]:
+            if a.get("actual_fill"):
+                self.assertEqual(a["ccy"], "INR", a.get("symbol"))
+                self.assertIsNone(a["fx"], a.get("symbol"))
+
     def test_every_row_says_which_days_rate_it_used(self):
         for a in self.s["ledger"]:
             self.assertIn("fx_date", a)

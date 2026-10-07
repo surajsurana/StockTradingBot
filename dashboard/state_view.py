@@ -1971,6 +1971,11 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
     from data.usdinr_history import history_for, rate_on
     fx_history = history_for(state_dir, refresh_if_stale=False) if state_dir else {}
     for r in rows:
+        # A row with a real exchange fill is already in rupees at the price actually paid. Stamping
+        # a currency and a rate over it would put the USDT label back on a trade that happened on an
+        # INR market -- the very thing the fill record exists to correct.
+        if r.get("actual_fill"):
+            continue
         today_rate = float((fx_of.get(r.get("pool")) or {}).get("usdinr") or 0)
         r["ccy"] = "USD" if r.get("pool") == "Pool I" else ("USDT" if today_rate else "INR")
         if not today_rate:
