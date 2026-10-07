@@ -54,7 +54,8 @@ def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, t
                           "stop_loss": float(p.get("stop_loss", 0) or 0), "value": round(price * qty, 2),
                           "pct": round((price / entry - 1) * 100, 2) if entry else 0.0,
                           "unbooked_raw": round(led["raw"], 2), "unbooked_pre_tax": round(led["pre_tax"], 2),
-                          "unbooked_post_tax": round(led["post_tax"], 2)})
+                          "unbooked_post_tax": round(led["post_tax"], 2),
+                          "live_fill": p.get("live_fill")})
 
     closed_ledgers, today_ledgers = [], []
     for t in trades:
