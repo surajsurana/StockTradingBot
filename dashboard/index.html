@@ -375,6 +375,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 
 <section id="tab-orders" hidden>
+  <h2>Real money orders</h2>
+  <div id="run-msg" class="note"></div>
+  <div id="run-out"></div>
+
   <h2>Orders</h2>
   <p class="note">Every order placed, across every pool and type — most recent first.</p>
   <div class="tools"><span id="orders-count" class="note"></span></div>
@@ -1139,6 +1143,7 @@ function renderOrders(s){
     ? `Page ${ORDERS_PAGE} of ${totalPages} (rows ${(ORDERS_PAGE-1)*pageSize+1}–${Math.min(ORDERS_PAGE*pageSize, rows.length)})` : "";
   document.getElementById("orders-prev").disabled = ORDERS_PAGE <= 1;
   document.getElementById("orders-next").disabled = ORDERS_PAGE >= totalPages;
+  renderRun();
   document.getElementById("orders").innerHTML = pageRows.length ? pageRows.map(a => `<tr><td title="${a.status==="Open"?"Still held -- P&L is unrealized":"Fully exited -- P&L is booked"}"><b>${esc(a.partial ? "Partial" : a.status)}</b></td><td class="n">${esc(a.date||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${esc(a.action)}</b></td><td class="l sym-link" data-row='${esc(JSON.stringify({symbol_key: a.symbol_key || a.symbol, symbol: a.symbol, pool: a.pool, book: a.book, kind: a.kind}))}' title="See every order for ${esc(a.symbol)} in this book">${esc(a.symbol)}</td><td class="n">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td><td class="n ${a.pnl!=null?cls(a.pnl):""}" title="${a.status==="Open"?"Unrealized -- this position is still open":"Realized on exit"}">${a.pnl!=null?money(a.pnl,true):"—"}</td></tr>`).join("")
     : `<tr><td colspan="12" class="note">No orders yet.</td></tr>`;
   document.querySelectorAll("#orders .sym-link").forEach(td => td.addEventListener("click", e => { e.stopPropagation(); showSymbolLedger(JSON.parse(td.dataset.row)); }));
@@ -1530,15 +1535,6 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // unless LIVE_TRADING is on and the kill switch is absent; this button starts the runner, it does
 // not authorise it.
 let RUNNER = null, RUNNER_POLL = null;
-const liveOutcomeHtml = () => `
-  <div class="runner"><span class="note" id="run-msg"></span></div>
-  <div id="run-out"></div>`;
-async function pollRun(){
-  clearTimeout(RUNNER_POLL);
-  try { RUNNER = await (await fetch("/api/live/run")).json(); } catch(e){ return; }
-  renderRun();
-  if(RUNNER.running) RUNNER_POLL = setTimeout(pollRun, 2500);
-}
 function renderRun(){
   const msg = document.getElementById("run-msg"), out = document.getElementById("run-out");
   if(!msg) return;
@@ -1557,13 +1553,14 @@ function renderRun(){
     : stage === "sent" ? `<span class="pill">sent</span>`
     : `<span class="pill miss">${esc(stage)}</span>`;
   out.innerHTML = `<div class="tblwrap"><table><thead><tr><th>When</th><th>Side</th><th>Coin</th>
-      <th class="n">Quantity</th><th class="n">Value</th><th>Result</th></tr></thead><tbody>
+      <th class="n">Quantity</th><th class="n">Value</th><th class="n">Fee</th><th>Result</th></tr></thead><tbody>
     ${rows.map(r => `<tr>
       <td class="n narrow">${esc(String(r.at || "").replace("T", " ").slice(0, 16))}</td>
       <td class="${r.side === "BUY" ? "gain" : "loss"}"><b>${esc(r.side || "")}</b></td>
       <td>${esc(r.symbol || "")}</td>
       <td class="n">${r.quantity == null ? "—" : r.quantity}</td>
       <td class="n">${r.value == null ? "—" : money(r.value)}</td>
+      <td class="n note">${r.fee == null ? "—" : money(r.fee)}</td>
       <td>${pill(r.stage || "")} <span class="note">${esc((r.reasons || []).join(" ") || r.order_id || "")}</span></td>
     </tr>`).join("")}</tbody></table></div>`;
 }
@@ -1596,12 +1593,11 @@ function renderAllocations(s){
     pot(lc.crypto_balance, "CoinDCX", "crypto", lc.assignable_crypto, lc.allocated_crypto,
         lc.crypto_balance_error, lc.crypto_balance == null ? "warn" : ""),
   ].join("");
-  panel.innerHTML = `<div class="cashcards">${cards}</div>` + liveOutcomeHtml()
+  panel.innerHTML = `<div class="cashcards">${cards}</div>`
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
         : lc.pool ? "" : `<p class="note" style="color:var(--loss)"><b>The deployment cap is ₹0, so nothing can be assigned yet.</b> Set it on the <a href="#" class="golink" data-tab="settings">Settings tab</a> — it caps what the bot may ever deploy — then assign per strategy in the Live capital column.</p>`)
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
-  renderRun();
 }
 
 // Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.

@@ -43,6 +43,53 @@ def market_for(symbol: str, quote: str = INR_MARKET_SUFFIX) -> str:
     return f"{str(symbol).strip().upper()}{quote.upper()}"
 
 
+def _confirm_fill(client, order_id: str, created: dict, attempts: int = 3,
+                  pause_seconds: float = 1.0) -> dict:
+    """Re-reads the order so the record is what HAPPENED, not what was asked for.
+
+    A limit order priced through the market fills in well under a second, but not instantly, and the
+    create response is returned before it does. Without this the log keeps the limit price and knows
+    nothing about the fee, so the dashboard and the exchange disagree on every trade -- by a small
+    amount, which is the worst kind, because it looks like rounding rather than a missing cost.
+
+    Never raises and never retries forever: if the order cannot be re-read, the caller keeps what the
+    create response gave it. An order that filled is still filled whether or not we could confirm it."""
+    import time as _time
+    out = {}
+    if not order_id:
+        return out
+    for attempt in range(attempts):
+        try:
+            row = client.order_status(order_id) or {}
+        except Exception:
+            return out
+        if not isinstance(row, dict):
+            return out
+        status = str(row.get("status", "")).lower()
+        try:
+            avg = float(row.get("avg_price") or 0)
+        except (TypeError, ValueError):
+            avg = 0.0
+        if avg > 0 or status in ("filled", "cancelled", "rejected"):
+            try:
+                quantity = float(row.get("total_quantity") or 0)
+            except (TypeError, ValueError):
+                quantity = 0.0
+            try:
+                fee = float(row.get("fee_amount") or 0)
+            except (TypeError, ValueError):
+                fee = 0.0
+            out = {"avg_price": avg or None, "quantity": quantity or None, "fee_amount": round(fee, 2),
+                   "status": status,
+                   # fee INCLUDED: this is what the account actually paid, which is what CoinDCX's
+                   # own order screen totals.
+                   "total": round(avg * quantity + fee, 2) if (avg and quantity) else None}
+            return out
+        if attempt < attempts - 1:
+            _time.sleep(pause_seconds)
+    return out
+
+
 def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: str,
                        quantity: float, reference_price_usdt: float, strategy_key: str,
                        usdinr: float, eligibility=None, current_live_exposure_rupees: float = 0.0,
@@ -159,12 +206,32 @@ def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: s
         _log_quietly(state_dir, now, "rejected", strategy_key, symbol, side, quantity, reasons)
         return OrderOutcome(placed=False, reasons=reasons, raw=body)
 
-    try:
-        fill = float(body.get("avg_price") or body.get("price_per_unit") or limit_price)
-    except (TypeError, ValueError):
-        fill = None                 # an unparseable price does not undo an order that was accepted
+    # ASK THE EXCHANGE WHAT ACTUALLY HAPPENED. The create response comes back the instant the order
+    # is accepted, before it fills, so its avg_price is empty and only the limit price is known. That
+    # made the dashboard report the price we ASKED for rather than the one we GOT -- Rs2,599 against
+    # CoinDCX's Rs2,600.21 on the first real trade, with the Rs13.00 fee and Rs2.34 GST missing
+    # entirely. Re-reading the order gives the real fill, the real fee and the real total.
+    filled = _confirm_fill(client, order_id, body)
+    fill = filled.get("avg_price")
+    if fill is None:
+        try:
+            fill = float(body.get("price_per_unit") or limit_price)
+        except (TypeError, ValueError):
+            fill = None             # an unparseable price does not undo an order that was accepted
 
     reasons = [] if order_id else ["CoinDCX accepted the order but returned no order id."]
-    _log_quietly(state_dir, now, "accepted", strategy_key, symbol, side, quantity, reasons,
-                 order_id=order_id, fill_price=fill)
-    return OrderOutcome(placed=True, reasons=reasons, order_id=order_id, fill_price=fill, raw=body)
+    try:
+        _append_log(state_dir, {"at": now.isoformat(), "stage": "accepted", "broker": BROKER,
+                                "strategy": strategy_key, "symbol": symbol, "market": market,
+                                "side": side, "quantity": filled.get("quantity", quantity),
+                                "order_id": order_id, "fill_price": fill,
+                                "status": filled.get("status", ""),
+                                "fee": filled.get("fee_amount"),
+                                # what actually left the account: the fill, plus the fee the
+                                # exchange charged on it. This is the number that must match
+                                # CoinDCX's own order screen.
+                                "value": filled.get("total"), "reasons": reasons})
+    except OSError:
+        pass
+    return OrderOutcome(placed=True, reasons=reasons, order_id=order_id, fill_price=fill,
+                        raw={**body, **filled})

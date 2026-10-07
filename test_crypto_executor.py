@@ -50,6 +50,9 @@ class _Client:
                  rules=None, rules_raises=None):
         self.rules = BTCINR_RULES if rules is None else rules
         self.rules_raises = rules_raises
+        # what the order looks like once it has actually filled, as CoinDCX reports it
+        self.status_row = {"id": "cd-1", "status": "filled", "avg_price": 8_387_793.3,
+                           "total_quantity": 0.00031, "fee_amount": 15.34}
         self.price = price
         self.result = result if result is not None else {"id": "cd-1", "status": "open",
                                                          "avg_price": INR_PRICE}
@@ -67,6 +70,9 @@ class _Client:
         if self.raises:
             raise self.raises
         return self.result
+
+    def order_status(self, order_id):
+        return self.status_row
 
 
 def _place(state_dir, client=None, **over):
@@ -232,6 +238,51 @@ class TestItPlacesALimitThroughTheMarket(unittest.TestCase):
         self.assertFalse(out.placed)
         self.assertEqual(c.orders, [])
         self.assertTrue(any("minimum" in r for r in out.reasons), out.reasons)
+
+
+class TestTheRecordIsWhatHappenedNotWhatWasAsked(unittest.TestCase):
+    """The create response returns the instant the order is ACCEPTED, before it fills, so its
+    avg_price is empty and only the limit price is known. Logging that made the dashboard say
+    Rs2,599 where CoinDCX said Rs2,600.21, with the Rs13.00 fee and Rs2.34 GST missing entirely --
+    a small difference, which is the worst kind, because it reads as rounding rather than a cost."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def test_the_logged_fill_is_the_average_price_not_the_limit(self):
+        c = _Client()
+        out = _place(self.d, client=c)
+        self.assertEqual(out.fill_price, 8_387_793.3)
+        self.assertNotEqual(out.fill_price, c.orders[0]["price"])      # not the limit we asked for
+
+    def test_the_logged_value_includes_the_exchange_fee(self):
+        _place(self.d)
+        accepted = next(r for r in _log(self.d) if r["stage"] == "accepted")
+        self.assertAlmostEqual(accepted["value"], 8_387_793.3 * 0.00031 + 15.34, places=1)
+        self.assertEqual(accepted["fee"], 15.34)
+        self.assertEqual(accepted["status"], "filled")
+
+    def test_an_order_that_cannot_be_re_read_still_counts_as_placed(self):
+        # it filled whether or not we could confirm it; claiming otherwise invites a retry
+        class Unreadable(_Client):
+            def order_status(self, order_id):
+                raise ConnectionError("down")
+
+        out = _place(self.d, client=Unreadable())
+        self.assertTrue(out.placed)
+        self.assertIsNotNone(out.fill_price)          # falls back to the limit rather than nothing
+
+    def test_it_does_not_wait_forever_for_a_fill(self):
+        class NeverFills(_Client):
+            def __init__(self):
+                super().__init__()
+                self.status_row = {"status": "open", "avg_price": 0}
+
+        out = place_crypto_order(settings=_settings(), record=_record(), state_dir=self.d,
+                                 symbol="BTC", side="BUY", quantity=0.0003,
+                                 reference_price_usdt=USDT_PRICE, strategy_key="portfolio_g",
+                                 usdinr=USDINR, client=NeverFills())
+        self.assertTrue(out.placed)
 
 
 class TestNothingRaises(unittest.TestCase):
