@@ -847,7 +847,8 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
         c = book_costs(trades, open_positions, intraday, realised + unrealised)
         return {"pool": pool, "key": key, "sid": sid, "name": name, "type": kind, "capital": capital, "cash": cash,
                 "deployed": deployed, "realised": realised, "unrealised": unrealised, "charges": c["charges"], "gst": c["gst"],
-                "tax": c["tax"], "tds": None, "tax_rate": c["tax_rate"], "detail": c["detail"], "taxable": True}
+                "tax": c["tax"], "tds": None, "tds_projected": None,
+                "tax_rate": c["tax_rate"], "detail": c["detail"], "taxable": True}
 
     for b in books:
         pool_letter = b["pool"]
@@ -873,7 +874,12 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
                 "realised": booked["raw"] * rate, "unrealised": unbooked["raw"] * rate,
                 # the 0.30% exchange fee is treated as GST-inclusive, so GST is shown as zero
                 "charges": fees, "gst": 0.0, "tax": (booked["tax"] + unbooked["tax"]) * rate,
-                "tds": (booked["tds"] + unbooked["tds"]) * rate, "tax_rate": 0.312, "detail": {"crypto_fee": fees}, "taxable": True}
+                "tds": (booked["tds"] + unbooked["tds"]) * rate,
+                # what WOULD be withheld if the open positions were sold today -- shown separately,
+                # because nothing has been withheld on a position that has not been sold
+                "tds_projected": (booked.get("tds_projected", booked["tds"])
+                                  + unbooked.get("tds_projected", unbooked["tds"])) * rate,
+                "tax_rate": 0.312, "detail": {"crypto_fee": fees}, "taxable": True}
     if pool_e.get("exists"):
         rate = pool_e.get("usdinr") or 0
         for eb in pool_e["books"]:
@@ -905,7 +911,8 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
             out.append(us_equity_line(ib["key"], ib.get("sid", "") or sid_of.get(ib["key"], ""), ib["display_name"],
                                       ib["capital"], ib["cash"], ib["deployed"], ib["booked"], ib["unbooked"], rate))
     for l in out:
-        for k in ("capital", "cash", "deployed", "realised", "unrealised", "charges", "gst", "tax", "tds"):
+        for k in ("capital", "cash", "deployed", "realised", "unrealised", "charges", "gst", "tax",
+                  "tds", "tds_projected"):
             if l[k] is not None:
                 l[k] = round(l[k], 2)
         l["detail"] = {k: round(v, 2) for k, v in l["detail"].items()}
