@@ -936,7 +936,7 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(s["roadmap"]["deferred"][0]["lane"], "us")
         # each lane quotes its OWN routine's day -- India Sunday, crypto Tuesday, US Thursday
         self.assertEqual([lanes[k]["next_run"]["iso"] for k in ("india", "crypto", "us")],
-                         ["2026-09-13T19:00", "2026-09-15T19:00", "2026-09-10T19:00"])
+                         ["2026-09-13T00:00", "2026-09-15T00:00", "2026-09-17T00:00"])
 
     def test_positions_detail_and_book_totals(self):
         alpha = next(b for b in self.s["books"] if b["key"] == "alpha")
@@ -987,22 +987,87 @@ class TestAccessKey(unittest.TestCase):
         self.assertFalse(is_authorized({}, "dash_key=nope", "s3cret"))
 
 
-class TestNextResearchRun(unittest.TestCase):
-    """The Strategy Implementer routine fires every Sunday at 19:00 IST -- the Research tab shows when."""
+class TestAPromotedStrategyOnTheStrategiesTab(unittest.TestCase):
+    """What the Strategies tab says about a strategy that has gone live. Both of these were wrong on
+    2026-10-07, the day after SW-030 became the first real-money strategy: its Pool column went blank
+    and its capital read Rs10,043 against Rs10,000 funded."""
 
-    def test_saturday_points_at_tomorrow_evening(self):
+    def setUp(self):
+        from types import SimpleNamespace
+
+        from deployment.base import DeploymentStatus, ResearchVerdict
+        from reporting.pool_g import build_pool_g
+        self.root = tempfile.mkdtemp()
+        book_dir = os.path.join(self.root, "pool_g")
+        os.makedirs(book_dir)
+        # exactly the shape of the real live book: Rs10,000 funded on a day USDINR was 96.53, so the
+        # USD-denominated engine stored 103.5974
+        with open(os.path.join(book_dir, "portfolio.json"), "w") as f:
+            json.dump({"cash": 103.5974, "starting_capital": 103.5974, "positions": {},
+                       "last_processed_date": "2026-10-07"}, f)
+        open(os.path.join(book_dir, "trades.jsonl"), "w").close()
+        self.pool_g = build_pool_g(self.root, {}, usdinr=96.94, today=date(2026, 10, 7))
+        self.record = SimpleNamespace(strategy_key="portfolio_g", display_name="Portfolio G (AI judgment book)",
+                                      strategy_id="SW-030", deployment_status=DeploymentStatus.PILOT_LIVE,
+                                      research_verdict=ResearchVerdict.NOT_YET_EVALUATED,
+                                      primary_experiment_id="", research_verdict_source="",
+                                      strategy_family="AI judgment book (crypto, Pool G)")
+        self.funded = {"portfolio_g": 10_000.0}
+
+    def _rows(self, mode):
+        from dashboard.state_view import strategies_view
+        return {r["key"]: r for r in strategies_view([self.record], "pool_d_vwap_fade",
+                                                     pool_g=self.pool_g, state_dir=self.root, mode=mode,
+                                                     live_allocations=self.funded)}
+
+    def test_going_live_does_not_blank_the_pool_column(self):
+        # the pool is a property of the strategy, not of its status
+        self.assertEqual(self._rows("live")["portfolio_g"]["pool"], "Pool G")
+        self.assertEqual(self._rows("paper")["portfolio_g"]["pool"], "Pool G")
+
+    def test_live_capital_is_the_money_at_the_broker_not_a_round_trip_through_the_dollar(self):
+        """Pool G's engine is denominated in USD. Funding it with Rs10,000 stored 103.5974 USD at that
+        day's rate; converting back at 96.94 read Rs10,043. That 0.4%% is a move in USDINR, not a gain,
+        and the account at CoinDCX holds Rs10,000 either way."""
+        row = self._rows("live")["portfolio_g"]
+        self.assertEqual(row["capital"], 10_000.0)
+        self.assertEqual([p["capital"] for p in row["pools_breakdown"]], [10_000.0])
+
+    def test_paper_mode_still_reports_the_book_itself(self):
+        # the override is about real money at a broker; a paper book has none, so it is untouched
+        row = self._rows("paper")["portfolio_g"]
+        self.assertNotEqual(row["capital"], 10_000.0)
+        self.assertAlmostEqual(row["capital"], 103.5974 * 96.94, delta=1.0)   # the Rs10,043 reading
+
+    def test_an_archived_strategy_still_has_no_pool(self):
+        from deployment.base import DeploymentStatus
+        self.record.deployment_status = DeploymentStatus.ARCHIVED
+        self.assertEqual(self._rows("live")["portfolio_g"]["pool"], "-")
+
+
+class TestNextResearchRun(unittest.TestCase):
+    """Each lane's routine fires at midnight IST at the START of its own weekday -- moved there from
+    19:00 on 2026-10-07 so an unattended run that takes hours happens while nobody is working."""
+
+    def test_saturday_points_at_midnight_tonight(self):
         from dashboard.state_view import next_research_run
         r = next_research_run(datetime(2026, 9, 26, 12, 30))         # a Saturday
-        self.assertEqual((r["iso"], r["label"]), ("2026-09-27T19:00", "Sun 27 Sep, 7:00 pm IST"))
+        self.assertEqual((r["iso"], r["label"]), ("2026-09-27T00:00", "Sun 27 Sep, 12:00 am IST"))
 
-    def test_sunday_before_seven_is_today_and_after_seven_is_next_week(self):
+    def test_sunday_itself_points_at_the_next_one_because_midnight_has_passed(self):
         from dashboard.state_view import next_research_run
-        self.assertEqual(next_research_run(datetime(2026, 9, 27, 18, 59))["iso"], "2026-09-27T19:00")
-        self.assertEqual(next_research_run(datetime(2026, 9, 27, 19, 1))["iso"], "2026-10-04T19:00")
+        self.assertEqual(next_research_run(datetime(2026, 9, 27, 0, 1))["iso"], "2026-10-04T00:00")
+        self.assertEqual(next_research_run(datetime(2026, 9, 27, 19, 1))["iso"], "2026-10-04T00:00")
 
     def test_midweek_points_at_the_coming_sunday(self):
         from dashboard.state_view import next_research_run
-        self.assertEqual(next_research_run(datetime(2026, 9, 30, 9, 0))["label"], "Sun 4 Oct, 7:00 pm IST")
+        self.assertEqual(next_research_run(datetime(2026, 9, 30, 9, 0))["label"], "Sun 4 Oct, 12:00 am IST")
+
+    def test_each_lane_keeps_its_own_weekday(self):
+        from dashboard.state_view import next_research_run
+        wed = datetime(2026, 9, 30, 9, 0)
+        self.assertEqual([next_research_run(wed, lane)["iso"] for lane in ("india", "crypto", "us")],
+                         ["2026-10-04T00:00", "2026-10-06T00:00", "2026-10-01T00:00"])
 
 
 if __name__ == "__main__":

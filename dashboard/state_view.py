@@ -297,7 +297,7 @@ AGENTS = [
                "picked by hand, right up until research actually starts; once it has, the queue is locked "
                "until that candidate is resolved."},
     {"id": "research_routine", "avatar": {"type": "robot", "body": "#8A5A9E", "eye": "#4CC383", "shape": "round"}, "name": "Strategy Implementer", "icon": "\U0001F9EA", "desk": "research_feeder", "kind": "AI",
-     "job": "Implements and backtests whatever's queued, every Sunday", "when": "Every Sunday, 7:00 pm IST", "status_from": None,
+     "job": "Implements and backtests whatever's queued, every Sunday", "when": "Every Sunday, 12:00 am IST", "status_from": None,
      "detail": "An unattended agent, not a local script: reads the queue, implements the candidate as real "
                "code following the pattern of whichever existing strategies are closest to it, runs the real "
                "backtest, and opens a pull request with the verdict -- pass or reject, whatever the numbers "
@@ -338,7 +338,7 @@ FLOWS = {
             {"id": "found", "icon": "\U0001F50D", "label": "Found", "text": "Discovery Scout searches on the 2nd of every month, 9:00 am IST, and adds real, sourced candidates -- a paper or a well-known book, never an invented idea"},
             {"id": "ranked", "icon": "\U0001F4CA", "label": "Ranked", "text": "Head of Research scores every candidate 0-10, across swing, intraday, medium, long-term and crypto alike"},
             {"id": "queued", "icon": "\U0001F5C2\ufe0f", "label": "Queued", "text": "One at a time, re-checked every 6 hours -- free to swap for a better-ranked one, or a specific pick, until research actually starts"},
-            {"id": "locked", "icon": "\U0001F512", "label": "Locked", "text": "Strategy Implementer starts every Sunday at 7:00 pm IST and claims it the instant it does; nothing can bump it after that"},
+            {"id": "locked", "icon": "\U0001F512", "label": "Locked", "text": "Strategy Implementer starts every Sunday at 12:00 am IST and claims it the instant it does; nothing can bump it after that"},
             {"id": "backtest", "icon": "\u2699\ufe0f", "label": "Backtest", "text": "Years of real data, no peeking ahead"},
             {"id": "audit", "icon": "\u2696\ufe0f", "label": "Audit", "text": "Statistical Auditor: PASS or REJECT, rules only (crypto: after fees and tax)"},
             {"id": "pr", "icon": "\U0001F500", "label": "Pull request", "text": "The real verdict either way -- pass or reject -- never merged by the routine itself"},
@@ -1237,12 +1237,17 @@ def reports_view(rep: Optional[dict], mine: dict, cash: Optional[float], today: 
     }
 
 
+# A strategy has a book -- and therefore a pool -- in any of these. RESEARCH and ARCHIVED do not.
+RUNNING_STATUSES = ("PAPER_TRADING", "PILOT_LIVE", "PRODUCTION")
+
+
 def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: Optional[set] = None,
                     books: Optional[list] = None, pool_d: Optional[dict] = None,
                     pool_e: Optional[dict] = None, pool_g: Optional[dict] = None,
                     state_dir: str = "", d_trades: Optional[list] = None,
                     pool_e1: Optional[dict] = None, pool_i: Optional[dict] = None,
-                    now: Optional[datetime] = None) -> list:
+                    now: Optional[datetime] = None, mode: str = "paper",
+                    live_allocations: Optional[dict] = None) -> list:
     """Every strategy the desk knows, with its pool, type, plain-language
     brief, capital allocated, total P&L to date, closed-trade count,
     reward:risk ratio, and the registry's verdict/status -- Pools B, C
@@ -1257,12 +1262,16 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         us_equity = is_us_equity_record(r)
         fixed_pool = {"portfolio_b": "Pool B", "portfolio_c": "Pool C", "pool_d_vwap_fade": "Pool D", "portfolio_g": "Pool G"}.get(r.strategy_key)
         kind, brief = STRATEGY_BRIEFS.get(r.strategy_key, ("US Equity" if us_equity else "Crypto" if crypto else "Swing", ""))
+        # A strategy's pool is a property of the strategy, not of its status: Pool G is Pool G whether
+        # its book is paper or real. This read PAPER_TRADING only, from when nothing could be anything
+        # else -- so the moment SW-030 was promoted, its Pool column went blank in Live view.
+        running = status in RUNNING_STATUSES
         if fixed_pool:
-            pool = fixed_pool if status == "PAPER_TRADING" else "-"
+            pool = fixed_pool if running else "-"
         elif us_equity:
-            pool = "Pool I" if status == "PAPER_TRADING" else "-"
+            pool = "Pool I" if running else "-"
         else:
-            pool = ("Pool E" if crypto else "Pool A") if status == "PAPER_TRADING" else "-"
+            pool = ("Pool E" if crypto else "Pool A") if running else "-"
         if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
             pool = "Pool A, F"
         if pool == "Pool E" and r.strategy_key in e1_keys:
@@ -1270,6 +1279,19 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         exp = getattr(r, "primary_experiment_id", "") or ""
         pools_breakdown = _strategy_pool_breakdown(r.strategy_key, books, state_dir, d_trades, pool_d, pool_e, pool_g, pool_e1, pool_i)
         capital = round(sum(p["capital"] for p in pools_breakdown), 2) if pools_breakdown else None
+        # In Live mode the capital is the rupees actually sitting at the broker against this
+        # strategy, which is what you funded and what the cash cards above the table quote.
+        #
+        # The breakdown cannot give that number for a crypto book. Pool G's engine is denominated in
+        # USD (it prices off Binance), so funding it with Rs10,000 stored 103.5974 USD at that day's
+        # rate, and converting back at today's rate read Rs10,043 -- a 0.4% move in USDINR, not a
+        # 0.4% gain. The money at CoinDCX is Rs10,000 and does not move with the dollar.
+        if mode == "live":
+            funded = (live_allocations or {}).get(r.strategy_key, 0.0)
+            if funded > 0:
+                capital = round(funded, 2)
+                if len(pools_breakdown) == 1:      # unambiguous: all of it is in that one book
+                    pools_breakdown[0]["capital"] = capital
         pnl = round(sum(p["pnl"] for p in pools_breakdown), 2) if pools_breakdown else None
         closed_trades = sum(p["closed_trades"] for p in pools_breakdown) if pools_breakdown else None
         # the strategy "started" when its first book began running (the registry date is when it was approved, which can be weeks earlier)
@@ -1390,14 +1412,20 @@ LANE_LABELS = {"india": "Indian markets", "crypto": "Crypto", "us": "US equity"}
 
 
 def next_research_run(now: datetime, lane: str = "india") -> dict:
-    """When a lane's research routine next fires: 19:00 IST on that lane's own weekday (a scheduled cloud
-    agent, so its real start can lag by a few minutes). Since 2026-10-03 the three lanes are three
-    independent routines on three different days -- India Sunday, crypto Tuesday, US Thursday."""
+    """When a lane's research routine next fires: midnight IST at the start of that lane's own weekday
+    (a scheduled cloud agent, so its real start can lag by a few minutes). Since 2026-10-03 the three
+    lanes are three independent routines on three different days -- India Sunday, crypto Tuesday, US
+    Thursday.
+
+    Moved from 19:00 to 00:00 on 2026-10-07, at Suraj's request: the routines take hours and are
+    unattended, so they should run when nobody is working rather than across the evening. The two
+    follow-up fires are at 02:00 and 04:00 IST, all three inside one UTC day so each lane is still a
+    single cron expression."""
     days = (RESEARCH_RUN_WEEKDAY[lane] - now.weekday()) % 7
-    when = (now + timedelta(days=days)).replace(hour=19, minute=0, second=0, microsecond=0)
+    when = (now + timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
     if when <= now:
         when += timedelta(days=7)
-    return {"iso": when.isoformat(timespec="minutes"), "label": f"{when:%a} {when.day} {when:%b}, 7:00 pm IST"}
+    return {"iso": when.isoformat(timespec="minutes"), "label": f"{when:%a} {when.day} {when:%b}, 12:00 am IST"}
 
 
 def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] = None, now: Optional[datetime] = None) -> dict:
@@ -1662,11 +1690,13 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
             for b in pool_i["books"]:
                 if b["key"] == r.strategy_key:
                     b["sid"] = getattr(r, "strategy_id", "")
+    from deployment.live_allocations import load as load_allocations
     strategy_rows = strategies_view(registry_records, "VWAP Extension Exhaustion Fade",
                                     {b["key"] for b in summary["books"].get("F", [])},
                                     books=books, pool_d=pool_d, pool_e=pool_e, pool_g=pool_g,
                                     state_dir=state_dir, d_trades=d_trades, pool_e1=pool_e1,
-                                    pool_i=pool_i, now=now)
+                                    pool_i=pool_i, now=now, mode=mode,
+                                    live_allocations=load_allocations(STATE_DIR_CANONICAL))
     statement = statement_lines(books, pool_d, pool_e, pool_g, registry_records, state_dir,
                                 d_trades, pool_e1=pool_e1, pool_i=pool_i)
     attach_net_pnl(strategy_rows, statement)
