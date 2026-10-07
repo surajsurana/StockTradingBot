@@ -241,6 +241,58 @@ class TestReconciliationRunsBeforeTheCycle(unittest.TestCase):
         self.assertNotEqual(out["status"], "halted")
 
 
+class TestAFailedOrderDoesNotBrickTheStrategy(unittest.TestCase):
+    """CoinDCX rejected the first real order this program ever sent, over a price-precision rule.
+    The book was left claiming 0.219 SOL it had never bought -- and because reconciliation halts on
+    exactly that, every future run would have halted too. One rejected order had permanently stopped
+    the strategy."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        set_allocation(self.d, "portfolio_g", 10_000, available_balance=10_000)
+        self.target = os.path.join(rpg.live_dir(self.d), "portfolio.json")
+
+    def _cycle_that_buys(self, *a, **k):
+        os.makedirs(os.path.dirname(self.target), exist_ok=True)
+        with open(self.target, "w") as f:
+            json.dump({"cash": 77.8, "starting_capital": 103.7,
+                       "positions": {"SOL": {"quantity": 0.219}}}, f)
+        return {"status": "processed", "stopped": [], "sold": [],
+                "bought": [{"symbol": "SOL", "quantity": 0.219, "price": 118.4}]}
+
+    def _run(self, placed_ok):
+        def place(**kw):
+            return SimpleNamespace(placed=placed_ok, order_id="o1" if placed_ok else "",
+                                   fill_price=118.4,
+                                   reasons=[] if placed_ok else ["INR precision should be 1"])
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle", side_effect=self._cycle_that_buys):
+            return rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                                client=_Exchange(), place_fn=place, dry_run=False)
+
+    def test_a_rejected_buy_is_removed_from_the_book(self):
+        out = self._run(placed_ok=False)
+        self.assertEqual(out["reverted"], ["SOL"])
+        with open(self.target) as f:
+            book = json.load(f)
+        self.assertEqual(book["positions"], {})          # it was never bought
+        self.assertAlmostEqual(book["cash"], 77.8 + 0.219 * 118.4, places=3)   # the cash came back
+
+    def test_the_next_run_is_therefore_not_halted(self):
+        self._run(placed_ok=False)
+        with patch.object(rpg, "list_strategies", return_value=[_record()]),              patch("portfolio_g.daily.run_pool_g_cycle",
+                   return_value={"status": "processed", "stopped": [], "sold": [], "bought": []}):
+            second = rpg.run_live({}, lambda s: {}, "k", 96.42, state_dir=self.d, settings=SETTINGS,
+                                  client=_Exchange(), place_fn=lambda **kw: None, dry_run=False)
+        self.assertNotEqual(second["status"], "halted", second.get("reason"))
+
+    def test_an_order_that_DID_place_is_kept(self):
+        # it is a real position; dropping it would stop the strategy managing something it holds
+        out = self._run(placed_ok=True)
+        self.assertEqual(out["reverted"], [])
+        with open(self.target) as f:
+            self.assertIn("SOL", json.load(f)["positions"])
+
+
 class TestDivergenceIsSurfacedNotSilent(unittest.TestCase):
     """A live run writes the book before placing, so anything refused leaves the book ahead of
     reality. Reconciliation is not built yet; the gap must at least be visible."""

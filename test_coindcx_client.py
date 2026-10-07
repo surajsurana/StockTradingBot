@@ -81,7 +81,8 @@ class TestItCannotMoveCoinsOffTheExchange(unittest.TestCase):
             source = f.read()
         paths = [ln.split("_PATH")[0] for ln in source.splitlines()
                  if "_PATH = " in ln and ln[:1].isupper()]
-        self.assertEqual(sorted(paths), ["BALANCES", "CREATE_ORDER", "ORDER_STATUS", "TICKER"])
+        self.assertEqual(sorted(paths),
+                         ["BALANCES", "CREATE_ORDER", "MARKETS", "ORDER_STATUS", "TICKER"])
 
 
 class TestSigning(unittest.TestCase):

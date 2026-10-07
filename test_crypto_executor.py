@@ -35,8 +35,21 @@ def _record(status=DeploymentStatus.PILOT_LIVE):
                           research_verdict=ResearchVerdict.PASS, deployment_status=status)
 
 
+# The real rules CoinDCX returns for BTCINR, read from the live exchange 2026-10-07.
+BTCINR_RULES = {"price_decimals": 1, "quantity_decimals": 5, "min_quantity": 1e-05,
+                "min_notional": 100.0}
+
+
 class _Client:
-    def __init__(self, price=INR_PRICE, result=None, raises=None, price_raises=None):
+    def rules_for(self, market):
+        if self.rules_raises:
+            raise self.rules_raises
+        return dict(self.rules) if self.rules is not None else {}
+
+    def __init__(self, price=INR_PRICE, result=None, raises=None, price_raises=None,
+                 rules=None, rules_raises=None):
+        self.rules = BTCINR_RULES if rules is None else rules
+        self.rules_raises = rules_raises
         self.price = price
         self.result = result if result is not None else {"id": "cd-1", "status": "open",
                                                          "avg_price": INR_PRICE}
@@ -190,11 +203,35 @@ class TestItPlacesALimitThroughTheMarket(unittest.TestCase):
         _place(tempfile.mkdtemp(), client=sell, side="SELL")
         self.assertLess(sell.orders[0]["price"], INR_PRICE)
 
-    def test_the_quantity_sent_is_the_one_the_cycle_decided(self):
+    def test_the_quantity_is_rounded_to_the_exchanges_own_precision(self):
+        # BTCINR accepts 5 decimals; sending 6 is rejected outright, so the cycle's quantity is
+        # rounded to what the market will take rather than sent and refused
         c = _Client()
         _place(self.d, client=c, quantity=0.000275)
-        self.assertEqual(c.orders[0]["quantity"], 0.000275)
+        self.assertEqual(c.orders[0]["quantity"], 0.00028)
         self.assertEqual(c.orders[0]["market"], "BTCINR")
+
+    def test_the_price_is_rounded_to_the_exchanges_own_precision(self):
+        # "INR precision should be 1" is the error that turned away the first real order this
+        # program ever sent
+        c = _Client()
+        _place(self.d, client=c)
+        price = c.orders[0]["price"]
+        self.assertEqual(price, round(price, 1), price)
+
+    def test_an_unlisted_market_is_refused_rather_than_sent_blind(self):
+        c = _Client(rules={})
+        out = _place(self.d, client=c)
+        self.assertFalse(out.placed)
+        self.assertEqual(c.orders, [])
+        self.assertTrue(any("does not list" in r for r in out.reasons))
+
+    def test_an_order_below_the_exchange_minimum_is_refused_with_a_readable_reason(self):
+        c = _Client()
+        out = _place(self.d, client=c, quantity=0.0000001)    # worth far under Rs100
+        self.assertFalse(out.placed)
+        self.assertEqual(c.orders, [])
+        self.assertTrue(any("minimum" in r for r in out.reasons), out.reasons)
 
 
 class TestNothingRaises(unittest.TestCase):

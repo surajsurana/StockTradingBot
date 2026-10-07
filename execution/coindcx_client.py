@@ -33,6 +33,7 @@ BALANCES_PATH = "/exchange/v1/users/balances"
 CREATE_ORDER_PATH = "/exchange/v1/orders/create"
 ORDER_STATUS_PATH = "/exchange/v1/orders/status"
 TICKER_PATH = "/exchange/ticker"
+MARKETS_PATH = "/exchange/v1/markets_details"
 DEFAULT_TIMEOUT = 30
 
 
@@ -127,6 +128,48 @@ class CoinDCXClient:
                 except (TypeError, ValueError):
                     return None
         return None
+
+    def market_details(self) -> dict:
+        """{MARKET: rules} from the exchange, fetched once per client and cached.
+
+        The rules are not cosmetic. CoinDCX rejects an order outright for a price with too many
+        decimals -- "INR precision should be 1" -- which is how the first real order of this
+        program's life was turned away. Guessing the precision would work until a market with
+        different rules was added; asking is the only version that keeps working."""
+        if getattr(self, "_markets", None) is None:
+            session = self._session
+            if session is None:
+                import requests
+                session = requests
+            try:
+                response = session.get(self.base_url + MARKETS_PATH, timeout=self.timeout)
+            except Exception as e:
+                raise CoinDCXError(f"Could not read CoinDCX market rules: {type(e).__name__}: {e}") from e
+            rows = self._decode(response, MARKETS_PATH)
+            self._markets = {str(r.get("coindcx_name", "")).upper(): r
+                             for r in (rows or []) if isinstance(r, dict)}
+        return self._markets
+
+    def rules_for(self, market: str) -> dict:
+        """Price/quantity precision and the minimums for one market, or {} if the exchange does not
+        list it -- which the caller must treat as "do not send", never as "no limits"."""
+        row = self.market_details().get(str(market).strip().upper()) or {}
+        if not row:
+            return {}
+        def _int(name, default):
+            try:
+                return int(row.get(name, default))
+            except (TypeError, ValueError):
+                return default
+        def _float(name, default):
+            try:
+                return float(row.get(name, default))
+            except (TypeError, ValueError):
+                return default
+        return {"price_decimals": _int("base_currency_precision", 1),
+                "quantity_decimals": _int("target_currency_precision", 6),
+                "min_quantity": _float("min_quantity", 0.0),
+                "min_notional": _float("min_notional", 0.0)}
 
     def order_status(self, order_id: str) -> dict:
         data = self._signed_post(ORDER_STATUS_PATH, {"id": str(order_id)})

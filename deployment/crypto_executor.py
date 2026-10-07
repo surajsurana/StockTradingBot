@@ -99,6 +99,31 @@ def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: s
     fair_inr = float(reference_price_usdt or 0) * float(usdinr or 0)
     premium_pct = round((inr_price / fair_inr - 1) * 100, 3) if fair_inr else None
 
+    # ROUND TO THE EXCHANGE'S OWN RULES. CoinDCX rejects an order outright for a price with too many
+    # decimals ("INR precision should be 1"), which is exactly how the first real order this program
+    # ever sent was turned away. The rules are asked for, never assumed: a market the exchange does
+    # not list is one we must not send to, not one with no limits.
+    try:
+        rules = client.rules_for(market)
+    except Exception as e:
+        return refuse([f"Could not read {market}'s trading rules: {type(e).__name__}: {e}"])
+    if not rules:
+        return refuse([f"CoinDCX does not list {market}, so no order was sent."])
+
+    through = 1 + limit_buffer_pct if str(side).upper() == "BUY" else 1 - limit_buffer_pct
+    limit_price = round(float(inr_price) * through, rules["price_decimals"])
+    quantity = round(float(quantity), rules["quantity_decimals"])
+    order_value = quantity * float(inr_price)
+
+    # The exchange's own floors. Below either of these the order is rejected, so refusing here keeps
+    # the reason readable instead of surfacing a broker error for something we could see coming.
+    if quantity < rules["min_quantity"]:
+        return refuse([f"{quantity:g} {symbol} is below {market}'s minimum of "
+                       f"{rules['min_quantity']:g}."], extra={"value": round(order_value, 2)})
+    if rules["min_notional"] and order_value < rules["min_notional"]:
+        return refuse([f"Rs{order_value:,.0f} is below {market}'s minimum order of "
+                       f"Rs{rules['min_notional']:,.0f}."], extra={"value": round(order_value, 2)})
+
     decision = check_order_allowed(
         settings=settings, record=record, state_dir=state_dir, order_value_rupees=order_value,
         current_live_exposure_rupees=current_live_exposure_rupees,
@@ -106,9 +131,6 @@ def place_crypto_order(*, settings, record, state_dir: str, symbol: str, side: s
         eligibility=eligibility, broker=BROKER)
     if not decision.allowed:
         return refuse(decision.reasons, extra={"value": round(order_value, 2)})
-
-    through = 1 + limit_buffer_pct if str(side).upper() == "BUY" else 1 - limit_buffer_pct
-    limit_price = round(float(inr_price) * through, 2)
 
     sent = {"at": now.isoformat(), "stage": "sent", "broker": BROKER, "strategy": strategy_key,
             "symbol": symbol, "market": market, "side": side, "quantity": quantity,

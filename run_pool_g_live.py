@@ -96,6 +96,50 @@ def _restore(path: str, blob) -> None:
     os.replace(tmp, path)
 
 
+def _rollback_unplaced(book_path: str, before_blob, placed: list) -> list:
+    """Undoes, in the book, every decision whose order did not actually reach the exchange.
+
+    WITHOUT THIS, ONE FAILED ORDER BRICKS THE STRATEGY. The cycle writes its decisions into the book
+    before placing, so a rejected order leaves a position the exchange does not have. Reconciliation
+    then halts -- correctly -- on the next run, and on every run after that, because nothing ever
+    clears it. That is not a theoretical risk: CoinDCX rejected the first real order of this
+    program's life over a price-precision rule, and the book was left claiming 0.219 SOL it had
+    never bought.
+
+    Only the FAILED decisions are reverted. An order that did place is real and the book must keep
+    it, or the strategy would stop managing a position it actually holds."""
+    unplaced = [p for p in placed if not p.get("placed")]
+    if not unplaced or before_blob is None:
+        return []
+    import json as _json
+    from deployment.atomic_write import write_json
+    try:
+        before = _json.loads(before_blob)
+        book = _json.loads(open(book_path, encoding="utf-8").read())
+    except (OSError, ValueError):
+        return []                      # cannot read one of them; leave the book alone and let
+                                       # reconciliation halt on the next run rather than guess
+    positions = book.setdefault("positions", {})
+    prior = (before.get("positions") or {})
+    reverted = []
+    for order in unplaced:
+        symbol = order.get("symbol")
+        try:
+            value = float(order.get("quantity") or 0) * float(order.get("price") or 0)
+        except (TypeError, ValueError):
+            continue
+        if str(order.get("side", "")).upper() == "BUY":
+            positions.pop(symbol, None)              # it was never bought
+            book["cash"] = round(float(book.get("cash", 0) or 0) + value, 6)
+        else:
+            if symbol in prior:
+                positions[symbol] = prior[symbol]    # it was never sold
+            book["cash"] = round(float(book.get("cash", 0) or 0) - value, 6)
+        reverted.append(symbol)
+    write_json(book_path, book)
+    return reverted
+
+
 def _divergence(orders: list, placed: list) -> list:
     """Decisions the book now records that no real order backs.
 
@@ -211,9 +255,11 @@ def run_live(fetch_data_fn, fetch_prices_fn, api_key: str, usdinr: float,
                         usdinr=usdinr, client=client, now=now)
         placed.append({**order, "placed": bool(outcome.placed), "order_id": outcome.order_id,
                        "fill_price": outcome.fill_price, "reasons": list(outcome.reasons)})
+    reverted = _rollback_unplaced(target, before, placed)
     diverged = _divergence(orders, placed)
     return {"status": result.get("status"), "allocated_inr": allocated_inr, "engine": result,
-            "orders": orders, "placed": placed, "divergence": diverged, "reconciliation": recon}
+            "orders": orders, "placed": placed, "divergence": diverged,
+            "reverted": reverted, "reconciliation": recon}
 
 
 def main() -> None:
