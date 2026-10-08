@@ -137,8 +137,11 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
-.cashcards{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 14px}
-.bigpot{flex:1 1 320px;max-width:none;padding:12px 14px}
+/* ONE ROW. A flex basis let the three cards wrap to a second row at some widths, which put the same
+   three platforms in two places and made the set read as more than it is. A grid cannot wrap. */
+.cashcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 14px}
+@media (max-width:1000px){.cashcards{grid-template-columns:minmax(0,1fr)}}
+.bigpot{min-width:0;max-width:none;padding:12px 14px}
 .bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
 .bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
 .bigpot.warn{border-left-color:var(--warn)}
