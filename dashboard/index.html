@@ -58,6 +58,10 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .board:hover .boardtrack{animation-play-state:paused}
 .boardtrack b{font-weight:600;color:var(--chrome-ink)}
 .boardtrack .q{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.chgflip{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.chgflip .ab{display:none}
+.board.showabs .chgflip .pc{display:none}
+.board.showabs .chgflip .ab{display:inline}
 @keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
 /* The Live-day P&L belongs beside the work, not in the navigation. */
@@ -1547,10 +1551,23 @@ function renderTeam(s){
 // the scroll loops seamlessly at -50%, and it pauses on hover so a number can actually be read.
 function renderBoard(s){
   const fmtPrice = v => v!=null ? (+v).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
-  const fmtChg = v => v!=null ? (v>0?"+":"")+v.toFixed(2)+"%" : "";
-  const item = (name, price, chg) =>
-    `<span><b>${esc(name)}</b> <span class="q">${fmtPrice(price)}</span>`
-    + (chg == null ? "" : ` <span class="q ${cls(chg)}">${fmtChg(chg)}</span>`) + `</span>`;
+  // The payload carries only a percentage, so the absolute move is derived from it. prev =
+  // price / (1 + pct/100), so the move is price * pct / (100 + pct) -- NOT price * pct/100, which
+  // would imply a previous close that never existed. At +2% on 97 that is 1.90, not 1.94.
+  const absMove = (price, pct) => (price == null || pct == null) ? null : price * pct / (100 + pct);
+  const arrow = v => v > 0 ? "▲" : v < 0 ? "▼" : "·";
+  const dp = v => Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4;
+  const item = (name, price, chg) => {
+    const move = absMove(price, chg);
+    // BOTH readings are rendered and CSS shows one. Re-rendering to flip would restart the scroll
+    // animation every few seconds, which is far more distracting than the flip is useful.
+    const change = chg == null ? "" :
+      `<span class="chgflip ${cls(chg)}">`
+      + `<span class="pc">(${arrow(chg)} ${Math.abs(chg).toFixed(2)}%)</span>`
+      + `<span class="ab">(${arrow(chg)} ${Math.abs(move).toLocaleString("en-IN",{minimumFractionDigits:dp(move),maximumFractionDigits:dp(move)})})</span>`
+      + `</span>`;
+    return `<span><b>${esc(name)}</b> <span class="q">${fmtPrice(price)}</span> ${change}</span>`;
+  };
   const parts = [];
   for(const m of (s.markets || []))
     parts.push(item(m.index_name || m.name, m.price, m.change_pct));
@@ -1561,6 +1578,8 @@ function renderBoard(s){
   // twice, so translateX(-50%) lands exactly on the start of the second copy
   document.getElementById("boardtrack").innerHTML = parts.join("") + parts.join("");
 }
+// The flip. A class on the board, not a re-render, so the scroll never stutters.
+setInterval(() => { const b = document.getElementById("board"); if(b) b.classList.toggle("showabs"); }, 5000);
 
 document.getElementById("who-close").addEventListener("click", () => document.getElementById("who").close());
 document.getElementById("brief-close").addEventListener("click", () => document.getElementById("brief").close());
