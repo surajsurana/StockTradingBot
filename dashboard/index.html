@@ -134,7 +134,15 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
 .cards{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px}
-.cashcards{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 12px}
+.cashcards{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 14px}
+.bigpot{flex:1 1 320px;max-width:none;padding:12px 14px}
+.bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
+.bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
+.bigpot.warn{border-left-color:var(--warn)}
+.pottbl{width:100%;border-collapse:collapse;font-size:13px}
+.pottbl td{padding:3px 0;border:0}
+.pottbl td.n{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pottbl td.note{padding-left:12px;font-size:11.5px;text-align:right;white-space:nowrap}
 .cashcard{flex:0 1 220px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:4px;padding:11px 14px}
 .cashcard.src{border-left-color:var(--accent)}
 .cashcard.warn{border-left-color:var(--loss)}
@@ -1789,18 +1797,43 @@ function renderAllocations(s){
   // rupees at CoinDCX are different pots that cannot fund each other. Everything else -- the cap,
   // what is assignable, what is already assigned -- is derived from those two and belongs under
   // them rather than competing with them for attention.
-  const pot = (amount, name, what, assignable, assigned, error, cls) => card(
-    amount,
-    amount == null
-      ? `Cash available · <b>${name}</b><br>${esc((error || "").slice(0, 70))}`
-      : `Cash available · <b>${name}</b>${what ? ` · ${what}` : ""}<br>`
-        + `${money(assignable)} assignable · ${money(assigned)} assigned`,
-    cls);
+  // TWO CARDS, EVERY PLATFORM. One for money that can still be put to work, one for money already
+  // at work -- each broken down by where it actually sits. Three accounts shown as three cash cards
+  // and nothing for Groww made the real question ("how much have I got, and where?") something you
+  // answered by reading four numbers off three tabs.
+  const line = (name, value, note) => value == null
+    ? `<tr><td>${esc(name)}</td><td class="n note">not readable</td></tr>`
+    : `<tr><td>${esc(name)}</td><td class="n">${money(value)}</td>`
+      + (note ? `<td class="note">${esc(note)}</td>` : "<td></td>") + `</tr>`;
+  const sum = (...xs) => xs.reduce((a, v) => a + (v == null ? 0 : +v), 0);
+
+  const growwCash = (s.pools && s.pools.H) ? s.pools.H.cash : null;
+  const growwValue = (s.my_portfolio && s.my_portfolio.totals) ? s.my_portfolio.totals.value : null;
+  // Pool G prices in USD; what is not cash is in positions.
+  const g = s.pool_g || {}, gRate = g.usdinr || 0;
+  const cryptoHeld = g.exists ? Math.max(0, (g.capital || 0) - (g.cash || 0)) * gRate : null;
+  // The live equity book holds nothing until an order fills, which is honest rather than absent.
+  const kiteHeld = (s.live_capital && s.live_capital.held_equity != null) ? s.live_capital.held_equity : 0;
+
+  const bigcard = (title, total, rows, warn) => `<div class="desk bigpot${warn ? " warn" : ""}">
+      <div class="head"><span class="nm">${esc(title)}</span><b class="potsum">${money(total)}</b></div>
+      <table class="pottbl">${rows.join("")}</table></div>`;
+
   const cards = [
-    pot(lc.balance, "Kite", "Indian equities", lc.assignable, lc.allocated_equity,
-        lc.balance_error, lc.balance == null ? "warn" : "src"),
-    pot(lc.crypto_balance, "CoinDCX", "crypto", lc.assignable_crypto, lc.allocated_crypto,
-        lc.crypto_balance_error, lc.crypto_balance == null ? "warn" : ""),
+    bigcard("Cash available", sum(lc.balance, lc.crypto_balance, growwCash), [
+      line("Kite · Indian equities", lc.balance,
+           lc.balance == null ? "" : `${money(lc.allocated_equity)} assigned`),
+      line("CoinDCX · crypto", lc.crypto_balance,
+           lc.crypto_balance == null ? "" : `${money(lc.allocated_crypto)} assigned`),
+      line("Groww · long-term", growwCash, ""),
+    ], lc.balance == null || lc.crypto_balance == null),
+    bigcard("Holdings value", sum(kiteHeld, cryptoHeld, growwValue), [
+      line("Kite · Indian equities", kiteHeld, kiteHeld ? "" : "nothing held yet"),
+      line("CoinDCX · crypto", cryptoHeld, ""),
+      line("Groww · long-term", growwValue,
+           (s.my_portfolio && s.my_portfolio.totals)
+             ? `${s.my_portfolio.totals.holdings} holdings` : ""),
+    ]),
   ].join("");
   panel.innerHTML = `<div class="cashcards">${cards}</div>`
     + (lc.balance == null
