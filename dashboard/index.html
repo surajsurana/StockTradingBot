@@ -67,7 +67,8 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 /* The Live-day P&L belongs beside the work, not in the navigation. */
 .pagetop{display:flex;align-items:flex-start;justify-content:flex-end;gap:16px;flex-wrap:wrap;
   margin-bottom:14px;min-height:0}
-.pagetop:empty,.pagetop:has(> .todaybar[hidden]){margin-bottom:0}
+.pagetop:empty,.pagetop:has(.todaybar[hidden]){margin-bottom:0}
+.todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:0}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
   border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:50%;cursor:pointer;
@@ -422,7 +423,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <header>
   <div class="headrow">
     <h1 class="brand">StockTradingBot Desk</h1>
-    <span id="refresh"></span>
     <span class="status" style="margin-left:auto">
       <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
       <span class="livebadge" id="livebadge">LIVE</span>
@@ -454,7 +454,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </aside>
 <div class="content">
 <p id="modenote" class="note" hidden></p>
-<div class="pagetop"><span></span><span class="todaybar" id="todaybar" hidden></span></div>
+<div class="pagetop"><span></span><div class="todaystack">
+  <span class="todaybar" id="todaybar" hidden></span>
+  <div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
+</div></div>
 <main class="shellmain">
 <p id="error" class="err" hidden></p>
 
@@ -670,7 +673,16 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEve
 }));
 document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
 
-function syncTicker(){}   // the ticker row it sized went with the old layout
+// The strip is only shown when the chip above it is, and is sized to match it, so the two read as
+// one block rather than a chip with an unrelated line of text beneath.
+function syncTicker(){
+  const tb = document.getElementById("todaybar"), row = document.getElementById("tickerrow"),
+        t = document.getElementById("ticker");
+  if(!tb || !row || !t) return;
+  row.hidden = tb.hidden || !t.innerHTML;
+  if(!tb.hidden && tb.offsetWidth) t.style.width = tb.offsetWidth + "px";
+}
+window.addEventListener("resize", syncTicker);
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
   const pm = document.getElementById("profile-menu");
   if(pm){ pm.hidden = true; document.getElementById("profile-btn").setAttribute("aria-expanded", "false"); }
@@ -1475,11 +1487,14 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
-  // The per-type split now rides in the chip's tooltip rather than its own scrolling row: the header
-  // board is the one moving strip on the page, and two competing ones read as noise.
+  // Today's P&L split by type, running under the chip. It says WHERE the day's number came from,
+  // which the single figure above cannot -- a flat day that is a crypto gain against an equity loss
+  // is not the same day as one where nothing moved.
   const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "US Equity", "Other"].filter(kd => kd in todayByKind);
-  if(kinds.length)
-    tb.title += " — " + kinds.map(kd => `${kd}: ${money(todayByKind[kd], true)}`).join("  ·  ");
+  const run = kinds.map(kd => `<span class="tk">${kd} <b class="${cls(todayByKind[kd])}">${money(todayByKind[kd], true)}</b></span>`).join("");
+  document.getElementById("ticker").innerHTML = kinds.length
+    ? `<span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span>` : "";
+  syncTicker();
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
 }
@@ -2654,7 +2669,7 @@ function renderResearchResults(rm, laneName){
 
 load();
 (function schedule(){ setTimeout(async () => { await load(); schedule(); }, STATE && STATE.market_open ? REFRESH_OPEN_MS : REFRESH_CLOSED_MS); })();
-setInterval(() => { if(!STATE) return; const age = Math.round((Date.now() - new Date(STATE.generated_at))/1000); document.getElementById("refresh").textContent = `refreshed ${age}s ago · crypto live every 20s${STATE.market_open?" · NSE quotes live every 20s":""}`; }, 1000);
+// The staleness line left the header on 2026-10-08, and the timer that kept it current went with it.
 </script>
 </body>
 </html>
