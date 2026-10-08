@@ -3,9 +3,9 @@
     "key": "us_short_term_reversal",
     "name": "Short-Term Reversal (US)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 8.877858796296297e-06,
     "horizon_lane": "swing"
   }
 }
