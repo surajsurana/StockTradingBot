@@ -8,12 +8,12 @@
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-:root{--paper:#F6F5F1;--ink:#1E2430;--muted:#5C6270;--rule:#D8D6CF;--band:#EEECE5;--card:#FFFFFF;--accent:#1F6F78;--accent-ink:#FFFFFF;--gain:#1B7F4E;--loss:#B23A3A;--warn:#A8681C;--chip:#E3EEEF;--live:#1B7F4E;--focus:#1F6F78;--desk:#EAE6DC;--desk-edge:#CFC8B8}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#15181E;--ink:#E6E4DD;--muted:#9AA0AB;--rule:#2C3039;--band:#1C2027;--card:#1A1E25;--accent:#5FB7C0;--accent-ink:#0F1418;--gain:#4CC383;--loss:#E0706A;--warn:#E0A85A;--chip:#22333A;--live:#4CC383;--focus:#5FB7C0;--desk:#22272F;--desk-edge:#3A404A}}
+:root{--paper:#F6F5F1;--ink:#1E2430;--muted:#5C6270;--rule:#D8D6CF;--band:#EEECE5;--card:#FFFFFF;--accent:#1F6F78;--accent-ink:#FFFFFF;--gain:#1B7F4E;--loss:#B23A3A;--warn:#A8681C;--chip:#E3EEEF;--live:#1B7F4E;--focus:#1F6F78;--desk:#EAE6DC;--desk-edge:#CFC8B8;--chrome:#13232B;--chrome-ink:#EAF0F2;--chrome-muted:#93A7B1;--chrome-edge:#2A3C45;--chrome-hover:#1D333C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#15181E;--ink:#E6E4DD;--muted:#9AA0AB;--rule:#2C3039;--band:#1C2027;--card:#1A1E25;--accent:#5FB7C0;--accent-ink:#0F1418;--gain:#4CC383;--loss:#E0706A;--warn:#E0A85A;--chip:#22333A;--live:#4CC383;--focus:#5FB7C0;--desk:#22272F;--desk-edge:#3A404A;--chrome:#0E181E;--chrome-ink:#E6E4DD;--chrome-muted:#8C99A3;--chrome-edge:#243038;--chrome-hover:#18262E}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
 .wrap{min-height:100vh}
-header{background:var(--desk);border-bottom:1px solid var(--desk-edge);
+header{background:var(--chrome);color:var(--chrome-muted);border-bottom:1px solid var(--chrome-edge);
   padding:12px clamp(16px,2vw,30px) 10px;display:flex;flex-direction:column;gap:6px}
 .headrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px}
 h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;margin:0}
@@ -25,32 +25,31 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;mar
    --paper the actual work sits on, so the eye knows at a glance what is furniture and what is
    content. Below 860px the rail becomes a strip above the content rather than eating the screen. */
 .app{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
-.rail{background:var(--desk);border-right:1px solid var(--desk-edge);display:flex;flex-direction:column;
+.rail{background:var(--chrome);color:var(--chrome-ink);border-right:1px solid var(--chrome-edge);display:flex;flex-direction:column;
   gap:6px;padding:18px 12px 24px;position:sticky;top:0;height:100vh;overflow-y:auto}
-.brand{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:17px;line-height:1.25;
-  padding:2px 10px 14px;border-bottom:1px solid var(--desk-edge);margin-bottom:6px}
+.brand{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:19px;line-height:1.2;
+  margin:0;color:var(--chrome-ink);white-space:nowrap}
 nav#sidenav{display:flex;flex-direction:column;gap:2px}
 nav#sidenav button{text-align:left;font:inherit;font-weight:500;border:1px solid transparent;
-  background:transparent;color:var(--ink);border-radius:6px;padding:8px 11px;cursor:pointer}
-nav#sidenav button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  background:transparent;color:var(--chrome-muted);border-radius:6px;padding:9px 12px;cursor:pointer}
+nav#sidenav button:hover{background:var(--chrome-hover);color:var(--chrome-ink)}
 nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .col{display:flex;flex-direction:column;min-width:0}
 .content{padding:20px clamp(16px,2vw,30px) 60px;min-width:0}
 @media (max-width:860px){
   .app{grid-template-columns:minmax(0,1fr)}
   .rail{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;
-    border-right:0;border-bottom:1px solid var(--desk-edge)}
-  .brand{border-bottom:0;margin:0;padding:0 12px 0 2px}
+    border-right:0;border-bottom:1px solid var(--chrome-edge)}
   nav#sidenav{flex-direction:row;flex-wrap:wrap}
 }
 /* A one-line market board across the header, the way an exchange runs one. It replaced the Markets
    tab: a page you had to navigate to in order to see a number that never stops moving was the wrong
    shape for it. */
-.board{display:flex;gap:0;overflow:hidden;border-top:1px solid var(--desk-edge);margin-top:10px}
+.board{display:flex;gap:0;overflow:hidden;border-top:1px solid var(--chrome-edge);margin-top:9px}
 .boardtrack{display:flex;gap:26px;white-space:nowrap;padding:6px 0;font-size:12.5px;
   animation:boardscroll 60s linear infinite}
 .board:hover .boardtrack{animation-play-state:paused}
-.boardtrack b{font-weight:600}
+.boardtrack b{font-weight:600;color:var(--chrome-ink)}
 .boardtrack .q{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 @keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
@@ -66,7 +65,16 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
   background:var(--warn);box-shadow:0 0 0 2px var(--card)}
 #tab-notifications td.nowrap, #tab-notifications th{white-space:nowrap}
 #tab-notifications td:last-child{white-space:normal}
+/* Controls living on the dark header. They inherit nothing useful from the light palette, so each
+   states its own colours rather than relying on a --card that is now the wrong side of the contrast. */
+header .iconround{background:transparent;border-color:var(--chrome-edge);color:var(--chrome-ink)}
+header .iconround:hover{border-color:var(--chrome-ink)}
+header .modeswitch{border-color:var(--chrome-edge)}
+header .modeswitch button{color:var(--chrome-muted)}
+header .modeswitch button.on{background:var(--accent);color:var(--accent-ink)}
+header #asof,header #prices,header #refresh,header #mkt-label{color:var(--chrome-muted)}
 .profile{position:relative;display:inline-flex}
+.profilemenu[hidden]{display:none}
 .profilemenu{position:absolute;right:0;top:40px;z-index:40;min-width:160px;background:var(--card);
   border:1px solid var(--rule);border-radius:6px;padding:5px;box-shadow:0 6px 20px rgba(0,0,0,.14);
   display:flex;flex-direction:column;gap:2px}
@@ -396,7 +404,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <body>
 <div class="wrap"><div class="app">
 <aside class="rail">
-  <div class="brand">StockTradingBot<br>Desk</div>
   <nav role="tablist" id="sidenav">
     <button role="tab" aria-selected="true" data-tab="team">The team</button>
     <button role="tab" aria-selected="false" data-tab="live">Live day</button>
@@ -411,13 +418,14 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <div class="col">
 <header>
   <div class="headrow">
-    <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
-    <span class="livebadge" id="livebadge">LIVE</span>
+    <h1 class="brand">StockTradingBot Desk</h1>
     <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
     <span id="asof">loading…</span>
     <span id="prices"></span>
     <span id="refresh"></span>
     <span class="status" style="margin-left:auto">
+      <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
+      <span class="livebadge" id="livebadge">LIVE</span>
       <button id="bell" class="iconround" data-tab="notifications" aria-selected="false"
               title="What the desk wanted to do and could not">&#128276;<span id="bell-dot" hidden></span></button>
       <span class="profile">
@@ -1461,11 +1469,11 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
-  // A stock-ticker strip of the per-type numbers, in its own row under the chip and exactly as wide as the chip.
+  // The per-type split now rides in the chip's tooltip rather than its own scrolling row: the header
+  // board is the one moving strip on the page, and two competing ones read as noise.
   const kinds = ["Swing", "Intraday", "Crypto", "Long-term", "US Equity", "Other"].filter(kd => kd in todayByKind);
-  const run = kinds.map(kd => `<span class="tk">${kd} <b class="${cls(todayByKind[kd])}">${money(todayByKind[kd], true)}</b></span>`).join("");
-  document.getElementById("ticker").innerHTML = kinds.length ? `<span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span>` : "";
-  syncTicker();
+  if(kinds.length)
+    tb.title += " — " + kinds.map(kd => `${kd}: ${money(todayByKind[kd], true)}`).join("  ·  ");
   document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
   // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
 }
