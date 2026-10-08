@@ -61,7 +61,9 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 @keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
 /* The Live-day P&L belongs beside the work, not in the navigation. */
-.pagetop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.pagetop{display:flex;align-items:flex-start;justify-content:flex-end;gap:16px;flex-wrap:wrap;
+  margin-bottom:14px;min-height:0}
+.pagetop:empty,.pagetop:has(> .todaybar[hidden]){margin-bottom:0}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
   border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:50%;cursor:pointer;
@@ -107,6 +109,9 @@ nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink
 nav button:focus-visible,input:focus-visible,th button:focus-visible,.agent:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 section[hidden]{display:none}
 h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;margin:26px 0 8px}
+/* The first heading in a section opens the page -- there is nothing above it to be spaced from. */
+section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{margin-top:0}
+.content{padding-top:14px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
 .tile{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
 .tile .lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -413,9 +418,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <header>
   <div class="headrow">
     <h1 class="brand">StockTradingBot Desk</h1>
-    <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
-    <span id="asof">loading…</span>
-    <span id="prices"></span>
     <span id="refresh"></span>
     <span class="status" style="margin-left:auto">
       <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
@@ -436,8 +438,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </header>
 <aside class="rail">
   <nav role="tablist" id="sidenav">
-    <button role="tab" aria-selected="true" data-tab="team">The team</button>
-    <button role="tab" aria-selected="false" data-tab="live">Live day</button>
+    <button role="tab" aria-selected="true" data-tab="live">Live day</button>
+    <button role="tab" aria-selected="false" data-tab="team">The team</button>
     <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
     <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
     <button role="tab" aria-selected="false" data-tab="research">Research</button>
@@ -452,7 +454,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <main class="shellmain">
 <p id="error" class="err" hidden></p>
 
-<section id="tab-live" hidden>
+<section id="tab-live">
   <div class="cards" id="livecards"></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -473,7 +475,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 <section id="tab-orders" hidden>
   <h2>Orders</h2>
-  <p class="note">Every order placed, across every pool and type — most recent first.</p>
   <div class="tools"><span id="orders-count" class="note"></span></div>
   <div class="tblwrap" id="orders-wrap"><table><thead id="orders-head"></thead><tbody id="orders"></tbody></table></div>
   <div class="pager" id="orders-pager">
@@ -483,13 +484,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   </div>
 </section>
 
-<section id="tab-team">
+<section id="tab-team" hidden>
   <div class="teamline" id="teamtiles"></div>
   <h2>The pools</h2>
   <div class="poollist" id="poollist"></div>
   <h2 id="flow-daily-title"></h2>
   <div class="strip" id="flow-daily"></div>
-  <p class="note">Steps light up as they happen today.</p>
   <h2>The office</h2>
   <div class="office" id="office"></div>
   <div class="legend"><span><i style="background:var(--live)"></i>working now</span><span><i style="background:var(--accent)"></i>done for today</span><span><i style="background:var(--rule)"></i>on call</span><span>· teal robots with a round head = AI agents, grey robots with a square head = rule-based engines · tap anyone to see what they do</span></div>
@@ -561,8 +561,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="note" id="adv-empty" hidden></p>
   <div id="adv-list"></div>
   <div id="adv-watch"></div>
-  <p class="note">Advice only: nothing here places an order. Click a line to see why, and press Done once you have placed the order. Money that arrives in your Groww account is planned automatically.</p>
-</section>
+  </section>
 
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
@@ -701,7 +700,7 @@ document.getElementById("bell").addEventListener("click", markNotificationsRead)
 function syncLiveTabs(){
   const btn = document.getElementById("tab-btn-advice");
   btn.hidden = MODE !== "live";
-  if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('[data-tab="team"]').click();
+  if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('[data-tab="live"]').click();
 }
 try { const t = localStorage.getItem("desk.tab"); if (t && !((t === "advice") && MODE !== "live")) document.querySelector(`[data-tab="${t}"]`)?.click(); } catch(e){}
 syncLiveTabs();
@@ -720,11 +719,9 @@ async function load(){
 
 function render(){
   const s = STATE;
-  document.getElementById("mkt").className = "dot" + (s.market_open ? " on" : "");
-  document.getElementById("mkt-label").textContent = s.market_open ? "market open" : "market closed";
+  // The market/as-of/quotes line left the header on 2026-10-08: the board above already says what
+  // the market is doing, and "as of" twice over was noise. The refresh line keeps the staleness.
   document.getElementById("livebadge").className = "livebadge" + (s.market_open ? " on" : "");
-  document.getElementById("asof").textContent = `as of ${s.generated_at.slice(11,19)}`;
-  document.getElementById("prices").textContent = s.prices_as_of ? `quotes ${s.prices_as_of.slice(11,19)}` : "prices loading…";
   const note = document.getElementById("modenote");
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
