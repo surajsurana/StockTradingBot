@@ -12,26 +12,50 @@
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--paper:#15181E;--ink:#E6E4DD;--muted:#9AA0AB;--rule:#2C3039;--band:#1C2027;--card:#1A1E25;--accent:#5FB7C0;--accent-ink:#0F1418;--gain:#4CC383;--loss:#E0706A;--warn:#E0A85A;--chip:#22333A;--live:#4CC383;--focus:#5FB7C0;--desk:#22272F;--desk-edge:#3A404A}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
-.wrap{max-width:1600px;margin:0 auto;padding:22px clamp(16px,2vw,32px) 60px}
-header{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 22px;border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:16px}
+.wrap{min-height:100vh}
+header{background:var(--desk);border-bottom:1px solid var(--desk-edge);
+  padding:12px clamp(16px,2vw,30px) 10px;display:flex;flex-direction:column;gap:6px}
+.headrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px}
 h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;margin:0}
 .status{color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-left:auto;font-size:13px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .dot.on{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 25%,transparent)}
-/* The shell: a left rail of destinations, content beside it. The rail collapses to a horizontal
-   strip on a narrow screen rather than eating half of it. */
-.shell{display:grid;grid-template-columns:184px minmax(0,1fr);gap:0 26px;align-items:start}
-.shellmain{min-width:0}
-nav#sidenav{display:flex;flex-direction:column;gap:2px;position:sticky;top:18px;
-  border-right:1px solid var(--rule);padding-right:14px;margin-bottom:18px}
-nav#sidenav button{text-align:left;border:1px solid transparent;background:transparent;border-radius:5px;padding:8px 11px}
-nav#sidenav button:hover{background:var(--band)}
+/* THE SHELL. A navigation pane pinned to the extreme left, full height, and a header across the
+   top of the content column. Both are CHROME -- they carry --desk, a tint distinct from the
+   --paper the actual work sits on, so the eye knows at a glance what is furniture and what is
+   content. Below 860px the rail becomes a strip above the content rather than eating the screen. */
+.app{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
+.rail{background:var(--desk);border-right:1px solid var(--desk-edge);display:flex;flex-direction:column;
+  gap:6px;padding:18px 12px 24px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:17px;line-height:1.25;
+  padding:2px 10px 14px;border-bottom:1px solid var(--desk-edge);margin-bottom:6px}
+nav#sidenav{display:flex;flex-direction:column;gap:2px}
+nav#sidenav button{text-align:left;font:inherit;font-weight:500;border:1px solid transparent;
+  background:transparent;color:var(--ink);border-radius:6px;padding:8px 11px;cursor:pointer}
+nav#sidenav button:hover{background:color-mix(in srgb,var(--accent) 12%,transparent)}
 nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.col{display:flex;flex-direction:column;min-width:0}
+.content{padding:20px clamp(16px,2vw,30px) 60px;min-width:0}
 @media (max-width:860px){
-  .shell{grid-template-columns:minmax(0,1fr)}
-  nav#sidenav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--rule);
-    padding:0 0 10px;position:static}
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;
+    border-right:0;border-bottom:1px solid var(--desk-edge)}
+  .brand{border-bottom:0;margin:0;padding:0 12px 0 2px}
+  nav#sidenav{flex-direction:row;flex-wrap:wrap}
 }
+/* A one-line market board across the header, the way an exchange runs one. It replaced the Markets
+   tab: a page you had to navigate to in order to see a number that never stops moving was the wrong
+   shape for it. */
+.board{display:flex;gap:0;overflow:hidden;border-top:1px solid var(--desk-edge);margin-top:10px}
+.boardtrack{display:flex;gap:26px;white-space:nowrap;padding:6px 0;font-size:12.5px;
+  animation:boardscroll 60s linear infinite}
+.board:hover .boardtrack{animation-play-state:paused}
+.boardtrack b{font-weight:600}
+.boardtrack .q{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+@keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
+/* The Live-day P&L belongs beside the work, not in the navigation. */
+.pagetop{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
   border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:50%;cursor:pointer;
@@ -370,43 +394,48 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap"><div class="app">
+<aside class="rail">
+  <div class="brand">StockTradingBot<br>Desk</div>
+  <nav role="tablist" id="sidenav">
+    <button role="tab" aria-selected="true" data-tab="team">The team</button>
+    <button role="tab" aria-selected="false" data-tab="live">Live day</button>
+    <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
+    <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
+    <button role="tab" aria-selected="false" data-tab="research">Research</button>
+    <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
+    <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
+    <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
+  </nav>
+</aside>
+<div class="col">
 <header>
-  <h1>StockTradingBot Desk</h1>
-  <div class="status">
+  <div class="headrow">
     <span class="modeswitch" role="group" aria-label="Trading mode"><button id="mode-paper" class="on" data-mode="paper">Paper</button><button id="mode-live" data-mode="live">Live</button></span>
     <span class="livebadge" id="livebadge">LIVE</span>
     <span><span class="dot" id="mkt"></span><span id="mkt-label">market</span></span>
     <span id="asof">loading…</span>
     <span id="prices"></span>
     <span id="refresh"></span>
-    <button id="bell" class="iconround" data-tab="notifications" aria-selected="false"
-            title="What the desk wanted to do and could not">&#128276;<span id="bell-dot" hidden></span></button>
-    <span class="profile">
-      <button id="profile-btn" class="iconround" aria-haspopup="true" aria-expanded="false"
-              title="Account">SS</button>
-      <span class="profilemenu" id="profile-menu" hidden>
-        <button data-tab="settings" aria-selected="false">Settings</button>
+    <span class="status" style="margin-left:auto">
+      <button id="bell" class="iconround" data-tab="notifications" aria-selected="false"
+              title="What the desk wanted to do and could not">&#128276;<span id="bell-dot" hidden></span></button>
+      <span class="profile">
+        <button id="profile-btn" class="iconround" aria-haspopup="true" aria-expanded="false"
+                title="Account">SS</button>
+        <span class="profilemenu" id="profile-menu" hidden>
+          <button data-tab="settings" aria-selected="false">Settings</button>
+        </span>
       </span>
     </span>
   </div>
+  <!-- The market board: a one-line exchange ticker, which is what these numbers want to be. -->
+  <div class="board" id="board" hidden><div class="boardtrack" id="boardtrack"></div></div>
 </header>
+<div class="content">
 <p id="modenote" class="note" hidden></p>
-<div class="shell">
-<nav role="tablist" id="sidenav">
-  <button role="tab" aria-selected="true" data-tab="team">The team</button>
-  <button role="tab" aria-selected="false" data-tab="markets">Markets</button>
-  <button role="tab" aria-selected="false" data-tab="live">Live day</button>
-  <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
-  <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
-  <button role="tab" aria-selected="false" data-tab="research">Research</button>
-  <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
-  <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
-  <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
-  <span class="todaybar" id="todaybar" hidden></span>
-</nav>
+<div class="pagetop"><span></span><span class="todaybar" id="todaybar" hidden></span></div>
 <main class="shellmain">
-<div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live" hidden>
@@ -454,12 +483,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="strip" id="flow-research"></div>
 </section>
 
-<section id="tab-markets" hidden>
-  <h2>Markets we trade</h2>
-  <div class="office" id="markets-grid"></div>
-  <h2>Macro backdrop</h2>
-  <div class="macrogrid" id="macro-grid"></div>
-</section>
 
 <section id="tab-statement" hidden>
   <div class="tools"><span class="note" id="st-count"></span></div>
@@ -570,7 +593,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   </div>
 </section>
 </main>
-</div><!-- /shell -->
+</div><!-- /content -->
+</div><!-- /col -->
+</div><!-- /app -->
 </div>
 
 <dialog id="sell"><h3 id="sell-title"></h3><p class="jb" id="sell-sub"></p>
@@ -629,13 +654,10 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEve
 }));
 document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
 
-function syncTicker(){
-  const tb = document.getElementById("todaybar"), row = document.getElementById("tickerrow"), t = document.getElementById("ticker");
-  row.hidden = tb.hidden || !t.innerHTML;
-  if(!tb.hidden && tb.offsetWidth) t.style.width = tb.offsetWidth + "px";
-}
-window.addEventListener("resize", syncTicker);
+function syncTicker(){}   // the ticker row it sized went with the old layout
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+  const pm = document.getElementById("profile-menu");
+  if(pm){ pm.hidden = true; document.getElementById("profile-btn").setAttribute("aria-expanded", "false"); }
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
   document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
@@ -694,7 +716,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); renderOrders(s); renderNotifications(s); renderTeam(s); renderMarkets(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderLive(s); renderOrders(s); renderNotifications(s); renderTeam(s); renderBoard(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -1510,21 +1532,26 @@ function renderTeam(s){
     document.getElementById("who").showModal();
   }));
 }
-function renderMarkets(s){
+// The market board. Replaced the Markets tab on 2026-10-08: a page you had to navigate to in order
+// to read a number that never stops moving was the wrong shape for it. The track is duplicated so
+// the scroll loops seamlessly at -50%, and it pauses on hover so a number can actually be read.
+function renderBoard(s){
   const fmtPrice = v => v!=null ? (+v).toLocaleString("en-IN",{maximumFractionDigits:2}) : "—";
-  const fmtChg = v => v!=null ? (v>0?"+":"")+v.toFixed(2)+"%" : "—";
-  document.getElementById("markets-grid").innerHTML = (s.markets || []).map(m => {
-    return `<div class="desk market-card"><div class="head"><span class="ic">${m.icon}</span><span class="nm">${esc(m.name)}</span><span class="pill ${m.status==="Open"?"ok":""}">${esc(m.status)}</span></div>
-      <p class="blurb">${esc(m.hours)}${m.hours_ist?` &middot; ${esc(m.hours_ist)}`:""}</p>
-      <div class="marketrate"><span class="lbl">${esc(m.index_name)}</span><span class="val">${fmtPrice(m.price)}</span><span class="chg ${cls(m.change_pct)}">${fmtChg(m.change_pct)}</span></div>
-      </div>`;
-  }).join("");
-  const quoteCard = (title, icon, rows) => `<div class="desk"><div class="head"><span class="ic">${icon}</span><span class="nm">${esc(title)}</span></div>
-    <table class="moverstbl quotecard">${rows.map(q => `<tr><td class="l"><span class="ic small">${q.icon}</span> ${esc(q.name)}</td><td class="n">${fmtPrice(q.price)}</td><td class="n ${cls(q.change_pct)}">${fmtChg(q.change_pct)}</td></tr>`).join("")}</table></div>`;
-  document.getElementById("macro-grid").innerHTML =
-    quoteCard("Commodities", "\u{1F6E2}️", s.commodities || []) +
-    quoteCard("Currencies", "\u{1F4B1}", s.currencies || []);
+  const fmtChg = v => v!=null ? (v>0?"+":"")+v.toFixed(2)+"%" : "";
+  const item = (name, price, chg) =>
+    `<span><b>${esc(name)}</b> <span class="q">${fmtPrice(price)}</span>`
+    + (chg == null ? "" : ` <span class="q ${cls(chg)}">${fmtChg(chg)}</span>`) + `</span>`;
+  const parts = [];
+  for(const m of (s.markets || []))
+    parts.push(item(m.index_name || m.name, m.price, m.change_pct));
+  for(const group of [s.commodities, s.currencies])
+    for(const q of (group || [])) parts.push(item(q.name, q.price, q.change_pct));
+  const board = document.getElementById("board");
+  board.hidden = !parts.length;
+  // twice, so translateX(-50%) lands exactly on the start of the second copy
+  document.getElementById("boardtrack").innerHTML = parts.join("") + parts.join("");
 }
+
 document.getElementById("who-close").addEventListener("click", () => document.getElementById("who").close());
 document.getElementById("brief-close").addEventListener("click", () => document.getElementById("brief").close());
 
