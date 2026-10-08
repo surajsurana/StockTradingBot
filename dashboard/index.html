@@ -14,7 +14,7 @@
 body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:14px;line-height:1.45}
 .wrap{min-height:100vh}
 header{background:var(--chrome);color:var(--chrome-muted);border-bottom:1px solid var(--chrome-edge);
-  padding:12px clamp(16px,2vw,30px) 10px;display:flex;flex-direction:column;gap:6px}
+  padding:11px clamp(16px,2vw,30px) 9px 14px;display:flex;flex-direction:column;gap:6px}
 .headrow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px}
 h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;margin:0}
 .status{color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-left:auto;font-size:13px}
@@ -24,11 +24,17 @@ h1{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:26px;mar
    top of the content column. Both are CHROME -- they carry --desk, a tint distinct from the
    --paper the actual work sits on, so the eye knows at a glance what is furniture and what is
    content. Below 860px the rail becomes a strip above the content rather than eating the screen. */
-.app{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:100vh}
-.rail{background:var(--chrome);color:var(--chrome-ink);border-right:1px solid var(--chrome-edge);display:flex;flex-direction:column;
-  gap:6px;padding:18px 12px 24px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.app{display:grid;grid-template-columns:208px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);
+  grid-template-areas:"hdr hdr" "rail main";min-height:100vh}
+header{grid-area:hdr}
+.rail{grid-area:rail}
+.content{grid-area:main}
+.rail{background:var(--chrome);color:var(--chrome-ink);border-right:1px solid var(--chrome-edge);
+  display:flex;flex-direction:column;gap:6px;padding:14px 12px 24px;align-self:stretch}
 .brand{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:19px;line-height:1.2;
-  margin:0;color:var(--chrome-ink);white-space:nowrap}
+  margin:0;color:var(--chrome-ink);white-space:nowrap;
+  /* the rail's width less the header's own left padding, so the brand ends where the rail ends */
+  flex:0 0 auto;min-width:calc(208px - 14px)}
 nav#sidenav{display:flex;flex-direction:column;gap:2px}
 nav#sidenav button{text-align:left;font:inherit;font-weight:500;border:1px solid transparent;
   background:transparent;color:var(--chrome-muted);border-radius:6px;padding:9px 12px;cursor:pointer}
@@ -37,7 +43,8 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .col{display:flex;flex-direction:column;min-width:0}
 .content{padding:20px clamp(16px,2vw,30px) 60px;min-width:0}
 @media (max-width:860px){
-  .app{grid-template-columns:minmax(0,1fr)}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-areas:"hdr" "rail" "main"}
+  .brand{min-width:0}
   .rail{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;
     border-right:0;border-bottom:1px solid var(--chrome-edge)}
   nav#sidenav{flex-direction:row;flex-wrap:wrap}
@@ -403,19 +410,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </head>
 <body>
 <div class="wrap"><div class="app">
-<aside class="rail">
-  <nav role="tablist" id="sidenav">
-    <button role="tab" aria-selected="true" data-tab="team">The team</button>
-    <button role="tab" aria-selected="false" data-tab="live">Live day</button>
-    <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
-    <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
-    <button role="tab" aria-selected="false" data-tab="research">Research</button>
-    <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
-    <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
-    <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
-  </nav>
-</aside>
-<div class="col">
 <header>
   <div class="headrow">
     <h1 class="brand">StockTradingBot Desk</h1>
@@ -440,6 +434,18 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <!-- The market board: a one-line exchange ticker, which is what these numbers want to be. -->
   <div class="board" id="board" hidden><div class="boardtrack" id="boardtrack"></div></div>
 </header>
+<aside class="rail">
+  <nav role="tablist" id="sidenav">
+    <button role="tab" aria-selected="true" data-tab="team">The team</button>
+    <button role="tab" aria-selected="false" data-tab="live">Live day</button>
+    <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
+    <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
+    <button role="tab" aria-selected="false" data-tab="research">Research</button>
+    <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
+    <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
+    <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
+  </nav>
+</aside>
 <div class="content">
 <p id="modenote" class="note" hidden></p>
 <div class="pagetop"><span></span><span class="todaybar" id="todaybar" hidden></span></div>
@@ -602,7 +608,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </section>
 </main>
 </div><!-- /content -->
-</div><!-- /col -->
 </div><!-- /app -->
 </div>
 
