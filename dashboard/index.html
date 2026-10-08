@@ -68,7 +68,7 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pagetop{display:flex;align-items:flex-start;justify-content:flex-end;gap:16px;flex-wrap:wrap;
   margin-bottom:14px;min-height:0}
 .pagetop:empty,.pagetop:has(.todaybar[hidden]){margin-bottom:0}
-.todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:0}
+.todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
   border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:50%;cursor:pointer;
@@ -100,9 +100,12 @@ nav{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:18px}
 .todaybar[hidden]{display:none}
 .todaybar i{font-style:normal;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .todaybar b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600}
-.tickerrow{display:flex;justify-content:flex-end;margin:-10px 0 12px}
+.tickerrow{display:flex;justify-content:flex-end;margin:0}
 .tickerrow[hidden]{display:none}
-.tickerrow .ticker{overflow:hidden;white-space:nowrap;font-size:11.5px;color:var(--muted);width:230px}
+/* A ticker window: the text scrolls through it, so clipping at the edges is the point. Framing it
+   like the chip above says so -- unframed, a half-word at the edge just reads as broken text. */
+.tickerrow .ticker{overflow:hidden;white-space:nowrap;font-size:11.5px;color:var(--muted);
+  width:230px;border:1px solid var(--rule);border-radius:4px;padding:3px 9px;background:var(--card)}
 .tickerrow .run{display:inline-block;animation:tick 26s linear infinite;will-change:transform}
 .tickerrow .ticker:hover .run{animation-play-state:paused}
 .tickerrow .tk{display:inline-block;padding:0 14px 0 0}
@@ -1819,6 +1822,20 @@ function renderAllocations(s){
       <div class="head"><span class="nm">${esc(title)}</span><b class="potsum">${money(total)}</b></div>
       <table class="pottbl">${rows.join("")}</table></div>`;
 
+  // Invested AT COST, per platform, read off the open rows of the ledger -- which is the only place
+  // that knows what was actually paid, as opposed to what it is worth now. Pool H is Groww, the
+  // crypto pools are CoinDCX, everything else is Kite.
+  // Matched on the pool CODE, not the label: the same pool is written "Pool G" in one place and
+  // "G" in another, and a pattern against either spelling silently sends every row to the default.
+  const venueOf = pool => {
+    const code = String(pool || "").trim().split(/\s+/).pop().toUpperCase();
+    return ["G", "E", "E1"].includes(code) ? "coindcx" : code === "H" ? "groww" : "kite";
+  };
+  const investedBy = {kite: 0, coindcx: 0, groww: 0};
+  for(const r of (s.ledger || []))
+    if(String(r.status || "").toLowerCase().startsWith("open"))
+      investedBy[venueOf(r.pool)] += (r.amount || 0);
+
   const cards = [
     bigcard("Cash available", sum(lc.balance, lc.crypto_balance, growwCash), [
       line("Kite · Indian equities", lc.balance,
@@ -1827,6 +1844,11 @@ function renderAllocations(s){
            lc.crypto_balance == null ? "" : `${money(lc.allocated_crypto)} assigned`),
       line("Groww · long-term", growwCash, ""),
     ], lc.balance == null || lc.crypto_balance == null),
+    bigcard("Invested at cost", sum(investedBy.kite, investedBy.coindcx, investedBy.groww), [
+      line("Kite · Indian equities", investedBy.kite, investedBy.kite ? "" : "nothing bought yet"),
+      line("CoinDCX · crypto", investedBy.coindcx, ""),
+      line("Groww · long-term", investedBy.groww, ""),
+    ]),
     bigcard("Holdings value", sum(kiteHeld, cryptoHeld, growwValue), [
       line("Kite · Indian equities", kiteHeld, kiteHeld ? "" : "nothing held yet"),
       line("CoinDCX · crypto", cryptoHeld, ""),

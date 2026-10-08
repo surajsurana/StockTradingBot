@@ -54,6 +54,32 @@ class TestThePageScriptParses(unittest.TestCase):
                              "node is needed to syntax-check dashboard/index.html")
 
 
+ALLOWED_CONTROL = {chr(9), chr(10), chr(13)}      # tab, newline, carriage return
+
+
+def _control_chars(text: str) -> list:
+    return sorted({c for c in text if ord(c) < 32 and c not in ALLOWED_CONTROL})
+
+
+class TestNoStrayControlCharacters(unittest.TestCase):
+    r"""Twice in one session an escape meant for JavaScript was eaten by the tool writing the file:
+    a newline escape became a real line break, which is a syntax error, and a backslash-b became a
+    literal backspace -- 0x08, sitting inside a regular expression.
+
+    The second one PARSED FINE and simply never matched, so every ledger row fell through to the
+    default venue and one card reported another card's money. A character you cannot see is the
+    worst kind of wrong answer, and node --check does not catch it.
+    """
+
+    def test_the_page_holds_no_control_characters(self):
+        bad = _control_chars(_page())
+        self.assertEqual(bad, [], f"control characters in the page: {[hex(ord(c)) for c in bad]}")
+
+    def test_the_check_actually_fires(self):
+        # a guard nobody has seen fail is a guard nobody knows is working
+        self.assertEqual(_control_chars("const venue" + chr(8) + "Of"), [chr(8)])
+
+
 class TestEveryElementItTouchesExists(unittest.TestCase):
     def test_no_renderer_writes_to_an_element_that_was_removed(self):
         """getElementById(...) returning null is a TypeError the moment anything is assigned to it,
