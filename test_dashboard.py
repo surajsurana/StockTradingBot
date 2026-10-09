@@ -404,6 +404,30 @@ class TestBuildDashboardState(unittest.TestCase):
                           "backtesting": False, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
 
+    def test_a_candidate_that_was_never_researched_is_startable_again(self):
+        """Superseded and abandoned close a row without any research happening, so the queue picks
+        those candidates again -- and the page has to offer the button, or it contradicts the queue
+        it is reporting on."""
+        cand = lambda key: SimpleNamespace(key=key, name=key, factor_family="Reversal", year=2001,
+            authors="A", typical_holding_period="1 month", direction="Long only", known_strengths="s",
+            known_weaknesses="w", horizon_lane="swing", market="India",
+            holding_days_min=30, holding_days_max=30)
+        scored = lambda key, sc: SimpleNamespace(candidate=cand(key), total_score=sc,
+            axis_scores={"academic_evidence": 8.0}, feasibility_classification="IMPLEMENTABLE",
+            feasibility_reasons=[])
+        roadmap = {"researchable_now": [scored("bumped", 9.0), scored("died", 8.0), scored("done", 7.0)],
+                   "deferred_pending_data": [], "weights": {}}
+        queue = {"current": None, "history": [
+            {"key": "bumped", "resolved": "2026-09-22", "outcome": "superseded"},
+            {"key": "died", "resolved": "2026-10-07", "outcome": "abandoned"},
+            {"key": "done", "resolved": "2026-09-20", "outcome": "researched", "experiment_id": "EXP-050"}]}
+        st = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None, now=self.now,
+                                   roadmap=roadmap, research_queues={"india": queue})
+        rows = {c["key"]: c["queue"] for c in st["roadmap"]["ready"]}
+        self.assertIsNone(rows["bumped"], "nothing was researched -- it must be startable")
+        self.assertIsNone(rows["died"], "nothing was researched -- it must be startable")
+        self.assertEqual(rows["done"]["state"], "resolved")   # a real verdict stays closed
+
     def test_a_claim_is_not_a_run_and_the_three_stages_are_told_apart(self):
         """us_short_term_reversal read "Researching now" for a day while it was actually FINISHED and
         waiting to be merged. A claim only means a routine took the candidate; the routine writes the

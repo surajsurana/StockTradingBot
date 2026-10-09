@@ -1536,7 +1536,13 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     for lane in RESEARCH_LANES:
         q = queues.get(lane) or {"current": None, "history": []}
         current = q.get("current") or {}
-        per_lane[lane] = (current, {h["key"]: h for h in q.get("history", []) if h.get("resolved")})
+        # Superseded and abandoned are closed rows where NO RESEARCH HAPPENED, so the queue will
+        # pick those candidates again (research_queue.REOPENING_OUTCOMES). Counting them as resolved
+        # here left the row with no "Start research" button for a candidate you are perfectly free
+        # to start -- the same mistake the queue itself was making, one layer up.
+        from research_queue import REOPENING_OUTCOMES
+        per_lane[lane] = (current, {h["key"]: h for h in q.get("history", [])
+                                    if h.get("resolved") and h.get("outcome") not in REOPENING_OUTCOMES})
 
     def queue_status(c):
         lane = lane_of(c)
