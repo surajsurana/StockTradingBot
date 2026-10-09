@@ -1388,6 +1388,83 @@ CRYPTO_TSMOM = PublishedStrategy(
     ),
 )
 
+CRYPTO_ILLIQUIDITY_PREMIUM = PublishedStrategy(
+    name="Cryptocurrency Illiquidity Premium (Amihud-style)",
+    source_citation=(
+        "Ali, A., Peng, S. and Shams, S. (2025), \"Unravelling cross-sectional patterns in "
+        "cryptocurrencies: a four-factor asset pricing model,\" China Accounting and Finance Review, "
+        "Vol. 27, No. 4, 493; corroborated by Zhang, W. and Li, Y. (2023), \"Liquidity risk and "
+        "expected cryptocurrency returns,\" International Journal of Finance & Economics, Vol. 28, "
+        "472-492."
+    ),
+    mechanism=(
+        "Investors demand compensation for holding hard-to-trade (price-impact-sensitive) coins -- "
+        "the crypto-market application of the same friction already priced in this program's "
+        "India-equity Amihud Illiquidity Premium (SW-010). Ali-Peng-Shams build a dedicated crypto "
+        "illiquidity factor ('CIHML', 1,160 coins, Jan 2014-Dec 2022) as part of a four-factor crypto "
+        "asset-pricing model and find it survives controlling for their own crypto size and reversal "
+        "factors; Zhang-Li independently corroborate a priced crypto liquidity-risk premium using a "
+        "related measure."
+    ),
+    rules=(
+        "ILLIQ_i = mean(|daily return| / daily dollar volume) over a formation period (Amihud's own "
+        "headline measure uses the prior year). Cross-sectional decile sort by ILLIQ at each "
+        "formation date. Long the TOP decile (most illiquid) -- each paper's own long-side framing "
+        "of the premium, a disclosed reduction from their long-short factor-portfolio construction, "
+        "the same interpretive step already used by this program's equity Amihud strategy."
+    ),
+    variant_chosen=(
+        "365-CALENDAR-day (not the equity lane's 252-TRADING-day) ILLIQ formation window -- crypto "
+        "trades every day, so 252 bars would be ~8.3 months, not the paper's annual window; 365 "
+        "matches crypto_tsmom.py's own disclosed 12-month-as-365-days convention (see "
+        "swing_research/cross_sectional.py's CRYPTO_ILLIQ_FORMATION_DAYS). Monthly single-vintage "
+        "reformation (last UTC calendar day of each month) -- the standard crypto cross-sectional "
+        "factor-sort cadence this lane's own crypto_xs_momentum.py (weekly) and crypto_tsmom.py "
+        "(monthly) already use; a monthly reformation is the natural match for an annual-formation "
+        "signal, and Amihud's own test itself re-estimates its cross-section monthly despite each "
+        "ILLIQ value looking back a full year. Dollar volume proxied as Close x Volume (USDT), the "
+        "exact same proxy as the equity strategy, reused verbatim via "
+        "execution_realism_engine.compute_trailing_illiq() with this strategy's own formation window."
+    ),
+    scope_reductions=(
+        "LONG ONLY (same disclosed reason as every strategy in this program). ZERO-VOLUME DAYS "
+        "excluded from the trailing ILLIQ average (not treated as infinite illiquidity), same "
+        "disclosed detail as the equity strategy. SINGLE-VINTAGE MONTHLY HOLDING: a position closes "
+        "only at the first month-end on or after 25 calendar days have elapsed (this candidate's own "
+        "disclosed holding_days_min) -- every month has >=28 days, so this always resolves to 'the "
+        "next month-end,' never an early or doubled-up exit. TOP-DECILE THRESHOLD (percentile >=90, "
+        "matching the equity strategy's own threshold) with a 20% protective stop-loss -- NOT the "
+        "equity strategy's 8%, which this lane's own crypto_xs_momentum.py/crypto_tsmom.py/"
+        "crypto_trend_timing*.py already disclose is an equity-volatility number inappropriate for "
+        "crypto's much higher daily volatility; 20% is reused from those strategies rather than "
+        "inventing a third number. 2.5% risk-per-unit sizing (12.5% of the book per coin) -- "
+        "identical sizing convention to crypto_xs_momentum.py (same universe, same decile-scale "
+        "qualifying count), not a new number invented for this strategy. Book in USDT, fractional "
+        "quantities. Costs (0.30%/side + 10bps spread) and India's 31.2% per-profitable-trade VDA tax "
+        "with no loss set-off are applied before the audit, exactly as for every other crypto "
+        "strategy -- the verdict is post-tax, pre-tax recorded alongside."
+    ),
+    distinctiveness=(
+        "First crypto-lane liquidity-risk strategy. Directly shares this program's 'liquidity' factor "
+        "tag with the already-implemented, PASS-verdicted (but robustness-REJECTed) India-equity "
+        "Amihud Illiquidity Premium -- meaningful diversification overlap by design, though a "
+        "different asset class and market than that existing strategy. Amihud-style measures are "
+        "known to be sensitive to exchange/venue choice in crypto specifically -- reported volume "
+        "differs materially across exchanges and wash-trading is a documented concern on some venues "
+        "(this platform's own data/fetch_crypto.py uses Binance only, one of the more scrutinized "
+        "large venues, which mitigates but does not eliminate this concern)."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. 365-calendar-day (vs equity's 252-trading-day) "
+        "formation window: MINOR -- a slightly longer, smoother ILLIQ estimate. Monthly reformation "
+        "cadence: MINOR -- matches the paper's own monthly re-estimation. Top-decile threshold "
+        "(percentile >=90): MINOR. 20% crypto-scaled stop (not the equity strategy's 8%): MODERATE, "
+        "one-directional. 2.5% risk-per-unit / 12.5%-of-book sizing: MINOR. USDT book / USD-INR "
+        "conversion: NEGLIGIBLE for the verdict. Costs and 31.2% no-offset tax: MAJOR and "
+        "one-directional -- the lane's standing question."
+    ),
+)
+
 
 CRYPTO_VOL_MANAGED = PublishedStrategy(
     name="Crypto Volatility-Managed Exposure",

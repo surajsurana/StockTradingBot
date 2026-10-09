@@ -2,8 +2,10 @@
 Unit tests for the crypto lane (Pool E, 2026-09-13): Binance kline parsing,
 the cost + India VDA tax model, the 3-week cross-sectional momentum ranks,
 the strategy's Monday-only entries and 7-day exits, fractional sizing in
-the backtest / benchmark / paper engines, and the post-tax walk-forward
-returning both pre- and post-tax metrics. Offline, hand-built fixtures.
+the backtest / benchmark / paper engines, the post-tax walk-forward
+returning both pre- and post-tax metrics, and the Amihud-style crypto
+illiquidity premium's 365-day ILLIQ ranks and month-end-only rules.
+Offline, hand-built fixtures.
 
     python test_crypto_lane.py
 """
@@ -340,6 +342,90 @@ class TestTimeSeriesMomentumRules(unittest.TestCase):
         window = full.iloc[-30:].join(warm.iloc[-30:])
         self.assertFalse(compute_tsmom_signal(window)["tsmom_return"].isna().all())
         self.assertTrue(compute_tsmom_signal(full.iloc[-30:])["tsmom_return"].isna().all())
+
+
+class TestIlliquidityPremiumRules(unittest.TestCase):
+    """Amihud-style crypto illiquidity premium: 365-day ILLIQ formation,
+    monthly month-end-only decisions, top-decile entry, 20% stop, and a
+    25-calendar-day minimum that always resolves to the next month-end."""
+
+    def test_illiq_percentile_ranks_low_volume_coin_ranks_highest(self):
+        from swing_research.cross_sectional import compute_crypto_illiq_percentile_ranks
+        n = 370
+        closes = [100.0 + 0.1 * i for i in range(n)]
+        data = {"A": _daily(closes, start=date(2025, 1, 1)), "B": _daily(closes, start=date(2025, 1, 1)),
+                "C": _daily(closes, start=date(2025, 1, 1))}
+        data["A"]["Volume"] = 10.0        # lowest volume -> highest ILLIQ
+        data["B"]["Volume"] = 1_000.0
+        data["C"]["Volume"] = 100_000.0   # highest volume -> lowest ILLIQ
+        ranks = compute_crypto_illiq_percentile_ranks(data)
+        last = {k: v.iloc[-1] for k, v in ranks.items()}
+        self.assertAlmostEqual(last["A"], 100.0)
+        self.assertAlmostEqual(last["C"], 100 / 3)
+        self.assertTrue(last["C"] < last["B"] < last["A"])
+
+    def test_needs_a_full_365_day_formation_window(self):
+        from swing_research.cross_sectional import compute_crypto_illiq_percentile_ranks
+        data = {"A": _daily([100.0] * 10, start=date(2025, 1, 1))}
+        ranks = compute_crypto_illiq_percentile_ranks(data)
+        self.assertTrue(ranks["A"].isna().all())
+
+    def _frame(self, start, closes, percentiles):
+        from swing_research.strategies.crypto_illiquidity_premium import CryptoIlliquidityPremiumStrategy
+        df = _daily(closes, start=start)
+        df["crypto_illiq_percentile"] = percentiles
+        return CryptoIlliquidityPremiumStrategy().precompute(df)
+
+    def test_enters_only_at_month_end_in_the_top_decile(self):
+        from swing_research.strategies.crypto_illiquidity_premium import CryptoIlliquidityPremiumStrategy
+        strategy = CryptoIlliquidityPremiumStrategy()
+        start, n = date(2025, 1, 25), 10   # crosses the 31 Jan month-end
+        df = self._frame(start, [100.0] * n, [95.0] * n)
+        rows = list(df.itertuples())
+        self.assertTrue(any(r.is_month_end for r in rows))
+        for r in rows:
+            sig = strategy.entry_signal_at(r)
+            self.assertIsNotNone(sig) if r.is_month_end else self.assertIsNone(sig)
+        low = self._frame(start, [100.0] * n, [89.9] * n)
+        self.assertTrue(all(strategy.entry_signal_at(r) is None for r in low.itertuples() if r.is_month_end))
+
+    def test_stop_is_20_pct_below_entry_and_confidence_is_percentile(self):
+        from swing_research.strategies.crypto_illiquidity_premium import STOP_LOSS_PCT, CryptoIlliquidityPremiumStrategy
+        strategy = CryptoIlliquidityPremiumStrategy()
+        df = self._frame(date(2025, 1, 31), [200.0], [97.0])
+        sig = strategy.entry_signal_at(list(df.itertuples())[0])
+        self.assertAlmostEqual(sig.stop_loss, 200.0 * (1 - STOP_LOSS_PCT))
+        self.assertAlmostEqual(sig.confidence, 97.0)
+
+    def test_exits_at_the_next_month_end_after_the_holding_period(self):
+        from swing_research.base import OpenPosition, PositionUnit
+        from swing_research.strategies.crypto_illiquidity_premium import CryptoIlliquidityPremiumStrategy
+        strategy = CryptoIlliquidityPremiumStrategy()
+        start, n = date(2025, 1, 1), 65   # through early March
+        df = self._frame(start, [100.0] * n, [50.0] * n)   # never qualifies, only exit logic is exercised
+        rows = list(df.itertuples())
+        pos = OpenPosition(symbol="X", direction="BUY",
+                           units=[PositionUnit(entry_price=100.0, entry_date=date(2025, 1, 31), quantity=1.0)])
+        feb_end = next(r for r in rows if r.is_month_end and r.date.month == 2)
+        for r in rows:
+            if r.date < feb_end.date:
+                self.assertIsNone(strategy.exit_signal_at(r, pos))
+        self.assertEqual(strategy.exit_signal_at(feb_end, pos), 100.0)   # 28 days later, >= the 25-day minimum
+
+    def test_end_to_end_fractional_monthly_positions_in_backtest(self):
+        from swing_research.strategies.crypto_illiquidity_premium import CryptoIlliquidityPremiumStrategy
+        start, n = date(2025, 1, 1), 95   # three month-ends: Jan 31, Feb 28, Mar 31
+        data = {"A": _daily([100.0 + 0.5 * i for i in range(n)], start=start),
+                "B": _daily([3_000.0 + 10 * i for i in range(n)], start=start)}
+        idx = data["A"].index
+        extra = {"A": pd.Series([95.0] * n, index=idx, name="crypto_illiq_percentile"),
+                 "B": pd.Series([10.0] * n, index=idx, name="crypto_illiq_percentile")}
+        result = simulate_portfolio(data, CryptoIlliquidityPremiumStrategy(), 1_000.0, sector_map={},
+                                    extra_columns_by_symbol=extra)
+        trades = result["trades"]
+        self.assertTrue(trades, "a 1,000 USDT book must be able to buy a fraction of the top-decile coin")
+        self.assertTrue(all(t.symbol == "A" for t in trades))        # B never qualifies (percentile 10)
+        self.assertTrue(all(0 < t.quantity for t in trades))
 
 
 class TestSizeMultiplier(unittest.TestCase):
