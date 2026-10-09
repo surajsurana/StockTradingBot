@@ -674,6 +674,49 @@ def run_cross_sectional_momentum_us_experiment(data: dict, start_date: date, end
     )
 
 
+def run_short_term_reversal_us_experiment(data: dict, start_date: date, end_date: date,
+                                           starting_capital: float = 100_000,
+                                           n_walk_forward_windows: int = 3,
+                                           narrative_api_key: str = "",
+                                           narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                           experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                           knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                           skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to the India Short-Term Reversal strategy -- the EXACT SAME
+    Strategy class, unmodified, against US equity `data` (S&P 500 universe,
+    swing_research/universe_us.py) instead of NSE data. See run_minervini_us_experiment()'s own
+    docstring for the full reasoning (identical pattern, different strategy). Unlike the two
+    existing Pool I ports, the roadmap rates this one's expected robustness LOW (3/10): short-term
+    reversal is among the most heavily documented decayed anomalies in US large-cap equities
+    post-2000 -- a REJECT here is an expected, useful result, not a surprise.
+    """
+    from swing_research.strategies.short_term_reversal import ShortTermReversalStrategy
+    from swing_research.published_research_analyst import SHORT_TERM_REVERSAL_US
+    from swing_research.cross_sectional import compute_short_term_reversal_percentile_ranks
+
+    reversal_percentiles = compute_short_term_reversal_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("reversal_percentile") for symbol, series in reversal_percentiles.items()}
+
+    strategy = ShortTermReversalStrategy()
+    return run_generic_swing_experiment(
+        strategy, SHORT_TERM_REVERSAL_US, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "short_term_reversal_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "short_term_reversal_stop_loss_pct": 0.08,
+            "short_term_reversal_percentile_threshold": 10.0,
+            "short_term_reversal_formation_days": 21,
+            "short_term_reversal_holding_period_trading_days": 21,
+            "short_term_reversal_single_vintage": True,
+            "short_term_reversal_market": "US",
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,

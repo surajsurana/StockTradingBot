@@ -6,9 +6,10 @@ import run_us_experiment as rue
 
 
 class TestRunnersCatalog(unittest.TestCase):
-    def test_both_existing_pool_i_strategies_are_registered(self):
+    def test_the_known_pool_i_strategies_are_registered(self):
         self.assertEqual(set(rue.RUNNERS),
-                         {"minervini_trend_template_filter_us", "cross_sectional_momentum_us"})
+                         {"minervini_trend_template_filter_us", "cross_sectional_momentum_us",
+                          "us_short_term_reversal"})
 
     def test_every_entry_resolves_to_a_real_callable_in_research_director(self):
         # the getters are lazy (so importing this CLI stays cheap) -- prove they actually resolve.
@@ -18,13 +19,19 @@ class TestRunnersCatalog(unittest.TestCase):
             self.assertTrue(fn.__name__.startswith("run_") and fn.__name__.endswith("_experiment"), key)
             self.assertTrue(variant.strip(), key)
 
-    def test_keys_match_the_registered_us_strategy_keys(self):
+    def test_keys_match_the_candidate_or_registered_strategy_keys(self):
         # run_queued_backtest decides "is this merged?" by looking the candidate's key up in here,
-        # so these must be the registry's own strategy keys, not display names or variants.
+        # so each key must either be the research roadmap's own candidate key (us_short_term_reversal
+        # hasn't backtested yet, so it isn't registered -- registration is a later, separate human
+        # promotion step, see deployment/PROMOTION_CHECKLIST.md) or already be a registered strategy
+        # key (minervini_trend_template_filter_us / cross_sectional_momentum_us, both already PASSed
+        # and promoted) -- never a display name or variant string either way.
         from deployment.deployment_manager import list_strategies
+        from swing_research.research_roadmap import CANDIDATES
         registered = {r.strategy_key for r in list_strategies()}
+        candidate_keys = {c.key for c in CANDIDATES}
         for key in rue.RUNNERS:
-            self.assertIn(key, registered, key)
+            self.assertTrue(key in registered or key in candidate_keys, key)
 
 
 class TestRunStrategy(unittest.TestCase):
