@@ -114,7 +114,8 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         body = _script(_page())
         body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
         names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
-        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Strategies"])
+        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Today's P&L",
+                                 "Strategies"])
 
     def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
         """Classic's counts were clickable and these have to be too -- the NAMES live in the
@@ -228,41 +229,41 @@ class TestTodaysPnlAddsUpToTheChip(unittest.TestCase):
         self.assertNotIn("tape-pnl-toggle", page)
 
 
-class TestTheDayChipHasTwoHomes(unittest.TestCase):
-    """The summary used to sit under two nearly empty bands -- the day's chip on one line and the
-    Classic/New switch on another, both right-aligned with the whole left of the page blank. The
-    chip is now MOVED into the summary row's fourth column in the New view, which is the same
-    element in both places, so nothing is rendered twice."""
+class TestTheDayIsACardLikeTheRest(unittest.TestCase):
+    """The day used to be the raw chip parked in a column of its own: it read as debris beside four
+    cards, and its by-type line -- built for a full-width band -- ran off the side of the page."""
 
-    def test_it_is_parked_before_the_board_is_rebuilt(self):
-        """The board rebuilds its innerHTML on every price refresh. With the chip inside it and not
-        parked first, that would delete the element -- for good, every 20 seconds."""
+    def test_the_day_card_does_not_recompute_the_day(self):
+        """renderLive knows the pool/book filters; the board does not. Two calculations of one
+        figure, side by side on the same screen, is the bug this whole row exists to avoid."""
         body = _script(_page())
-        head = body[body.index("function renderLiveBoard"):]
-        self.assertLess(head.index("parkTodayStack()"), head.index("box.innerHTML"))
+        card = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertIn("const day = TODAY;", card)
+        self.assertIn("day.byKind", card)
+        live = body[body.index("const todayTotal = today + openMove"):]
+        self.assertIn("TODAY = {total: todayTotal", live[:600])
 
-    def test_it_is_placed_after_the_board_exists(self):
-        body = _script(_page())
+    def test_the_chip_is_hidden_when_the_card_is_showing(self):
+        page = _page()
+        self.assertIn("#todayhome.carded .todaybar,#todayhome.carded .tickerrow{display:none}", page)
+        body = _script(page)
         body = body[body.index("function applyLiveView"):]
-        body = body[:body.index(chr(10) + "}")]
-        self.assertLess(body.index("renderLiveBoard(STATE)"), body.index("placeTodayStack(which)"))
+        self.assertIn('home.classList.toggle("carded", which === "new")', body)
 
-    def test_there_is_exactly_one_of_it(self):
+    def test_five_cards_in_five_columns(self):
         page = _page()
-        self.assertEqual(page.count('id="todaybar"'), 1)
-        self.assertEqual(page.count('class="todaystack"'), 1)
-        self.assertEqual(page.count('id="todayhome"'), 1)
+        self.assertIn(".boardrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))", page)
+        body = _script(page)
+        body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
+        names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
+        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Today's P&L",
+                                 "Strategies"])
 
-    def test_the_view_switch_travels_with_the_chip(self):
-        """Left in a band of its own it would still cost a line, and on another tab it would show
-        with nothing to switch."""
+    def test_the_cards_share_one_top_and_bottom(self):
+        """Five cards of four different heights read as a pile, not a row."""
         page = _page()
-        live = page[page.index('<section id="tab-live">'):]
-        live = live[:live.index('<div class="cards" id="livecards">')]
-        stack = live[live.index('<div class="todaystack">'):]
-        self.assertIn('data-view="old"', stack)
-        self.assertIn('data-view="new"', stack)
-        self.assertIn('id="todayhome"', live)          # and its Classic home is in Live day too
+        self.assertIn("align-items:stretch", page)
+        self.assertIn(".boardrow .bigpot{max-width:none;flex:none;height:100%}", page)
 
 
 class TestHidingActuallyHides(unittest.TestCase):
@@ -277,12 +278,10 @@ class TestHidingActuallyHides(unittest.TestCase):
             if f"{selector}{{display:" in page or f"{selector}{{display:" in page.replace(" ", ""):
                 self.assertIn(f"{selector}[hidden]{{display:none}}", page, selector)
 
-    def test_the_cards_are_laid_on_a_four_column_grid(self):
-        """Three cards in four columns. The per-card max-widths have to be overridden AFTER
-        .bigpot.onecard -- equal specificity, so the later rule is the only thing that wins -- or
-        the 520px cap holds and the card never fills its column."""
+    def test_the_per_card_width_caps_are_overridden_after_they_are_set(self):
+        """Equal specificity with .bigpot.onecard, so the later rule is the only thing that wins --
+        otherwise the 520px cap holds and the card never fills its column."""
         page = _page()
-        self.assertIn(".boardrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", page)
         self.assertLess(page.index(".bigpot.onecard{"), page.index(".boardrow .bigpot{max-width:none"))
 
     def test_a_table_inside_a_card_overrides_the_global_min_width(self):

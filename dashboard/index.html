@@ -92,8 +92,11 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pboard tr.total td{border-top:2px solid var(--ink);font-weight:600}
 .pboard .venue{display:block;font-weight:600}
 .pboard .venue small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
-.livetop{display:flex;justify-content:flex-end;margin:0 0 10px}
+.livetop{display:flex;justify-content:flex-end;margin:0 0 8px}
 .livetop:empty{margin:0}
+/* New draws the day as a card in the summary row, so the chip and its by-type line would be the
+   same figure twice. Only the view switch is left on this line. */
+#todayhome.carded .todaybar,#todayhome.carded .tickerrow{display:none}
 .todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
@@ -174,22 +177,17 @@ section > h2:first-child,section > .tools:first-child,section > .livetop + h2{ma
 .bigpot.onecard{max-width:520px}
 /* Money and counts are different questions. Counts need less width than money, so the three sit
    beside each other rather than stacking two near-empty cards under a full one. */
-/* FOUR COLUMNS, three of them filled. Sized by the screen rather than by three hand-picked pixel
-   widths, so the set spans the page instead of huddling at the left, and the empty fourth column
-   leaves the eye somewhere to stop. */
-.boardrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
-/* The fourth column carries the day's chip and the Strategies card under it. The chip is short and
-   the cards are not, so the column that used to be blank now absorbs the two bands that were
-   stacked above the summary. */
-.boardcol{display:flex;flex-direction:column;gap:10px;min-width:0}
-.boardside{display:flex;justify-content:flex-end}
-.boardside .todaystack{width:100%}
-.boardside .todaybar{width:100%;justify-content:space-between;margin-left:0}
+/* FIVE EQUAL COLUMNS, five cards, one band. The day's P&L is a card like the rest now, instead of
+   the raw chip parked in a column of its own: that column read as debris, its by-type line was
+   built for a full-width band and ran off the side of the page, and the view switch floated in the
+   gap between. Cards stretch to the tallest so the row has one baseline top and bottom. */
+.boardrow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;align-items:stretch}
 /* The cell decides the width now. Same specificity as .bigpot.onecard, so this must come AFTER it
    or the 520px cap wins and the grid column is never filled. */
-.boardrow .bigpot{max-width:none;flex:none}
-@media (max-width:1380px){.boardrow{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:820px){.boardrow{grid-template-columns:minmax(0,1fr)}}
+.boardrow .bigpot{max-width:none;flex:none;height:100%}
+@media (max-width:1560px){.boardrow{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1040px){.boardrow{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:720px){.boardrow{grid-template-columns:minmax(0,1fr)}}
 /* The Classic cards' own row: a banded, bordered pill per line, label left and the figure right in
    mono. A bare table row gave the number and its label the same weight, which is why the split
    underneath read as loudly as the line it belonged to. */
@@ -866,6 +864,7 @@ function renderLive(s){
 
 const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"bought_on", dir:-1};
+let TODAY = null;      // the day's P&L as renderLive worked it out -- see renderLive()
 const CAL = {y: null, m: null, from: "", to: ""};
 function pad(n){ return String(n).padStart(2, "0"); }
 function calRender(){
@@ -1387,9 +1386,6 @@ const poolVenue = pool => {
 function renderLiveBoard(s){
   const box = document.getElementById("liveboard");
   if(!box) return;
-  // The chip is a REAL NODE that gets moved into this box's fourth column; rebuilding innerHTML
-  // underneath it would delete it for good, and a price refresh rebuilds every 20 seconds.
-  parkTodayStack();
   const lc = s.live_capital || {};
   const vs = {
     kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
@@ -1455,9 +1451,9 @@ function renderLiveBoard(s){
   // belong in the Strategies tab, where they can be sorted and filtered; a count that cannot be
   // opened is a dead end, and listing names in a summary card is a table in disguise.
   // A plain row: a platform and what it is worth. Nothing to open -- the row is already the answer.
-  const flatrow = (label, value, title) =>
+  const flatrow = (label, value, title, signed) =>
     `<div class="metric plain" title="${esc(title)}">
-        <span class="lbl">${esc(label)}</span><b>${amount(value)}</b></div>`;
+        <span class="lbl">${esc(label)}</span><b>${amount(value, !!signed)}</b></div>`;
   const navrow = (id, label, total, filters, title) =>
     `<div class="metric nav" data-nav="${id}" tabindex="0" role="button"
           title="${esc(title)}" data-filters='${esc(JSON.stringify(filters))}'>
@@ -1465,6 +1461,10 @@ function renderLiveBoard(s){
 
   // STRATEGIES, the two counts the Classic cards carried. Active follows the Paper/Live toggle, the
   // same test the Strategies tab itself applies, so the number here and the rows there agree.
+  // The day, as renderLive worked it out -- never a second calculation of the same thing.
+  const day = TODAY;
+  const dayKinds = day ? ["Swing", "Intraday", "Crypto", "Long-term", "US Equity", "Other"]
+    .filter(kd => kd in day.byKind) : [];
   const isActive = r => MODE === "live" ? liveState(r.status) === "Live" : r.status === "PAPER_TRADING";
   const strats = s.strategies || [];
   const sActive = strats.filter(isActive).length;
@@ -1496,9 +1496,15 @@ function renderLiveBoard(s){
           ${metric("open", "Open", "open", false, true)}
           ${metric("closed", "Closed", "closed", false, true)}
         </div></div>
-      <div class="boardcol">
-        <div class="boardside" id="boardside"></div>
-        <div class="desk bigpot countcard">
+      <div class="desk bigpot countcard">
+        <div class="head"><span class="nm">Today's P&L</span>
+          <b class="potsum ${day ? cls(day.total) : ""}" title="${day ? esc(`${money(day.booked, true)} booked today + ${money(day.move, true)} today's move on open positions · ${day.scope}`) : ""}">${day ? money(day.total, true) : "&mdash;"}</b></div>
+        <div class="potlist">
+          ${dayKinds.length ? dayKinds.map(kd => flatrow(kd, day.byKind[kd],
+              `${kd} positions' share of the day`, true)).join("")
+            : `<div class="metric plain"><span class="lbl">Nothing moved today</span><b>&mdash;</b></div>`}
+        </div></div>
+      <div class="desk bigpot countcard">
           <div class="head"><span class="nm">Strategies</span>
             <b class="potsum" title="Books trading right now">${sActive}</b></div>
           <div class="potlist">
@@ -1508,7 +1514,6 @@ function renderLiveBoard(s){
             ${navrow("sresearched", "Researched", sResearched, {},
                      `every strategy with a backtest on record, trading or not · click to see them by name`)}
           </div></div>
-      </div>
     </div>`;
 
   const toggle = el => {
@@ -1533,19 +1538,6 @@ function renderLiveBoard(s){
 const LIVE_VIEW_KEY = "desk.liveView";
 const liveView = () => { try { return localStorage.getItem(LIVE_VIEW_KEY) || "old"; } catch(e){ return "old"; } };
 
-// The day's chip lives in one of two places, and is the same element in both: Classic keeps it in
-// its own band above the cards, New puts it in the summary row's fourth column so there is no band.
-function todayHome(){ return document.getElementById("todayhome"); }
-function parkTodayStack(){
-  const st = document.querySelector(".todaystack"), home = todayHome();
-  if(st && home && st.parentElement !== home) home.appendChild(st);
-}
-function placeTodayStack(which){
-  const st = document.querySelector(".todaystack"), side = document.getElementById("boardside");
-  const to = (which === "new" && side) ? side : todayHome();
-  if(st && to && st.parentElement !== to) to.appendChild(st);
-}
-
 function applyLiveView(){
   const which = liveView();
   const cards = document.getElementById("livecards"), board = document.getElementById("liveboard");
@@ -1554,8 +1546,11 @@ function applyLiveView(){
   board.hidden = which !== "new";
   for(const b of document.querySelectorAll(".viewswitch [data-view]"))
     b.classList.toggle("on", b.dataset.view === which);
+  // In New the day is a CARD in the row, so the chip and its by-type line would be the same figure
+  // twice. The switch itself stays -- it is the only thing left on that line, and it is 24px.
+  const home = document.getElementById("todayhome");
+  if(home) home.classList.toggle("carded", which === "new");
   if(which === "new" && STATE) renderLiveBoard(STATE);
-  placeTodayStack(which);          // after the board exists, never before
 }
 document.querySelectorAll(".viewswitch [data-view]").forEach(b => b.addEventListener("click", () => {
   try { localStorage.setItem(LIVE_VIEW_KEY, b.dataset.view); } catch(e){}
@@ -1785,6 +1780,10 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   ].join("");
   // Today's P&L chip, top right; follows the same filters as the cards.
   const todayTotal = today + openMove;
+  // ONE COMPUTATION, two displays. Classic shows it as the chip below; New draws it as a card in
+  // the summary row. Recomputing it there would be a second opinion, and it follows the pool/book
+  // filters, which only this function knows about.
+  TODAY = {total: todayTotal, booked: today, move: openMove, scope: scope, byKind: {...todayByKind}};
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;
