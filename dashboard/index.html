@@ -72,9 +72,14 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .segbtns button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 /* The platform board: every account down the side, every measure across, and the combined row kept
    visually apart so a total is never mistaken for one more account. */
-.boardcards{grid-template-columns:repeat(4,minmax(0,1fr))}
-@media (max-width:1180px){.boardcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:700px){.boardcards{grid-template-columns:minmax(0,1fr)}}
+.onecard{max-width:560px}
+/* Each line opens to the account-by-account split. A row that does something has to look like it. */
+.drill tr.metric{cursor:pointer}
+.drill tr.metric:hover td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.drill tr.metric:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
+.drill .twist{display:inline-block;width:14px;color:var(--muted);font-size:11px}
+.drill tr.sub td{padding-left:18px;font-size:12.5px;color:var(--muted);border-top:1px dotted var(--rule)}
+.drill tr.sub td small{display:block;font-size:11px;opacity:.75}
 .bigpot .potsub{margin:-2px 0 8px;font-size:11.5px}
 /* The combined card is a TOTAL, not a fourth account -- it is marked so it cannot be read as one. */
 .totalpot{border-left-color:var(--ink);background:var(--band)}
@@ -499,12 +504,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live">
-  <div class="viewswitch">
-    <span class="segbtns" role="group" aria-label="Summary layout">
-      <button id="lv-old" class="on" data-view="old">Classic</button><button id="lv-new" data-view="new">New</button>
-    </span>
-  </div>
-  <div class="cards" id="livecards"></div>
+  <!-- Classic summary: retired from view 2026-10-09 but still rendered, because the same pass
+       produces the Today's P&L chip. One attribute brings it back if New turns out to be short. -->
+  <div class="cards" id="livecards" hidden></div>
   <div id="liveboard" hidden></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -1325,8 +1327,6 @@ function markNotificationsRead(){
 // is that in?" has no answer on the page at all. This lays the accounts down the side and the
 // measures across, with the combined row kept visually apart so a total is never read as a fourth
 // account. Classic is untouched and the switch remembers which you chose.
-const LIVE_VIEW_KEY = "desk.liveView";
-const liveView = () => { try { return localStorage.getItem(LIVE_VIEW_KEY) || "old"; } catch(e){ return "old"; } };
 
 // Which account a pool's money actually sits in. Matched on the pool CODE, because the same pool is
 // written "Pool G" in one place and "G" in another.
@@ -1340,10 +1340,10 @@ function renderLiveBoard(s){
   if(!box) return;
   const lc = s.live_capital || {};
   const vs = {
-    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0},
-    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0},
+    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
+    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
-                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0},
+                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
   };
   // Every figure comes off the SAME ledger rows the Positions table shows, so the two cannot
   // disagree -- a summary built from its own source is a second opinion, not a summary.
@@ -1356,52 +1356,66 @@ function renderLiveBoard(s){
       v.open += 1;
       v.invested += (r.amount || 0);
       v.held += (r.amount || 0) + (r.pnl || 0);      // cost plus what it has done since
-    }
+    } else v.closed += 1;
   }
   const order = ["kite", "coindcx", "groww"];
-  const tot = {name: "All platforms", what: "everything, combined",
-               cash: 0, invested: 0, held: 0, today: 0, pnl: 0, open: 0};
+  const tot = {cash: 0, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0};
   for(const k of order)
-    for(const f of ["cash", "invested", "held", "today", "pnl", "open"])
-      tot[f] += (vs[k][f] == null ? 0 : vs[k][f]);
+    for(const f of Object.keys(tot)) tot[f] += (vs[k][f] == null ? 0 : vs[k][f]);
 
-  // VALUE IS WHAT THE ACCOUNT IS WORTH: holdings at today's price PLUS the cash sitting in it.
-  // Holdings alone made an account that had just sold everything look empty when the money was
-  // simply uninvested.
+  // VALUE IS WHAT THE ACCOUNT IS WORTH: holdings at today's price PLUS the cash in it. Holdings
+  // alone made an account that had just sold everything look empty when the money was uninvested.
   const worth = v => (v.held || 0) + (v.cash == null ? 0 : v.cash);
-  const row = (label, value, colour) => value == null
-    ? `<tr><td>${esc(label)}</td><td class="n note">—</td></tr>`
-    : `<tr><td>${esc(label)}</td><td class="n ${colour ? cls(value) : ""}">${money(value, !!colour)}</td></tr>`;
-  const cardFor = (v, isTotal) => `<div class="desk bigpot${isTotal ? " totalpot" : ""}">
-      <div class="head"><span class="nm">${esc(v.name)}</span><b class="potsum">${money(worth(v))}</b></div>
-      <div class="note potsub">${esc(v.what)}${v.cash == null ? " · balance not readable" : ""}</div>
-      <table class="pottbl">
-        ${row("Cash", v.cash)}
-        ${row("Invested", v.invested)}
-        ${row("Holdings now", v.held)}
-        ${row("Today", v.today, true)}
-        ${row("Total P&L", v.pnl, true)}
-        <tr><td>Open positions</td><td class="n">${v.open}</td></tr>
+
+  // ONE CARD, and each line opens. The combined number is what you want at a glance; "which account
+  // is that in" is the follow-up question, so it lives one click away rather than in three more
+  // cards competing with the total for attention.
+  const amount = (value, colour, plain) => value == null ? `<span class="note">—</span>`
+    : plain ? String(value) : `<span class="${colour ? cls(value) : ""}">${money(value, !!colour)}</span>`;
+  const metric = (id, label, field, colour, plain) => {
+    const rows = order.map(k =>
+      `<tr class="sub" data-metric="${id}" hidden><td>${esc(vs[k].name)}<small>${esc(vs[k].what)}</small></td>`
+      + `<td class="n">${amount(vs[k][field], colour, plain)}</td></tr>`).join("");
+    return `<tr class="metric" data-metric="${id}" tabindex="0" role="button" aria-expanded="false"
+              title="Show it account by account">
+        <td><span class="twist">&#9656;</span>${esc(label)}</td>
+        <td class="n">${amount(tot[field], colour, plain)}</td></tr>` + rows;
+  };
+
+  box.innerHTML = `<div class="desk bigpot totalpot onecard">
+      <div class="head"><span class="nm">All platforms</span><b class="potsum">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
+      <div class="note potsub">Kite, CoinDCX and Groww combined &middot; click any line for the split</div>
+      <table class="pottbl drill">
+        ${metric("cash", "Cash", "cash")}
+        ${metric("invested", "Invested", "invested")}
+        ${metric("held", "Holdings now", "held")}
+        ${metric("today", "Today", "today", true)}
+        ${metric("pnl", "Total P&L", "pnl", true)}
+        ${metric("open", "Open positions", "open", false, true)}
+        ${metric("closed", "Closed trades", "closed", false, true)}
       </table></div>`;
 
-  box.innerHTML = `<div class="cashcards boardcards">`
-    + order.map(k => cardFor(vs[k], false)).join("") + cardFor(tot, true) + `</div>`;
+  const toggle = tr => {
+    const id = tr.dataset.metric, open = tr.getAttribute("aria-expanded") === "true";
+    tr.setAttribute("aria-expanded", String(!open));
+    tr.querySelector(".twist").innerHTML = open ? "&#9656;" : "&#9662;";
+    box.querySelectorAll(`tr.sub[data-metric="${id}"]`).forEach(r => r.hidden = open);
+  };
+  box.querySelectorAll("tr.metric").forEach(tr => {
+    tr.addEventListener("click", () => toggle(tr));
+    tr.addEventListener("keydown", e => {
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(tr); }
+    });
+  });
 }
 
 function applyLiveView(){
-  const which = liveView();
   const cards = document.getElementById("livecards"), board = document.getElementById("liveboard");
   if(!cards || !board) return;
-  cards.hidden = which === "new";
-  board.hidden = which !== "new";
-  for(const b of document.querySelectorAll(".viewswitch [data-view]"))
-    b.classList.toggle("on", b.dataset.view === which);
-  if(which === "new" && STATE) renderLiveBoard(STATE);
+  cards.hidden = true;          // Classic is retired; see the note on the element itself
+  board.hidden = false;
+  if(STATE) renderLiveBoard(STATE);
 }
-document.querySelectorAll(".viewswitch [data-view]").forEach(b => b.addEventListener("click", () => {
-  try { localStorage.setItem(LIVE_VIEW_KEY, b.dataset.view); } catch(e){}
-  applyLiveView();
-}));
 
 // What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
 // and no errors -- it looks exactly like a book that had no signals -- so without this the honest

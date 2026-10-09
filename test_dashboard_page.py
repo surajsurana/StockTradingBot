@@ -61,34 +61,37 @@ def _control_chars(text: str) -> list:
     return sorted({c for c in text if ord(c) < 32 and c not in ALLOWED_CONTROL})
 
 
-class TestTheLiveViewSwitch(unittest.TestCase):
-    """Classic and New are two layouts of the same page, and exactly one may be on screen. Showing
-    both would put the same figures twice over and leave no way to tell which you were reading."""
+class TestTheLiveSummaryCard(unittest.TestCase):
+    """One card with the combined figures, each line opening to the account-by-account split. The
+    Classic cards were retired on 2026-10-09 once New had earned it; their markup stays, hidden,
+    because the same render pass produces the Today's P&L chip."""
 
-    def test_both_layouts_exist_with_a_switch(self):
+    def test_classic_is_retired_but_still_rendered(self):
         page = _page()
-        self.assertIn('id="livecards"', page)       # Classic
-        self.assertIn('id="liveboard"', page)       # New
-        self.assertIn('data-view="old"', page)
-        self.assertIn('data-view="new"', page)
+        self.assertIn('id="livecards" hidden', page)
+        self.assertIn('id="liveboard"', page)
+        self.assertNotIn('data-view="old"', page)      # the switch is gone
 
-    def test_choosing_one_hides_the_other(self):
-        source = _script(_page())
-        body = source[source.index("function applyLiveView()"):]
+    def test_classic_stays_hidden(self):
+        body = _script(_page())
+        body = body[body.index("function applyLiveView()"):]
         body = body[:body.index(chr(10) + "}")]
-        self.assertIn('cards.hidden = which === "new"', body)
-        self.assertIn('board.hidden = which !== "new"', body)
+        self.assertIn("cards.hidden = true", body)
+        self.assertIn("board.hidden = false", body)
 
-    def test_classic_is_the_default(self):
-        """New has to earn its place before it becomes what you land on."""
-        source = _script(_page())
-        self.assertIn('localStorage.getItem(LIVE_VIEW_KEY) || "old"', source)
+    def test_every_line_can_be_opened(self):
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):]
+        for metric in ("cash", "invested", "held", "today", "pnl", "open", "closed"):
+            self.assertIn(f'metric("{metric}"', body, metric)
+        self.assertIn('tr.metric', body)               # the row that opens
+        self.assertIn('tr.sub[data-metric=', body)     # the rows it opens
 
-    def test_the_board_does_not_invent_its_own_numbers(self):
+    def test_the_card_does_not_invent_its_own_numbers(self):
         """It reads the same ledger rows the Positions table does. A summary built from its own
         source is a second opinion, not a summary."""
-        source = _script(_page())
-        body = source[source.index("function renderLiveBoard"):]
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):]
         body = body[:body.index("function applyLiveView")]
         self.assertIn("s.ledger", body)
         # value is holdings PLUS cash -- holdings alone made a flat account look empty
