@@ -151,6 +151,26 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         self.assertIn("(v.held || 0) + (v.cash == null ? 0 : v.cash)", body)
 
 
+class TestTheResearchStageIsTheRealOne(unittest.TestCase):
+    """"Researching now" was shown for a claim, and a claim is not a run. The page must tell apart
+    being written, queued for tonight's backtest, and a backtest actually running."""
+
+    def test_the_three_stages_are_distinct_on_the_page(self):
+        body = _script(_page())
+        body = body[body.index("const stageChip"):body.index("const queueAction")]
+        self.assertIn("c.queue.backtesting", body)     # a live process, not a claim
+        self.assertIn("c.queue.implemented", body)     # merged, so tonight's run can have it
+        self.assertIn("Being written", body)
+        self.assertIn("Queued · backtest", body)
+
+    def test_only_a_running_backtest_is_called_research(self):
+        body = _script(_page())
+        body = body[body.index("const stageChip"):]
+        said = body[:body.index("Researching now")]
+        self.assertIn("c.queue.backtesting", said,
+                      "'Researching now' must be reached only via backtesting, never via in_progress")
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many

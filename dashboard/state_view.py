@@ -1505,6 +1505,31 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     id, also no button), or None (still eligible to start)."""
     from swing_research.research_roadmap import RESEARCH_LANES, _record_lane, lane_of
     taken = {r.strategy_key for r in registry_records}
+
+    _impl_cache = {}
+
+    def _implemented(lane):
+        """Whose implementation is merged to main, so the nightly backtest can actually run it.
+        Read from run_queued_backtest's own gate, not a second copy of the rule -- if those two ever
+        disagreed, the page would promise a run that never comes."""
+        if lane not in _impl_cache:
+            try:
+                from run_queued_backtest import implemented_keys
+                _impl_cache[lane] = implemented_keys(lane)
+            except Exception:
+                _impl_cache[lane] = set()
+        return _impl_cache[lane]
+
+    def _backtest_running():
+        """True only while a backtest process is genuinely alive. The lock carries its pid."""
+        try:
+            from run_queued_backtest import LOCK_PATH
+            with open(LOCK_PATH, encoding="utf-8") as f:
+                os.kill(int(f.read().strip() or 0), 0)
+            return True
+        except Exception:
+            return False
+
     queues = queues or {}
     now = now or datetime.now()
     per_lane = {}
@@ -1514,7 +1539,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
         per_lane[lane] = (current, {h["key"]: h for h in q.get("history", []) if h.get("resolved")})
 
     def queue_status(c):
-        current, resolved = per_lane[lane_of(c)]
+        lane = lane_of(c)
+        current, resolved = per_lane[lane]
         if c.key == current.get("key"):
             # `stale` matters to the reader: a lane fires once a week, so a routine that died on
             # Tuesday leaves the lock standing until the next Tuesday clears it. Without this the
@@ -1522,6 +1548,13 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
             from research_queue import lock_age_days, lock_is_stale
             return {"state": "current", "in_progress": bool(current.get("in_progress")),
                     "stale": lock_is_stale(current, now), "claimed_days_ago": lock_age_days(current, now),
+                    "claimed_at": current.get("in_progress_since") or current.get("started"),
+                    # A CLAIM IS NOT A RUN. "in_progress" only means a routine took the candidate;
+                    # what happens next is three different things, and the page called all of them
+                    # "Researching now" -- so us_short_term_reversal read as under way for a day
+                    # while it was actually finished and waiting to be merged.
+                    "implemented": c.key in _implemented(lane),
+                    "backtesting": _backtest_running(),
                     "mode": current.get("mode", "backtest")}
         if c.key in resolved:
             h = resolved[c.key]

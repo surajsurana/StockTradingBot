@@ -2842,11 +2842,29 @@ function renderResearch(s){
   // How long a claim has been held, for the two places that have to tell the difference between
   // "running" and "ran away". A lane fires once a week, so a dead routine's lock outlives its run.
   const heldDays = c => Math.floor((c.queue || {}).claimed_days_ago || 0);
+  // A CLAIM IS NOT A RUN, and saying "Researching now" for all of it was wrong twice over: the
+  // routine only WRITES the strategy (its sandbox cannot reach Yahoo Finance), and the backtest runs
+  // here, nightly, and only once a human has merged the code. Three stages, three different things
+  // the reader can do about them.
+  const BACKTEST_AT = "02:30";
+  const claimedOn = c => {
+    const t = (c.queue || {}).claimed_at;
+    if(!t) return "";
+    const d = new Date(String(t).length <= 10 ? t + "T00:00:00" : t);
+    return isNaN(d) ? String(t).slice(0, 16).replace("T", " ")
+      : d.toLocaleDateString(undefined, {day:"numeric", month:"short"}) + " " +
+        d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
+  };
+  const stageChip = c => c.queue.backtesting
+    ? `<span class="pill ok" title="A backtest process is running on the server right now">Researching now</span>`
+    : c.queue.implemented
+    ? `<span class="pill" title="The strategy is written and merged, so the nightly backtest can run it. Claimed ${esc(claimedOn(c))}; the backtest runs at ${BACKTEST_AT} and records a PASS or REJECT">Queued · backtest ${BACKTEST_AT}</span>`
+    : `<span class="pill" title="A research routine claimed it ${esc(claimedOn(c))} and is writing the strategy. It cannot backtest where it runs -- it pushes a branch, and the backtest runs here once that is merged">Being written · since ${esc(claimedOn(c))}</span>`;
   const queueAction = c => c.queue && c.queue.state === "current"
     ? c.queue.stale
       ? `<span class="pill due" title="The routine that claimed this ${heldDays(c)} days ago never reported back, so it is treated as gone -- the next run of this lane will record it as abandoned and move on">Stalled · ${heldDays(c)}d</span>`
       : c.queue.in_progress
-      ? `<span class="pill ok" title="Locked -- research is already under way, so this can no longer be bumped">Researching now</span>`
+      ? stageChip(c)
       : `<span class="pill" title="Queued but not started yet -- the Strategy Implementer picks it up ${esc(nextRun(c))}; until then it is still free to be bumped by a better-ranked candidate, or by picking a different one">Queued · ${esc(nextRun(c).split(",")[0])}</span>`
     : c.queue && c.queue.state === "resolved"
     ? `<span class="pill" title="${esc(c.queue.experiment_id||"")}">${esc(c.queue.outcome)}</span>`
@@ -2858,10 +2876,15 @@ function renderResearch(s){
   // The three queues at a glance -- one line each, including a lane with nothing researchable yet.
   document.getElementById("lane-strip").innerHTML = lanes.map(l => {
     const cur = l.current;
-    const state = cur ? (cur.queue.stale ? "" : cur.queue.in_progress ? "live" : "queued") : "";
+    // Only a backtest that is actually running gets the "live" treatment.
+    const state = cur ? (cur.queue.stale ? "" : cur.queue.backtesting ? "live" : "queued") : "";
     const laneWhen = cur && cur.queue.stale
       ? `Stalled · claimed ${heldDays(cur)}d ago, never reported back`
-      : cur && cur.queue.in_progress ? "Researching now" : "Queued · starts " + esc(laneRun[(l || {}).lane]);
+      : cur && cur.queue.in_progress
+      ? (cur.queue.backtesting ? "Researching now"
+         : cur.queue.implemented ? `Queued · backtest ${BACKTEST_AT}, claimed ${esc(claimedOn(cur))}`
+         : `Being written · since ${esc(claimedOn(cur))}`)
+      : "Queued · starts " + esc(laneRun[(l || {}).lane]);
     const what = cur
       ? `<div class="lc">${esc(short(cur.name))}</div><div class="lw">${laneWhen}</div>`
       : `<div class="lc none">${l.ready ? "Nothing picked up yet" : "Nothing researchable yet"}</div><div class="lw">${l.ready ? l.ready + " ready · next run " + esc(laneRun[l.lane]) : l.deferred + " waiting on data we don't have"}</div>`;

@@ -361,7 +361,8 @@ class TestBuildDashboardState(unittest.TestCase):
                                   roadmap=roadmap, research_queues={"india": queue})
         rows = {c["key"]: c["queue"] for c in s["roadmap"]["ready"]}
         self.assertEqual(rows["current_one"], {"state": "current", "in_progress": False, "stale": False,
-                          "claimed_days_ago": None, "mode": "backtest"})
+                          "claimed_days_ago": None, "claimed_at": None, "implemented": False,
+                          "backtesting": False, "mode": "backtest"})
         self.assertEqual(rows["resolved_one"], {"state": "resolved", "outcome": "researched", "experiment_id": "EXP-050"})
         self.assertIsNone(rows["untouched"])
 
@@ -372,7 +373,8 @@ class TestBuildDashboardState(unittest.TestCase):
                                    roadmap=roadmap, research_queues={"india": queue})
         rows2 = {c["key"]: c["queue"] for c in s2["roadmap"]["ready"]}
         self.assertEqual(rows2["current_one"], {"state": "current", "in_progress": True,
-                          "stale": False, "claimed_days_ago": None, "mode": "backtest"})
+                          "stale": False, "claimed_days_ago": None, "claimed_at": None,
+                          "implemented": False, "backtesting": False, "mode": "backtest"})
 
     def test_each_lane_reads_its_own_queue_not_indias(self):
         # 2026-10-03: the Research tab used to read only research_queue.json (India), so the crypto lane's
@@ -398,8 +400,42 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual([rows[k]["lane"] for k in ("ind", "cry", "usa")], ["india", "crypto", "us"])
         self.assertTrue(rows["ind"]["queue"]["in_progress"])
         self.assertEqual(rows["cry"]["queue"], {"state": "current", "in_progress": False, "stale": False,
-                          "claimed_days_ago": None, "mode": "backtest"})
+                          "claimed_days_ago": None, "claimed_at": None, "implemented": False,
+                          "backtesting": False, "mode": "backtest"})
         self.assertIsNone(rows["usa"]["queue"])          # its lane's queue is empty -- still startable
+
+    def test_a_claim_is_not_a_run_and_the_three_stages_are_told_apart(self):
+        """us_short_term_reversal read "Researching now" for a day while it was actually FINISHED and
+        waiting to be merged. A claim only means a routine took the candidate; the routine writes the
+        strategy (its sandbox cannot reach Yahoo Finance), and the backtest runs here, nightly, only
+        once a human has merged the code. Three stages, and the page called all of them research."""
+        cand = SimpleNamespace(key="claimed_one", name="Claimed", factor_family="Reversal", year=2001,
+                               authors="A", typical_holding_period="1 month", direction="Long only",
+                               known_strengths="s", known_weaknesses="w", horizon_lane="swing",
+                               market="India", holding_days_min=30, holding_days_max=30)
+        roadmap = {"researchable_now": [SimpleNamespace(candidate=cand, total_score=9.0,
+                        axis_scores={"academic_evidence": 8.0},
+                        feasibility_classification="IMPLEMENTABLE", feasibility_reasons=[])],
+                   "deferred_pending_data": [], "weights": {}}
+        queues = {"india": {"current": {"key": "claimed_one", "in_progress": True,
+                                        "in_progress_since": "2026-10-08T06:00:09"}, "history": []}}
+        no_lock = os.path.join(self.state_dir, "no_such_backtest.lock")   # nothing is running
+
+        def q(implemented):
+            with patch("run_queued_backtest.implemented_keys",
+                       return_value={"claimed_one"} if implemented else set()),                  patch("run_queued_backtest.LOCK_PATH", no_lock):
+                st = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None,
+                                           now=self.now, roadmap=roadmap, research_queues=queues)
+            return st["roadmap"]["ready"][0]["queue"]
+
+        writing = q(implemented=False)
+        self.assertEqual((writing["in_progress"], writing["implemented"], writing["backtesting"]),
+                         (True, False, False))                   # being written -- not research yet
+        self.assertEqual(writing["claimed_at"], "2026-10-08T06:00:09")   # when, so the page can say so
+
+        merged = q(implemented=True)
+        self.assertEqual((merged["implemented"], merged["backtesting"]), (True, False))
+        # merged but not running = queued for tonight's backtest, which is NOT "researching now"
 
     def test_a_claim_nobody_came_back_from_reads_as_stalled_not_as_running(self):
         """The crypto lane said "Researching now" for three days about a cloud run that had died on
