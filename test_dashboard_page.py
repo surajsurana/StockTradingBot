@@ -92,6 +92,23 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         self.assertIn('.metric[data-metric]', body)    # the row that opens
         self.assertIn('.sub[data-metric=', body)       # the rows it opens
 
+    def test_value_by_platform_is_holdings_plus_cash_not_invested_plus_total_pnl(self):
+        """The arithmetic that is easy to get wrong. Invested + cash + TOTAL P&L double-counts the
+        realised part: when a trade closes, that money is already back in the cash balance. Value is
+        the open positions at today's price plus the cash -- which is what worth() computes."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        card = body[body.index("Value by platform"):]
+        card = card[:card.index("</div></div>")]
+        self.assertIn("worth(vs[k])", card)          # holdings + that account's own cash
+        self.assertNotIn("tot.pnl", card)            # never total P&L
+
+    def test_the_cards_are_in_the_order_they_are_read_in(self):
+        body = _script(_page())
+        body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
+        names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
+        self.assertEqual(names, ["All platforms", "Value by platform", "Positions", "Strategies"])
+
     def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
         """Classic's counts were clickable and these have to be too -- the NAMES live in the
         Strategies tab, where they can be sorted and filtered. A count you cannot open is a dead

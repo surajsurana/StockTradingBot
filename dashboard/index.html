@@ -192,6 +192,10 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
   background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px;
   font-size:12.5px;cursor:pointer}
 .potlist .metric:hover,.potlist .metric:focus-visible{border-color:var(--accent)}
+/* A row that IS the thing, not a line you open: no pointer, no hover, nothing to press. */
+.potlist .metric.plain{cursor:default}
+.potlist .metric.plain:hover{border-color:var(--rule)}
+.potlist .metric.plain .lbl small{display:block;font-weight:400;font-size:11px;color:var(--muted)}
 .potlist .metric .lbl{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ink)}
 /* The figure sits at the label's own size and weight, so the line reads as one thing. At 16px it
    was the loudest thing on the card after the headline, and the four lines no longer looked even.
@@ -1451,6 +1455,11 @@ function renderLiveBoard(s){
   // A line that takes you to the strategies themselves, the way the Classic cards did. The NAMES
   // belong in the Strategies tab, where they can be sorted and filtered; a count that cannot be
   // opened is a dead end, and listing names in a summary card is a table in disguise.
+  // A plain row: a platform and what it is worth. Nothing to open -- the row is already the answer.
+  const flatrow = (label, sub, value, title) =>
+    `<div class="metric plain" title="${esc(title)}">
+        <span class="lbl">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ""}</span>
+        <b>${amount(value)}</b></div>`;
   const navrow = (id, label, total, filters, title) =>
     `<div class="metric nav" data-nav="${id}" tabindex="0" role="button"
           title="${esc(title)}" data-filters='${esc(JSON.stringify(filters))}'>
@@ -1473,6 +1482,14 @@ function renderLiveBoard(s){
           ${metric("pnl", "Total P&L", "pnl", true)}
           ${metric("held", "Holdings now", "held")}
           ${metric("cash", "Cash available", "cash")}
+        </div></div>
+      <div class="desk bigpot countcard">
+        <div class="head"><span class="nm">Value by platform</span>
+          <b class="potsum" title="Every account added up">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
+        <div class="potlist">
+          ${order.map(k => flatrow(vs[k].name, vs[k].what, worth(vs[k]),
+              `what this account is worth right now: its holdings at today's price plus the cash in it`
+            )).join("")}
         </div></div>
       <div class="desk bigpot countcard">
         <div class="head"><span class="nm">Positions</span>
