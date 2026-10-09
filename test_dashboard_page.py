@@ -98,7 +98,7 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         the open positions at today's price plus the cash -- which is what worth() computes."""
         body = _script(_page())
         body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
-        card = body[body.index("Value by platform"):]
+        card = body[body.index("Total Value"):]
         card = card[:card.index("</div></div>")]
         self.assertIn("worth(vs[k])", card)          # holdings + that account's own cash
         self.assertNotIn("tot.pnl", card)            # never total P&L
@@ -107,7 +107,7 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         body = _script(_page())
         body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
         names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
-        self.assertEqual(names, ["All platforms", "Value by platform", "Positions", "Strategies"])
+        self.assertEqual(names, ["All platforms", "Total Value", "Positions", "Strategies"])
 
     def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
         """Classic's counts were clickable and these have to be too -- the NAMES live in the
