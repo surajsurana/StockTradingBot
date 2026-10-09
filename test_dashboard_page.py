@@ -281,12 +281,15 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         self.assertIn("min-height:30px", head)
         self.assertIn("align-items:center", head)   # a chip has a box; baselines no longer line up
 
-    def test_the_headline_figure_is_chipped(self):
+    def test_the_headline_figure_wears_the_same_chip_as_the_rows(self):
+        """A teal badge over a stack of grey pills reads as two different things in one card."""
         page = _page()
-        sum_ = page[page.index(".bigpot .potsum{"):]
-        sum_ = sum_[:sum_.index("}")]
-        self.assertIn("background:var(--chip)", sum_)
-        self.assertIn("border-radius", sum_)
+        pick = lambda sel: page[page.index(sel) + len(sel):page.index("}", page.index(sel))]
+        head = pick(".bigpot .potsum{")
+        row = pick(".potlist .metric{")
+        for prop in ("background:var(--band)", "border:1px solid var(--rule)", "border-radius:4px"):
+            self.assertIn(prop, head, prop)
+            self.assertIn(prop, row, prop)
 
     def test_the_cards_share_one_top_and_bottom(self):
         """Five cards of four different heights read as a pile, not a row."""
