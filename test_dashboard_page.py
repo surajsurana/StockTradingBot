@@ -89,10 +89,29 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         body = body[body.index("function renderLiveBoard"):]
         for metric in ("invested", "pnl", "held", "cash", "open", "closed"):
             self.assertIn(f'metric("{metric}"', body, metric)
+        self.assertIn('.metric[data-metric]', body)    # the row that opens
+        self.assertIn('.sub[data-metric=', body)       # the rows it opens
+
+    def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
+        """Classic's counts were clickable and these have to be too -- the NAMES live in the
+        Strategies tab, where they can be sorted and filtered. A count you cannot open is a dead
+        end, and listing names on a summary card is a table in disguise."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
         for counted in ("sactive", "sresearched"):
-            self.assertIn(f'drill("{counted}"', body, counted)
-        self.assertIn('tr.metric', body)               # the row that opens
-        self.assertIn('tr.sub[data-metric=', body)     # the rows it opens
+            self.assertIn(f'navrow("{counted}"', body, counted)
+        self.assertIn("showStrategies(JSON.parse(el.dataset.filters))", body)
+
+    def test_the_split_is_never_louder_than_the_line_it_opens(self):
+        """The drill-down is subordinate: if its figures are bolder or darker than the line they
+        came out of, the eye lands on a part before the whole."""
+        page = _page()
+        self.assertIn(".potlist .metric > b{", page)
+        self.assertIn("font-weight:600;color:var(--ink)", page)
+        sub = page[page.index(".potlist .sub em{"):]
+        sub = sub[:sub.index("}")]
+        self.assertIn("font-weight:400", sub)
+        self.assertIn("color:var(--muted)", sub)
 
     def test_today_is_not_repeated_on_the_card(self):
         """It already has a chip of its own in the top right; two copies of one number invite the
@@ -107,7 +126,7 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         body = _script(_page())
         body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
         money_card = body[body.index("All platforms"):body.index(">Positions<")]
-        for counted in ('metric("open"', 'metric("closed"', 'drill("sactive"'):
+        for counted in ('metric("open"', 'metric("closed"', 'navrow("sactive"'):
             self.assertNotIn(counted, money_card, counted)
 
     def test_a_us_paper_book_is_not_counted_as_kite_money(self):

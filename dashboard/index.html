@@ -172,11 +172,33 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 .bigpot{min-width:0;max-width:none;padding:12px 14px}
 /* After .bigpot, or its max-width:none wins at equal specificity. Narrow enough to read without
    moving your eyes across the screen. */
-.bigpot.onecard{max-width:460px}
-/* Money and counts are different questions. Counts need a fraction of the width, so the
-   two sit beside each other rather than stacking a near-empty card under a full one. */
+.bigpot.onecard{max-width:520px}
+/* Money and counts are different questions. Counts need less width than money, so the three sit
+   beside each other rather than stacking two near-empty cards under a full one. */
 .boardrow{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.bigpot.countcard{flex:0 1 230px;max-width:230px}
+.bigpot.countcard{flex:0 1 300px;max-width:300px}
+/* The Classic cards' own row: a banded, bordered pill per line, label left and the figure right in
+   mono. A bare table row gave the number and its label the same weight, which is why the split
+   underneath read as loudly as the line it belonged to. */
+.potlist{display:flex;flex-direction:column;gap:6px}
+.potlist .metric{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  background:var(--band);border:1px solid var(--rule);border-radius:4px;padding:6px 10px;
+  font-size:12.5px;cursor:pointer}
+.potlist .metric:hover,.potlist .metric:focus-visible{border-color:var(--accent)}
+.potlist .metric .lbl{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--ink)}
+.potlist .metric > b{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:16px;
+  font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.potlist .metric > b .gain{color:var(--gain)}.potlist .metric > b .loss{color:var(--loss)}
+/* THE SPLIT IS SUBORDINATE. Lighter and smaller than the line it opens out of, never bolder --
+   otherwise the eye lands on a part before the whole. */
+.potlist .sub{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:1px 11px 1px 25px;font-size:12px;color:var(--muted)}
+.potlist .sub[hidden]{display:none}
+.potlist .sub i{font-style:normal}
+.potlist .sub em{font-style:normal;font-weight:400;font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-variant-numeric:tabular-nums;color:var(--muted)}
+.potlist .sub em .gain{color:var(--gain)}.potlist .sub em .loss{color:var(--loss)}
+.potlist .twist{font-size:9px;color:var(--muted)}
 .bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
 .bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
 .bigpot.warn{border-left-color:var(--warn)}
@@ -1402,88 +1424,80 @@ function renderLiveBoard(s){
   // ONE CARD, and each line opens. The combined number is what you want at a glance; "which account
   // is that in" is the follow-up question, so it lives one click away rather than in three more
   // cards competing with the total for attention.
-  const amount = (value, colour, plain) => value == null ? `<span class="note">—</span>`
+  const amount = (value, colour, plain) => value == null ? `<span class="note">&mdash;</span>`
     : plain ? String(value) : `<span class="${colour ? cls(value) : ""}">${money(value, !!colour)}</span>`;
-  // One drill-down, whatever the rows are counting -- money by desk, or strategies by desk.
+  // One drill-down, whatever the rows are counting.
   const drill = (id, label, total, parts, colour, plain) => {
     const rows = parts.map(part =>
-      `<tr class="sub" data-metric="${id}" hidden><td>${esc(part.name)}</td>`
-      + `<td class="n">${amount(part.value, colour, plain)}</td></tr>`).join("");
-    return `<tr class="metric" data-metric="${id}" tabindex="0" role="button" aria-expanded="false"
+      `<div class="sub" data-metric="${id}" hidden><i>${esc(part.name)}</i>`
+      + `<em>${amount(part.value, colour, plain)}</em></div>`).join("");
+    return `<div class="metric" data-metric="${id}" tabindex="0" role="button" aria-expanded="false"
               title="Show it account by account">
-        <td><span class="twist">&#9656;</span>${esc(label)}</td>
-        <td class="n">${amount(total, colour, plain)}</td></tr>` + rows;
+        <span class="lbl"><span class="twist">&#9656;</span>${esc(label)}</span>
+        <b>${amount(total, colour, plain)}</b></div>` + rows;
   };
   const metric = (id, label, field, colour, plain) =>
     drill(id, label, tot[field], order.map(k => ({name: vs[k].name, value: vs[k][field]})), colour, plain);
+  // A line that takes you to the strategies themselves, the way the Classic cards did. The NAMES
+  // belong in the Strategies tab, where they can be sorted and filtered; a count that cannot be
+  // opened is a dead end, and listing names in a summary card is a table in disguise.
+  const navrow = (id, label, total, filters, title) =>
+    `<div class="metric nav" data-nav="${id}" tabindex="0" role="button"
+          title="${esc(title)}" data-filters='${esc(JSON.stringify(filters))}'>
+        <span class="lbl">${esc(label)}</span><b>${total}</b></div>`;
 
   // STRATEGIES, the two counts the Classic cards carried. Active follows the Paper/Live toggle, the
   // same test the Strategies tab itself applies, so the number here and the rows there agree.
-  // Every desk, not just the ones `order` kept: that list is filtered by what is in the LEDGER, and
-  // a strategy can be trading on a desk that has no rows yet. Filtered by ledger, Pool I's two books
-  // fell through to "Not trading" while they were trading.
-  const sdesks = ALL_VENUES.map(k => ({key: k, name: vs[k].name, active: 0, researched: 0}));
-  // Backtested but parked -- archived, or researched and never promoted. They belong to no desk, and
-  // leaving them out would make the rows fail to add up to the total they sit under.
-  const parked = {key: "none", name: "Not trading", active: 0, researched: 0};
-  const byKey = Object.fromEntries(sdesks.map(d => [d.key, d]));
   const isActive = r => MODE === "live" ? liveState(r.status) === "Live" : r.status === "PAPER_TRADING";
-  let sActive = 0, sResearched = 0;
-  for(const r of (s.strategies || [])){
-    const active = isActive(r), researched = !!r.experiment;
-    if(!active && !researched) continue;
-    if(active) sActive += 1;
-    if(researched) sResearched += 1;
-    const desks = [...new Set(String(r.pool || "").split(", ")
-      .filter(x => x && x !== "-").map(x => poolVenue(x)))].map(k => byKey[k]).filter(Boolean);
-    for(const d of (desks.length ? desks : [parked])){
-      if(active) d.active += 1;
-      if(researched) d.researched += 1;
-    }
-  }
-  const sparts = f => [...sdesks, parked].filter(d => d.active || d.researched)
-    .map(d => ({name: d.name, value: d[f]}));
+  const strats = s.strategies || [];
+  const sActive = strats.filter(isActive).length;
+  const sResearched = strats.filter(r => r.experiment).length;
 
-  // TWO CARDS, because they answer different questions. What the desk is worth is read against the
-  // other money figures; how many trades are open is a count, and sitting it under Total P&L in the
-  // same column invited it to be read as one. Both still open account by account.
+  // THREE CARDS, because they answer three questions. A trade count sitting in the same column as
+  // Total P&L gets read as money for a moment, every time.
   box.innerHTML = `<div class="boardrow">
       <div class="desk bigpot totalpot onecard">
         <div class="head"><span class="nm">All platforms</span><b class="potsum">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
-        <table class="pottbl drill">
+        <div class="potlist">
           ${metric("invested", "Invested", "invested")}
           ${metric("pnl", "Total P&L", "pnl", true)}
           ${metric("held", "Holdings now", "held")}
           ${metric("cash", "Cash available", "cash")}
-        </table></div>
+        </div></div>
       <div class="desk bigpot countcard">
         <div class="head"><span class="nm">Positions</span>
           <b class="potsum" title="Open right now">${tot.open}</b></div>
-        <table class="pottbl drill">
+        <div class="potlist">
           ${metric("open", "Open", "open", false, true)}
           ${metric("closed", "Closed", "closed", false, true)}
-        </table></div>
+        </div></div>
       <div class="desk bigpot countcard">
         <div class="head"><span class="nm">Strategies</span>
           <b class="potsum" title="Books trading right now">${sActive}</b></div>
-        <table class="pottbl drill">
-          ${drill("sactive", "Active", sActive, sparts("active"), false, true)}
-          ${drill("sresearched", "Researched", sResearched, sparts("researched"), false, true)}
-        </table></div>
+        <div class="potlist">
+          ${navrow("sactive", "Active", sActive,
+                   {"reg-status": MODE === "live" ? "Live" : "Paper"},
+                   `the ${sActive} books trading right now · click to see them by name`)}
+          ${navrow("sresearched", "Researched", sResearched, {},
+                   `every strategy with a backtest on record, trading or not · click to see them by name`)}
+        </div></div>
     </div>`;
 
-  const toggle = tr => {
-    const id = tr.dataset.metric, open = tr.getAttribute("aria-expanded") === "true";
-    tr.setAttribute("aria-expanded", String(!open));
-    tr.querySelector(".twist").innerHTML = open ? "&#9656;" : "&#9662;";
-    box.querySelectorAll(`tr.sub[data-metric="${id}"]`).forEach(r => r.hidden = open);
+  const toggle = el => {
+    const id = el.dataset.metric, open = el.getAttribute("aria-expanded") === "true";
+    el.setAttribute("aria-expanded", String(!open));
+    el.querySelector(".twist").innerHTML = open ? "&#9656;" : "&#9662;";
+    box.querySelectorAll(`.sub[data-metric="${id}"]`).forEach(r => r.hidden = open);
   };
-  box.querySelectorAll("tr.metric").forEach(tr => {
-    tr.addEventListener("click", () => toggle(tr));
-    tr.addEventListener("keydown", e => {
-      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); toggle(tr); }
+  const press = (el, act) => {
+    el.addEventListener("click", act);
+    el.addEventListener("keydown", e => {
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); act(); }
     });
-  });
+  };
+  box.querySelectorAll(".metric[data-metric]").forEach(el => press(el, () => toggle(el)));
+  box.querySelectorAll(".metric[data-filters]").forEach(el =>
+    press(el, () => showStrategies(JSON.parse(el.dataset.filters))));
 }
 
 // New is not finalised, so Classic stays until it is. Exactly one is on screen: showing both would
