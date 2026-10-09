@@ -1634,3 +1634,75 @@ TURNOVER_LIQUIDITY = PublishedStrategy(
         "drawdown versus the paper's unconstrained long leg."
     ),
 )
+
+SIZE_PREMIUM_BANZ = PublishedStrategy(
+    name="Size Premium (Small-Cap Effect)",
+    source_citation=(
+        "Banz, R.W. (1981), \"The Relationship Between Return and Market Value of Common Stocks,\" "
+        "Journal of Financial Economics, Vol. 9, No. 1, 3-18."
+    ),
+    mechanism=(
+        "Smaller-market-cap firms earn systematically higher risk-adjusted returns than larger firms, a "
+        "premium the CAPM alone does not explain -- one of the three original anomalies (alongside value "
+        "and momentum) that motivated multi-factor asset pricing models, later formalized as the SMB "
+        "(Small Minus Big) factor in Fama-French (1992/1993). A genuinely new factor family for this "
+        "program -- no existing strategy carries a 'size' tag."
+    ),
+    rules=(
+        "Market capitalization = price x shares outstanding, at each formation date. Cross-sectional "
+        "decile sort by market cap at each formation date. Long the BOTTOM decile (smallest market cap) "
+        "-- the paper's documented finding is an inverse relationship between size and subsequent "
+        "risk-adjusted return."
+    ),
+    variant_chosen=(
+        "Point-in-time market cap (no formation-window averaging, unlike this program's other "
+        "cross-sectional signals) -- faithful to the paper's own annual size-sort at the formation date. "
+        "Annual (252-trading-day / 365-calendar-day) holding, single-vintage, matching Fama-French's own "
+        "annual (June) rebalance cadence for size-sorted portfolios -- the same structural adaptation "
+        "(single-vintage instead of an overlapping-portfolio construction) as every prior cross-sectional "
+        "strategy in this program."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy) -- the original "
+        "construction is long-short (small minus big). SHARES OUTSTANDING IS A CURRENT SNAPSHOT "
+        "(data/fetch_shares_outstanding.py), not a historical series -- applied across the whole "
+        "backtest. This is the central disclosed approximation of this strategy, identical to Turnover/ "
+        "Liquidity's own: mild for a large, stable Nifty 500 constituent, more material for anything "
+        "with a big past split, bonus issue, buyback or follow-on dilution between the backtest's start "
+        "date and today. SINGLE-VINTAGE HOLDING instead of any overlapping-portfolio construction. EXIT "
+        "RULE is ONLY the 252-trading-day time-stop or the synthetic protective stop -- no percentile- "
+        "based early exit, same discipline as every prior strategy. PROTECTIVE STOP-LOSS (8%) and "
+        "POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- the "
+        "source paper is a factor-return study with no position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "The first 'size' factor-family strategy in this program -- no existing strategy (momentum, "
+        "value-adjacent, risk-based, liquidity, or behavioral) shares this tag, so diversification credit "
+        "is clean. Reuses swing_research/cross_sectional.py's existing vectorized .rank(pct=True, axis=1) "
+        "pattern via a new compute_market_cap_percentile_ranks() function, and the existing "
+        "data/fetch_shares_outstanding.py cache module (already built for Turnover/Liquidity) for the "
+        "one data input this candidate needs."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact. "
+        "Current-snapshot shares outstanding (vs. a true historical series): MINOR for most Nifty 500 "
+        "constituents (stable float), but POTENTIALLY MATERIAL for any name with a large historical "
+        "split/bonus/buyback/dilution inside the backtest window -- not individually audited per symbol "
+        "here, and more consequential here than for Turnover/Liquidity since the signal IS the market-cap "
+        "level itself, not a ratio that partially cancels share-count changes. Point-in-time market cap "
+        "(vs. a paper-specific formation-window average, which this signal doesn't use at all): MINOR, a "
+        "direct, faithful restatement of the paper's own point-in-time annual sort. Single-vintage "
+        "holding (vs. an overlapping-portfolio construction): MODERATE, same direction and magnitude as "
+        "every prior cross-sectional strategy's identical deviation -- more consequential here given the "
+        "long (1-year) holding period, since a single-vintage annual hold captures far fewer independent "
+        "trade observations per unit of backtest history than this program's typical 1-month holds. 8% "
+        "stop-loss and 1% position sizing (not part of the original methodology): MODERATE, adds risk "
+        "control the zero-cost academic portfolio never needed, likely REDUCES both upside and drawdown "
+        "versus the paper's unconstrained long leg. Also disclosed per the roadmap candidate's own "
+        "evidence_sufficiency_note: whether a clean size premium still exists post-discovery is a "
+        "well-cited, CONTESTED question in the literature (much of the original premium may be "
+        "concentrated in a January-effect/small-sample artifact), unlike value or momentum -- this is "
+        "not a settled anomaly, so a REJECT here would be consistent with a large and credible strand of "
+        "the modern literature, not merely an implementation artifact."
+    ),
+)

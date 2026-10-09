@@ -407,4 +407,13 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_earnings_announcement_premium_experiment"]
         ).run_earnings_announcement_premium_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="size_premium_banz",
+        variant_description=("Size Premium / Banz 1981 (point-in-time market cap = Close x shares outstanding, "
+                             "bottom-decile percentile, 252-trading-day single-vintage hold, current-snapshot "
+                             "shares outstanding)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_size_premium_banz_experiment"]
+        ).run_size_premium_banz_experiment,
+    ),
 ]
