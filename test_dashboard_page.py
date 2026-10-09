@@ -61,6 +61,40 @@ def _control_chars(text: str) -> list:
     return sorted({c for c in text if ord(c) < 32 and c not in ALLOWED_CONTROL})
 
 
+class TestTheLiveViewSwitch(unittest.TestCase):
+    """Classic and New are two layouts of the same page, and exactly one may be on screen. Showing
+    both would put the same figures twice over and leave no way to tell which you were reading."""
+
+    def test_both_layouts_exist_with_a_switch(self):
+        page = _page()
+        self.assertIn('id="livecards"', page)       # Classic
+        self.assertIn('id="liveboard"', page)       # New
+        self.assertIn('data-view="old"', page)
+        self.assertIn('data-view="new"', page)
+
+    def test_choosing_one_hides_the_other(self):
+        source = _script(_page())
+        body = source[source.index("function applyLiveView()"):]
+        body = body[:body.index(chr(10) + "}")]
+        self.assertIn('cards.hidden = which === "new"', body)
+        self.assertIn('board.hidden = which !== "new"', body)
+
+    def test_classic_is_the_default(self):
+        """New has to earn its place before it becomes what you land on."""
+        source = _script(_page())
+        self.assertIn('localStorage.getItem(LIVE_VIEW_KEY) || "old"', source)
+
+    def test_the_board_does_not_invent_its_own_numbers(self):
+        """It reads the same ledger rows the Positions table does. A summary built from its own
+        source is a second opinion, not a summary."""
+        source = _script(_page())
+        body = source[source.index("function renderLiveBoard"):]
+        body = body[:body.index("function applyLiveView")]
+        self.assertIn("s.ledger", body)
+        # value is holdings PLUS cash -- holdings alone made a flat account look empty
+        self.assertIn("(v.held || 0) + (v.cash == null ? 0 : v.cash)", body)
+
+
 class TestNoStrayControlCharacters(unittest.TestCase):
     r"""Twice in one session an escape meant for JavaScript was eaten by the tool writing the file:
     a newline escape became a real line break, which is a syntax error, and a backslash-b became a
