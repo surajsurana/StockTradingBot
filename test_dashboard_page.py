@@ -108,6 +108,9 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         page = _page()
         self.assertIn(".potlist .metric > b{", page)
         self.assertIn("font-weight:600;color:var(--ink)", page)
+        # the figure matches its own label's size, so the line reads as one thing
+        fig = page[page.index(".potlist .metric > b{"):]
+        self.assertIn("font-size:inherit", fig[:fig.index("}")])
         sub = page[page.index(".potlist .sub em{"):]
         sub = sub[:sub.index("}")]
         self.assertIn("font-weight:400", sub)
