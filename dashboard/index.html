@@ -72,6 +72,12 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .segbtns button:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 /* The platform board: every account down the side, every measure across, and the combined row kept
    visually apart so a total is never mistaken for one more account. */
+.boardcards{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:1180px){.boardcards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.boardcards{grid-template-columns:minmax(0,1fr)}}
+.bigpot .potsub{margin:-2px 0 8px;font-size:11.5px}
+/* The combined card is a TOTAL, not a fourth account -- it is marked so it cannot be read as one. */
+.totalpot{border-left-color:var(--ink);background:var(--band)}
 .pboard{width:100%;border-collapse:collapse}
 .pboard th{text-align:right;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;
   color:var(--muted);font-weight:600;padding:0 0 7px 14px;white-space:nowrap}
@@ -1334,43 +1340,52 @@ function renderLiveBoard(s){
   if(!box) return;
   const lc = s.live_capital || {};
   const vs = {
-    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, value: 0, today: 0, pnl: 0, open: 0},
-    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, value: 0, today: 0, pnl: 0, open: 0},
+    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0},
+    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0},
     groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
-                                                        invested: 0, value: 0, today: 0, pnl: 0, open: 0},
+                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0},
   };
-  // Every figure below comes off the SAME ledger rows the Positions table shows, so the two can
-  // never disagree -- a summary built from a different source is a second opinion, not a summary.
+  // Every figure comes off the SAME ledger rows the Positions table shows, so the two cannot
+  // disagree -- a summary built from its own source is a second opinion, not a summary.
   for(const r of (s.ledger || [])){
     const v = vs[poolVenue(r.pool)];
     if(!v) continue;
-    const open = String(r.status || "").toLowerCase() === "open";
     v.pnl += (r.pnl || 0);
     v.today += (r.pnl_today || 0);
-    if(open){
+    if(String(r.status || "").toLowerCase() === "open"){
       v.open += 1;
       v.invested += (r.amount || 0);
-      v.value += (r.amount || 0) + (r.pnl || 0);
+      v.held += (r.amount || 0) + (r.pnl || 0);      // cost plus what it has done since
     }
   }
   const order = ["kite", "coindcx", "groww"];
-  const tot = {cash: 0, invested: 0, value: 0, today: 0, pnl: 0, open: 0};
+  const tot = {name: "All platforms", what: "everything, combined",
+               cash: 0, invested: 0, held: 0, today: 0, pnl: 0, open: 0};
   for(const k of order)
-    for(const f of ["cash", "invested", "value", "today", "pnl", "open"])
+    for(const f of ["cash", "invested", "held", "today", "pnl", "open"])
       tot[f] += (vs[k][f] == null ? 0 : vs[k][f]);
 
-  const cell = (v, colour) => v == null ? `<td class="note">—</td>`
-    : `<td class="${colour ? cls(v) : ""}">${money(v, !!colour)}</td>`;
-  const row = (v, isTotal) => `<tr class="${isTotal ? "total" : ""}">`
-    + `<td><span class="venue">${esc(v.name)}${v.what ? `<small>${esc(v.what)}</small>` : ""}</span></td>`
-    + cell(v.cash) + cell(v.invested) + cell(v.value) + cell(v.today, true) + cell(v.pnl, true)
-    + `<td>${v.open}</td></tr>`;
+  // VALUE IS WHAT THE ACCOUNT IS WORTH: holdings at today's price PLUS the cash sitting in it.
+  // Holdings alone made an account that had just sold everything look empty when the money was
+  // simply uninvested.
+  const worth = v => (v.held || 0) + (v.cash == null ? 0 : v.cash);
+  const row = (label, value, colour) => value == null
+    ? `<tr><td>${esc(label)}</td><td class="n note">—</td></tr>`
+    : `<tr><td>${esc(label)}</td><td class="n ${colour ? cls(value) : ""}">${money(value, !!colour)}</td></tr>`;
+  const cardFor = (v, isTotal) => `<div class="desk bigpot${isTotal ? " totalpot" : ""}">
+      <div class="head"><span class="nm">${esc(v.name)}</span><b class="potsum">${money(worth(v))}</b></div>
+      <div class="note potsub">${esc(v.what)}${v.cash == null ? " · balance not readable" : ""}</div>
+      <table class="pottbl">
+        ${row("Cash", v.cash)}
+        ${row("Invested", v.invested)}
+        ${row("Holdings now", v.held)}
+        ${row("Today", v.today, true)}
+        ${row("Total P&L", v.pnl, true)}
+        <tr><td>Open positions</td><td class="n">${v.open}</td></tr>
+      </table></div>`;
 
-  box.innerHTML = `<table class="pboard">
-      <thead><tr><th>Account</th><th>Cash</th><th>Invested</th><th>Value</th>
-        <th>Today</th><th>Total P&amp;L</th><th>Open</th></tr></thead>
-      <tbody>${order.map(k => row(vs[k], false)).join("")}
-        ${row({name: "All platforms", what: "", ...tot}, true)}</tbody></table>`;
+  box.innerHTML = `<div class="cashcards boardcards">`
+    + order.map(k => cardFor(vs[k], false)).join("") + cardFor(tot, true) + `</div>`;
 }
 
 function applyLiveView(){
