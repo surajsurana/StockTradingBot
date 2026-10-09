@@ -175,8 +175,15 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 .bigpot.onecard{max-width:520px}
 /* Money and counts are different questions. Counts need less width than money, so the three sit
    beside each other rather than stacking two near-empty cards under a full one. */
-.boardrow{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
-.bigpot.countcard{flex:0 1 300px;max-width:300px}
+/* FOUR COLUMNS, three of them filled. Sized by the screen rather than by three hand-picked pixel
+   widths, so the set spans the page instead of huddling at the left, and the empty fourth column
+   leaves the eye somewhere to stop. */
+.boardrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+/* The cell decides the width now. Same specificity as .bigpot.onecard, so this must come AFTER it
+   or the 520px cap wins and the grid column is never filled. */
+.boardrow .bigpot{max-width:none;flex:none}
+@media (max-width:1380px){.boardrow{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:820px){.boardrow{grid-template-columns:minmax(0,1fr)}}
 /* The Classic cards' own row: a banded, bordered pill per line, label left and the figure right in
    mono. A bare table row gave the number and its label the same weight, which is why the split
    underneath read as loudly as the line it belonged to. */

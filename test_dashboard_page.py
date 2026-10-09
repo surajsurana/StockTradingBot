@@ -160,6 +160,14 @@ class TestHidingActuallyHides(unittest.TestCase):
             if f"{selector}{{display:" in page or f"{selector}{{display:" in page.replace(" ", ""):
                 self.assertIn(f"{selector}[hidden]{{display:none}}", page, selector)
 
+    def test_the_cards_are_laid_on_a_four_column_grid(self):
+        """Three cards in four columns. The per-card max-widths have to be overridden AFTER
+        .bigpot.onecard -- equal specificity, so the later rule is the only thing that wins -- or
+        the 520px cap holds and the card never fills its column."""
+        page = _page()
+        self.assertIn(".boardrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))", page)
+        self.assertLess(page.index(".bigpot.onecard{"), page.index(".boardrow .bigpot{max-width:none"))
+
     def test_a_table_inside_a_card_overrides_the_global_min_width(self):
         """table{min-width:640px} exists so the big data tables scroll rather than crush. A table
         inside a card inherits it and runs straight past the card's edge -- the numbers get drawn
