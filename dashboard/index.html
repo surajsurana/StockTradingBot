@@ -216,8 +216,15 @@ section > h2:first-child,section > .tools:first-child,section > .livetop + h2{ma
   font-variant-numeric:tabular-nums;color:var(--muted)}
 .potlist .sub em .gain{color:var(--gain)}.potlist .sub em .loss{color:var(--loss)}
 .potlist .twist{font-size:9px;color:var(--muted)}
-.bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
-.bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
+/* CENTRED, not baseline-aligned: once the figure sits in a chip, a shared baseline puts the chip's
+   box low against its own title. min-height is what keeps the five titles on one line -- All
+   platforms has no figure, and without it that card's title rode 3px higher than the other four. */
+.bigpot .head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:8px;min-height:30px}
+/* The card's one headline figure, highlighted: a chip, like the Today's P&L chip it replaced. */
+.bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:18px;
+  font-variant-numeric:tabular-nums;background:var(--chip);border-radius:4px;padding:2px 9px;
+  line-height:1.35;white-space:nowrap}
 .bigpot.warn{border-left-color:var(--warn)}
 /* min-width:0 against the global table{min-width:640px}, which is there so the big data tables
    scroll rather than crush. A table INSIDE a card must fit the card: at 640px it ran 180px past the

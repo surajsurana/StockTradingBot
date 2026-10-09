@@ -272,6 +272,22 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Strategies",
                                  "Today's P&L"])
 
+    def test_the_five_titles_sit_on_one_line(self):
+        """All platforms carries no headline figure, so without a floor on the header height its
+        title rode higher than the other four -- five cards in a row and one of them off by 3px."""
+        page = _page()
+        head = page[page.index(".bigpot .head{"):]
+        head = head[:head.index("}")]
+        self.assertIn("min-height:30px", head)
+        self.assertIn("align-items:center", head)   # a chip has a box; baselines no longer line up
+
+    def test_the_headline_figure_is_chipped(self):
+        page = _page()
+        sum_ = page[page.index(".bigpot .potsum{"):]
+        sum_ = sum_[:sum_.index("}")]
+        self.assertIn("background:var(--chip)", sum_)
+        self.assertIn("border-radius", sum_)
+
     def test_the_cards_share_one_top_and_bottom(self):
         """Five cards of four different heights read as a pile, not a row."""
         page = _page()
