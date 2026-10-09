@@ -1473,14 +1473,6 @@ function renderLiveBoard(s){
   // THREE CARDS, because they answer three questions. A trade count sitting in the same column as
   // Total P&L gets read as money for a moment, every time.
   box.innerHTML = `<div class="boardrow">
-      <div class="desk bigpot totalpot onecard">
-        <div class="head"><span class="nm">All platforms</span><b class="potsum">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
-        <div class="potlist">
-          ${metric("invested", "Invested", "invested")}
-          ${metric("pnl", "Total P&L", "pnl", true)}
-          ${metric("held", "Holdings now", "held")}
-          ${metric("cash", "Cash available", "cash")}
-        </div></div>
       <div class="desk bigpot countcard">
         <div class="head"><span class="nm">Total Value</span>
           <b class="potsum" title="Every account added up">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
@@ -1488,6 +1480,14 @@ function renderLiveBoard(s){
           ${order.map(k => flatrow(vs[k].name, worth(vs[k]),
               `what this account is worth right now: its holdings at today's price plus the cash in it`
             )).join("")}
+        </div></div>
+      <div class="desk bigpot totalpot onecard">
+        <div class="head"><span class="nm">All platforms</span></div>
+        <div class="potlist">
+          ${metric("invested", "Invested", "invested")}
+          ${metric("pnl", "Total P&L", "pnl", true)}
+          ${metric("held", "Holdings now", "held")}
+          ${metric("cash", "Cash available", "cash")}
         </div></div>
       <div class="desk bigpot countcard">
         <div class="head"><span class="nm">Positions</span>

@@ -98,16 +98,23 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         the open positions at today's price plus the cash -- which is what worth() computes."""
         body = _script(_page())
         body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
-        card = body[body.index("Total Value"):]
+        card = body[body.index(">Total Value<"):]
         card = card[:card.index("</div></div>")]
         self.assertIn("worth(vs[k])", card)          # holdings + that account's own cash
         self.assertNotIn("tot.pnl", card)            # never total P&L
+
+    def test_the_total_is_printed_once(self):
+        """It is the headline of Total Value. Printing it again on All platforms invites the reader
+        to check whether the two agree, which is the one thing a summary must never make them do."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertEqual(body.count("worth({held: tot.held, cash: tot.cash})"), 1)
 
     def test_the_cards_are_in_the_order_they_are_read_in(self):
         body = _script(_page())
         body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
         names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
-        self.assertEqual(names, ["All platforms", "Total Value", "Positions", "Strategies"])
+        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Strategies"])
 
     def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
         """Classic's counts were clickable and these have to be too -- the NAMES live in the
@@ -145,7 +152,7 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         column of the same table gets read as money for a moment, every time."""
         body = _script(_page())
         body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
-        money_card = body[body.index("All platforms"):body.index(">Positions<")]
+        money_card = body[body.index(">All platforms<"):body.index(">Positions<")]
         for counted in ('metric("open"', 'metric("closed"', 'navrow("sactive"'):
             self.assertNotIn(counted, money_card, counted)
 
