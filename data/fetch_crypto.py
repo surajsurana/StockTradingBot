@@ -121,3 +121,44 @@ def fetch_usdinr_rate(default: float = DEFAULT_USDINR) -> float:
     except Exception as e:
         print(f"WARNING: USD/INR fetch failed ({e}); using {default}")
     return default
+
+# CoinDCX's OWN INR prices. The books are valued off Binance USDT x USDINR, which is a different
+# market from the one the money is actually in: CoinDCX INR carries an India premium of 2-3% that
+# moves on its own, so the two disagree by a little every day and by more on some days. Where the
+# question is "what is this worth at the exchange I would sell it on", only the exchange can answer,
+# and this is where that answer comes from.
+#
+# Public and unauthenticated -- the same ticker a logged-out visitor sees -- so reporting never
+# depends on a credential being present or valid.
+COINDCX_TICKER_URL = "https://api.coindcx.com/exchange/ticker"
+
+
+def fetch_coindcx_inr_prices(symbols, timeout: int = 15) -> dict:
+    """{SYMBOL: last INR price} for whichever of `symbols` CoinDCX lists an INR market for.
+
+    A symbol with no INR market, or any failure at all, is simply absent: the caller falls back to
+    its existing mark rather than showing a price nobody quoted."""
+    wanted = {str(s).strip().upper() for s in (symbols or []) if str(s or "").strip()}
+    if not wanted:
+        return {}
+    try:
+        import requests
+        rows = requests.get(COINDCX_TICKER_URL, timeout=timeout).json()
+    except Exception:
+        return {}
+    out = {}
+    for row in (rows or []):
+        if not isinstance(row, dict):
+            continue
+        market = str(row.get("market", "")).upper()
+        if not market.endswith("INR"):
+            continue
+        base = market[:-3]
+        if base in wanted:
+            try:
+                price = float(row.get("last_price"))
+            except (TypeError, ValueError):
+                continue
+            if price > 0:
+                out[base] = price
+    return out

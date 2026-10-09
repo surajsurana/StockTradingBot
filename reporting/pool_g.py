@@ -49,9 +49,24 @@ def _sum(ledgers: list) -> dict:
 
 
 def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, today: Optional[date] = None,
-                 model: CryptoCostModel = CryptoCostModel(), tax_rate: float = INDIA_VDA_TAX_RATE) -> dict:
+                 model: CryptoCostModel = CryptoCostModel(), tax_rate: float = INDIA_VDA_TAX_RATE,
+                 inr_prices: Optional[dict] = None) -> dict:
+    """`inr_prices` are CoinDCX's own INR quotes, and where one exists it decides what a position is
+    worth. The money is at CoinDCX: if our number and theirs disagree, ours is wrong, because theirs
+    is the one you can actually withdraw.
+
+    It is applied as a SUBSTITUTED USDT MARK -- inr_price / usdinr -- rather than by converting the
+    book to rupees. Everything downstream still works in the book's own USDT terms, and the
+    dashboard's own x usdinr lands back exactly on CoinDCX's figure. Nothing about how the strategy
+    decides or sizes changes; this is what a holding is reported to be worth, nothing else."""
     today = today or date.today()
     prices = crypto_prices or {}
+    inr = inr_prices or {}
+    def mark(symbol, fallback):
+        quote = inr.get(symbol)
+        if quote and usdinr:
+            return float(quote) / float(usdinr)        # CoinDCX's own price, in the book's units
+        return float(prices.get(symbol, fallback))
     book_dir = os.path.join(state_dir, POOL_G_DIRNAME)
     pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
     positions = pf.get("positions") or {}
@@ -61,7 +76,7 @@ def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, t
     open_rows, open_ledgers = [], []
     for symbol, p in positions.items():
         entry, qty = float(p["entry_price"]), float(p["quantity"])
-        price = float(prices.get(symbol, entry))
+        price = mark(symbol, entry)
         # The real fee, where the exchange charged one, converted back to the book's own USDT terms.
         fill = p.get("live_fill") if isinstance(p, dict) else None
         actual_fee = None
@@ -72,7 +87,9 @@ def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, t
         open_ledgers.append(led)
         open_rows.append({"symbol": symbol, "quantity": qty, "entry_price": entry, "price": price,
                           "priced": symbol in prices, "entry_date": p.get("entry_date"), "reasoning": p.get("reasoning", ""),
-                          "stop_loss": float(p.get("stop_loss", 0) or 0), "value": round(price * qty, 2),
+                          "stop_loss": float(p.get("stop_loss", 0) or 0), # 6dp, not 2: this is a USDT figure that the page multiplies by ~96.6 to show rupees, so
+                          # rounding it to paise HERE lands about Rs0.40 away from the exchange's own number
+                          "value": round(price * qty, 6),
                           "pct": round((price / entry - 1) * 100, 2) if entry else 0.0,
                           "unbooked_raw": round(led["raw"], 2), "unbooked_pre_tax": round(led["pre_tax"], 2),
                           "unbooked_post_tax": round(led["post_tax"], 2),
@@ -102,5 +119,5 @@ def build_pool_g(state_dir: str, crypto_prices: Optional[dict], usdinr: float, t
         "runs_today": sum(1 for d in decision_log if str(d.get("at", "")).startswith(today.isoformat())),
         "last_decisions": (last_decisions or {}).get("decisions", []),
         "last_web_search_used": (last_decisions or {}).get("web_search_used"),
-        "usdinr": usdinr, "tax_rate": tax_rate, "cost_model": model.describe(),
+        "usdinr": usdinr, "tax_rate": tax_rate, "inr_marked": sorted(inr), "cost_model": model.describe(),
     }

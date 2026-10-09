@@ -1648,6 +1648,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           roadmap: Optional[dict] = None, mode: str = "paper",
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
                           coindcx_balance: tuple = (None, ""),
+                          coindcx_prices: Optional[dict] = None,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
@@ -1742,7 +1743,10 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     from reporting.pool_g import build_pool_g
     from reporting.pool_i import build_pool_i
     from data.fetch_crypto import DEFAULT_USDINR
-    pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today)
+    # CoinDCX's own INR quotes decide what a crypto holding is worth, because that is the exchange
+    # the money is at. Absent (no network, no INR market), the Binance mark stands.
+    pool_g = build_pool_g(state_dir, crypto_prices, usdinr or DEFAULT_USDINR, today,
+                          inr_prices=coindcx_prices)
     pool_i = build_pool_i(state_dir, us_prices, usdinr or DEFAULT_USDINR, today)
     for r in registry_records:
         if is_us_equity_record(r):

@@ -401,5 +401,72 @@ class TestOrdersAndDryRun(unittest.TestCase):
         self.assertTrue(all(s["usdinr"] == 96.42 for s in sent))
 
 
+class TestTheExchangeDecidesWhatItIsWorth(unittest.TestCase):
+    """The money is at CoinDCX. If our number and theirs disagree, ours is wrong -- theirs is the one
+    that can be withdrawn. The books were valued off Binance USDT x USDINR, a different market
+    carrying a 2-3% India premium that moves on its own, so the two drifted apart a little every day.
+    """
+
+    def _book(self, **over):
+        import json
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, "pool_g"))
+        with open(os.path.join(d, "pool_g", "portfolio.json"), "w", encoding="utf-8") as f:
+            json.dump({"cash": 76.19, "starting_capital": 103.60,
+                       "positions": {"BTC": {"entry_price": 84181.5, "quantity": 0.00031,
+                                             "entry_date": "2026-10-07", **over}}}, f)
+        return d
+
+    def test_an_inr_quote_reproduces_the_exchanges_own_value_exactly(self):
+        from reporting.pool_g import build_pool_g
+        usdinr, inr_price, qty = 96.5650, 8_234_176.5, 0.00031
+        out = build_pool_g(self._book(), {"BTC": 85_000.0}, usdinr, inr_prices={"BTC": inr_price})
+        shown = out["open_positions"][0]["value"] * usdinr      # what the page displays
+        self.assertAlmostEqual(shown, inr_price * qty, places=2)
+
+    def test_without_an_inr_quote_the_binance_mark_stands(self):
+        """No network, or a coin with no INR market, must not blank the valuation."""
+        from reporting.pool_g import build_pool_g
+        out = build_pool_g(self._book(), {"BTC": 85_000.0}, 96.5650, inr_prices={})
+        self.assertAlmostEqual(out["open_positions"][0]["value"], 85_000.0 * 0.00031, places=6)
+        self.assertEqual(out["inr_marked"], [])
+
+    def test_it_says_which_symbols_it_marked_from_the_exchange(self):
+        from reporting.pool_g import build_pool_g
+        out = build_pool_g(self._book(), {"BTC": 85_000.0}, 96.5650, inr_prices={"BTC": 8_234_176.5})
+        self.assertEqual(out["inr_marked"], ["BTC"])
+
+    def test_the_quote_source_needs_no_credential(self):
+        """Reporting must not stop working because an API key expired. CoinDCX's ticker is the same
+        one a logged-out visitor sees."""
+        import inspect
+
+        import data.fetch_crypto as fc
+        source = inspect.getsource(fc.fetch_coindcx_inr_prices)
+        for forbidden in ("API_KEY", "API_SECRET", "hmac", "X-AUTH"):
+            self.assertNotIn(forbidden, source, forbidden)
+
+    def test_a_failure_yields_no_prices_rather_than_wrong_ones(self):
+        from unittest.mock import patch
+        import data.fetch_crypto as fc
+        with patch("requests.get", side_effect=OSError("network down")):
+            self.assertEqual(fc.fetch_coindcx_inr_prices(["BTC"]), {})
+
+    def test_only_inr_markets_are_read(self):
+        from unittest.mock import patch
+        import data.fetch_crypto as fc
+
+        class R:
+            @staticmethod
+            def json():
+                return [{"market": "BTCINR", "last_price": "8234176.5"},
+                        {"market": "BTCUSDT", "last_price": "85000"},
+                        {"market": "ETHINR", "last_price": "249999.9"}]
+        with patch("requests.get", return_value=R()):
+            self.assertEqual(fc.fetch_coindcx_inr_prices(["BTC"]), {"BTC": 8_234_176.5})
+
+
 if __name__ == "__main__":
     unittest.main()

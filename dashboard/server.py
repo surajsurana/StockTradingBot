@@ -146,6 +146,7 @@ class PriceCache:
         self.prices = {}
         self.as_of = None
         self.crypto_prices = {}
+        self.coindcx_prices = {}        # CoinDCX's own INR quotes, for valuing what is held there
         self.usdinr = None
         self.prev_close = {}          # symbol -> last close BEFORE today (for "today's move" on open positions)
         self.crypto_prev_close = {}   # coin -> last completed UTC daily close
@@ -294,9 +295,14 @@ class PriceCache:
         """Binance last prices for Pool E's open coins (one cheap call; the
         coins trade 24x7 so this runs on every loop pass) and, on the full
         refresh, the USD/INR rate."""
-        from data.fetch_crypto import fetch_crypto_last_prices, fetch_usdinr_rate
+        from data.fetch_crypto import (fetch_coindcx_inr_prices, fetch_crypto_last_prices,
+                                       fetch_usdinr_rate)
         symbols = self._pool_e_symbols()
         quotes = fetch_crypto_last_prices(symbols) if symbols else {}
+        # CoinDCX's own INR quotes, for valuing what is actually held there. Public and
+        # unauthenticated, so reporting never waits on a credential. A failure leaves the previous
+        # set in place rather than blanking the marks.
+        inr = fetch_coindcx_inr_prices(symbols) if symbols else {}
         rate = fetch_usdinr_rate() if (with_rate or self.usdinr is None) else None
         prev = {}
         if with_rate and symbols:   # once per full refresh: the last completed UTC daily close per held coin
@@ -312,6 +318,8 @@ class PriceCache:
         with self._lock:
             if symbols and quotes:
                 self.crypto_prices = {**{k: v for k, v in self.crypto_prices.items() if k in symbols}, **quotes}
+            if inr:
+                self.coindcx_prices = {**getattr(self, "coindcx_prices", {}), **inr}
             if rate:
                 self.usdinr = rate
             if prev:
@@ -403,6 +411,11 @@ class PriceCache:
     def snapshot(self) -> tuple:
         with self._lock:
             return dict(self.prices), self.as_of
+
+    def coindcx_snapshot(self) -> dict:
+        """CoinDCX's own INR quotes. A copy, so a caller cannot mutate the cache under the refresh."""
+        with self._lock:
+            return dict(self.coindcx_prices)
 
     def crypto_snapshot(self) -> tuple:
         with self._lock:
@@ -1045,6 +1058,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                                        for lane in research_queue.LANES},
                                       kite_balance=self.balance_cache.get(),
                                       coindcx_balance=self.coindcx_cache.get(),
+                                      coindcx_prices=self.price_cache.coindcx_snapshot(),
                                       crypto_prices=crypto_prices, usdinr=usdinr,
                                       prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                       us_prices=us_prices, us_prev_close=us_prev_close,

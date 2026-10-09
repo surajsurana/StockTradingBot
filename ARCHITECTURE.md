@@ -269,6 +269,47 @@ Change it in PAPER, and let the paper record restart from there. A changed strat
 strategy with no track record, and the honest thing is to say so rather than to carry the old
 record forward as though it still applied.
 
+## THE BROKER IS THE TRUTH
+
+**Where a platform reports a figure, the platform's figure is the right one and ours reconciles to
+it. Not the other way round.**
+
+The money is at the broker. If our number and theirs disagree, ours is wrong by definition — you
+cannot withdraw our number. This is not a tie to be broken on which calculation looks better.
+
+### What this governs
+
+Anything the platform also reports: cash, invested, holdings value, realised and unrealised P&L,
+fees, quantities. Our own books remain the record of *why* a trade happened and *what the strategy
+decided* — the broker has no opinion on that — but what a thing is **worth** is the exchange's to
+say.
+
+### The case that produced the rule
+
+Pool G valued its crypto off **Binance USDT × USD/INR** while the money sat at **CoinDCX in INR**.
+Those are different markets: CoinDCX INR carries an India premium of 2–3% that moves on its own, and
+USD/INR moves underneath it. On 2026-10-09 CoinDCX showed today's P&L as +₹45.96 while the dashboard
+showed +₹22 — same coin, same quantity, two prices, neither of them arithmetic error.
+
+`reporting/pool_g.py` now takes `inr_prices`, CoinDCX's own quotes, and where one exists it decides
+what a position is worth. It is applied as a **substituted USDT mark** (`inr_price / usdinr`) rather
+than by re-denominating the book, so everything downstream still works in the book's own units and
+the page's own `× usdinr` lands back exactly on the exchange's figure. A test asserts that equality.
+
+### What it deliberately does NOT change
+
+**How the strategy decides or sizes.** This is reporting. Re-denominating the book from USD to INR
+would change position sizes as FX moved, and that is a change of method — see **PAPER TO LIVE**, it
+would need the paper record to restart. Valuing a holding correctly needs none of that, which is why
+the two were separated.
+
+**History.** Rows keep the prices they were recorded at. Rewriting a past mark to a price we never
+used would be worse than the seam in the series, and the seam is dated here: 2026-10-09.
+
+**The fallback.** No network, or a coin CoinDCX lists no INR market for, leaves the Binance mark in
+place. A missing quote must never blank a valuation. The quote source is the public, unauthenticated
+ticker, so reporting never waits on a credential — asserted by test.
+
 ## FUND ALLOCATION — the proportionality rule
 
 **A live book must behave as a scaled copy of its paper book. Everything that decides how much to
