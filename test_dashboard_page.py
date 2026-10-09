@@ -103,6 +103,24 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         self.assertIn("(v.held || 0) + (v.cash == null ? 0 : v.cash)", body)
 
 
+class TestHidingActuallyHides(unittest.TestCase):
+    """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
+    all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many
+    places called close(), and .cards' display:flex kept the Classic summary on screen in the New
+    view. Any selector that sets display needs a [hidden] partner."""
+
+    def test_every_display_rule_has_a_hidden_partner(self):
+        page = _page()
+        for selector in (".profilemenu", ".cards", ".tickerrow", ".todaybar"):
+            if f"{selector}{{display:" in page or f"{selector}{{display:" in page.replace(" ", ""):
+                self.assertIn(f"{selector}[hidden]{{display:none}}", page, selector)
+
+    def test_the_two_that_already_broke_are_covered(self):
+        page = _page()
+        self.assertIn(".profilemenu[hidden]{display:none}", page)
+        self.assertIn(".cards[hidden]{display:none}", page)
+
+
 class TestNoStrayControlCharacters(unittest.TestCase):
     r"""Twice in one session an escape meant for JavaScript was eaten by the tool writing the file:
     a newline escape became a real line break, which is a syntax error, and a backslash-b became a
