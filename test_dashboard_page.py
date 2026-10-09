@@ -66,18 +66,23 @@ class TestTheLiveSummaryCard(unittest.TestCase):
     Classic cards were retired on 2026-10-09 once New had earned it; their markup stays, hidden,
     because the same render pass produces the Today's P&L chip."""
 
-    def test_classic_is_retired_but_still_rendered(self):
+    def test_both_layouts_exist_with_a_switch(self):
+        """New is not finalised, so Classic stays until it is."""
         page = _page()
-        self.assertIn('id="livecards" hidden', page)
+        self.assertIn('id="livecards"', page)
         self.assertIn('id="liveboard"', page)
-        self.assertNotIn('data-view="old"', page)      # the switch is gone
+        self.assertIn('data-view="old"', page)
+        self.assertIn('data-view="new"', page)
 
-    def test_classic_stays_hidden(self):
+    def test_exactly_one_layout_is_on_screen(self):
         body = _script(_page())
         body = body[body.index("function applyLiveView()"):]
         body = body[:body.index(chr(10) + "}")]
-        self.assertIn("cards.hidden = true", body)
-        self.assertIn("board.hidden = false", body)
+        self.assertIn('cards.hidden = which === "new"', body)
+        self.assertIn('board.hidden = which !== "new"', body)
+
+    def test_classic_is_still_the_default(self):
+        self.assertIn('localStorage.getItem(LIVE_VIEW_KEY) || "old"', _script(_page()))
 
     def test_every_line_can_be_opened(self):
         body = _script(_page())

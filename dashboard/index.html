@@ -504,9 +504,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live">
-  <!-- Classic summary: retired from view 2026-10-09 but still rendered, because the same pass
-       produces the Today's P&L chip. One attribute brings it back if New turns out to be short. -->
-  <div class="cards" id="livecards" hidden></div>
+  <div class="viewswitch">
+    <span class="segbtns" role="group" aria-label="Summary layout">
+      <button id="lv-old" class="on" data-view="old">Classic</button><button id="lv-new" data-view="new">New</button>
+    </span>
+  </div>
+  <div class="cards" id="livecards"></div>
   <div id="liveboard" hidden></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -1415,13 +1418,25 @@ function renderLiveBoard(s){
   });
 }
 
+// New is not finalised, so Classic stays until it is. Exactly one is on screen: showing both would
+// put the same figures twice over with no way to tell which you were reading.
+const LIVE_VIEW_KEY = "desk.liveView";
+const liveView = () => { try { return localStorage.getItem(LIVE_VIEW_KEY) || "old"; } catch(e){ return "old"; } };
+
 function applyLiveView(){
+  const which = liveView();
   const cards = document.getElementById("livecards"), board = document.getElementById("liveboard");
   if(!cards || !board) return;
-  cards.hidden = true;          // Classic is retired; see the note on the element itself
-  board.hidden = false;
-  if(STATE) renderLiveBoard(STATE);
+  cards.hidden = which === "new";
+  board.hidden = which !== "new";
+  for(const b of document.querySelectorAll(".viewswitch [data-view]"))
+    b.classList.toggle("on", b.dataset.view === which);
+  if(which === "new" && STATE) renderLiveBoard(STATE);
 }
+document.querySelectorAll(".viewswitch [data-view]").forEach(b => b.addEventListener("click", () => {
+  try { localStorage.setItem(LIVE_VIEW_KEY, b.dataset.view); } catch(e){}
+  applyLiveView();
+}));
 
 // What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
 // and no errors -- it looks exactly like a book that had no signals -- so without this the honest
