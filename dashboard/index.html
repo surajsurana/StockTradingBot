@@ -80,7 +80,6 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .drill .twist{display:inline-block;width:14px;color:var(--muted);font-size:11px}
 .drill tr.sub td{padding:4px 0 4px 20px;font-size:12px;color:var(--muted);border-top:0}
 .drill tr.sub:first-of-type td{padding-top:5px}
-.bigpot .potsub{margin:-2px 0 8px;font-size:11.5px}
 /* The combined card is a TOTAL, not a fourth account -- it is marked so it cannot be read as one. */
 .totalpot{border-left-color:var(--ink);background:var(--band)}
 .pboard{width:100%;border-collapse:collapse}
@@ -174,6 +173,10 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 /* After .bigpot, or its max-width:none wins at equal specificity. Narrow enough to read without
    moving your eyes across the screen. */
 .bigpot.onecard{max-width:460px}
+/* Money and counts are different questions. Counts need a fraction of the width, so the
+   two sit beside each other rather than stacking a near-empty card under a full one. */
+.boardrow{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.bigpot.countcard{flex:0 1 230px;max-width:230px}
 .bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
 .bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
 .bigpot.warn{border-left-color:var(--warn)}
@@ -1342,7 +1345,11 @@ function markNotificationsRead(){
 // written "Pool G" in one place and "G" in another.
 const poolVenue = pool => {
   const code = String(pool || "").trim().split(/\s+/).pop().toUpperCase();
-  return ["G", "E", "E1"].includes(code) ? "coindcx" : code === "H" ? "groww" : "kite";
+  // Pool I is a US paper book on no broker at all. It fell to the default and its dollars were
+  // added to the Kite account's rupees -- Rs3.8L of them, on a page whose whole point is that it
+  // shows what the broker shows.
+  return ["G", "E", "E1"].includes(code) ? "coindcx"
+       : code === "H" ? "groww" : code === "I" ? "us" : "kite";
 };
 
 function renderLiveBoard(s){
@@ -1354,12 +1361,18 @@ function renderLiveBoard(s){
     coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
                                                         invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
+    // Pool I has no broker -- it is a US paper book. Without a desk of its own its rows fell to the
+    // default and were added to Kite's, so in Paper mode Kite's money included dollars that are not
+    // in the Kite account. A desk with no cash figure is honest; silently folding it in was not.
+    us:      {name: "US (paper)", what: "US equities",  cash: null,
+                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
   };
   // COST BASIS, the same one the P&L is measured against. `amount` is what left the account --
   // it includes the buy fee -- while `pnl` is measured against `order_value`, the fee-exclusive
   // figure the broker calls "Invested". Mixing the two made Holdings read Rs15 high on the one row
   // that has a fee, and made Invested disagree with CoinDCX's own screen by the same Rs15. Where a
   // row has no order_value (Groww records no fee), amount IS the cost and nothing changes.
+  const ALL_VENUES = ["kite", "coindcx", "groww", "us"];
   const costOf = r => (r.order_value != null ? r.order_value : (r.amount || 0));
   // Every figure comes off the SAME ledger rows the Positions table shows, so the two cannot
   // disagree -- a summary built from its own source is a second opinion, not a summary.
@@ -1374,7 +1387,10 @@ function renderLiveBoard(s){
       v.held += costOf(r) + (r.pnl || 0);            // cost plus what it has done since
     } else v.closed += 1;
   }
-  const order = ["kite", "coindcx", "groww"];
+  // Only desks with something to show. A desk that holds nothing and has no readable cash balance
+  // is a row of zeroes competing for attention with the ones that matter.
+  const order = ALL_VENUES
+    .filter(k => vs[k].cash != null || vs[k].open || vs[k].closed || vs[k].pnl);
   const tot = {cash: 0, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0};
   for(const k of order)
     for(const f of Object.keys(tot)) tot[f] += (vs[k][f] == null ? 0 : vs[k][f]);
@@ -1388,28 +1404,73 @@ function renderLiveBoard(s){
   // cards competing with the total for attention.
   const amount = (value, colour, plain) => value == null ? `<span class="note">—</span>`
     : plain ? String(value) : `<span class="${colour ? cls(value) : ""}">${money(value, !!colour)}</span>`;
-  const metric = (id, label, field, colour, plain) => {
-    const rows = order.map(k =>
-      `<tr class="sub" data-metric="${id}" hidden><td>${esc(vs[k].name)}</td>`
-      + `<td class="n">${amount(vs[k][field], colour, plain)}</td></tr>`).join("");
+  // One drill-down, whatever the rows are counting -- money by desk, or strategies by desk.
+  const drill = (id, label, total, parts, colour, plain) => {
+    const rows = parts.map(part =>
+      `<tr class="sub" data-metric="${id}" hidden><td>${esc(part.name)}</td>`
+      + `<td class="n">${amount(part.value, colour, plain)}</td></tr>`).join("");
     return `<tr class="metric" data-metric="${id}" tabindex="0" role="button" aria-expanded="false"
               title="Show it account by account">
         <td><span class="twist">&#9656;</span>${esc(label)}</td>
-        <td class="n">${amount(tot[field], colour, plain)}</td></tr>` + rows;
+        <td class="n">${amount(total, colour, plain)}</td></tr>` + rows;
   };
+  const metric = (id, label, field, colour, plain) =>
+    drill(id, label, tot[field], order.map(k => ({name: vs[k].name, value: vs[k][field]})), colour, plain);
 
-  box.innerHTML = `<div class="desk bigpot totalpot onecard">
-      <div class="head"><span class="nm">All platforms</span><b class="potsum">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
-      <div class="note potsub">Kite, CoinDCX and Groww combined &middot; click any line for the split</div>
-      <table class="pottbl drill">
-        ${metric("cash", "Cash", "cash")}
-        ${metric("invested", "Invested", "invested")}
-        ${metric("held", "Holdings now", "held")}
-        ${metric("today", "Today", "today", true)}
-        ${metric("pnl", "Total P&L", "pnl", true)}
-        ${metric("open", "Open positions", "open", false, true)}
-        ${metric("closed", "Closed trades", "closed", false, true)}
-      </table></div>`;
+  // STRATEGIES, the two counts the Classic cards carried. Active follows the Paper/Live toggle, the
+  // same test the Strategies tab itself applies, so the number here and the rows there agree.
+  // Every desk, not just the ones `order` kept: that list is filtered by what is in the LEDGER, and
+  // a strategy can be trading on a desk that has no rows yet. Filtered by ledger, Pool I's two books
+  // fell through to "Not trading" while they were trading.
+  const sdesks = ALL_VENUES.map(k => ({key: k, name: vs[k].name, active: 0, researched: 0}));
+  // Backtested but parked -- archived, or researched and never promoted. They belong to no desk, and
+  // leaving them out would make the rows fail to add up to the total they sit under.
+  const parked = {key: "none", name: "Not trading", active: 0, researched: 0};
+  const byKey = Object.fromEntries(sdesks.map(d => [d.key, d]));
+  const isActive = r => MODE === "live" ? liveState(r.status) === "Live" : r.status === "PAPER_TRADING";
+  let sActive = 0, sResearched = 0;
+  for(const r of (s.strategies || [])){
+    const active = isActive(r), researched = !!r.experiment;
+    if(!active && !researched) continue;
+    if(active) sActive += 1;
+    if(researched) sResearched += 1;
+    const desks = [...new Set(String(r.pool || "").split(", ")
+      .filter(x => x && x !== "-").map(x => poolVenue(x)))].map(k => byKey[k]).filter(Boolean);
+    for(const d of (desks.length ? desks : [parked])){
+      if(active) d.active += 1;
+      if(researched) d.researched += 1;
+    }
+  }
+  const sparts = f => [...sdesks, parked].filter(d => d.active || d.researched)
+    .map(d => ({name: d.name, value: d[f]}));
+
+  // TWO CARDS, because they answer different questions. What the desk is worth is read against the
+  // other money figures; how many trades are open is a count, and sitting it under Total P&L in the
+  // same column invited it to be read as one. Both still open account by account.
+  box.innerHTML = `<div class="boardrow">
+      <div class="desk bigpot totalpot onecard">
+        <div class="head"><span class="nm">All platforms</span><b class="potsum">${money(worth({held: tot.held, cash: tot.cash}))}</b></div>
+        <table class="pottbl drill">
+          ${metric("invested", "Invested", "invested")}
+          ${metric("pnl", "Total P&L", "pnl", true)}
+          ${metric("held", "Holdings now", "held")}
+          ${metric("cash", "Cash available", "cash")}
+        </table></div>
+      <div class="desk bigpot countcard">
+        <div class="head"><span class="nm">Positions</span>
+          <b class="potsum" title="Open right now">${tot.open}</b></div>
+        <table class="pottbl drill">
+          ${metric("open", "Open", "open", false, true)}
+          ${metric("closed", "Closed", "closed", false, true)}
+        </table></div>
+      <div class="desk bigpot countcard">
+        <div class="head"><span class="nm">Strategies</span>
+          <b class="potsum" title="Books trading right now">${sActive}</b></div>
+        <table class="pottbl drill">
+          ${drill("sactive", "Active", sActive, sparts("active"), false, true)}
+          ${drill("sresearched", "Researched", sResearched, sparts("researched"), false, true)}
+        </table></div>
+    </div>`;
 
   const toggle = tr => {
     const id = tr.dataset.metric, open = tr.getAttribute("aria-expanded") === "true";
@@ -1991,7 +2052,11 @@ function renderAllocations(s){
   // "G" in another, and a pattern against either spelling silently sends every row to the default.
   const venueOf = pool => {
     const code = String(pool || "").trim().split(/\s+/).pop().toUpperCase();
-    return ["G", "E", "E1"].includes(code) ? "coindcx" : code === "H" ? "groww" : "kite";
+    // Pool I is a US paper book on no broker at all. It fell to the default and its dollars were
+  // added to the Kite account's rupees -- Rs3.8L of them, on a page whose whole point is that it
+  // shows what the broker shows.
+  return ["G", "E", "E1"].includes(code) ? "coindcx"
+       : code === "H" ? "groww" : code === "I" ? "us" : "kite";
   };
   // The same cost basis the P&L is measured against -- `amount` includes the buy fee, `order_value`
   // does not, and the broker's own "Invested" is the fee-exclusive one.

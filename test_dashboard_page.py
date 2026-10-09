@@ -87,10 +87,36 @@ class TestTheLiveSummaryCard(unittest.TestCase):
     def test_every_line_can_be_opened(self):
         body = _script(_page())
         body = body[body.index("function renderLiveBoard"):]
-        for metric in ("cash", "invested", "held", "today", "pnl", "open", "closed"):
+        for metric in ("invested", "pnl", "held", "cash", "open", "closed"):
             self.assertIn(f'metric("{metric}"', body, metric)
+        for counted in ("sactive", "sresearched"):
+            self.assertIn(f'drill("{counted}"', body, counted)
         self.assertIn('tr.metric', body)               # the row that opens
         self.assertIn('tr.sub[data-metric=', body)     # the rows it opens
+
+    def test_today_is_not_repeated_on_the_card(self):
+        """It already has a chip of its own in the top right; two copies of one number invite the
+        reader to check whether they agree."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertNotIn('metric("today"', body)
+
+    def test_the_counts_are_not_in_the_money_card(self):
+        """Money and counts read differently. A trade count sitting under Total P&L in the same
+        column of the same table gets read as money for a moment, every time."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        money_card = body[body.index("All platforms"):body.index(">Positions<")]
+        for counted in ('metric("open"', 'metric("closed"', 'drill("sactive"'):
+            self.assertNotIn(counted, money_card, counted)
+
+    def test_a_us_paper_book_is_not_counted_as_kite_money(self):
+        """Pool I has no broker. With no desk of its own it fell to poolVenue's default and its
+        dollars were added to the Kite account's rupees."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertIn('us:', body)
+        self.assertIn('ALL_VENUES = ["kite", "coindcx", "groww", "us"]', body)
 
     def test_the_card_does_not_invent_its_own_numbers(self):
         """It reads the same ledger rows the Positions table does. A summary built from its own
