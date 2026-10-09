@@ -147,6 +147,8 @@ class PriceCache:
         self.as_of = None
         self.crypto_prices = {}
         self.coindcx_prices = {}        # CoinDCX's own INR quotes, for valuing what is held there
+        self.coindcx_day_open = {}      # and their IST-day open, which is what their "Today" is from
+        self.coindcx_day = None         # the IST date those opens belong to
         self.usdinr = None
         self.prev_close = {}          # symbol -> last close BEFORE today (for "today's move" on open positions)
         self.crypto_prev_close = {}   # coin -> last completed UTC daily close
@@ -303,6 +305,13 @@ class PriceCache:
         # unauthenticated, so reporting never waits on a credential. A failure leaves the previous
         # set in place rather than blanking the marks.
         inr = fetch_coindcx_inr_prices(symbols) if symbols else {}
+        # The day's opening price is HISTORY once the day has started, so it is fetched once per IST
+        # day and then simply kept -- no nightly job to miss, and a restart re-reads it rather than
+        # losing it.
+        from data.fetch_crypto import fetch_coindcx_day_open, ist_day_start
+        today_ist = ist_day_start().date().isoformat()
+        day_open = ({} if (self.coindcx_day == today_ist or not symbols)
+                    else fetch_coindcx_day_open(symbols))
         rate = fetch_usdinr_rate() if (with_rate or self.usdinr is None) else None
         prev = {}
         if with_rate and symbols:   # once per full refresh: the last completed UTC daily close per held coin
@@ -320,6 +329,8 @@ class PriceCache:
                 self.crypto_prices = {**{k: v for k, v in self.crypto_prices.items() if k in symbols}, **quotes}
             if inr:
                 self.coindcx_prices = {**getattr(self, "coindcx_prices", {}), **inr}
+            if day_open:
+                self.coindcx_day_open, self.coindcx_day = day_open, today_ist
             if rate:
                 self.usdinr = rate
             if prev:
@@ -416,6 +427,11 @@ class PriceCache:
         """CoinDCX's own INR quotes. A copy, so a caller cannot mutate the cache under the refresh."""
         with self._lock:
             return dict(self.coindcx_prices)
+
+    def coindcx_day_open_snapshot(self) -> dict:
+        """Their IST-day opening prices -- the reference their own "Today's PNL" is measured from."""
+        with self._lock:
+            return dict(self.coindcx_day_open)
 
     def crypto_snapshot(self) -> tuple:
         with self._lock:
@@ -1059,6 +1075,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       kite_balance=self.balance_cache.get(),
                                       coindcx_balance=self.coindcx_cache.get(),
                                       coindcx_prices=self.price_cache.coindcx_snapshot(),
+                                      coindcx_day_open=self.price_cache.coindcx_day_open_snapshot(),
                                       crypto_prices=crypto_prices, usdinr=usdinr,
                                       prev_close=prev_close, crypto_prev_close=crypto_prev_close,
                                       us_prices=us_prices, us_prev_close=us_prev_close,

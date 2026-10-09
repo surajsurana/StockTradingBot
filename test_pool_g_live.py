@@ -468,5 +468,57 @@ class TestTheExchangeDecidesWhatItIsWorth(unittest.TestCase):
             self.assertEqual(fc.fetch_coindcx_inr_prices(["BTC"]), {"BTC": 8_234_176.5})
 
 
+class TestWhatTodayMeansAtTheExchange(unittest.TestCase):
+    """Today's P&L is a price MINUS A REFERENCE, so marking at the exchange's price is only half of
+    matching the exchange's number. Ours was Binance's previous UTC daily close: a different market,
+    a different currency and a different day.
+
+    CoinDCX's "Today" is an IST calendar day -- established by arithmetic, not assumption. On
+    2026-10-09 their screen showed +Rs50.69 on 0.00031 BTC against a value of Rs2,554.27, implying a
+    reference of Rs8,076,064: within 0.01% of the 00:45 IST candle, and nowhere near the UTC-day open
+    (Rs8,086,188) or the previous UTC close (Rs8,120,826)."""
+
+    def test_the_day_starts_at_midnight_IST(self):
+        from datetime import datetime, timedelta, timezone
+        from data.fetch_crypto import IST, ist_day_start
+        noon = datetime(2026, 10, 9, 12, 0, tzinfo=IST)
+        start = ist_day_start(noon)
+        self.assertEqual((start.hour, start.minute), (0, 0))
+        self.assertEqual(start.date(), noon.date())
+        # 00:00 IST is 18:30 the previous day UTC -- which is why 1h and 1d candles cannot express it
+        utc = start.astimezone(timezone.utc)
+        self.assertEqual((utc.hour, utc.minute), (18, 30))
+
+    def test_just_after_midnight_still_belongs_to_the_same_day(self):
+        from datetime import datetime
+        from data.fetch_crypto import IST, ist_day_start
+        self.assertEqual(ist_day_start(datetime(2026, 10, 9, 0, 5, tzinfo=IST)).date(),
+                         datetime(2026, 10, 9).date())
+
+    def test_it_asks_for_fifteen_minute_candles(self):
+        """1h and 1d candles cannot land on 18:30 UTC, so neither can express an IST day."""
+        import inspect
+
+        import data.fetch_crypto as fc
+        source = inspect.getsource(fc.fetch_coindcx_day_open)
+        self.assertIn('"interval": "15m"', source)
+
+    def test_there_is_no_nightly_snapshot_to_miss(self):
+        """The day's opening candle is HISTORY, so it can be asked for at any hour and survives a
+        restart. Nothing is persisted at midnight and nothing is lost if the box was down."""
+        import inspect
+
+        import data.fetch_crypto as fc
+        source = inspect.getsource(fc.fetch_coindcx_day_open)
+        for forbidden in ("with open", "json.dump", ".write(", "os.replace"):
+            self.assertNotIn(forbidden, source, forbidden)
+
+    def test_a_missing_open_leaves_the_existing_reference_alone(self):
+        from unittest.mock import patch
+        import data.fetch_crypto as fc
+        with patch("requests.get", side_effect=OSError("down")):
+            self.assertEqual(fc.fetch_coindcx_day_open(["BTC"]), {})
+
+
 if __name__ == "__main__":
     unittest.main()

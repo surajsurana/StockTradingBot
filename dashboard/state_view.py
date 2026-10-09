@@ -1649,6 +1649,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           crypto_prices: Optional[dict] = None, usdinr: Optional[float] = None,
                           coindcx_balance: tuple = (None, ""),
                           coindcx_prices: Optional[dict] = None,
+                          coindcx_day_open: Optional[dict] = None,
                           prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
                           groww: Optional[dict] = None, reports: Optional[dict] = None,
                           advice_params: Optional[dict] = None, advice_done: Optional[list] = None,
@@ -1780,6 +1781,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         "pools": pools, "overall": overall, "books": books, "pool_d": pool_d, "pool_e": pool_e, "pool_e1": pool_e1, "pool_g": pool_g, "pool_i": pool_i,
         "ledger": _ledger(state_dir, books, d_pf, d_trades, today, pool_e, d_open,
                           prev_close=prev_close, crypto_prev_close=crypto_prev_close,
+                          coindcx_day_open=coindcx_day_open,
                           prices=prices, crypto_prices=crypto_prices, pool_g=pool_g, lifecycles=lifecycles, pool_e1=pool_e1,
                           pool_i=pool_i, us_prices=us_prices, us_prev_close=us_prev_close),
         "lifecycles": lifecycles,
@@ -1880,6 +1882,7 @@ def _live_fill_overrides(position: dict, derived_amount: float) -> dict:
 
 def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date,
             pool_e: Optional[dict] = None, d_open: Optional[list] = None,
+            coindcx_day_open: Optional[dict] = None,
             prev_close: Optional[dict] = None, crypto_prev_close: Optional[dict] = None,
             prices: Optional[dict] = None, crypto_prices: Optional[dict] = None,
             pool_g: Optional[dict] = None, lifecycles: Optional[dict] = None,
@@ -2033,8 +2036,14 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
     g_rate = float((pool_g or {}).get("usdinr") or 0)
     for p in (pool_g or {}).get("open_positions", []):
         entered_today = p.get("entry_date") == today_iso
+        # TODAY'S REFERENCE IS COINDCX'S OWN, because their "Today" is an IST calendar day and ours
+        # was Binance's previous UTC close -- a different market, currency and day. Converted to the
+        # book's USDT terms so the x g_rate below lands back on their figure. Absent, the Binance
+        # close stands rather than the move reading as zero.
+        g_open = (coindcx_day_open or {}).get(p["symbol"])
+        g_prev = (g_open / g_rate) if (g_open and g_rate) else crypto_prev_close.get(p["symbol"])
         move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
-                        crypto_prices.get(p["symbol"]), crypto_prev_close.get(p["symbol"]))
+                        crypto_prices.get(p["symbol"]), g_prev)
         rows.append({"date": p.get("entry_date"), "time": "", "action": "BUY",
                      "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
                      "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",
