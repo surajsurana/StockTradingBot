@@ -1463,8 +1463,6 @@ function renderLiveBoard(s){
   // same test the Strategies tab itself applies, so the number here and the rows there agree.
   // The day, as renderLive worked it out -- never a second calculation of the same thing.
   const day = TODAY;
-  const dayKinds = day ? ["Swing", "Intraday", "Crypto", "Long-term", "US Equity", "Other"]
-    .filter(kd => kd in day.byKind) : [];
   const isActive = r => MODE === "live" ? liveState(r.status) === "Live" : r.status === "PAPER_TRADING";
   const strats = s.strategies || [];
   const sActive = strats.filter(isActive).length;
@@ -1497,14 +1495,6 @@ function renderLiveBoard(s){
           ${metric("closed", "Closed", "closed", false, true)}
         </div></div>
       <div class="desk bigpot countcard">
-        <div class="head"><span class="nm">Today's P&L</span>
-          <b class="potsum ${day ? cls(day.total) : ""}" title="${day ? esc(`${money(day.booked, true)} booked today + ${money(day.move, true)} today's move on open positions · ${day.scope}`) : ""}">${day ? money(day.total, true) : "&mdash;"}</b></div>
-        <div class="potlist">
-          ${dayKinds.length ? dayKinds.map(kd => flatrow(kd, day.byKind[kd],
-              `${kd} positions' share of the day`, true)).join("")
-            : `<div class="metric plain"><span class="lbl">Nothing moved today</span><b>&mdash;</b></div>`}
-        </div></div>
-      <div class="desk bigpot countcard">
           <div class="head"><span class="nm">Strategies</span>
             <b class="potsum" title="Books trading right now">${sActive}</b></div>
           <div class="potlist">
@@ -1514,6 +1504,15 @@ function renderLiveBoard(s){
             ${navrow("sresearched", "Researched", sResearched, {},
                      `every strategy with a backtest on record, trading or not · click to see them by name`)}
           </div></div>
+      <div class="desk bigpot countcard">
+        <div class="head"><span class="nm">Today's P&L</span>
+          <b class="potsum ${day ? cls(day.total) : ""}" title="${day ? esc(`${money(day.booked, true)} booked today + ${money(day.move, true)} today's move on open positions · ${day.scope}`) : ""}">${day ? money(day.total, true) : "&mdash;"}</b></div>
+        <div class="potlist">
+          ${day ? order.map(k => flatrow(vs[k].name, day.byVenue[k] || 0,
+              `what this account made or lost today -- today's move on its open positions, plus
+               anything it booked by closing a trade today`, true)).join("")
+            : `<div class="metric plain"><span class="lbl">Nothing moved today</span><b>&mdash;</b></div>`}
+        </div></div>
     </div>`;
 
   const toggle = el => {
@@ -1737,11 +1736,15 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const inToday = a => poolLetters.has(a.pool) && inBook(a) && a.pnl_today != null;
   const openMove = s.ledger.filter(a => a.status === "Open" && inToday(a)).reduce((t, a) => t + (+a.pnl_today || 0), 0);
   today = s.ledger.filter(a => a.status !== "Open" && inToday(a)).reduce((t, a) => t + (+a.pnl_today || 0), 0);
-  // One pass, open and closed alike: the breakdown under the chip is the same rows added up by type.
+  // One pass, open and closed alike. By TYPE for the Classic chip's running line, and by PLATFORM
+  // for the New view's card -- the same rows, added up two ways, never two sets of rows.
+  const todayByVenue = {};
   for(const a of s.ledger){
     if(!inToday(a)) continue;
     const kd = kindOfPool[String(a.pool).replace("Pool ", "")] || "Other";
     todayByKind[kd] = (todayByKind[kd] || 0) + (+a.pnl_today || 0);
+    const vn = poolVenue(a.pool);
+    todayByVenue[vn] = (todayByVenue[vn] || 0) + (+a.pnl_today || 0);
   }
   const openRows = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a));
   const inProfit = openRows.filter(a => (+a.pnl || 0) > 0).length, inLoss = openRows.filter(a => (+a.pnl || 0) < 0).length;
@@ -1783,7 +1786,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // ONE COMPUTATION, two displays. Classic shows it as the chip below; New draws it as a card in
   // the summary row. Recomputing it there would be a second opinion, and it follows the pool/book
   // filters, which only this function knows about.
-  TODAY = {total: todayTotal, booked: today, move: openMove, scope: scope, byKind: {...todayByKind}};
+  TODAY = {total: todayTotal, booked: today, move: openMove, scope: scope,
+           byKind: {...todayByKind}, byVenue: {...todayByVenue}};
   const tb = document.getElementById("todaybar");
   tb.title = `${money(today, true)} booked today + ${money(openMove, true)} today's move on open positions · ${scope}`;
   tb.innerHTML = `<i>Today's P&L</i> ${val("live.today", todayTotal, true)}`;

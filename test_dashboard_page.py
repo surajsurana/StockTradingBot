@@ -114,8 +114,8 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         body = _script(_page())
         body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
         names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
-        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Today's P&L",
-                                 "Strategies"])
+        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Strategies",
+                                 "Today's P&L"])
 
     def test_the_strategy_counts_lead_to_the_strategies_themselves(self):
         """Classic's counts were clickable and these have to be too -- the NAMES live in the
@@ -239,9 +239,22 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         body = _script(_page())
         card = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
         self.assertIn("const day = TODAY;", card)
-        self.assertIn("day.byKind", card)
+        self.assertIn("day.byVenue[k]", card)      # split by platform, like every other card
+        self.assertNotIn("day.byKind", card)       # the by-TYPE line belongs to Classic's chip
         live = body[body.index("const todayTotal = today + openMove"):]
         self.assertIn("TODAY = {total: todayTotal", live[:600])
+
+    def test_the_day_splits_by_platform_over_the_same_desks_as_every_other_card(self):
+        """Four cards split by desk and one split by asset type is five cards you cannot read
+        across. Both splits come off the same ledger pass -- the same rows added up two ways."""
+        body = _script(_page())
+        live = body[body.index("const todayByVenue = {}"):]
+        live = live[:live.index(chr(10) + "  }")]
+        self.assertIn("poolVenue(a.pool)", live)
+        self.assertIn("todayByKind[kd]", live)     # Classic's running line still needs by-type
+        card = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        card = card[card.index("Today's P&L"):]
+        self.assertIn("order.map(k => flatrow(vs[k].name", card)
 
     def test_the_chip_is_hidden_when_the_card_is_showing(self):
         page = _page()
@@ -256,8 +269,8 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         body = _script(page)
         body = body[body.index('box.innerHTML = `<div class="boardrow">'):]
         names = re.findall(r'class="nm">([^<]+)<', body[:body.index("</div>`;")])
-        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Today's P&L",
-                                 "Strategies"])
+        self.assertEqual(names, ["Total Value", "All platforms", "Positions", "Strategies",
+                                 "Today's P&L"])
 
     def test_the_cards_share_one_top_and_bottom(self):
         """Five cards of four different heights read as a pile, not a row."""
