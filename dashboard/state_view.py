@@ -2116,8 +2116,15 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         cost = float(r.pop("cost", 0) or 0)
         r["pct"] = round(float(r["pnl"]) / cost * 100, 2) if r.get("pnl") is not None and cost > 0 else None
         r.setdefault("pnl_today", None)
-        # Live day tape's P&L column toggles between total and today's -- pct_today is today's
-        # move as a % of cost, the same way pct is the total move as a % of cost.
+        # A TRADE CLOSED TODAY BOOKED ITS WHOLE P&L TODAY -- the same convention the pool summaries
+        # already use (reporting/pool_summary.py: realised_today sums the pnl of every trade whose
+        # exit_date is today). Without this a closed row's Today column reads "-", and the column
+        # cannot add up to the figure in the top right, which includes exactly this.
+        if (r.get("pnl_today") is None and r.get("pnl") is not None
+                and str(r.get("status") or "") == "Closed"
+                and r.get("date") == today.isoformat()):
+            r["pnl_today"] = r["pnl"]
+        # pct_today is today's move as a % of cost, the same way pct is the total move as a % of cost.
         r["pct_today"] = round(float(r["pnl_today"]) / cost * 100, 2) if r.get("pnl_today") is not None and cost > 0 else None
     # Which currency each row's PRICE is quoted in, and the rate its rupee amount was converted at.
     # Price and amount are in DIFFERENT currencies on a foreign row -- price stays in the currency the

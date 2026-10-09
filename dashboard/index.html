@@ -856,13 +856,8 @@ function renderLive(s){
 
 }
 
-const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["held_days","Days",true],["sell","",false]];
+const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"bought_on", dir:-1};
-let TAPE_PNL_MODE = "total";   // "total" (lifetime) or "today" -- toggled by clicking the P&L header; P&L % follows it
-function updateTapePnlLabels(){
-  document.getElementById("tape-pnl-label").textContent = TAPE_PNL_MODE === "today" ? "Today's P&L" : "P&L";
-  document.getElementById("tape-pct-label").textContent = TAPE_PNL_MODE === "today" ? "Today's P&L %" : "P&L %";
-}
 const CAL = {y: null, m: null, from: "", to: ""};
 function pad(n){ return String(n).padStart(2, "0"); }
 function calRender(){
@@ -907,13 +902,9 @@ function buildTapeHead(){
   })[k] || "";
   head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>`
     : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>`
-    : k==="pnl" ? `<th class="n"><span class="hf"><button id="tape-pnl-toggle" class="fbtn" title="Click to switch between total and today's P&amp;L"><span id="tape-pnl-label">${l}</span></button><button data-sort="pnl" class="sortbtn" title="Sort">↕</button></span></th>`
-    : k==="pct" ? `<th class="n"><span class="hf"><span class="lbl" id="tape-pct-label">${l}</span><button data-sort="pct" class="sortbtn" title="Sort">↕</button></span></th>`
     : hcell(l, k, cell(k), `${num?"n":""}${k==="symbol"||k==="book"?" l":""}`)).join("")}</tr>`;
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
-  document.getElementById("tape-pnl-toggle").addEventListener("click", e => { e.stopPropagation(); TAPE_PNL_MODE = TAPE_PNL_MODE === "total" ? "today" : "total"; updateTapePnlLabels(); renderTape(STATE); });
-  updateTapePnlLabels();
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
   ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
   document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(); });
@@ -968,9 +959,7 @@ function renderTape(s){
     // today's closed trades 31 rows down and they read as missing -- which is exactly how a pair
     // of crypto sells came to look like they had never happened. The grouping is a TIEBREAK now:
     // the column you sorted by wins.
-    const k0 = TAPE_SORT.key;
-    // when the P&L column is toggled to "today", sorting by P&L or P&L % follows the same field the column is showing
-    const k = TAPE_PNL_MODE === "today" ? (k0 === "pnl" ? "pnl_today" : k0 === "pct" ? "pct_today" : k0) : k0;
+    const k0 = TAPE_SORT.key, k = k0;
     const x = a[k], y = b[k];
     const tie = (b.date||"").localeCompare(a.date||"") || (b.time||"").localeCompare(a.time||"")
               || (a.status === b.status ? 0 : a.status === "Open" ? -1 : 1)
@@ -996,8 +985,8 @@ function renderTape(s){
   document.getElementById("tape-prev").disabled = TAPE_PAGE <= 1;
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
-  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = TAPE_PNL_MODE==="today" ? a.pnl_today : a.pnl, pctV = TAPE_PNL_MODE==="today" ? a.pct_today : a.pct;
-    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="15" class="note">No positions or trades match.</td></tr>`;
+  document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = a.pnl, pctV = a.pct;
+    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n ${a.pnl_today!=null?cls(+a.pnl_today):""}" title="${a.status==="Closed"?"booked today":"today's move on this position"}">${a.pnl_today!=null?money(+a.pnl_today,true):"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="16" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 function showLife(id){
@@ -1692,8 +1681,9 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   if(bookOne){
     keys = bookOne.pools;
     capital = +bookOne.capital || 0; deployed = +bookOne.deployed || 0; cash = +bookOne.cash || 0;
-    booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; today = +bookOne.realised_today || 0; open = +bookOne.positions || 0;
-    todayByKind[kindOfPool[keys[0]] || "Other"] = today;
+    booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; open = +bookOne.positions || 0;
+    // `today` and todayByKind are both filled from the ledger below, under the same filters this
+    // book selection applies -- setting them here too would count the day twice.
   } else {
     for(const k of keys){
       let p = null;
@@ -1706,17 +1696,27 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       else if(k === "I"){ if(s.pool_i.exists) p = {capital: s.pool_i.inr.capital, deployed: s.pool_i.inr.deployed, cash: s.pool_i.inr.cash, realised: s.pool_i.inr.booked.raw, unrealised: s.pool_i.inr.unbooked.raw, realised_today: s.pool_i.inr.booked_today.raw, positions: s.pool_i.usd.positions}; }
       else p = s.pools[k];
       if(!p) continue;
-      capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; today += +p.realised_today || 0; open += +p.positions || 0;
-      const kd = kindOfPool[k] || "Other";
-      if(+p.capital || +p.positions) todayByKind[kd] = (todayByKind[kd] || 0) + (+p.realised_today || 0);   // a type with no money in it stays out of the breakdown
+      capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; open += +p.positions || 0;
+      // `today` (booked today) is NOT taken from p.realised_today any more -- see below.
     }
   }
   const scope = bookF || poolF || kindF ? [poolF, kindF, bookF].filter(Boolean).join(" · ") : "all pools";
   const poolLetters = new Set(keys.map(k => "Pool " + k));
   const inBook = a => !bookF || a.book === bookF;
-  const openMove = s.ledger.filter(a => a.status === "Open" && poolLetters.has(a.pool) && inBook(a) && a.pnl_today != null).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  // TODAY COMES OFF THE LEDGER, the same rows the Positions table shows, so the Today's P&L column
+  // adds up to this chip exactly. It used to be `sum of p.realised_today` + the open rows' move, and
+  // the pool summaries do not cover everything: Pool G has no summary at all, so a crypto trade
+  // closed today never reached the day's number (BNB, -Rs79.92 on 2026-10-09, missing from the
+  // chip), and Pool D's summary reads zero whenever its own state file is not stamped today
+  // (+Rs493.64 missing on the same day). Both are in the ledger, and the ledger is what the page
+  // shows you. A booked row only counts on the day it closed -- state_view gives a trade closed
+  // today a pnl_today equal to its whole realised P&L, the same convention pool_summary uses.
+  const inToday = a => poolLetters.has(a.pool) && inBook(a) && a.pnl_today != null;
+  const openMove = s.ledger.filter(a => a.status === "Open" && inToday(a)).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  today = s.ledger.filter(a => a.status !== "Open" && inToday(a)).reduce((t, a) => t + (+a.pnl_today || 0), 0);
+  // One pass, open and closed alike: the breakdown under the chip is the same rows added up by type.
   for(const a of s.ledger){
-    if(a.status !== "Open" || !poolLetters.has(a.pool) || !inBook(a) || a.pnl_today == null) continue;
+    if(!inToday(a)) continue;
     const kd = kindOfPool[String(a.pool).replace("Pool ", "")] || "Other";
     todayByKind[kd] = (todayByKind[kd] || 0) + (+a.pnl_today || 0);
   }

@@ -195,6 +195,39 @@ class TestTheResearchStageIsTheRealOne(unittest.TestCase):
                       "'Researching now' must be reached only via backtesting, never via in_progress")
 
 
+class TestTodaysPnlAddsUpToTheChip(unittest.TestCase):
+    """The column and the chip must be the same arithmetic over the same rows, or the reader is
+    invited to check whether they agree -- and before this they did not: the chip took its booked
+    part from the pool summaries, which have no entry for Pool G at all and read zero for Pool D
+    whenever its state file is not stamped today."""
+
+    def test_the_table_has_a_todays_pnl_column(self):
+        self.assertIn(chr(34) + "pnl_today" + chr(34) + ",", _page())
+        self.assertIn("Today's P&L", _page())
+
+    def test_the_chip_reads_the_same_ledger_rows_the_column_does(self):
+        body = _script(_page())
+        body = body[body.index("const inToday = a =>"):]
+        body = body[:body.index("const openRows")]
+        self.assertIn('a.status !== "Open" && inToday(a)', body)   # booked today, off the ledger
+        self.assertIn('a.status === "Open" && inToday(a)', body)   # today's move, off the ledger
+        self.assertNotIn("realised_today", body)
+
+    def test_nothing_still_takes_the_day_from_the_pool_summaries(self):
+        """Both sources at once would count the day twice."""
+        body = _script(_page())
+        body = body[body.index("function renderLive("):body.index("const openRows")]
+        self.assertNotIn("today += +p.realised_today", body)
+        self.assertNotIn("todayByKind[kindOfPool[keys[0]]", body)
+
+    def test_the_pnl_toggle_is_gone(self):
+        """With a column of its own, flipping the P&L column to today would put two columns headed
+        "Today's P&L" side by side."""
+        page = _page()
+        self.assertNotIn("TAPE_PNL_MODE", page)
+        self.assertNotIn("tape-pnl-toggle", page)
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many

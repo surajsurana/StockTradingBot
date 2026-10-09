@@ -764,6 +764,32 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual((open_["fx"], open_["fx_is_today"]), (100.0, True))   # still open: today
         self.assertEqual(open_["fx_date"], "2026-10-06")
 
+    def test_a_trade_closed_today_books_its_whole_pnl_today(self):
+        """The Today's P&L column must add up to the figure in the top right, and that figure
+        includes what was booked today. Closed rows carried pnl_today=None, so the one trade that
+        actually moved the day read "-" -- BNB, -Rs79.92 booked on 2026-10-09, missing from the day
+        altogether because Pool G has no pool summary to carry realised_today.
+
+        Same convention as reporting/pool_summary.py: a trade whose exit date is today booked its
+        whole realised P&L today. A trade closed on any earlier day books nothing today."""
+        from dashboard.state_view import _ledger
+        import dashboard.state_view as sv
+        rate = {"2026-10-08": 100.0, "2026-10-09": 100.0}
+        pool_i = {"exists": True, "usdinr": 100.0, "books": [{"key": "us1", "display_name": "US One",
+                  "open_positions": []}]}
+        with patch.object(sv, "history_for", return_value=rate, create=True),              patch("data.usdinr_history.history_for", return_value=rate),              patch.object(sv, "_read_jsonl", return_value=[
+                 {"symbol": "TODAY", "quantity": 1, "entry_price": 10.0, "exit_price": 12.0,
+                  "entry_date": "2026-10-08", "exit_date": "2026-10-09", "pnl": 2.0},
+                 {"symbol": "YESTERDAY", "quantity": 1, "entry_price": 10.0, "exit_price": 9.0,
+                  "entry_date": "2026-10-07", "exit_date": "2026-10-08", "pnl": -1.0}]):
+            rows = _ledger("x", [], {}, [], date(2026, 10, 9), pool_i=pool_i,
+                           us_prices={}, us_prev_close={}, prices={}, crypto_prices={},
+                           crypto_prev_close={})
+        booked = next(r for r in rows if r["symbol"] == "TODAY")
+        older = next(r for r in rows if r["symbol"] == "YESTERDAY")
+        self.assertEqual(booked["pnl_today"], booked["pnl"])   # all of it, booked today
+        self.assertIsNone(older["pnl_today"])                  # closed yesterday: nothing today
+
     def test_net_pnl_is_summed_from_the_pnl_tabs_own_lines_across_every_pool(self):
         # the Strategies tab's new net breakdown must not be a second calculation: two views
         # disagreeing about a strategy's profit is worse than not showing net at all
