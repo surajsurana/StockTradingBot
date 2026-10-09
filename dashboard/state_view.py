@@ -1618,6 +1618,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
                         "resolved": h["resolved"], "started_by": h.get("started_by"),
                         "source": "queue", "outcome": h.get("outcome"), "experiment_id": None,
+                        # why it ended that way, for the outcomes that have a reason (abandoned)
+                        "note": h.get("note") or "",
                         "branch": h.get("branch"), "verdict": "", "run_verdict": "", "metrics": {},
                         "status": "",   # never registered -- it never got as far as a verdict
                         **_sortable("", {})})

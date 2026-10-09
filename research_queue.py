@@ -95,11 +95,45 @@ def _save(state_dir: str, data: dict, lane: str = "india") -> None:
     os.replace(tmp, os.path.join(state_dir, filename))
 
 
+# Outcomes that close a history row WITHOUT any research having happened, so the candidate goes back
+# in the pool to be picked again later (2026-10-09, per explicit direction: "we want the superseded
+# one to be researched if that was the case").
+#
+# WHY THIS EXISTS. "Resolved" was read as "finished with", and these two are not. A candidate bumped
+# for a better-ranked one has had nothing done to it at all, and a candidate whose routine died and
+# got abandoned has had less than that -- yet both were being retired permanently. Three real
+# candidates had already been lost this way: nifty_momentum_30_style and turnover_liquidity in the
+# India lane, crypto_long_horizon_reversal in crypto, none of them ever researched, none of them
+# ever eligible to be again.
+#
+# Listed by what REOPENS rather than by what concludes, deliberately: an outcome this file has never
+# heard of keeps the old, conservative behaviour of counting as done, instead of a typo quietly
+# putting finished work back in the queue.
+REOPENING_OUTCOMES = frozenset({"superseded", "abandoned"})
+
+
 def _resolved_keys(data: dict) -> set:
-    """Keys with a CLOSED history row (researched, skipped or superseded) -- these are done, never
-    picked again. The current pick's own key is deliberately not in here -- it's still open to being
+    """Keys whose research actually CONCLUDED -- researched, skipped, or proposed straight for paper
+    trading. These are done and never picked again.
+
+    A row closed as superseded or abandoned is not one of them: no research was done, so the key
+    stays eligible and will be picked again once the candidates that outranked it are out of the way.
+    The current pick's own key is deliberately not in here either -- it's still open to being
     compared against, and swapped out for, a better-ranked candidate until research starts on it."""
-    return {r["key"] for r in data["history"] if r.get("resolved") is not None}
+    return {r["key"] for r in data["history"]
+            if r.get("resolved") is not None and r.get("outcome") not in REOPENING_OUTCOMES}
+
+
+def _abandoned_keys(data: dict) -> set:
+    """Keys a routine actually CLAIMED and then died on. Eligible again, but LAST.
+
+    Being bumped costs nothing, so a superseded candidate rejoins at its own rank. An abandoned one
+    already consumed a slot, and the reason the routine died may well be the candidate itself -- data
+    it can never fetch, an API that always times out. Letting it rejoin at full rank means the same
+    advance() call that abandons it picks it straight back up, and a lane can retry one dead
+    candidate for ever and never research anything else. Behind everything untried, it gets its
+    retry without being able to block the queue."""
+    return {r["key"] for r in data["history"] if r.get("outcome") == "abandoned"}
 
 
 def _set_current(state_dir: str, data: dict, key: str, name: str, started_by: str, mode: str,
@@ -156,7 +190,10 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane:
     pool = ([(s, "backtest") for s in roadmap.get("researchable_now", [])]
             + [(s, "paper_direct") for s in roadmap.get("paper_direct_eligible", [])])
     pool.sort(key=lambda pair: -pair[0].total_score)
-    picked = next(((s, mode) for s, mode in pool if s.candidate.key not in resolved), None)
+    retry_last = _abandoned_keys(data)
+    eligible = [(s, mode) for s, mode in pool if s.candidate.key not in resolved]
+    picked = (next(((s, m) for s, m in eligible if s.candidate.key not in retry_last), None)
+              or next(iter(eligible), None))
     if picked is None:
         return None
     top, mode = picked[0].candidate, picked[1]

@@ -62,6 +62,66 @@ class TestAdvance(unittest.TestCase):
         self.assertEqual((alpha_row["resolved"], alpha_row["outcome"]), ("2026-09-24", "superseded"))
         self.assertEqual(len(data["history"]), 2)               # alpha's row closed, beta's row opened
 
+    def test_a_superseded_candidate_comes_back_once_the_better_one_is_done(self):
+        """THE WHOLE POINT OF THE DISTINCTION. Being bumped is not a result -- nothing was run, no
+        verdict exists -- so a candidate that was only ever superseded must still get its turn.
+        It was being retired permanently instead, which quietly cost three real candidates
+        (nifty_momentum_30_style, turnover_liquidity, crypto_long_horizon_reversal)."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))          # alpha queued
+        advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 24))          # beta outranks it
+        self.assertEqual(load(d)["current"]["key"], "beta")
+        mark_in_progress(d, "beta", now=datetime(2026, 9, 25))
+        resolve(d, "beta", "researched", experiment_id="EXP-900", now=datetime(2026, 9, 26))
+        entry = advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 27))
+        self.assertIsNotNone(entry, "alpha was never researched -- it has to come back")
+        self.assertEqual(entry["key"], "alpha")
+
+    def test_an_abandoned_candidate_comes_back_but_only_behind_everything_untried(self):
+        """A routine that claimed it and died did LESS than no research. The week is lost; the
+        candidate is not -- but it waits its turn. At full rank, the same advance() that abandons it
+        picks it straight back up, and one candidate that kills every routine it touches would block
+        the lane for ever."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 22))
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 26))   # stale lock -> abandoned
+        row = next(r for r in load(d)["history"] if r["key"] == "alpha" and r["outcome"] == "abandoned")
+        self.assertEqual(row["outcome"], "abandoned")
+        self.assertEqual(load(d)["current"]["key"], "beta")
+        mark_in_progress(d, "beta", now=datetime(2026, 9, 26))
+        resolve(d, "beta", "researched", experiment_id="EXP-901", now=datetime(2026, 9, 27))
+        self.assertEqual(advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 28))["key"], "alpha")
+
+    def test_a_concluded_candidate_never_comes_back(self):
+        """The other half of the rule, and the one that stops the queue re-proposing finished work:
+        researched, skipped and paper_trading_proposed are all real decisions."""
+        for outcome in ("researched", "skipped", "paper_trading_proposed"):
+            with self.subTest(outcome=outcome):
+                d = tempfile.mkdtemp()
+                advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 22))
+                mark_in_progress(d, "alpha", now=datetime(2026, 9, 22))
+                resolve(d, "alpha", outcome, now=datetime(2026, 9, 23))
+                self.assertIsNone(advance(d, _roadmap(["alpha"]), now=datetime(2026, 9, 24)))
+
+    def test_an_outcome_this_module_has_never_heard_of_counts_as_done(self):
+        """Listed by what reopens, not by what concludes, so a typo or a future outcome keeps the
+        conservative behaviour instead of quietly putting finished work back in the queue."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        data = load(d)
+        data["history"][0].update({"resolved": "2026-09-23", "outcome": "something_new"})
+        data["current"] = None
+        research_queue._save(d, data, "india")
+        self.assertEqual(advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 24))["key"], "beta")
+
+    def test_a_superseded_candidate_can_be_started_by_hand_again(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        advance(d, _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 24))
+        entry = start_now(d, "alpha", _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 25))
+        self.assertEqual((entry["key"], entry["started_by"]), ("alpha", "manual"))
+
     def test_never_swaps_a_pick_a_human_made_by_hand(self):
         d = tempfile.mkdtemp()
         start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))

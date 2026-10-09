@@ -2327,7 +2327,7 @@ function buildResearchHead(){
     name: `<input id="res-q" type="search" placeholder="find…" autocomplete="off">`,
     label: laneFilterControl("res-lane"),
     resolved: `<select id="res-source"><option value="">All</option><option value="queue">From the queue</option><option value="earlier">Before the queue</option></select>`,
-    verdict: `<select id="res-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="superseded">Superseded</option><option value="skipped">Skipped</option><option value="paper_trading_proposed">Paper proposed</option></select>`,
+    verdict: `<select id="res-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="superseded">Superseded</option><option value="abandoned">Abandoned</option><option value="skipped">Skipped</option><option value="paper_trading_proposed">Paper proposed</option></select>`,
     status: `<select id="res-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option><option value="none">Never registered</option></select>`,
   };
   const alignOf = {trades:"n", cagr:"n", sharpe:"n", max_dd:"n", win_rate:"n", exp_no:"n"};
@@ -2914,8 +2914,11 @@ function renderResearchResults(rm, laneName){
       return `<span class="pill ${r.verdict === "PASS" ? "ok" : r.verdict === "REJECT" ? "miss" : ""}" title="${esc(tip)}">${esc(r.verdict)}${differs ? " *" : ""}</span>`;
     }
     if(r.outcome === "paper_trading_proposed") return `<span class="pill" title="no backtest was possible, so it was proposed straight for paper trading">Paper proposed</span>`;
-    if(r.outcome === "skipped") return `<span class="pill" title="claimed but abandoned before a verdict -- nothing was researched">Skipped</span>`;
-    return `<span class="pill info" title="a better-ranked candidate replaced it before research started">Superseded</span>`;
+    if(r.outcome === "skipped") return `<span class="pill" title="looked at and deliberately not pursued -- it will not be picked again">Skipped</span>`;
+    // Neither of these means a verdict. Both go back in the queue, and the pill says so, because
+    // "Superseded" on its own reads as a result and it is the absence of one.
+    if(r.outcome === "abandoned") return `<span class="pill info" title="${esc(r.note || "the routine that claimed it never reported back")} · nothing was researched, so it is back in the queue to be picked again">Abandoned &#8635;</span>`;
+    return `<span class="pill info" title="a better-ranked candidate replaced it before research started · nothing was researched, so it is back in the queue to be picked again">Superseded &#8635;</span>`;
   };
   const m = r => r.metrics || {};
   const when = r => r.source === "queue"
