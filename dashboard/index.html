@@ -177,7 +177,10 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
 .bigpot .head{display:flex;align-items:baseline;justify-content:space-between;gap:14px;margin-bottom:6px}
 .bigpot .potsum{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:19px;font-variant-numeric:tabular-nums}
 .bigpot.warn{border-left-color:var(--warn)}
-.pottbl{width:100%;border-collapse:collapse;font-size:13px}
+/* min-width:0 against the global table{min-width:640px}, which is there so the big data tables
+   scroll rather than crush. A table INSIDE a card must fit the card: at 640px it ran 180px past the
+   edge of a 460px card and the numbers were drawn outside it. */
+.pottbl{width:100%;min-width:0;border-collapse:collapse;font-size:13px}
 .pottbl td{padding:3px 0;border:0}
 .pottbl td.n{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .pottbl td.note{padding-left:12px;font-size:11.5px;text-align:right;white-space:nowrap}

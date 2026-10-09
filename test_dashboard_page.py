@@ -115,6 +115,12 @@ class TestHidingActuallyHides(unittest.TestCase):
             if f"{selector}{{display:" in page or f"{selector}{{display:" in page.replace(" ", ""):
                 self.assertIn(f"{selector}[hidden]{{display:none}}", page, selector)
 
+    def test_a_table_inside_a_card_overrides_the_global_min_width(self):
+        """table{min-width:640px} exists so the big data tables scroll rather than crush. A table
+        inside a card inherits it and runs straight past the card's edge -- the numbers get drawn
+        outside the box."""
+        self.assertIn(".pottbl{width:100%;min-width:0;", _page())
+
     def test_the_two_that_already_broke_are_covered(self):
         page = _page()
         self.assertIn(".profilemenu[hidden]{display:none}", page)
