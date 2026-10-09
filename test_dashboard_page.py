@@ -228,6 +228,43 @@ class TestTodaysPnlAddsUpToTheChip(unittest.TestCase):
         self.assertNotIn("tape-pnl-toggle", page)
 
 
+class TestTheDayChipHasTwoHomes(unittest.TestCase):
+    """The summary used to sit under two nearly empty bands -- the day's chip on one line and the
+    Classic/New switch on another, both right-aligned with the whole left of the page blank. The
+    chip is now MOVED into the summary row's fourth column in the New view, which is the same
+    element in both places, so nothing is rendered twice."""
+
+    def test_it_is_parked_before_the_board_is_rebuilt(self):
+        """The board rebuilds its innerHTML on every price refresh. With the chip inside it and not
+        parked first, that would delete the element -- for good, every 20 seconds."""
+        body = _script(_page())
+        head = body[body.index("function renderLiveBoard"):]
+        self.assertLess(head.index("parkTodayStack()"), head.index("box.innerHTML"))
+
+    def test_it_is_placed_after_the_board_exists(self):
+        body = _script(_page())
+        body = body[body.index("function applyLiveView"):]
+        body = body[:body.index(chr(10) + "}")]
+        self.assertLess(body.index("renderLiveBoard(STATE)"), body.index("placeTodayStack(which)"))
+
+    def test_there_is_exactly_one_of_it(self):
+        page = _page()
+        self.assertEqual(page.count('id="todaybar"'), 1)
+        self.assertEqual(page.count('class="todaystack"'), 1)
+        self.assertEqual(page.count('id="todayhome"'), 1)
+
+    def test_the_view_switch_travels_with_the_chip(self):
+        """Left in a band of its own it would still cost a line, and on another tab it would show
+        with nothing to switch."""
+        page = _page()
+        live = page[page.index('<section id="tab-live">'):]
+        live = live[:live.index('<div class="cards" id="livecards">')]
+        stack = live[live.index('<div class="todaystack">'):]
+        self.assertIn('data-view="old"', stack)
+        self.assertIn('data-view="new"', stack)
+        self.assertIn('id="todayhome"', live)          # and its Classic home is in Live day too
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many

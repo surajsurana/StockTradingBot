@@ -65,7 +65,7 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 @keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
 /* The Live-day P&L belongs beside the work, not in the navigation. */
-.viewswitch{display:flex;justify-content:flex-end;margin:0 0 10px}
+.viewswitch{display:flex;justify-content:flex-end;margin:0}
 .segbtns{display:inline-flex;border:1px solid var(--rule);border-radius:20px;overflow:hidden}
 .segbtns button{all:unset;cursor:pointer;padding:4px 14px;font-size:12.5px;font-weight:600;color:var(--muted)}
 .segbtns button.on{background:var(--accent);color:var(--accent-ink)}
@@ -92,9 +92,8 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pboard tr.total td{border-top:2px solid var(--ink);font-weight:600}
 .pboard .venue{display:block;font-weight:600}
 .pboard .venue small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
-.pagetop{display:flex;align-items:flex-start;justify-content:flex-end;gap:16px;flex-wrap:wrap;
-  margin-bottom:14px;min-height:0}
-.pagetop:empty,.pagetop:has(.todaybar[hidden]){margin-bottom:0}
+.livetop{display:flex;justify-content:flex-end;margin:0 0 10px}
+.livetop:empty{margin:0}
 .todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
@@ -145,7 +144,7 @@ nav button:focus-visible,input:focus-visible,th button:focus-visible,.agent:focu
 section[hidden]{display:none}
 h2{font-family:"Source Serif 4",Georgia,serif;font-weight:600;font-size:20px;margin:26px 0 8px}
 /* The first heading in a section opens the page -- there is nothing above it to be spaced from. */
-section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{margin-top:0}
+section > h2:first-child,section > .tools:first-child,section > .livetop + h2{margin-top:0}
 .content{padding-top:14px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
 .tile{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
@@ -179,6 +178,13 @@ section > h2:first-child,section > .tools:first-child,section > .pagetop + h2{ma
    widths, so the set spans the page instead of huddling at the left, and the empty fourth column
    leaves the eye somewhere to stop. */
 .boardrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+/* The fourth column carries the day's chip and the Strategies card under it. The chip is short and
+   the cards are not, so the column that used to be blank now absorbs the two bands that were
+   stacked above the summary. */
+.boardcol{display:flex;flex-direction:column;gap:10px;min-width:0}
+.boardside{display:flex;justify-content:flex-end}
+.boardside .todaystack{width:100%}
+.boardside .todaybar{width:100%;justify-content:space-between;margin-left:0}
 /* The cell decides the width now. Same specificity as .bigpot.onecard, so this must come AFTER it
    or the 520px cap wins and the grid column is never filled. */
 .boardrow .bigpot{max-width:none;flex:none}
@@ -541,19 +547,21 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </aside>
 <div class="content">
 <p id="modenote" class="note" hidden></p>
-<div class="pagetop"><span></span><div class="todaystack">
-  <span class="todaybar" id="todaybar" hidden></span>
-  <div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
-</div></div>
 <main class="shellmain">
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live">
-  <div class="viewswitch">
-    <span class="segbtns" role="group" aria-label="Summary layout">
-      <button id="lv-old" class="on" data-view="old">Classic</button><button id="lv-new" data-view="new">New</button>
-    </span>
-  </div>
+  <!-- Where the day's chip lives in Classic. In the New view it is MOVED into the summary row's
+       fourth column, so the cards do not sit under two nearly empty bands. -->
+  <div class="livetop" id="todayhome"><div class="todaystack">
+    <span class="todaybar" id="todaybar" hidden></span>
+    <div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
+    <div class="viewswitch">
+      <span class="segbtns" role="group" aria-label="Summary layout">
+        <button id="lv-old" class="on" data-view="old">Classic</button><button id="lv-new" data-view="new">New</button>
+      </span>
+    </div>
+  </div></div>
   <div class="cards" id="livecards"></div>
   <div id="liveboard" hidden></div>
   <h2>Positions and trades</h2>
@@ -1379,6 +1387,9 @@ const poolVenue = pool => {
 function renderLiveBoard(s){
   const box = document.getElementById("liveboard");
   if(!box) return;
+  // The chip is a REAL NODE that gets moved into this box's fourth column; rebuilding innerHTML
+  // underneath it would delete it for good, and a price refresh rebuilds every 20 seconds.
+  parkTodayStack();
   const lc = s.live_capital || {};
   const vs = {
     kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
@@ -1485,16 +1496,19 @@ function renderLiveBoard(s){
           ${metric("open", "Open", "open", false, true)}
           ${metric("closed", "Closed", "closed", false, true)}
         </div></div>
-      <div class="desk bigpot countcard">
-        <div class="head"><span class="nm">Strategies</span>
-          <b class="potsum" title="Books trading right now">${sActive}</b></div>
-        <div class="potlist">
-          ${navrow("sactive", "Active", sActive,
-                   {"reg-status": MODE === "live" ? "Live" : "Paper"},
-                   `the ${sActive} books trading right now · click to see them by name`)}
-          ${navrow("sresearched", "Researched", sResearched, {},
-                   `every strategy with a backtest on record, trading or not · click to see them by name`)}
-        </div></div>
+      <div class="boardcol">
+        <div class="boardside" id="boardside"></div>
+        <div class="desk bigpot countcard">
+          <div class="head"><span class="nm">Strategies</span>
+            <b class="potsum" title="Books trading right now">${sActive}</b></div>
+          <div class="potlist">
+            ${navrow("sactive", "Active", sActive,
+                     {"reg-status": MODE === "live" ? "Live" : "Paper"},
+                     `the ${sActive} books trading right now · click to see them by name`)}
+            ${navrow("sresearched", "Researched", sResearched, {},
+                     `every strategy with a backtest on record, trading or not · click to see them by name`)}
+          </div></div>
+      </div>
     </div>`;
 
   const toggle = el => {
@@ -1519,6 +1533,19 @@ function renderLiveBoard(s){
 const LIVE_VIEW_KEY = "desk.liveView";
 const liveView = () => { try { return localStorage.getItem(LIVE_VIEW_KEY) || "old"; } catch(e){ return "old"; } };
 
+// The day's chip lives in one of two places, and is the same element in both: Classic keeps it in
+// its own band above the cards, New puts it in the summary row's fourth column so there is no band.
+function todayHome(){ return document.getElementById("todayhome"); }
+function parkTodayStack(){
+  const st = document.querySelector(".todaystack"), home = todayHome();
+  if(st && home && st.parentElement !== home) home.appendChild(st);
+}
+function placeTodayStack(which){
+  const st = document.querySelector(".todaystack"), side = document.getElementById("boardside");
+  const to = (which === "new" && side) ? side : todayHome();
+  if(st && to && st.parentElement !== to) to.appendChild(st);
+}
+
 function applyLiveView(){
   const which = liveView();
   const cards = document.getElementById("livecards"), board = document.getElementById("liveboard");
@@ -1528,6 +1555,7 @@ function applyLiveView(){
   for(const b of document.querySelectorAll(".viewswitch [data-view]"))
     b.classList.toggle("on", b.dataset.view === which);
   if(which === "new" && STATE) renderLiveBoard(STATE);
+  placeTodayStack(which);          // after the board exists, never before
 }
 document.querySelectorAll(".viewswitch [data-view]").forEach(b => b.addEventListener("click", () => {
   try { localStorage.setItem(LIVE_VIEW_KEY, b.dataset.view); } catch(e){}
