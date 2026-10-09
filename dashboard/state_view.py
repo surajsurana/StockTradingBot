@@ -2042,8 +2042,11 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         # close stands rather than the move reading as zero.
         g_open = (coindcx_day_open or {}).get(p["symbol"])
         g_prev = (g_open / g_rate) if (g_open and g_rate) else crypto_prev_close.get(p["symbol"])
+        # p["price"] is build_pool_g's own mark, which is ALREADY CoinDCX's price where there is
+        # one. Reading crypto_prices here instead measured a Binance price against a CoinDCX
+        # reference -- two markets subtracted from each other, which is worse than either alone.
         move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
-                        crypto_prices.get(p["symbol"]), g_prev)
+                        p.get("price"), g_prev)
         rows.append({"date": p.get("entry_date"), "time": "", "action": "BUY",
                      "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
                      "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",
