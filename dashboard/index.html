@@ -1345,6 +1345,12 @@ function renderLiveBoard(s){
     groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
                                                         invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
   };
+  // COST BASIS, the same one the P&L is measured against. `amount` is what left the account --
+  // it includes the buy fee -- while `pnl` is measured against `order_value`, the fee-exclusive
+  // figure the broker calls "Invested". Mixing the two made Holdings read Rs15 high on the one row
+  // that has a fee, and made Invested disagree with CoinDCX's own screen by the same Rs15. Where a
+  // row has no order_value (Groww records no fee), amount IS the cost and nothing changes.
+  const costOf = r => (r.order_value != null ? r.order_value : (r.amount || 0));
   // Every figure comes off the SAME ledger rows the Positions table shows, so the two cannot
   // disagree -- a summary built from its own source is a second opinion, not a summary.
   for(const r of (s.ledger || [])){
@@ -1354,8 +1360,8 @@ function renderLiveBoard(s){
     v.today += (r.pnl_today || 0);
     if(String(r.status || "").toLowerCase() === "open"){
       v.open += 1;
-      v.invested += (r.amount || 0);
-      v.held += (r.amount || 0) + (r.pnl || 0);      // cost plus what it has done since
+      v.invested += costOf(r);
+      v.held += costOf(r) + (r.pnl || 0);            // cost plus what it has done since
     } else v.closed += 1;
   }
   const order = ["kite", "coindcx", "groww"];
@@ -1965,10 +1971,12 @@ function renderAllocations(s){
     const code = String(pool || "").trim().split(/\s+/).pop().toUpperCase();
     return ["G", "E", "E1"].includes(code) ? "coindcx" : code === "H" ? "groww" : "kite";
   };
+  // The same cost basis the P&L is measured against -- `amount` includes the buy fee, `order_value`
+  // does not, and the broker's own "Invested" is the fee-exclusive one.
   const investedBy = {kite: 0, coindcx: 0, groww: 0};
   for(const r of (s.ledger || []))
     if(String(r.status || "").toLowerCase().startsWith("open"))
-      investedBy[venueOf(r.pool)] += (r.amount || 0);
+      investedBy[venueOf(r.pool)] += (r.order_value != null ? r.order_value : (r.amount || 0));
 
   const cards = [
     bigcard("Cash available", sum(lc.balance, lc.crypto_balance, growwCash), [
