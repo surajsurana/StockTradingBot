@@ -828,8 +828,13 @@ class TestBuildDashboardState(unittest.TestCase):
         rows = _ledger("x", [], {}, [], date(2026, 10, 10), pool_g=pool_g, prices={},
                        crypto_prices={}, crypto_prev_close={})
         bnb = next(r for r in rows if r["symbol"] == "BNB" and r["status"] == "Open")
-        self.assertEqual(bnb["pnl_today"], bnb["pnl"])
+        # P&L is measured against what was INVESTED (fee-exclusive, as CoinDCX reports it)...
         self.assertAlmostEqual(bnb["pnl"], 19.0, places=0)       # their screen: +20.69
+        # ...but the DAY is what happened to the account, so it carries the fee that was paid to
+        # open the position. Rs19.75 of fees on 2026-10-10's two buys was the bulk of a Rs15 gap
+        # against CoinDCX's own Today figure.
+        self.assertAlmostEqual(bnb["pnl_today"], bnb["pnl"] - 11.36, places=2)
+        self.assertLess(bnb["pnl_today"], bnb["pnl"])
 
     def test_a_paper_position_with_no_fill_is_left_on_its_own_terms(self):
         """Pool G's PAPER book has no exchange fill to defer to, and re-denominating it would

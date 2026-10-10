@@ -1632,6 +1632,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
         exp_id = (h or {}).get("experiment_id") or exp_id
         exp = _experiment_summary(exp_id)
         results.append({"key": r.strategy_key, "name": getattr(r, "display_name", r.strategy_key),
+                        "sid": getattr(r, "strategy_id", "") or "",
+                        "pool": _default_pool_label(r),
                         "lane": lane, "label": LANE_LABELS[lane],
                         "mode": (h or {}).get("mode", "backtest"), "resolved": (h or {}).get("resolved"),
                         "started_by": (h or {}).get("started_by"),
@@ -1651,6 +1653,7 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         "status": str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1],
                         **_sortable(exp_id, exp)})
     covered = {r["key"] for r in results}
+    by_key = {r.strategy_key: r for r in registry_records}
     for key, (lane, h) in queue_rows.items():
         # `covered` is what the REGISTRY already put in the list. Skipping on experiment_id instead
         # assumed every experiment has a registry record, and a candidate that was researched but
@@ -1661,7 +1664,13 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
             continue
         exp_id = h.get("experiment_id") or ""
         exp = _experiment_summary(exp_id) if exp_id else {}
+        # A candidate can be registered and paper trading while this row is still the queue's --
+        # the registry path needs a primary_experiment_id to own it. Where a record exists, its
+        # id, pool and status belong on the row whatever path built it.
+        rec = by_key.get(key)
         results.append({"key": key, "name": h.get("name") or names.get(key, key),
+                        "sid": getattr(rec, "strategy_id", "") or "" if rec else "",
+                        "pool": _default_pool_label(rec) if rec else "",
                         "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
                         "resolved": h["resolved"], "started_by": h.get("started_by"),
                         "source": "queue", "outcome": h.get("outcome"), "experiment_id": exp_id or None,
@@ -1672,7 +1681,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         # experiment's own word is all there is -- and it is shown as its own word.
                         "verdict": exp.get("verdict", ""), "run_verdict": exp.get("verdict", ""),
                         "metrics": exp,
-                        "status": "",   # never registered -- nothing has been promoted
+                        "status": (str(getattr(rec.deployment_status, "value", rec.deployment_status)).split(".")[-1]
+                   if rec else ""),   # blank only when nothing has been registered at all
                         **_sortable(exp_id, exp)})
     # Newest research first by default; the dashboard re-sorts client-side from here.
     results.sort(key=lambda r: (r["exp_no"] or 0, r["resolved"] or "", r["key"]), reverse=True)
@@ -2114,9 +2124,14 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
             paid = float(over["order_value"])          # rupees billed, less the fee -- "Invested"
             worth = float(p.get("price") or 0) * float(p["quantity"]) * g_rate
             cost, pnl = paid, round(worth - paid, 2)
-            # Bought today: every rupee of it moved today, the same convention CoinDCX applies.
+            # BOUGHT TODAY: today's figure is what the day did to the ACCOUNT, so it is measured
+            # against the cash that actually left it -- the fee included. CoinDCX does the same:
+            # on 2026-10-10 their Today read +Rs13.04 against our +Rs28, and Rs19.75 of that gap
+            # was exactly the fee on the day's two buys, which we were not charging to the day at
+            # all. (Their TOTAL P&L is fee-exclusive, and so is ours -- it is only the day that
+            # absorbs what was spent making the trade.)
             if entered_today:
-                today_move = pnl
+                today_move = round(worth - float(over.get("amount") or paid), 2)
         rows.append({"date": p.get("entry_date"), "time": "", "action": "BUY",
                      "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
                      "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",

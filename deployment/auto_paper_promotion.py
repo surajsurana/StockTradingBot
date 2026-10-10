@@ -28,7 +28,7 @@ from typing import Optional
 
 from deployment.base import DeploymentStatus, ResearchVerdict
 from deployment.deployment_manager import (get_strategy, register_strategy, set_deployment_status,
-                                           set_research_verdict)
+                                           set_primary_experiment_id, set_research_verdict)
 
 # Verdicts worth putting in front of a paper book.
 PROMOTING_VERDICTS = ("PASS", "INCONCLUSIVE")
@@ -112,6 +112,11 @@ def promote(strategy_key: str, verdict: str, display_name: str = "", strategy_fa
         enum = _verdict_enum(word)
         if enum is not None and getattr(record, "research_verdict", None) != enum:
             set_research_verdict(strategy_key, enum, source=source)
+        # The experiment this verdict came from. Without it the Research tab cannot join the row to
+        # its registry record, so the result showed with no id, no pool and no status -- the three
+        # things that say what actually happened to it.
+        if experiment_id and not getattr(record, "primary_experiment_id", ""):
+            set_primary_experiment_id(strategy_key, experiment_id)
         record = get_strategy(strategy_key)
         if record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING:
             result.update({"promoted": True, "runner": runner,
