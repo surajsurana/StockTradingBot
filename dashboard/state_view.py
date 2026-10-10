@@ -2088,16 +2088,32 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         # reference -- two markets subtracted from each other, which is worse than either alone.
         move = day_move(p["symbol"], p["entry_price"], p["quantity"], entered_today,
                         p.get("price"), g_prev)
+        over = _live_fill_overrides(p, p["entry_price"] * p["quantity"] * g_rate)
+        cost = p["entry_price"] * p["quantity"] * g_rate
+        pnl = round(p["unbooked_raw"] * g_rate, 2)
+        today_move = round(move * g_rate, 2) if move is not None else None
+        # THE ENTRY SIDE HAS TO COME FROM THE EXCHANGE TOO. The mark is already CoinDCX's, but
+        # entry_price is the GLOBAL USDT price at decision time, and the fill happened on an INR
+        # market that trades at a premium to it -- about 3% on 2026-10-10. Subtracting one from the
+        # other said BTC was +Rs32 while CoinDCX's own screen said -Rs43.77, on the same coin, the
+        # same quantity and the same mark. Rupees paid is not a conversion of the USDT reference; it
+        # is a number the exchange billed, and live_fill records it.
+        if over.get("actual_fill"):
+            paid = float(over["order_value"])          # rupees billed, less the fee -- "Invested"
+            worth = float(p.get("price") or 0) * float(p["quantity"]) * g_rate
+            cost, pnl = paid, round(worth - paid, 2)
+            # Bought today: every rupee of it moved today, the same convention CoinDCX applies.
+            if entered_today:
+                today_move = pnl
         rows.append({"date": p.get("entry_date"), "time": "", "action": "BUY",
                      "symbol": p["symbol"], "symbol_key": p["symbol"], "book_key": None,
                      "qty": p["quantity"], "price": round(p["entry_price"], 2), "pool": "Pool G",
                      "book": "AI judgment", "status": "Open", "fill_today": entered_today,
-                     "pnl": round(p["unbooked_raw"] * g_rate, 2),
-                     "pnl_today": round(move * g_rate, 2) if move is not None else None,
+                     "pnl": pnl, "pnl_today": today_move,
                      "bought_on": p.get("entry_date"), "held_days": _days_between(p.get("entry_date"), today_iso),
-                     "cost": p["entry_price"] * p["quantity"] * g_rate,
+                     "cost": cost,
                      "note": p.get("reasoning", "") or "price in USDT; P&L in Rs., before fees and tax", "kind": "Crypto",
-                     **_live_fill_overrides(p, p["entry_price"] * p["quantity"] * g_rate)})
+                     **over})
     for t in _read_jsonl(os.path.join(state_dir, "pool_g", "trades.jsonl")):
         qty = float(t.get("quantity", 0) or 0)
         rows.append({"date": t.get("exit_date"), "time": "", "action": "SELL", "symbol": t.get("symbol"),

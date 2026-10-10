@@ -1,6 +1,8 @@
 """run_queued_backtest.py -- the VPS-side backtest step for an already-implemented research candidate."""
 import os
 import tempfile
+import json
+from unittest.mock import patch
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -151,6 +153,51 @@ class TestRunLane(unittest.TestCase):
         self.assertIsNone(research_queue.load(d, "india")["current"])
         self.assertEqual(research_queue.load(d, "crypto")["current"]["key"], "beta")   # untouched
 
+
+class TestTheLockSaysWhoIsHoldingIt(unittest.TestCase):
+    """The lock used to carry a bare pid, so nothing outside this file could tell that a backtest
+    was running -- and the six-hourly queue advance expired a claim out from under one, throwing
+    away a finished PASS (2026-10-10, US lane, EXP-096)."""
+
+    def _lock(self, text):
+        import run_queued_backtest as q
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "queued_backtest.lock")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        return q, path
+
+    def test_a_live_holder_is_reported_with_its_lane(self):
+        import run_queued_backtest as q
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "queued_backtest.lock")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(), "lane": "us"}, f)
+        with patch.object(q, "LOCK_PATH", path):
+            self.assertEqual((q.running_claim() or {}).get("lane"), "us")
+
+    def test_a_dead_holder_is_not_a_lock(self):
+        import run_queued_backtest as q
+        _, path = self._lock(json.dumps({"pid": 999999, "lane": "us"}))
+        with patch.object(q, "LOCK_PATH", path):
+            self.assertIsNone(q.running_claim())
+
+    def test_the_older_bare_pid_lock_still_reads(self):
+        import run_queued_backtest as q
+        _, path = self._lock(str(os.getpid()))
+        with patch.object(q, "LOCK_PATH", path):
+            self.assertEqual((q.running_claim() or {}).get("pid"), os.getpid())
+
+    def test_an_unreadable_lock_does_not_block_every_future_run(self):
+        import run_queued_backtest as q
+        _, path = self._lock("{not json at all")
+        with patch.object(q, "LOCK_PATH", path):
+            self.assertIsNone(q.running_claim())
+
+    def test_no_lock_file_is_no_lock(self):
+        import run_queued_backtest as q
+        with patch.object(q, "LOCK_PATH", os.path.join(tempfile.mkdtemp(), "nope.lock")):
+            self.assertIsNone(q.running_claim())
 
 if __name__ == "__main__":
     unittest.main()

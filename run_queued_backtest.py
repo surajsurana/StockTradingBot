@@ -41,7 +41,10 @@ run, which would have locked that queue the same way).
 """
 
 import argparse
+import json
 import os
+from datetime import datetime
+from typing import Optional
 import re
 import subprocess
 import sys
@@ -76,6 +79,38 @@ def implemented_keys(lane: str) -> set:
     except Exception as e:                                    # a half-merged catalog shouldn't kill the cron
         print(f"[{lane}] could not read the experiment catalog ({type(e).__name__}: {e})", flush=True)
         return set()
+
+
+def running_claim() -> Optional[dict]:
+    """The backtest that is running RIGHT NOW, or None.
+
+    WHY ANYONE ELSE CARES. advance_research_queue runs every six hours and expires a claim older
+    than STALE_LOCK_DAYS. On 2026-10-10 the US walk-forward started at 02:30 and the 06:00 advance,
+    seeing a claim exactly two days old, abandoned it underneath the running job -- which then
+    finished, produced a real PASS, and crashed with "not the current candidate". A lock whose
+    holder is alive says the run is not abandoned, so the queue can stop guessing from the clock.
+
+    Tolerates the older plain-pid lock file, and treats an unreadable one as not held: a lock nobody
+    can parse must not be able to block every future run."""
+    try:
+        with open(LOCK_PATH, encoding="utf-8") as f:
+            raw = f.read().strip()
+    except OSError:
+        return None
+    try:
+        held = json.loads(raw)
+        if not isinstance(held, dict):
+            raise ValueError
+    except ValueError:
+        try:
+            held = {"pid": int(raw or 0), "lane": ""}
+        except ValueError:
+            return None
+    try:
+        os.kill(int(held.get("pid") or 0), 0)
+    except (OSError, ValueError, TypeError):
+        return None
+    return held
 
 
 def pending_candidate(state_dir: str, lane: str) -> tuple:
@@ -164,19 +199,14 @@ def main() -> None:
 
     # One at a time. A stale lock from a killed run would block this forever, so the lock carries the
     # pid and is ignored once that process is gone.
-    if os.path.exists(LOCK_PATH):
-        try:
-            with open(LOCK_PATH, encoding="utf-8") as f:
-                pid = int(f.read().strip() or 0)
-            os.kill(pid, 0)
-            print(f"another backtest is already running (pid {pid}) -- nothing to do", flush=True)
-            return
-        except (OSError, ValueError):
-            print("ignoring a stale backtest lock (its process is gone)", flush=True)
+    held = running_claim()
+    if held:
+        print(f"another backtest is already running (pid {held['pid']}) -- nothing to do", flush=True)
+        return
 
     os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
     with open(LOCK_PATH, "w", encoding="utf-8") as f:
-        f.write(str(os.getpid()))
+        json.dump({"pid": os.getpid(), "lane": args.lane or "", "at": datetime.now().isoformat(timespec="seconds")}, f)
     try:
         for lane in ([args.lane] if args.lane else list(research_queue.LANES)):
             if run_lane(lane, state_dir, args.windows, args.send, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID):

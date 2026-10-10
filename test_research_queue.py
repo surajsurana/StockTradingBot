@@ -122,6 +122,51 @@ class TestAdvance(unittest.TestCase):
         entry = start_now(d, "alpha", _roadmap(["beta", "alpha"]), now=datetime(2026, 9, 25))
         self.assertEqual((entry["key"], entry["started_by"]), ("alpha", "manual"))
 
+    def test_a_claim_whose_backtest_is_running_is_not_abandoned(self):
+        """THE 2026-10-10 FAILURE. The US walk-forward started at 02:30; the 06:00 advance saw a
+        claim exactly STALE_LOCK_DAYS old and abandoned it underneath the running job. The job then
+        finished, produced a real PASS (EXP-096), and died trying to resolve a candidate that was
+        no longer current -- a verdict thrown away by a clock."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 22))
+        late = datetime(2026, 9, 22) + timedelta(days=research_queue.STALE_LOCK_DAYS + 1)
+        self.assertIsNone(advance(d, _roadmap(["alpha", "beta"]), now=late, claim_is_busy=True))
+        self.assertEqual(load(d)["current"]["key"], "alpha")        # still claimed, still running
+        # and with nothing running, the same call still expires it
+        advance(d, _roadmap(["alpha", "beta"]), now=late)
+        self.assertEqual(load(d)["current"]["key"], "beta")
+
+    def test_a_finished_result_is_recorded_even_if_the_lane_moved_on(self):
+        """The verdict is the expensive thing. Where the row it belongs to was closed WITHOUT one,
+        the result replaces that outcome instead of raising and being lost."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 22))
+        late = datetime(2026, 9, 22) + timedelta(days=research_queue.STALE_LOCK_DAYS + 1)
+        advance(d, _roadmap(["alpha", "beta"]), now=late)           # alpha abandoned, beta queued
+        resolve(d, "alpha", "researched", experiment_id="EXP-096", now=late)
+        row = next(r for r in reversed(load(d)["history"]) if r["key"] == "alpha")
+        self.assertEqual((row["outcome"], row["experiment_id"]), ("researched", "EXP-096"))
+        self.assertIn("moved on", row["note"])
+        self.assertEqual(load(d)["current"]["key"], "beta")         # the lane is not disturbed
+
+    def test_a_result_for_something_that_never_ran_is_still_refused(self):
+        """Only a row closed WITHOUT a verdict can take one. Anything else is a caller bug, and
+        silently writing it would corrupt the record this whole module exists to keep."""
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        with self.assertRaises(ValueError):
+            resolve(d, "beta", "researched", experiment_id="EXP-900", now=datetime(2026, 9, 23))
+
+    def test_a_result_does_not_overwrite_a_verdict_already_recorded(self):
+        d = tempfile.mkdtemp()
+        advance(d, _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))
+        mark_in_progress(d, "alpha", now=datetime(2026, 9, 22))
+        resolve(d, "alpha", "researched", experiment_id="EXP-100", now=datetime(2026, 9, 23))
+        with self.assertRaises(ValueError):
+            resolve(d, "alpha", "researched", experiment_id="EXP-101", now=datetime(2026, 9, 24))
+
     def test_never_swaps_a_pick_a_human_made_by_hand(self):
         d = tempfile.mkdtemp()
         start_now(d, "alpha", _roadmap(["alpha", "beta"]), now=datetime(2026, 9, 22))

@@ -157,7 +157,7 @@ def _close_open_row(data: dict, key: str, outcome: str, now: datetime,
 
 
 def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane: str = "india",
-            exclude: Optional[set] = None) -> Optional[dict]:
+            exclude: Optional[set] = None, claim_is_busy: bool = False) -> Optional[dict]:
     """Keeps `current` pointed at the best available candidate: picks the top-ranked one if nothing is
     queued, swaps it for a better-ranked one if the current pick was itself auto-picked and hasn't
     started yet, and does nothing once research is in_progress (locked until resolve()) -- "research
@@ -177,7 +177,12 @@ def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane:
     dropped these (roadmap_view's `taken`); the queue simply never did."""
     now = now or datetime.now()
     data = load(state_dir, lane)
-    if data["current"] and data["current"].get("in_progress") and not lock_is_stale(data["current"], now):
+    # `claim_is_busy` is the caller saying a backtest for this lane is RUNNING RIGHT NOW. On
+    # 2026-10-10 the US lane's walk-forward started at 02:30 and the 06:00 advance, seeing a claim
+    # exactly STALE_LOCK_DAYS old, abandoned it underneath the running job -- which then finished,
+    # produced a real PASS (EXP-096), and crashed trying to resolve a candidate that was no longer
+    # current. A lock whose holder is demonstrably alive is not an abandoned lock.
+    if data["current"] and data["current"].get("in_progress")             and (claim_is_busy or not lock_is_stale(data["current"], now)):
         return None
     if data["current"] and data["current"].get("in_progress"):
         # The routine that claimed this is gone. Record it as abandoned rather than silently
@@ -349,7 +354,21 @@ def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str]
     now = now or datetime.now()
     data = load(state_dir, lane)
     if not data["current"] or data["current"]["key"] != key:
-        raise ValueError(f"{key!r} is not the current candidate")
+        # THE RESEARCH STILL HAPPENED. A claim abandoned while its backtest was running left the
+        # finished run with nowhere to report to: resolve() raised, the whole job died, and a real
+        # PASS sat orphaned on disk while the lane's history said "abandoned". A verdict is the
+        # expensive thing here -- where the row this result belongs to was closed without one,
+        # the result replaces that outcome and `current` is left exactly as it is.
+        row = next((r for r in reversed(data["history"])
+                    if r["key"] == key and r.get("outcome") in REOPENING_OUTCOMES
+                    and not r.get("experiment_id")), None)
+        if row is None:
+            raise ValueError(f"{key!r} is not the current candidate")
+        row.update({"resolved": now.date().isoformat(), "outcome": outcome,
+                    "experiment_id": experiment_id, "branch": branch,
+                    "note": f"reported back after the lane had moved on ({row.get('outcome')})"})
+        _save(state_dir, data, lane)
+        return
     data["current"] = None
     _close_open_row(data, key, outcome, now, experiment_id, branch)
     _save(state_dir, data, lane)

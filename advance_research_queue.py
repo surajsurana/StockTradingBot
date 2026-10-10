@@ -63,8 +63,14 @@ def run_lane(lane: str, state_dir: str, send: bool, token: str, chat_id: str) ->
     from deployment.deployment_manager import list_strategies
     from swing_research.research_roadmap import build_roadmap
     roadmap = build_roadmap(lane=lane)
+    # A lane whose backtest is RUNNING is not a lane whose routine has gone away. Without this the
+    # six-hourly advance expired a claim out from under a walk-forward that was still going, and the
+    # finished run had nowhere to report its verdict (2026-10-10, US lane, EXP-096).
+    from run_queued_backtest import running_claim
+    held = running_claim() or {}
     entry = advance(state_dir, roadmap, lane=lane,
-                    exclude={r.strategy_key for r in list_strategies()})
+                    exclude={r.strategy_key for r in list_strategies()},
+                    claim_is_busy=bool(held) and held.get("lane") in ("", lane))
     if entry is None:
         print(f"[{lane}] Nothing to change: the current pick is already the best available, research "
               "is already under way, it was picked by hand, or nothing eligible remains.")

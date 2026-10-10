@@ -764,6 +764,56 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual((open_["fx"], open_["fx_is_today"]), (100.0, True))   # still open: today
         self.assertEqual(open_["fx_date"], "2026-10-06")
 
+    def test_a_real_fill_is_measured_against_the_rupees_it_actually_cost(self):
+        """THE ENTRY SIDE HAS TO COME FROM THE EXCHANGE TOO. The mark was already CoinDCX's, but
+        entry_price is the GLOBAL USDT price at decision time and the fill happened on an INR market
+        that trades at a premium to it -- about 3% on 2026-10-10. Subtracting one from the other put
+        BTC at +Rs32 while CoinDCX's own screen said -Rs43.77: same coin, same quantity, same mark,
+        opposite sign.
+
+        Numbers below are the real 2026-10-10 book. CoinDCX showed invested Rs2,600.21, current
+        Rs2,556.44, P&L -Rs43.77."""
+        from dashboard.state_view import _ledger
+        rate = 96.73
+        pool_g = {"exists": True, "usdinr": rate, "open_positions": [{
+            "symbol": "BTC", "quantity": 0.00031, "entry_price": 84181.5, "price": 85245.1278,
+            "entry_date": "2026-10-07", "unbooked_raw": 0.33,
+            "live_fill": {"inr_price": 8387793.3, "quantity": 0.00031, "fee_inr": 15.34,
+                          "inr_value": 2615.56, "order_id": "2910327372"}}]}
+        rows = _ledger("x", [], {}, [], date(2026, 10, 10), pool_g=pool_g, prices={},
+                       crypto_prices={}, crypto_prev_close={})
+        btc = next(r for r in rows if r["symbol"] == "BTC" and r["status"] == "Open")
+        self.assertEqual(btc["order_value"], 2600.22)            # what CoinDCX calls Invested
+        self.assertAlmostEqual(btc["pnl"], -44.03, places=1)     # their screen: -43.77
+        self.assertAlmostEqual(btc["pct"], -1.69, places=1)      # their screen: -1.68%
+
+    def test_a_coin_bought_today_books_its_whole_move_today(self):
+        """CoinDCX's own convention, and the only one that can agree with it: a position opened
+        today has no earlier reference to measure from."""
+        from dashboard.state_view import _ledger
+        pool_g = {"exists": True, "usdinr": 96.73, "open_positions": [{
+            "symbol": "BNB", "quantity": 0.026, "entry_price": 745.53, "price": 773.2854,
+            "entry_date": "2026-10-10", "unbooked_raw": 0.72,
+            "live_fill": {"inr_price": 74069.3, "quantity": 0.026, "fee_inr": 11.36,
+                          "inr_value": 1937.16, "order_id": "2974391022"}}]}
+        rows = _ledger("x", [], {}, [], date(2026, 10, 10), pool_g=pool_g, prices={},
+                       crypto_prices={}, crypto_prev_close={})
+        bnb = next(r for r in rows if r["symbol"] == "BNB" and r["status"] == "Open")
+        self.assertEqual(bnb["pnl_today"], bnb["pnl"])
+        self.assertAlmostEqual(bnb["pnl"], 19.0, places=0)       # their screen: +20.69
+
+    def test_a_paper_position_with_no_fill_is_left_on_its_own_terms(self):
+        """Pool G's PAPER book has no exchange fill to defer to, and re-denominating it would
+        restart its record -- a separate decision, deliberately not taken here."""
+        from dashboard.state_view import _ledger
+        pool_g = {"exists": True, "usdinr": 96.73, "open_positions": [{
+            "symbol": "ETH", "quantity": 0.5, "entry_price": 2000.0, "price": 2100.0,
+            "entry_date": "2026-10-07", "unbooked_raw": 50.0}]}
+        rows = _ledger("x", [], {}, [], date(2026, 10, 10), pool_g=pool_g, prices={},
+                       crypto_prices={}, crypto_prev_close={})
+        eth = next(r for r in rows if r["symbol"] == "ETH")
+        self.assertEqual(eth["pnl"], round(50.0 * 96.73, 2))     # unchanged: the USD book's own P&L
+
     def test_a_trade_closed_today_books_its_whole_pnl_today(self):
         """The Today's P&L column must add up to the figure in the top right, and that figure
         includes what was booked today. Closed rows carried pnl_today=None, so the one trade that
