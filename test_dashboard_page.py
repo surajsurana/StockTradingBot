@@ -141,6 +141,20 @@ class TestTheLiveSummaryCard(unittest.TestCase):
         self.assertIn("font-weight:400", sub)
         self.assertIn("color:var(--muted)", sub)
 
+    def test_unrealised_and_realised_are_separate_lines(self):
+        """A holdings page can only know what you still hold, so the broker's own "Total PNL" is
+        the UNREALISED line. Folded together with realised, CoinDCX's -Rs24.14 read as our -Rs165
+        on the same account at the same second -- Rs130 of it booked on trades they no longer
+        list. The line that matches their screen has to be on ours."""
+        body = _script(_page())
+        body = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertIn('metric("unreal", "Unrealised"', body)
+        self.assertIn('metric("real", "Realised"', body)
+        self.assertIn('metric("pnl", "Total P&L"', body)
+        # open rows feed unrealised, closed rows feed realised, and nothing feeds both
+        self.assertIn("v.unreal += (r.pnl || 0)", body)
+        self.assertIn("v.real += (r.pnl || 0)", body)
+
     def test_today_is_not_repeated_on_the_card(self):
         """It already has a chip of its own in the top right; two copies of one number invite the
         reader to check whether they agree."""
