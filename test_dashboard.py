@@ -764,6 +764,14 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual((open_["fx"], open_["fx_is_today"]), (100.0, True))   # still open: today
         self.assertEqual(open_["fx_date"], "2026-10-06")
 
+    def test_the_results_row_carries_the_average_holding_period(self):
+        """A CAGR means something different over a 2-day hold than a 200-day one, and the number
+        was already in every experiment's metrics -- just never put on the row."""
+        from dashboard.state_view import _experiment_summary
+        with patch("dashboard.state_view._read_json",
+                   return_value={"total_trades": 10, "avg_holding_period_days": 21.4}),              patch("os.path.exists", return_value=True):
+            self.assertEqual(_experiment_summary("EXP-001")["avg_holding_period_days"], 21.4)
+
     def test_a_candidate_researched_but_never_promoted_still_appears(self):
         """It was skipped on the assumption that every experiment has a registry record. A
         candidate that was researched and NOT promoted has none -- so us_short_term_reversal's

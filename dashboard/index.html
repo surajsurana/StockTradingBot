@@ -2344,7 +2344,7 @@ let RESEARCH_PAGE = 1, RESEARCH_PAGE_SIZE = 50, RESEARCH_LAST_SIG = null;
 const RESEARCH_COLS = [["resolved","Date",false],["name","Strategy",false],["label","Lane",false],
                        ["verdict","Outcome",false],["status","Now",false],["trades","Trades",true],
                        ["cagr","CAGR",true],["sharpe","Sharpe",true],["max_dd","Max DD",true],
-                       ["win_rate","Win rate",true],["exp_no","Experiment",true]];
+                       ["win_rate","Win rate",true],["hold_days","Avg hold",true],["exp_no","Experiment",true]];
 // The lane dropdown that appears in BOTH tables' Lane column. It drives the same RESEARCH_LANE the
 // chips above do -- one piece of state, three controls -- so the chips, the Next up filter and the
 // Results filter can never disagree about which lane you are looking at.
@@ -3047,7 +3047,7 @@ function renderResearchResults(rm, laneName){
   document.getElementById("research-prev").disabled = RESEARCH_PAGE <= 1;
   document.getElementById("research-next").disabled = RESEARCH_PAGE >= totalPages;
 
-  document.getElementById("research-results").innerHTML = pageRows.map(r => `<tr><td>${when(r)}</td><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${verdictPill(r)}</td><td>${nowCell(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
+  document.getElementById("research-results").innerHTML = pageRows.map(r => `<tr><td>${when(r)}</td><td><b>${esc(r.name)}</b>${r.branch ? `<div class="note">${esc(r.branch)}</div>` : ""}</td><td>${esc(laneName[r.lane] || r.lane)}</td><td>${verdictPill(r)}</td><td>${nowCell(r)}</td><td class="n">${m(r).total_trades ?? "—"}</td><td class="n">${num(m(r).cagr, "%")}</td><td class="n">${num(m(r).sharpe_ratio)}</td><td class="n">${num(m(r).max_drawdown_pct, "%")}</td><td class="n">${rate(m(r).win_rate)}</td><td class="n" title="average days a trade was held">${m(r).avg_holding_period_days != null ? (+m(r).avg_holding_period_days).toFixed(1) + "d" : "—"}</td><td class="note">${esc(r.experiment_id || "—")}</td></tr>`).join("");
   const empty = document.getElementById("research-results-empty");
   empty.hidden = rows.length > 0;
   if(!rows.length) empty.textContent = !(rm.results || []).length

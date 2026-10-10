@@ -177,6 +177,14 @@ class PriceCache:
             self.crypto_prices, self.crypto_prev_close = dict(d.get("crypto_prices", {})), dict(d.get("crypto_prev_close", {}))
             self.us_prices, self.us_prev_close = dict(d.get("us_prices", {})), dict(d.get("us_prev_close", {}))
             self.macro = dict(d.get("macro", {}))
+            # THE BROKER'S OWN MARKS SURVIVE A RESTART. They were not in the cache, so every
+            # restart emptied them and Pool G fell back to the Binance USD price until the next
+            # crypto refresh landed -- about 2.5% out on 2026-10-10, shown with nothing to say it
+            # was not CoinDCX's number. A page whose whole claim is that it shows what the broker
+            # shows cannot quietly swap markets because it was restarted.
+            self.coindcx_prices = dict(d.get("coindcx_prices", {}))
+            self.coindcx_day_open = dict(d.get("coindcx_day_open", {}))
+            self.coindcx_day = d.get("coindcx_day")
             self.usdinr, self.as_of = d.get("usdinr"), d.get("as_of")
         except (OSError, ValueError):
             pass
@@ -189,7 +197,10 @@ class PriceCache:
         with self._lock:
             payload = {"as_of": self.as_of, "prices": self.prices, "prev_close": self.prev_close, "crypto_prices": self.crypto_prices,
                        "crypto_prev_close": self.crypto_prev_close, "usdinr": self.usdinr,
-                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close, "macro": self.macro}
+                       "us_prices": self.us_prices, "us_prev_close": self.us_prev_close, "macro": self.macro,
+                       "coindcx_prices": self.coindcx_prices,
+                       "coindcx_day_open": getattr(self, "coindcx_day_open", {}),
+                       "coindcx_day": getattr(self, "coindcx_day", None)}
             text = json.dumps(payload)
         try:
             os.makedirs(self.state_dir, exist_ok=True)

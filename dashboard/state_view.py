@@ -1618,7 +1618,8 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
         digits = re.sub(r"\D", "", exp_id or "")
         return {"trades": exp.get("total_trades"), "cagr": exp.get("cagr"),
                 "sharpe": exp.get("sharpe_ratio"), "max_dd": exp.get("max_drawdown_pct"),
-                "win_rate": exp.get("win_rate"), "exp_no": int(digits) if digits else None}
+                "win_rate": exp.get("win_rate"), "hold_days": exp.get("avg_holding_period_days"),
+                "exp_no": int(digits) if digits else None}
 
     results = []
     for r in registry_records:
