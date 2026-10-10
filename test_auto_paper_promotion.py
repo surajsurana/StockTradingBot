@@ -93,6 +93,8 @@ class TestWhatItDoesWhenItDoesPromote(unittest.TestCase):
                    side_effect=lambda **kw: calls.setdefault("registered", kw)), \
              patch("deployment.auto_paper_promotion.set_research_verdict",
                    side_effect=lambda k, v, source="": calls.setdefault("verdict", (k, v, source))), \
+             patch("deployment.auto_paper_promotion.set_primary_experiment_id",
+                   side_effect=lambda k, e: calls.setdefault("exp", (k, e))), \
              patch("deployment.auto_paper_promotion.set_deployment_status",
                    side_effect=lambda k, s, reason="": calls.setdefault("status", (k, s, reason))):
             calls["result"] = promote("alpha", verdict, display_name="Alpha", experiment_id="EXP-096")
@@ -104,6 +106,9 @@ class TestWhatItDoesWhenItDoesPromote(unittest.TestCase):
         self.assertEqual(calls["verdict"][1], ResearchVerdict.PASS)
         self.assertEqual(calls["status"][1], DeploymentStatus.PAPER_TRADING)
         self.assertIn("EXP-096", calls["status"][2])
+        # the experiment is written onto the record, which is what lets the Research tab join the
+        # result to its registry row -- without it the result shows no id, no pool and no status
+        self.assertEqual(calls["exp"], ("alpha", "EXP-096"))
 
     def test_it_registers_a_strategy_that_has_no_record_yet(self):
         """A research candidate has never been in the registry -- the PR that implements it adds
@@ -115,6 +120,7 @@ class TestWhatItDoesWhenItDoesPromote(unittest.TestCase):
              patch("deployment.auto_paper_promotion.register_strategy",
                    side_effect=lambda **kw: calls.setdefault("registered", kw)), \
              patch("deployment.auto_paper_promotion.set_research_verdict"), \
+             patch("deployment.auto_paper_promotion.set_primary_experiment_id"), \
              patch("deployment.auto_paper_promotion.set_deployment_status"):
             promote("alpha", "PASS", display_name="Alpha")
         self.assertEqual(calls["registered"]["strategy_key"], "alpha")
