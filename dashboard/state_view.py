@@ -1651,17 +1651,28 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
                         **_sortable(exp_id, exp)})
     covered = {r["key"] for r in results}
     for key, (lane, h) in queue_rows.items():
-        if key in covered or h.get("experiment_id"):
-            continue      # an experiment-carrying row is already above, via the registry
+        # `covered` is what the REGISTRY already put in the list. Skipping on experiment_id instead
+        # assumed every experiment has a registry record, and a candidate that was researched but
+        # never promoted has none -- so us_short_term_reversal's PASS (EXP-096) vanished off the
+        # page entirely the moment its verdict was attached. Researched and not promoted is a
+        # perfectly ordinary outcome; it has to have somewhere to be shown.
+        if key in covered:
+            continue
+        exp_id = h.get("experiment_id") or ""
+        exp = _experiment_summary(exp_id) if exp_id else {}
         results.append({"key": key, "name": h.get("name") or names.get(key, key),
                         "lane": lane, "label": LANE_LABELS[lane], "mode": h.get("mode", "backtest"),
                         "resolved": h["resolved"], "started_by": h.get("started_by"),
-                        "source": "queue", "outcome": h.get("outcome"), "experiment_id": None,
+                        "source": "queue", "outcome": h.get("outcome"), "experiment_id": exp_id or None,
                         # why it ended that way, for the outcomes that have a reason (abandoned)
                         "note": h.get("note") or "",
-                        "branch": h.get("branch"), "verdict": "", "run_verdict": "", "metrics": {},
-                        "status": "",   # never registered -- it never got as far as a verdict
-                        **_sortable("", {})})
+                        "branch": h.get("branch"),
+                        # With no registry record there is no recorded verdict to prefer, so the
+                        # experiment's own word is all there is -- and it is shown as its own word.
+                        "verdict": exp.get("verdict", ""), "run_verdict": exp.get("verdict", ""),
+                        "metrics": exp,
+                        "status": "",   # never registered -- nothing has been promoted
+                        **_sortable(exp_id, exp)})
     # Newest research first by default; the dashboard re-sorts client-side from here.
     results.sort(key=lambda r: (r["exp_no"] or 0, r["resolved"] or "", r["key"]), reverse=True)
 

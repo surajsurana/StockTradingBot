@@ -764,6 +764,27 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual((open_["fx"], open_["fx_is_today"]), (100.0, True))   # still open: today
         self.assertEqual(open_["fx_date"], "2026-10-06")
 
+    def test_a_candidate_researched_but_never_promoted_still_appears(self):
+        """It was skipped on the assumption that every experiment has a registry record. A
+        candidate that was researched and NOT promoted has none -- so us_short_term_reversal's
+        PASS (EXP-096) vanished off the page the moment its verdict was attached, which is the
+        opposite of what recording a verdict should do."""
+        queues = {"us": {"current": None, "history": [
+            {"key": "us_short_term_reversal", "name": "Short-Term Reversal (US)", "lane": "us",
+             "mode": "backtest", "resolved": "2026-10-10", "outcome": "researched",
+             "experiment_id": "EXP-096", "branch": "research-us/us_short_term_reversal"}]}}
+        with patch("dashboard.state_view._experiment_summary",
+                   return_value={"verdict": "PASS", "trades": 768}):
+            st = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None,
+                                       now=self.now, roadmap={"researchable_now": [],
+                                       "deferred_pending_data": [], "weights": {}},
+                                       research_queues=queues)
+        row = next((r for r in st["roadmap"]["results"] if r["key"] == "us_short_term_reversal"), None)
+        self.assertIsNotNone(row, "a researched candidate must be somewhere on the page")
+        self.assertEqual((row["outcome"], row["experiment_id"], row["verdict"]),
+                         ("researched", "EXP-096", "PASS"))
+        self.assertEqual(row["status"], "")          # researched, never promoted
+
     def test_a_real_fill_is_measured_against_the_rupees_it_actually_cost(self):
         """THE ENTRY SIDE HAS TO COME FROM THE EXCHANGE TOO. The mark was already CoinDCX's, but
         entry_price is the GLOBAL USDT price at decision time and the fill happened on an INR market
