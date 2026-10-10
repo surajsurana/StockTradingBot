@@ -1396,15 +1396,15 @@ function renderLiveBoard(s){
   if(!box) return;
   const lc = s.live_capital || {};
   const vs = {
-    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, unreal: 0, real: 0, open: 0, closed: 0},
-    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, unreal: 0, real: 0, open: 0, closed: 0},
+    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
+    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
-                                                        invested: 0, held: 0, today: 0, pnl: 0, unreal: 0, real: 0, open: 0, closed: 0},
+                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     // Pool I has no broker -- it is a US paper book. Without a desk of its own its rows fell to the
     // default and were added to Kite's, so in Paper mode Kite's money included dollars that are not
     // in the Kite account. A desk with no cash figure is honest; silently folding it in was not.
     us:      {name: "US (paper)", what: "US equities",  cash: null,
-                                                        invested: 0, held: 0, today: 0, pnl: 0, unreal: 0, real: 0, open: 0, closed: 0},
+                                                        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
   };
   // COST BASIS, the same one the P&L is measured against. `amount` is what left the account --
   // it includes the buy fee -- while `pnl` is measured against `order_value`, the fee-exclusive
@@ -1422,16 +1422,15 @@ function renderLiveBoard(s){
     v.today += (r.pnl_today || 0);
     if(String(r.status || "").toLowerCase() === "open"){
       v.open += 1;
-      v.unreal += (r.pnl || 0);                      // still held -- this is what the broker shows
       v.invested += costOf(r);
       v.held += costOf(r) + (r.pnl || 0);            // cost plus what it has done since
-    } else { v.closed += 1; v.real += (r.pnl || 0); }
+    } else v.closed += 1;
   }
   // Only desks with something to show. A desk that holds nothing and has no readable cash balance
   // is a row of zeroes competing for attention with the ones that matter.
   const order = ALL_VENUES
     .filter(k => vs[k].cash != null || vs[k].open || vs[k].closed || vs[k].pnl);
-  const tot = {cash: 0, invested: 0, held: 0, today: 0, pnl: 0, unreal: 0, real: 0, open: 0, closed: 0};
+  const tot = {cash: 0, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0};
   for(const k of order)
     for(const f of Object.keys(tot)) tot[f] += (vs[k][f] == null ? 0 : vs[k][f]);
 
@@ -1445,25 +1444,17 @@ function renderLiveBoard(s){
   const amount = (value, colour, plain) => value == null ? `<span class="note">&mdash;</span>`
     : plain ? String(value) : `<span class="${colour ? cls(value) : ""}">${money(value, !!colour)}</span>`;
   // One drill-down, whatever the rows are counting.
-  const drill = (id, label, total, parts, colour, plain, tip) => {
+  const drill = (id, label, total, parts, colour, plain) => {
     const rows = parts.map(part =>
       `<div class="sub" data-metric="${id}" hidden><i>${esc(part.name)}</i>`
       + `<em>${amount(part.value, colour, plain)}</em></div>`).join("");
     return `<div class="metric" data-metric="${id}" tabindex="0" role="button" aria-expanded="false"
-              title="${esc(tip ? tip + " · click for the split by account" : "Show it account by account")}">
+              title="Show it account by account">
         <span class="lbl"><span class="twist">&#9656;</span>${esc(label)}</span>
         <b>${amount(total, colour, plain)}</b></div>` + rows;
   };
-  const TIP = {
-    // The one line on this card that is the BROKER'S OWN number: a holdings page can only know what
-    // you still hold, so CoinDCX's "Total PNL" is this, not the line below it.
-    unreal: "open positions only, at today's price -- this is the figure the broker's own holdings page shows",
-    real: "booked on trades already closed, which a holdings page has no way to show",
-    pnl: "unrealised plus realised -- everything this desk has made or lost since it started",
-  };
   const metric = (id, label, field, colour, plain) =>
-    drill(id, label, tot[field], order.map(k => ({name: vs[k].name, value: vs[k][field]})), colour, plain,
-          TIP[field]);
+    drill(id, label, tot[field], order.map(k => ({name: vs[k].name, value: vs[k][field]})), colour, plain);
   // A line that takes you to the strategies themselves, the way the Classic cards did. The NAMES
   // belong in the Strategies tab, where they can be sorted and filtered; a count that cannot be
   // opened is a dead end, and listing names in a summary card is a table in disguise.
@@ -1500,8 +1491,6 @@ function renderLiveBoard(s){
         <div class="head"><span class="nm">All platforms</span></div>
         <div class="potlist">
           ${metric("invested", "Invested", "invested")}
-          ${metric("unreal", "Unrealised", "unreal", true)}
-          ${metric("real", "Realised", "real", true)}
           ${metric("pnl", "Total P&L", "pnl", true)}
           ${metric("held", "Holdings now", "held")}
           ${metric("cash", "Cash available", "cash")}
