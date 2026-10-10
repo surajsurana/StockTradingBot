@@ -34,21 +34,33 @@ from deployment.deployment_manager import (get_strategy, register_strategy, set_
 PROMOTING_VERDICTS = ("PASS", "INCONCLUSIVE")
 
 
+# THE FAMILY IS HOW EACH POOL FINDS ITS OWN. deployment/base.py's is_us_equity_record() and
+# is_crypto_record() match on a prefix of strategy_family, and each pool runner GUARDS on them, so
+# registering a US strategy under Pool A's family leaves it marked PAPER_TRADING while Pool I skips
+# it as "not registered as a US equity strategy" -- traded by nobody, which is the one outcome this
+# module exists to prevent.
+_POOLS = (("run_paper_trading.py (Pool A)", "run_paper_trading", None,
+           "swing_research published strategy"),
+          ("run_pool_i.py (Pool I, US)", "run_pool_i", "POOL_I_STRATEGIES", "us_equity"),
+          ("run_pool_e.py (Pool E, crypto)", "run_pool_e", "POOL_E_STRATEGIES",
+           "crypto research published strategy"))
+
+
 def _runner_maps() -> dict:
-    """{strategy_key: the runner that would trade it}, across every paper pool.
+    """{strategy_key: (runner label, the strategy_family that pool recognises)}.
 
     Imported lazily and defensively: this is called from the nightly backtest job, and one pool's
     import problem must not stop a verdict being recorded for a different pool's strategy."""
     out = {}
     try:
         from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
-        out.update({s.strategy_key: "run_paper_trading.py (Pool A)" for s in PAPER_TRADING_STRATEGY_SPECS})
+        label, family = _POOLS[0][0], _POOLS[0][3]
+        out.update({s.strategy_key: (label, family) for s in PAPER_TRADING_STRATEGY_SPECS})
     except Exception:
         pass
-    for module, attr, label in (("run_pool_i", "POOL_I_STRATEGIES", "run_pool_i.py (Pool I, US)"),
-                                ("run_pool_e", "POOL_E_STRATEGIES", "run_pool_e.py (Pool E, crypto)")):
+    for label, module, attr, family in _POOLS[1:]:
         try:
-            out.update({k: label for k in getattr(__import__(module, fromlist=[attr]), attr)})
+            out.update({k: (label, family) for k in getattr(__import__(module, fromlist=[attr]), attr)})
         except Exception:
             pass
     return out
@@ -56,7 +68,14 @@ def _runner_maps() -> dict:
 
 def paper_runner_for(strategy_key: str) -> Optional[str]:
     """The runner that would trade `strategy_key` in paper, or None if nothing would."""
-    return _runner_maps().get(strategy_key)
+    hit = _runner_maps().get(strategy_key)
+    return hit[0] if hit else None
+
+
+def family_for(strategy_key: str) -> Optional[str]:
+    """The strategy_family the pool that would run it recognises, or None."""
+    hit = _runner_maps().get(strategy_key)
+    return hit[1] if hit else None
 
 
 def _verdict_enum(word: str):
@@ -87,7 +106,8 @@ def promote(strategy_key: str, verdict: str, display_name: str = "", strategy_fa
         if record is None:
             register_strategy(strategy_key=strategy_key,
                               display_name=display_name or strategy_key,
-                              strategy_family=strategy_family or "swing_research published strategy")
+                              strategy_family=strategy_family or family_for(strategy_key)
+                              or "swing_research published strategy")
             record = get_strategy(strategy_key)
         enum = _verdict_enum(word)
         if enum is not None and getattr(record, "research_verdict", None) != enum:

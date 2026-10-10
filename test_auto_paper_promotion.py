@@ -9,7 +9,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from deployment.auto_paper_promotion import PROMOTING_VERDICTS, line, paper_runner_for, promote
+from deployment.auto_paper_promotion import (PROMOTING_VERDICTS, family_for, line,
+                                            paper_runner_for, promote)
 from deployment.base import DeploymentStatus, ResearchVerdict
 
 
@@ -57,6 +58,21 @@ class TestItRefusesToPromoteWhatNothingCanRun(unittest.TestCase):
             said = line(promote("orphan", "PASS"))
         self.assertIn("not promoted", said)
         self.assertIn("orphan", said)
+
+    def test_it_registers_into_the_family_that_pool_recognises(self):
+        """is_us_equity_record() and is_crypto_record() match on a PREFIX of strategy_family, and
+        each pool runner guards on them. Registering a US strategy under Pool A's family leaves it
+        marked PAPER_TRADING while Pool I skips it as "not registered as a US equity strategy" --
+        traded by nobody, which is the one outcome this module exists to prevent."""
+        from deployment.base import is_crypto_record, is_us_equity_record
+        us = SimpleNamespace(strategy_family=family_for("minervini_trend_template_filter_us"))
+        crypto = SimpleNamespace(strategy_family=family_for("crypto_tsmom"))
+        self.assertTrue(is_us_equity_record(us))
+        self.assertTrue(is_crypto_record(crypto))
+        self.assertFalse(is_us_equity_record(crypto))
+        india = SimpleNamespace(strategy_family=family_for("minervini_trend_template_filter"))
+        self.assertFalse(is_us_equity_record(india))
+        self.assertFalse(is_crypto_record(india))
 
     def test_the_runner_lookup_covers_every_paper_pool(self):
         """Read from each pool's own map, so a pool that gains a strategy needs nothing here."""
