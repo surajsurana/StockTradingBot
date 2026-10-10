@@ -178,8 +178,15 @@ def run_lane(lane: str, state_dir: str, windows: int, send: bool, token: str, ch
     research_queue.resolve(state_dir, key, "researched", experiment_id=exp_id,
                            branch=f"research/{key}" if lane == "india" else f"research-{lane}/{key}",
                            lane=lane)
-    msg = (f"*Research complete* ({lane})\n{key}\nVerdict: *{verdict or 'see ' + exp_id}*  ({exp_id})\n\n"
-           f"Backtested on the VPS against real data. See the Research tab's Results view.")
+    # PASS or INCONCLUSIVE goes straight into paper trading -- the second test, not a deployment
+    # (2026-10-10, per explicit direction). Live promotion is untouched and stays a human decision.
+    # This never raises: a verdict is worth more than a promotion, and the two must not share a fate.
+    from deployment.auto_paper_promotion import line as promo_line, promote
+    promo = promote(key, verdict, display_name=key, experiment_id=exp_id)
+    msg = (f"*Research complete* ({lane})\n{key}"
+           f"\nVerdict: *{verdict or 'see ' + exp_id}*  ({exp_id})\n\n"
+           f"Backtested on the VPS against real data. See the Research tab's Results view.\n\n"
+           f"{promo_line(promo)}")
     print(msg, flush=True)
     if send:
         from reporting.telegram_notifier import send_telegram_message

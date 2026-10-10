@@ -41,9 +41,12 @@ from deployment.base import DeploymentStatus, is_us_equity_record
 from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from reporting.pool_i import POOL_I_STARTING_CAPITAL_USD
-from swing_research.cross_sectional import compute_rs_percentile_ranks, compute_momentum_percentile_ranks
+from swing_research.cross_sectional import (compute_momentum_percentile_ranks,
+                                            compute_rs_percentile_ranks,
+                                            compute_short_term_reversal_percentile_ranks)
 from swing_research.strategies.minervini_trend_template_filter import MinerviniTrendTemplateFilterStrategy
 from swing_research.strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
+from swing_research.strategies.short_term_reversal import ShortTermReversalStrategy
 from swing_research.universe_us import get_swing_universe_us
 
 POOL_I_STATE_DIR = os.path.join(STATE_DIR, "pool_i")
@@ -63,6 +66,13 @@ POOL_I_STRATEGIES = {
     "cross_sectional_momentum_us": (
         CrossSectionalMomentumStrategy,
         lambda data: {s: series.rename("momentum_percentile") for s, series in compute_momentum_percentile_ranks(data).items()},
+    ),
+    # Added 2026-10-10 when its research came back PASS (EXP-096). Same Strategy class and same
+    # extra column as research_director.run_short_term_reversal_us_experiment used to produce that
+    # verdict -- nothing about the strategy changes between the backtest and the paper book.
+    "us_short_term_reversal": (
+        ShortTermReversalStrategy,
+        lambda data: {s: series.rename("reversal_percentile") for s, series in compute_short_term_reversal_percentile_ranks(data).items()},
     ),
 }
 
