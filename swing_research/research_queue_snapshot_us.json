@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "us_short_term_reversal",
-    "name": "Short-Term Reversal (US)",
+    "key": "us_high_volume_return_premium",
+    "name": "High-Volume Return Premium (US)",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "stale": false,
-    "claimed_days_ago": 1.500048559236111,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }

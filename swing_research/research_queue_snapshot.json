@@ -1,7 +1,7 @@
 {
   "current": {
-    "key": "intraday_momentum_half_hour",
-    "name": "Intraday Momentum (First Half-Hour Return Predicts Last Half-Hour Return)",
+    "key": "nifty_momentum_30_style",
+    "name": "Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology)",
     "mode": "backtest",
     "in_progress": false,
     "stale": false,
