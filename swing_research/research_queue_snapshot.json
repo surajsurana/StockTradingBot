@@ -3,9 +3,9 @@
     "key": "nifty_momentum_30_style",
     "name": "Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 1.4810706018518517e-05,
     "horizon_lane": "swing"
   }
 }
