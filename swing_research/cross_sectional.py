@@ -857,3 +857,128 @@ def compute_crypto_illiq_percentile_ranks(data: dict, lookback_days: int = CRYPT
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+CRYPTO_IVOL_FORMATION_DAYS = 30  # ~1 month of CALENDAR days, not the equity lane's 21 TRADING
+                                   # days (IVOL_FORMATION_DAYS above) -- crypto trades every day,
+                                   # so 21 bars would be ~3 weeks, not a full month. 30 is the same
+                                   # "every day is a bar" conversion already established by this
+                                   # lane's own CRYPTO_ILLIQ_FORMATION_DAYS (252->365 for the
+                                   # annual window; 21->30 here for the monthly one, same ~1.45x
+                                   # trading-to-calendar ratio).
+
+
+def compute_crypto_market_factor_close(data: dict) -> pd.Series:
+    """
+    An equal-weighted crypto market-factor proxy, built from `data` itself
+    (the universe already fetched for this experiment) -- a synthetic
+    daily index level series, usable as the `market_close` argument of
+    compute_crypto_idiosyncratic_volatility_score()/_percentile_ranks()
+    below, the same role Nifty 50's own fetched Close series plays for the
+    equity lane's compute_idiosyncratic_volatility_score(). Unlike Nifty
+    50, this platform has no separately-fetched "crypto market index"
+    data source (see data/fetch_crypto.py) -- Zhang & Li's own
+    Fama-MacBeth-style market factor is itself built from the authors' own
+    coin sample, so an equal-weighted index of the SAME universe each
+    experiment already fetches is a faithful, disclosed proxy, not an
+    invented substitute.
+
+    DISCLOSED DEVIATION: because the index is built from this experiment's
+    own universe, each coin contributes to the market factor it is then
+    regressed against (e.g. ~2.5% self-weight in the 40-coin
+    CRYPTO_UNIVERSE) -- unlike Nifty 50 vs. an arbitrary NSE stock, where
+    the two series are fetched independently. Estimated impact: MINOR --
+    this slightly inflates every coin's own correlation with the market
+    factor (and so slightly understates every coin's IVOL) by the same
+    small amount, symmetrically across the whole cross-section, so it does
+    not favor one coin over another in the resulting percentile ranks.
+
+    Each day's cross-sectional mean of daily simple returns (across
+    whichever coins have a valid prior-day Close that day -- a coin
+    missing a day is simply excluded from that day's mean, not treated as
+    a zero return) is compounded into an index level starting at 1.0.
+    """
+    returns = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        returns[symbol] = df.sort_index()["Close"].pct_change()
+
+    if not returns:
+        return pd.Series(dtype=float)
+
+    wide_returns = pd.DataFrame(returns)
+    market_return = wide_returns.mean(axis=1, skipna=True)
+    return (1.0 + market_return.fillna(0.0)).cumprod()
+
+
+def compute_crypto_idiosyncratic_volatility_score(price_history: pd.DataFrame, market_close: pd.Series,
+                                                   lookback_days: int = CRYPTO_IVOL_FORMATION_DAYS) -> pd.Series:
+    """
+    Zhang & Li (2020)'s crypto idiosyncratic volatility: the standard
+    deviation of the residuals from a regression of a coin's daily returns
+    on a crypto-market-factor proxy, over the trailing `lookback_days`
+    (30 calendar days, ~1 month -- see CRYPTO_IVOL_FORMATION_DAYS above).
+
+    Same single-factor closed-form identity as the equity lane's own
+    compute_idiosyncratic_volatility_score() (for a single-regressor OLS,
+    Var(residual) = Var(Y) x (1 - rho^2), so idio_vol = sigma_coin x
+    sqrt(1 - rho^2)) -- the regression machinery this candidate's own
+    mechanism field says to reuse -- just with THIS strategy's own
+    30-calendar-day window and crypto market-factor proxy (market_close:
+    see compute_crypto_market_factor_close() above) in place of the equity
+    lane's 21-trading-day window and fetched Nifty 50 Close series. Plain
+    (non-overlapping) daily returns, no lookahead: the value at row i uses
+    only data up to and including row i's own Close.
+
+    clip(..., 0, None): a near-perfectly-correlated coin (rho within
+    floating-point noise of +/-1.0, plausible here since this experiment's
+    OWN universe partly makes up the market factor -- see
+    compute_crypto_market_factor_close()'s own disclosed self-weighting)
+    can otherwise push 1 - rho^2 to a tiny NEGATIVE number, turning a
+    true, near-zero idiosyncratic volatility into NaN (sqrt of a negative
+    number) instead of ~0.0.
+    """
+    coin_close = price_history["Close"]
+    aligned_market = market_close.reindex(coin_close.index).ffill()
+
+    coin_r1 = coin_close.pct_change()
+    market_r1 = aligned_market.pct_change()
+
+    rho = coin_r1.rolling(lookback_days).corr(market_r1)
+    sigma_coin = coin_r1.rolling(lookback_days).std()
+
+    return sigma_coin * np.sqrt((1 - rho ** 2).clip(lower=0.0))
+
+
+def compute_crypto_idiosyncratic_volatility_percentile_ranks(
+        data: dict, market_close: pd.Series, lookback_days: int = CRYPTO_IVOL_FORMATION_DAYS) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}. market_close: the
+    crypto market-factor proxy (see compute_crypto_market_factor_close()).
+
+    Returns {symbol: pd.Series of crypto_ivol_percentile (0-100), indexed
+    by date} -- each coin's cross-sectional percentile rank, among
+    whatever coins have a valid (non-NaN) idiosyncratic volatility that
+    day, of its own residual (market-model-adjusted) volatility. HIGH
+    percentile means HIGH idiosyncratic volatility -- this strategy's
+    entry condition is percentile >=90 (the top decile), the paper's own
+    documented POSITIVE crypto IVOL-return relationship -- the OPPOSITE
+    polarity from the equity lane's own compute_idiosyncratic_volatility_
+    percentile_ranks() (bottom-decile, lowest-idio-vol), which is this
+    candidate's own disclosed, genuinely-different-sign mechanism, not an
+    inconsistency between the two. Same vectorized .rank(axis=1, pct=True)
+    construction as every other cross-sectional signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_crypto_idiosyncratic_volatility_score(df.sort_index(), market_close, lookback_days)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
