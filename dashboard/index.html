@@ -1414,15 +1414,19 @@ function renderLiveBoard(s){
   const box = document.getElementById("liveboard");
   if(!box) return;
   const lc = s.live_capital || {};
+  // The same cash source the Strategies cards use -- the brokers' balances in Live, the paper books'
+  // own cash in Paper. Reading the real Kite balance beside simulated positions described an account
+  // that does not exist.
+  const vcash = cashByVenue(s);
   const vs = {
-    kite:    {name: "Kite",    what: "Indian equities", cash: lc.balance,        invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
-    coindcx: {name: "CoinDCX", what: "crypto",          cash: lc.crypto_balance, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
-    groww:   {name: "Groww",   what: "long-term",       cash: (s.pools && s.pools.H) ? s.pools.H.cash : null,
+    kite:    {name: "Kite",    what: "Indian equities", cash: vcash.kite,    invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
+    coindcx: {name: "CoinDCX", what: "crypto",          cash: vcash.coindcx, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
+    groww:   {name: "Groww",   what: "long-term",       cash: vcash.groww,
                                                         invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     // Pool I has no broker -- it is a US paper book. Without a desk of its own its rows fell to the
     // default and were added to Kite's, so in Paper mode Kite's money included dollars that are not
     // in the Kite account. A desk with no cash figure is honest; silently folding it in was not.
-    us:      {name: "US (paper)", what: "US equities",  cash: null,
+    us:      {name: "US (paper)", what: "US equities",  cash: vcash.us,
                                                         invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
   };
   // COST BASIS, the same one the P&L is measured against. `amount` is what left the account --
@@ -2067,9 +2071,29 @@ const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ?
 // unless LIVE_TRADING is on and the kill switch is absent; this button starts the runner, it does
 // not authorise it.
 let RUNNER = null, RUNNER_POLL = null;
+
+// CASH, PER ACCOUNT, IN WHICHEVER MONEY THIS MODE IS ABOUT. Live reads the brokers' own balances.
+// Paper reads the paper books' cash -- the only honest answer there, since showing the real Kite
+// balance beside simulated positions describes an account that does not exist. Both cards and the
+// Live-day board read this one function, so the two can never tell different stories.
+function cashByVenue(s){
+  const lc = s.live_capital || {};
+  if(MODE === "live")
+    return {kite: lc.balance, coindcx: lc.crypto_balance,
+            groww: (s.pools && s.pools.H) ? s.pools.H.cash : null, us: null};
+  const pools = s.pools || {}, add = (t, v) => t + (+v || 0);
+  const kite = ["A", "B", "C", "F"].reduce((t, k) => add(t, (pools[k] || {}).cash), 0)
+             + (+((s.pool_d || {}).cash) || 0);
+  const rate = (s.pool_g || {}).usdinr || (s.pool_e || {}).usdinr || 0;
+  const coindcx = (+(((s.pool_e || {}).inr || {}).cash) || 0)
+                + (+(((s.pool_e1 || {}).inr || {}).cash) || 0)
+                + (+((s.pool_g || {}).cash) || 0) * rate;
+  const us = ((s.pool_i || {}).books || []).reduce((t, b) => add(t, b.cash), 0) * rate;
+  return {kite: kite, coindcx: coindcx, groww: null, us: us || null};
+}
+
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
-  if(MODE !== "live"){ panel.hidden = true; return; }
   panel.hidden = false;
   const lc = s.live_capital || {pool:0, allocated:0, free:0};
   // Four cards, each saying plainly where its number comes from. The cash figure is the broker's,
@@ -2092,7 +2116,8 @@ function renderAllocations(s){
       + (note ? `<td class="note">${esc(note)}</td>` : "<td></td>") + `</tr>`;
   const sum = (...xs) => xs.reduce((a, v) => a + (v == null ? 0 : +v), 0);
 
-  const growwCash = (s.pools && s.pools.H) ? s.pools.H.cash : null;
+  const venueCash = cashByVenue(s);
+  const growwCash = venueCash.groww;
   const growwValue = (s.my_portfolio && s.my_portfolio.totals) ? s.my_portfolio.totals.value : null;
   // Pool G prices in USD; what is not cash is in positions.
   const g = s.pool_g || {}, gRate = g.usdinr || 0;
@@ -2119,31 +2144,47 @@ function renderAllocations(s){
   };
   // The same cost basis the P&L is measured against -- `amount` includes the buy fee, `order_value`
   // does not, and the broker's own "Invested" is the fee-exclusive one.
-  const investedBy = {kite: 0, coindcx: 0, groww: 0};
+  const investedBy = {kite: 0, coindcx: 0, groww: 0, us: 0};
+  const heldBy = {kite: 0, coindcx: 0, groww: 0, us: 0};
   for(const r of (s.ledger || []))
-    if(String(r.status || "").toLowerCase().startsWith("open"))
-      investedBy[venueOf(r.pool)] += (r.order_value != null ? r.order_value : (r.amount || 0));
+    if(String(r.status || "").toLowerCase().startsWith("open")){
+      const v = venueOf(r.pool), cost = (r.order_value != null ? r.order_value : (r.amount || 0));
+      investedBy[v] += cost;
+      heldBy[v] += cost + (+r.pnl || 0);
+    }
 
   const cards = [
-    bigcard("Cash available", sum(lc.balance, lc.crypto_balance, growwCash), [
-      line("Kite · Indian equities", lc.balance,
-           lc.balance == null ? "" : `${money(lc.allocated_equity)} assigned`),
-      line("CoinDCX · crypto", lc.crypto_balance,
-           lc.crypto_balance == null ? "" : `${money(lc.allocated_crypto)} assigned`),
-      line("Groww · long-term", growwCash, ""),
-    ], lc.balance == null || lc.crypto_balance == null),
-    bigcard("Invested at cost", sum(investedBy.kite, investedBy.coindcx, investedBy.groww), [
+    bigcard("Cash available", sum(venueCash.kite, venueCash.coindcx, growwCash, venueCash.us), [
+      line("Kite · Indian equities", venueCash.kite,
+           MODE !== "live" ? "across the paper books"
+             : venueCash.kite == null ? "" : `${money(lc.allocated_equity)} assigned`),
+      line("CoinDCX · crypto", venueCash.coindcx,
+           MODE !== "live" ? "across the paper books"
+             : venueCash.coindcx == null ? "" : `${money(lc.allocated_crypto)} assigned`),
+      ...(MODE === "live" ? [line("Groww · long-term", growwCash, "")] : []),
+      ...(venueCash.us ? [line("US (paper) · US equities", venueCash.us, "")] : []),
+    ], MODE === "live" && (venueCash.kite == null || venueCash.coindcx == null)),
+    bigcard("Invested at cost", sum(investedBy.kite, investedBy.coindcx, investedBy.groww, investedBy.us), [
       line("Kite · Indian equities", investedBy.kite, investedBy.kite ? "" : "nothing bought yet"),
       line("CoinDCX · crypto", investedBy.coindcx, ""),
-      line("Groww · long-term", investedBy.groww, ""),
+      ...(MODE === "live" ? [line("Groww · long-term", investedBy.groww, "")] : []),
+      ...(investedBy.us ? [line("US (paper) · US equities", investedBy.us, "")] : []),
     ]),
-    bigcard("Holdings value", sum(kiteHeld, cryptoHeld, growwValue), [
-      line("Kite · Indian equities", kiteHeld, kiteHeld ? "" : "nothing held yet"),
-      line("CoinDCX · crypto", cryptoHeld, ""),
-      line("Groww · long-term", growwValue,
-           (s.my_portfolio && s.my_portfolio.totals)
-             ? `${s.my_portfolio.totals.holdings} holdings` : ""),
-    ]),
+    bigcard("Holdings value", MODE === "live" ? sum(kiteHeld, cryptoHeld, growwValue)
+                                               : sum(heldBy.kite, heldBy.coindcx, heldBy.us),
+      MODE === "live" ? [
+        line("Kite · Indian equities", kiteHeld, kiteHeld ? "" : "nothing held yet"),
+        line("CoinDCX · crypto", cryptoHeld, ""),
+        line("Groww · long-term", growwValue,
+             (s.my_portfolio && s.my_portfolio.totals)
+               ? `${s.my_portfolio.totals.holdings} holdings` : ""),
+      ] : [
+        // Paper: at cost plus what each position has done since, off the same rows as Invested --
+        // not a broker figure, which would be describing somebody else's account.
+        line("Kite · Indian equities", heldBy.kite, heldBy.kite ? "" : "nothing held yet"),
+        line("CoinDCX · crypto", heldBy.coindcx, ""),
+        ...(heldBy.us ? [line("US (paper) · US equities", heldBy.us, "")] : []),
+      ]),
   ].join("");
   panel.innerHTML = `<div class="cashcards">${cards}</div>`
     + (lc.balance == null

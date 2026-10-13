@@ -338,6 +338,38 @@ class TestTheStrategiesPeriodFilter(unittest.TestCase):
         self.assertIn("REG_CAL.from, REG_CAL.to]", body)
 
 
+class TestPaperLooksLikeLive(unittest.TestCase):
+    """Standing rule: the two modes are the same screen, with each one's own money in it. The
+    Strategies cards used to be Live-only, and the Live-day board read the BROKER's cash even in
+    Paper -- a real Kite balance beside simulated positions describes an account that does not
+    exist."""
+
+    def test_the_strategies_cards_are_not_live_only(self):
+        body = _script(_page())
+        fn = body[body.index("function renderAllocations"):]
+        fn = fn[:fn.index("panel.innerHTML")]
+        self.assertNotIn('if(MODE !== "live"){ panel.hidden = true; return; }', fn)
+        self.assertIn("panel.hidden = false", fn)
+
+    def test_one_cash_source_feeds_both_the_cards_and_the_board(self):
+        """Two answers to "how much cash" on one screen is the bug this whole row exists to avoid."""
+        body = _script(_page())
+        self.assertIn("function cashByVenue(s)", body)
+        board = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
+        self.assertIn("cashByVenue(s)", board)
+        cards = body[body.index("function renderAllocations"):body.index("const regCols")]
+        self.assertIn("cashByVenue(s)", cards)
+
+    def test_paper_cash_comes_from_the_paper_books(self):
+        body = _script(_page())
+        fn = body[body.index("function cashByVenue(s)"):]
+        fn = fn[:fn.index(chr(10) + "}")]
+        self.assertIn("lc.balance", fn)                 # live: the broker's own
+        self.assertIn("(s.pool_d || {}).cash", fn)      # paper: the books' own
+        self.assertIn("(s.pool_g || {}).cash", fn)
+        self.assertIn("(s.pool_i || {}).books", fn)
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many
