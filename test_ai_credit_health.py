@@ -77,6 +77,23 @@ class TestNoticingTheOutage(unittest.TestCase):
         self._log("pool_g.log", ERROR_LINE, when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
         self.assertTrue(check(self.state, self.logs)["blocked"])
 
+    def test_it_clears_itself_when_a_run_finally_works(self):
+        """THE QUESTION THIS HAS TO ANSWER: how does the bar come down after you top up? A run that
+        works writes its state file and its log seconds apart. A failed one leaves the state a whole
+        cron interval behind. Requiring a GAP is what tells them apart -- a success writes the log
+        LAST, so plain "log is newer" is true even then and the warning would never come down."""
+        ok = time.mktime((2026, 10, 14, 8, 30, 0, 0, 0, -1))
+        self._log("pool_g.log", "starting" + chr(10) + ERROR_LINE + chr(10) + "then it worked",
+                  when=ok + 20)                      # log finishes 20s after the state is written
+        self._state("pool_g/portfolio.json", when=ok)
+        self.assertFalse(check(self.state, self.logs)["blocked"])
+
+    def test_a_run_a_whole_cycle_behind_is_still_blocked(self):
+        failed = time.mktime((2026, 10, 14, 8, 30, 0, 0, 0, -1))
+        self._log("pool_g.log", ERROR_LINE, when=failed)
+        self._state("pool_g/portfolio.json", when=failed - 12 * 3600)
+        self.assertTrue(check(self.state, self.logs)["blocked"])
+
     def test_an_ordinary_error_is_not_this_error(self):
         self._log("pool_g.log", "[2026-10-11] RuntimeError: data provider outage\n")
         self.assertFalse(check(self.state, self.logs)["blocked"])

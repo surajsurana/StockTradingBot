@@ -97,13 +97,16 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pboard .venue small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
 /* STUCK TO THE TOP OF THE PAGE, not to the flow: the thing it reports (a live book that cannot
    manage its own positions) does not stop mattering because you scrolled. */
-.alertbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:10px;
-  background:var(--loss);color:#fff;padding:6px 14px;font-size:12.5px;font-weight:600;
-  line-height:1.3}
+.alertbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;justify-content:center;
+  background:var(--loss);color:#fff;padding:6px 40px;font-size:12.5px;font-weight:600;
+  line-height:1.3;text-align:center}
 .alertbar[hidden]{display:none}
-.alertbar .ab-what{flex:1 1 auto}
+/* The message is centred on the PAGE, so the X is taken out of the flow rather than balanced
+   against it -- sticky is a positioned ancestor, so it anchors here. */
+.alertbar .ab-what{flex:0 1 auto}
 .alertbar .ab-what b{font-weight:700}
-.alertbar .ab-x{all:unset;cursor:pointer;font-size:19px;line-height:1;padding:0 4px;opacity:.85}
+.alertbar .ab-x{all:unset;cursor:pointer;font-size:19px;line-height:1;padding:0 4px;opacity:.85;
+  position:absolute;right:12px;top:50%;transform:translateY(-50%)}
 .alertbar .ab-x:hover{opacity:1}
 .livetop{display:flex;justify-content:flex-end;margin:0 0 8px}
 .livetop:empty{margin:0}

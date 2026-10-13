@@ -28,6 +28,9 @@ AI_BOOKS = (("Pool G (AI judgment, crypto)", "pool_g.log", os.path.join("pool_g"
 
 CREDIT_MESSAGE = "credit balance is too low"
 TAIL_BYTES = 60_000          # plenty for the last few runs, trivial to read on every refresh
+# A run that worked writes its state and its log seconds apart; one that failed leaves the state a
+# whole cron interval behind. An hour is far longer than the first and far shorter than the second.
+RECOVERED_WITHIN_SECONDS = 3600
 
 
 def _tail(path: str) -> str:
@@ -78,8 +81,13 @@ def check(state_dir: str, logs_dir: str, now: Optional[datetime] = None) -> dict
             ran_at = os.path.getmtime(state_path)
         except OSError:
             ran_at = 0.0
-        if ran_at > failed_at:
-            continue      # it has got something done since, so whatever that was, it is over
+        # HOW IT CLEARS BY ITSELF. A successful run writes its state file and its log within
+        # seconds of each other; a failed one leaves the state file untouched, so it falls a whole
+        # cron interval behind. Requiring a GAP rather than plain "log is newer" is what makes the
+        # two distinguishable -- a success always writes the log last, so "log is newer" is true
+        # even then, and the warning would never have come down.
+        if failed_at - ran_at <= RECOVERED_WITHIN_SECONDS:
+            continue
         blocked.append({"name": name, "last_error": _when(log_path), "last_ran": _when(state_path)})
     return {"blocked": bool(blocked), "books": blocked,
             "since": min((b["last_error"] for b in blocked if b["last_error"]), default=""),
