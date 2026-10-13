@@ -496,6 +496,18 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
 .iconbtn.promote.armed{border-color:var(--loss);color:var(--loss);font-weight:600}
 /* .pop is absolute, so it needs a positioned parent -- .calwrap above. In a table header `th` is
    already relative; in a toolbar nothing is, and the calendar flew to the page's top-left corner. */
+/* The equity chart behind a strategy's Capital and Net Profit figures. Drawn as an inline SVG --
+   no library, no network, and it scales with the dialog. */
+#equity{min-width:min(560px,92vw)}
+#equity .segbtns{margin:4px 0 10px}
+#equity-chart{position:relative}
+#equity-chart svg{display:block;width:100%;height:170px;overflow:visible}
+#equity-chart .ln{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round}
+#equity-chart .fill{fill:color-mix(in srgb,var(--accent) 12%,transparent);stroke:none}
+#equity-chart .zero{stroke:var(--rule);stroke-width:1;stroke-dasharray:3 3}
+#equity-chart .dot{fill:var(--accent)}
+#equity-chart .cap{font-size:11px;fill:var(--muted)}
+#equity-chart .empty{color:var(--muted);font-size:12.5px;padding:28px 0;text-align:center}
 .pop{position:absolute;top:34px;left:0;z-index:5;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 18px color-mix(in srgb,var(--ink) 15%,transparent);font-size:12.5px}
 .pop[hidden]{display:none}
 .pop label{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -734,6 +746,13 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <p class="err" id="sell-err" hidden></p>
   <div class="row"><button id="sell-go" class="primary">Sell</button><button id="sell-close">Cancel</button></div></dialog>
 <dialog id="brief"><h3 id="brief-name"></h3><p class="jb" id="brief-meta"></p><h4 id="brief-what">What it does</h4><p id="brief-text"></p><div id="brief-how"></div><button id="brief-close" style="margin-top:12px">Close</button></dialog>
+<dialog id="equity"><button class="iconbtn x" id="equity-close" aria-label="Close">×</button>
+  <h3 id="equity-name"></h3><p class="jb" id="equity-meta"></p>
+  <div class="segbtns" id="equity-range" role="group" aria-label="Period">
+    <button data-days="7" class="on">7 days</button><button data-days="30">30 days</button><button data-days="0">All time</button>
+  </div>
+  <div id="equity-chart"></div>
+  <p class="note" id="equity-foot"></p></dialog>
 <dialog id="life"><button class="iconbtn x" id="life-close" aria-label="Close">×</button><div id="life-body"></div></dialog>
 <dialog id="who"><div class="av" id="who-av"></div><h3 id="who-name"></h3><p class="jb" id="who-job"></p><p id="who-detail"></p><p class="note" id="who-kind"></p><p id="who-when" class="note"></p><button id="who-close">Close</button></dialog>
 
@@ -1260,6 +1279,70 @@ async function saveCredentials(group, btn){
     btn.disabled = false; btn.textContent = label;
   }
 }
+// EQUITY, DAY BY DAY. The engine already writes each book's daily equity as it runs, so this draws
+// that file rather than deriving a second opinion of what the strategy is worth. One fetch per
+// click, never on the 15-second refresh: 46 books' full histories every tick would be absurd.
+let EQUITY = {key: "", name: "", series: null, days: 7};
+
+function equityPath(points, w, h){
+  if(points.length < 2) return null;
+  const vs = points.map(p => p.equity), lo = Math.min(...vs), hi = Math.max(...vs);
+  // A flat book is a real answer, not a divide-by-zero: give it a band so the line sits mid-height.
+  const pad = (hi - lo) || Math.max(1, Math.abs(hi) * 0.01);
+  const x = i => (i / (points.length - 1)) * w;
+  const y = v => h - ((v - (lo - pad * 0.1)) / (pad * 1.2)) * h;
+  const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join("");
+  return {line: line, area: `${line}L${w},${h}L0,${h}Z`, lo: lo, hi: hi,
+          last: {x: x(points.length - 1), y: y(points[points.length - 1].equity)}};
+}
+
+function renderEquity(){
+  const box = document.getElementById("equity-chart"), foot = document.getElementById("equity-foot");
+  const all = (EQUITY.series || {}).points || [];
+  const points = EQUITY.days ? all.slice(-EQUITY.days) : all;
+  for(const b of document.querySelectorAll("#equity-range [data-days]"))
+    b.classList.toggle("on", +b.dataset.days === EQUITY.days);
+  if(points.length < 2){
+    box.innerHTML = `<div class="empty">${all.length ? "Only one day on record for this period."
+      : "This strategy has no daily record yet."}</div>`;
+    foot.textContent = "";
+    return;
+  }
+  const W = 520, H = 150, g = equityPath(points, W, H);
+  const first = points[0], last = points[points.length - 1];
+  const move = last.equity - first.equity;
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+        aria-label="equity from ${esc(first.date)} to ${esc(last.date)}">
+      <path class="fill" d="${g.area}"/><path class="ln" d="${g.line}"/>
+      <circle class="dot" cx="${g.last.x.toFixed(1)}" cy="${g.last.y.toFixed(1)}" r="3"/>
+    </svg>
+    <div class="tools" style="margin:6px 0 0"><span class="note">${esc(first.date)}</span>
+      <span class="note" style="margin-left:auto">${esc(last.date)}</span></div>`;
+  foot.innerHTML = `Low ${money(g.lo)} &middot; high ${money(g.hi)} &middot; `
+    + `<b class="${cls(move)}">${money(move, true)}</b> over ${points.length} days`
+    + ((EQUITY.series || {}).converted ? " &middot; a dollar book, shown in rupees at today's rate" : "");
+}
+
+async function showEquity(key, name, meta){
+  EQUITY = {key: key, name: name, series: null, days: 7};
+  document.getElementById("equity-name").textContent = name;
+  document.getElementById("equity-meta").textContent = meta || "";
+  document.getElementById("equity-chart").innerHTML = `<div class="empty">Loading…</div>`;
+  document.getElementById("equity-foot").textContent = "";
+  document.getElementById("equity").showModal();
+  try {
+    const r = await fetch(`/api/equity?key=${encodeURIComponent(key)}&mode=${MODE}`, {cache: "no-store"});
+    EQUITY.series = await r.json();
+  } catch(e){ EQUITY.series = {points: []}; }
+  if(EQUITY.key === key) renderEquity();
+}
+
+document.getElementById("equity-close").addEventListener("click", () => document.getElementById("equity").close());
+document.getElementById("equity").addEventListener("click", e => { if(e.target.id === "equity") e.target.close(); });
+document.querySelectorAll("#equity-range [data-days]").forEach(b => b.addEventListener("click", () => {
+  EQUITY.days = +b.dataset.days; renderEquity();
+}));
+
 function wireNetButtons(){
   document.querySelectorAll("#registry .netbtn").forEach(b => {
     if(b.dataset.wired === "1") return;
@@ -2877,7 +2960,7 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n cap-link" title="Click for this book's day-by-day equity">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}" title="Click for this book's day-by-day equity">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? (p.net == null ? p.pnl : p.net) / p.capital * 100 : null, pdays = daysSince(p.started);
       return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td>${MODE === "live" ? "<td></td>" : ""}<td class="c">${poolPromoteBtn(p, r)}</td></tr>`;
     }).join("") : "";
@@ -2897,10 +2980,17 @@ function renderRegistry(s){
   document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
     e.stopPropagation(); toggleExpand(btn.dataset.key);
   }));
-  document.querySelectorAll("#registry .pool-link, #registry .pnl-link").forEach(td => td.addEventListener("click", e => {
+  document.querySelectorAll("#registry .pool-link").forEach(td => td.addEventListener("click", e => {
     e.stopPropagation();
     const tr = td.closest("tr"), r = all.find(x => x.key === tr.dataset.key || x.key === tr.dataset.parent); if(!r) return;
     goLive(td.dataset.pool || "", r.type, r.name);
+  }));
+  // Capital and Net Profit both open the same chart: they are two readings of one curve, and the
+  // question behind either of them is "how did this get here".
+  document.querySelectorAll("#registry .cap-link, #registry .pnl-link").forEach(td => td.addEventListener("click", e => {
+    e.stopPropagation();
+    const tr = td.closest("tr"), r = all.find(x => x.key === tr.dataset.key || x.key === tr.dataset.parent); if(!r) return;
+    showEquity(r.key, `${r.sid} · ${r.name}`, `${r.pool === "-" ? "Not trading" : r.pool} · ${r.type}`);
   }));
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", e => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;

@@ -1041,6 +1041,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "https_port": getattr(DashboardHandler, "https_port", 8443),
             }).encode("utf-8"), "application/json", extra)
             return
+        if parsed.path == "/api/equity":
+            # The little chart behind a strategy's Capital and Net Profit figures. Its own endpoint
+            # rather than a field on /api/state: it is one strategy at a time and only when clicked,
+            # and 46 books' full histories on every 15-second refresh would be absurd.
+            from reporting.equity_series import series_for
+            mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
+            root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
+            key = (query.get("key", [""])[0] or "").strip()
+            if not key or not re.fullmatch(r"[A-Za-z0-9_\-]+", key):
+                self._send(400, json.dumps({"error": "a strategy key is required"}).encode("utf-8"),
+                           "application/json")
+                return
+            rate = float(getattr(self.price_cache, "usdinr", 0) or 0)
+            self._send(200, json.dumps(series_for(root, key, rate)).encode("utf-8"),
+                       "application/json")
+            return
         if parsed.path == "/api/state":
             # mode=live is a VIEW of deployment/state/live/ (the same layout
             # as the paper folders) -- it exists so the page's Live/Paper
