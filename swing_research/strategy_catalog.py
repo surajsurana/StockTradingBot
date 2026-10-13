@@ -416,4 +416,14 @@ RESEARCH_EXPERIMENT_SPECS = [
             "swing_research.research_director", fromlist=["run_size_premium_banz_experiment"]
         ).run_size_premium_banz_experiment,
     ),
+    ResearchExperimentSpec(
+        strategy_key="nifty_momentum_30_style",
+        variant_description=("Risk-Adjusted Blended Momentum / Nifty200 Momentum 30 methodology (6mo+12mo "
+                             "returns each divided by trailing 12mo daily-return volatility, blended 50/50, "
+                             "top-decile percentile, 126-trading-day single-vintage hold, no percentile-based "
+                             "early exit)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_nifty_momentum_30_style_experiment"]
+        ).run_nifty_momentum_30_style_experiment,
+    ),
 ]

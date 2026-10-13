@@ -815,6 +815,71 @@ def compute_realized_volatility_percentile_ranks(data: dict,
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+NIFTY_MOMENTUM_30_6M_DAYS = 126    # 6-month return leg
+NIFTY_MOMENTUM_30_12M_DAYS = 252   # 12-month return leg, also the volatility lookback window
+NIFTY_MOMENTUM_30_6M_WEIGHT = 0.5
+NIFTY_MOMENTUM_30_12M_WEIGHT = 0.5
+
+
+def compute_nifty_momentum_30_score(price_history: pd.DataFrame) -> pd.Series:
+    """
+    Risk-adjusted blended momentum score, per the Nifty200 Momentum 30
+    Index methodology (NSE Indices, live since 2019): the 6-month and
+    12-month Close-to-Close returns, EACH divided by the SAME trailing
+    12-month (252-trading-day) standard deviation of daily returns -- a
+    Sharpe-ratio-like risk adjustment -- then blended 50%/50%. No
+    .shift() needed before .rolling()/the return ratios -- every value at
+    row i uses only data up to and including row i, no lookahead.
+
+    DISCLOSED SIMPLIFICATION: the official methodology standardises each
+    of the two risk-adjusted ratios into a cross-sectional Z-score FIRST,
+    averages the two Z-scores, and then applies an asymmetric non-linear
+    transform (1+Z for Z>=0, 1/(1-Z) for Z<0) -- a transform that matters
+    for THAT index's free-float-market-cap x score portfolio WEIGHTING,
+    which this program's framework has no equivalent of. Like every other
+    cross-sectional strategy already in this program (compute_rs_score(),
+    compute_momentum_score(), etc.), this blends the raw ratios directly
+    and leaves cross-sectional standardisation to the single
+    .rank(pct=True) percentile step below, since a decile-cutoff entry
+    rule only needs a consistent ORDERING, not the index's own
+    score-as-a-portfolio-weight value.
+    """
+    close = price_history["Close"]
+    r = np.log(close) - np.log(close.shift(1))
+    vol_12m = r.rolling(NIFTY_MOMENTUM_30_12M_DAYS).std()
+    ret_6m = close / close.shift(NIFTY_MOMENTUM_30_6M_DAYS) - 1
+    ret_12m = close / close.shift(NIFTY_MOMENTUM_30_12M_DAYS) - 1
+    ratio_6m = ret_6m / vol_12m
+    ratio_12m = ret_12m / vol_12m
+    return (NIFTY_MOMENTUM_30_6M_WEIGHT * ratio_6m
+            + NIFTY_MOMENTUM_30_12M_WEIGHT * ratio_12m)
+
+
+def compute_nifty_momentum_30_percentile_ranks(data: dict) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of nifty_momentum_30_percentile (0-100),
+    indexed by date} -- each symbol's cross-sectional percentile rank,
+    among whatever symbols have a valid (non-NaN, i.e. >=252 bars of
+    history) blended risk-adjusted momentum score that day. Same
+    vectorized .rank(axis=1, pct=True) construction as every other signal
+    in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_nifty_momentum_30_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 CRYPTO_ILLIQ_FORMATION_DAYS = 365  # ~1 year of CALENDAR days, not the equity lane's 252 TRADING
                                      # days (AMIHUD_ILLIQ_FORMATION_DAYS above) -- crypto trades
                                      # every day, so 252 bars would be ~8.3 months, not a full year.

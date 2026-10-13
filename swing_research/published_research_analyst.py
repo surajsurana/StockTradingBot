@@ -1819,3 +1819,98 @@ SHORT_TERM_REVERSAL_US = PublishedStrategy(
         "roadmap's own disclosed concern about transaction-cost sensitivity."
     ),
 )
+
+NIFTY_MOMENTUM_30_STYLE = PublishedStrategy(
+    name="Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology)",
+    source_citation=(
+        "Nifty200 Momentum 30 Index Methodology (official NSE Indices Limited methodology "
+        "document, nsearchives.nseindia.com) -- verified via WebFetch/WebSearch 2026-08-15 and "
+        "2026-10-10, not from memory. Live since 2019, with multiple AMCs (SBI, HDFC, etc.) "
+        "running index funds/ETFs that track this exact methodology."
+    ),
+    mechanism=(
+        "A 'Normalised Momentum Score' blends each stock's 6-month AND 12-month price return, "
+        "each divided by the stock's own trailing 12-month daily-return volatility (a "
+        "Sharpe-ratio-like risk adjustment) -- a more sophisticated construction than a single-"
+        "horizon raw-return momentum score. A real, live, institutionally-tracked product, not an "
+        "academic finding."
+    ),
+    rules=(
+        "6-month and 12-month Close-to-Close returns, EACH divided by the SAME trailing 12-month "
+        "standard deviation of daily returns. The two resulting ratios are each cross-sectionally "
+        "standardised into a Z-score, averaged 50%/50% into a 'Weighted Average Z Score,' then "
+        "passed through an asymmetric transform (1+Z for Z>=0, 1/(1-Z) for Z<0) used for the "
+        "index's own free-float-market-cap x score portfolio weighting. Universe: Nifty 200 "
+        "constituents with >=1 year listing history and derivatives-segment availability. "
+        "Selects the top 30 stocks by score. Semi-annual (June/December) reconstitution, with a "
+        "rank-based buffer to reduce turnover."
+    ),
+    variant_chosen=(
+        "The documented dual-horizon (6M+12M), single-volatility-window (12M) risk-adjusted "
+        "blend, computed via swing_research/cross_sectional.py's "
+        "compute_nifty_momentum_30_score(). Single-vintage holding instead of the index's "
+        "semi-annual whole-portfolio reconstitution -- the same structural adaptation already "
+        "applied to Cross-Sectional Momentum and 52-Week High Momentum, approved for the "
+        "identical underlying reason (see scope_reductions below)."
+    ),
+    scope_reductions=(
+        "LONG ONLY -- a direct restatement of the source's own long-only index construction, not "
+        "a deviation. BLENDED RATIO, NOT Z-SCORE-THEN-ASYMMETRIC-TRANSFORM: the 6-month and "
+        "12-month risk-adjusted ratios are blended 50%/50% directly, then cross-sectionally "
+        "percentile-ranked once, rather than each ratio being Z-scored, averaged, and passed "
+        "through the index's own portfolio-weighting transform -- this program's framework has no "
+        "equivalent of cap-weighted index-fund portfolio construction, only a decile-cutoff "
+        "position rule, which only needs the same relative ordering. SINGLE-VINTAGE HOLDING "
+        "instead of the index's semi-annual whole-portfolio reconstitution -- identical structural "
+        "adaptation to Cross-Sectional Momentum and 52-Week High Momentum, approved for the "
+        "identical reason. RANK THRESHOLD of percentile >=90 (top decile) standing in for the "
+        "index's own 'top 30 of 200' selection (~top 15%). EXIT RULE is ONLY a 126-trading-day "
+        "time-stop (standing in for the ~6-month semi-annual cadence) or the synthetic protective "
+        "stop -- deliberately no percentile-based early exit, same discipline as every prior "
+        "cross-sectional strategy. PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per "
+        "unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- the source is an index "
+        "construction/weighting methodology with no position-level risk management whatsoever. "
+        "UNIVERSE is whatever universe this experiment is run against, with no derivatives-"
+        "availability or minimum-listing-history filter applied."
+    ),
+    distinctiveness=(
+        "Fourth strategy in this program requiring a genuinely cross-sectional computation (after "
+        "Minervini's RS percentile, 52-Week High Momentum's nearness percentile, and Cross-"
+        "Sectional Momentum's single-horizon formation return) -- reuses "
+        "swing_research/cross_sectional.py's existing vectorized .rank(pct=True, axis=1) pattern "
+        "via a new compute_nifty_momentum_30_percentile_ranks() function. Same broad momentum "
+        "factor family already represented twice in this program (Cross-Sectional Momentum and "
+        "52-Week High Momentum, both PASS) -- the dual-horizon blend and volatility adjustment are "
+        "real, disclosed refinements (per the roadmap candidate's own known_weaknesses), but the "
+        "marginal diversification value of a THIRD momentum-family candidate is limited, same "
+        "reasoning already applied when scoring Industry Momentum and other momentum-adjacent "
+        "candidates on the global roadmap. Its real distinguishing feature is evidentiary TYPE, not "
+        "mechanism: an audited, live, institutionally-tracked index methodology rather than an "
+        "academic replication -- see the roadmap candidate's own evidence_sufficiency_note."
+    ),
+    assumptions_impact=(
+        "Long-only scope: N/A, a direct restatement of the source's own long-only construction. "
+        "Blended-ratio-then-percentile-rank (vs. Z-score-then-asymmetric-transform-then-cap-"
+        "weighting): MINOR for a decile-cutoff entry rule -- both constructions are monotonic "
+        "transforms of the same two underlying risk-adjusted ratios, so the resulting ORDERING "
+        "(which this strategy's entry rule actually depends on) should track closely, though not "
+        "identically, especially near the decile boundary where a few symbols could swap sides "
+        "between a raw blend and a transform-then-weighted construction. Single-vintage holding "
+        "(vs. the index's semi-annual whole-portfolio reconstitution): MODERATE-to-MATERIAL, "
+        "DIRECTIONALLY UNKNOWN -- identical reasoning to Cross-Sectional Momentum's own single-"
+        "vintage deviation; realizes one entry point's path per qualifying episode, with "
+        "materially higher variance than the index's smoothed, diversified 30-stock portfolio. "
+        "90th-percentile rank threshold (vs. the index's own ~top-15% selection): MINOR-to-"
+        "MODERATE, a slightly tighter cutoff erring toward the stronger-signal side of the same "
+        "underlying score. 126-trading-day time-stop exit: N/A, a direct analogue of the "
+        "documented semi-annual cadence. Protective stop-loss (8%) and position sizing (1% risk/"
+        "unit): MODERATE by themselves (standard conventions already used elsewhere), but "
+        "structurally significant in that NEITHER exists in the source at all -- the original is "
+        "an index construction/weighting methodology, not a trading system, and has zero position-"
+        "level risk management. Also disclosed per the roadmap candidate's own "
+        "evidence_sufficiency_note: 'the index exists and has AUM' is a different TYPE of evidence "
+        "than 'a paper found a statistically significant premium' -- a PASS here would show this "
+        "implementation faithfully captures a real, live, audited product's own return "
+        "construction, not that an independent academic study found the same effect."
+    ),
+)

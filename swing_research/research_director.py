@@ -1493,3 +1493,49 @@ def run_volume_backed_breakout_experiment(data: dict, start_date: date, end_date
                           "vbb_reward_risk_multiple": 2.0, "vbb_risk_pct_per_unit": strategy.risk_pct_per_unit,
                           "fixed_target_checked_by_engine": True},
     )
+
+
+def run_nifty_momentum_30_style_experiment(data: dict, start_date: date, end_date: date,
+                                            starting_capital: float = 1_000_000,
+                                            n_walk_forward_windows: int = 3,
+                                            narrative_api_key: str = "",
+                                            narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                            experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                            knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                            skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for Risk-Adjusted
+    Blended Momentum (Nifty200 Momentum 30 methodology) -- computes the
+    blended 6-month/12-month risk-adjusted momentum cross-sectional
+    percentile ONCE up front (same pattern as every other cross-sectional
+    strategy in this program), reused across every walk-forward window by
+    run_walk_forward_generic()'s own per-window slicing of
+    extra_columns_by_symbol.
+    """
+    from swing_research.strategies.nifty_momentum_30_style import NiftyMomentum30StyleStrategy
+    from swing_research.published_research_analyst import NIFTY_MOMENTUM_30_STYLE
+    from swing_research.cross_sectional import compute_nifty_momentum_30_percentile_ranks
+
+    momentum_30_percentiles = compute_nifty_momentum_30_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("nifty_momentum_30_percentile")
+                     for symbol, series in momentum_30_percentiles.items()}
+
+    strategy = NiftyMomentum30StyleStrategy()
+    return run_generic_swing_experiment(
+        strategy, NIFTY_MOMENTUM_30_STYLE, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "nifty_momentum_30_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "nifty_momentum_30_stop_loss_pct": 0.08,
+            "nifty_momentum_30_percentile_threshold": 90.0,
+            "nifty_momentum_30_formation_days_6m": 126,
+            "nifty_momentum_30_formation_days_12m": 252,
+            "nifty_momentum_30_volatility_lookback_days": 252,
+            "nifty_momentum_30_holding_period_trading_days": 126,
+            "nifty_momentum_30_single_vintage": True,
+            "nifty_momentum_30_percentile_based_early_exit": False,
+        },
+    )
