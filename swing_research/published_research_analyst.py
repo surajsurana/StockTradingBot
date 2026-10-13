@@ -1914,3 +1914,105 @@ NIFTY_MOMENTUM_30_STYLE = PublishedStrategy(
         "construction, not that an independent academic study found the same effect."
     ),
 )
+
+CRYPTO_IDIOSYNCRATIC_VOLATILITY = PublishedStrategy(
+    name="Cryptocurrency Idiosyncratic Volatility Factor",
+    source_citation=(
+        "Zhang, W. and Li, Y. (2020), \"Is idiosyncratic volatility priced in cryptocurrency "
+        "markets?\", Research in International Business and Finance, Vol. 54, Elsevier."
+    ),
+    mechanism=(
+        "For each coin, regress daily returns on a crypto-market-factor proxy (a Fama-MacBeth-"
+        "style market model, the same general regression machinery this program already built "
+        "for Betting Against Beta and the equity Idiosyncratic Volatility Anomaly); the "
+        "regression RESIDUAL's volatility is that coin's idiosyncratic volatility (IVOL), net of "
+        "common crypto-market risk. Cross-sectionally sorting coins by IVOL finds a POSITIVE "
+        "IVOL-return relationship in crypto -- the OPPOSITE sign from the well-known equity-market "
+        "'IVOL puzzle' (Ang, Chen, Xing and colleagues' negative relationship, already represented "
+        "in this program's own 'risk_based' family via idiosyncratic_volatility, INCONCLUSIVE/"
+        "PAPER_TRADING). The first crypto candidate that cross-sectionally ranks coins by a RISK "
+        "measure (residual volatility) rather than by price-return momentum/reversal/trend, or by "
+        "Crypto Volatility-Managed Exposure's entirely different, time-series (not cross-sectional) "
+        "use of volatility."
+    ),
+    rules=(
+        "IVOL_i = std dev of the residuals from a regression of the coin's daily returns on a "
+        "crypto-market-factor proxy, over a formation period (the paper's own Fama-MacBeth "
+        "regression cadence is monthly). Cross-sectional decile sort by IVOL at each formation "
+        "date. Long the TOP decile (highest IVOL) -- the paper's own documented positive-sign "
+        "finding for crypto, a disclosed reduction from its long-short portfolio-sort "
+        "construction, the same interpretive step already used by every prior strategy in this "
+        "program."
+    ),
+    variant_chosen=(
+        "SINGLE-FACTOR (CAPM/market-model) residual volatility, via the SAME closed-form identity "
+        "(for a single-regressor OLS, Var(residual) = Var(Y) x (1 - rho^2), so idio_vol = "
+        "sigma_coin x sqrt(1 - rho^2)) already established for the equity lane's own "
+        "idiosyncratic_volatility.py -- not a new formula invented for crypto, the same "
+        "regression machinery reused with a crypto-specific market factor and formation window. "
+        "30-CALENDAR-day (not the equity lane's 21-TRADING-day) IVOL formation window -- crypto "
+        "trades every day, so 21 bars would be ~3 weeks, not a full month; 30 matches this lane's "
+        "own 252->365 calendar-day conversion already established by crypto_illiquidity_premium.py "
+        "(see swing_research/cross_sectional.py's CRYPTO_IVOL_FORMATION_DAYS). Monthly single-"
+        "vintage reformation (last UTC calendar day of each month) -- the standard crypto "
+        "cross-sectional factor-sort cadence this lane's own crypto_illiquidity_premium.py / "
+        "crypto_tsmom.py already use, and a direct match for the paper's own monthly Fama-MacBeth "
+        "cadence."
+    ),
+    scope_reductions=(
+        "LONG ONLY (same disclosed reason as every strategy in this program). CRYPTO-MARKET-"
+        "FACTOR PROXY built from this experiment's OWN universe (swing_research/"
+        "cross_sectional.py's compute_crypto_market_factor_close(), an equal-weighted index of "
+        "daily returns across the fetched coins) rather than a separately-fetched market index -- "
+        "this platform has no such index for crypto, unlike the equity lane's fetched Nifty 50 "
+        "Close series; each coin therefore contributes a small self-weight to the very factor it "
+        "is regressed against. SINGLE-VINTAGE MONTHLY HOLDING: a position closes only at the "
+        "first month-end on or after 25 calendar days have elapsed (this candidate's own "
+        "disclosed holding_days_min) -- every month has >=28 days, so this always resolves to "
+        "'the next month-end,' never an early or doubled-up exit. TOP-DECILE THRESHOLD "
+        "(percentile >=90) with a 20% protective stop-loss -- NOT the equity strategy's 8%, which "
+        "this lane's own crypto_xs_momentum.py/crypto_illiquidity_premium.py/crypto_tsmom.py/"
+        "crypto_trend_timing*.py already disclose is an equity-volatility number inappropriate for "
+        "crypto's much higher daily volatility; 20% is reused from those strategies rather than "
+        "inventing a third number. 2.5% risk-per-unit sizing (12.5% of the book per coin) -- "
+        "identical sizing convention to crypto_xs_momentum.py / crypto_illiquidity_premium.py "
+        "(same universe, same decile-scale qualifying count), not a new number invented for this "
+        "strategy. Book in USDT, fractional quantities. Costs (0.30%/side + 10bps spread) and "
+        "India's 31.2% per-profitable-trade VDA tax with no loss set-off are applied before the "
+        "audit, exactly as for every other crypto strategy -- the verdict is post-tax, pre-tax "
+        "recorded alongside."
+    ),
+    distinctiveness=(
+        "First crypto-lane strategy that cross-sectionally ranks coins by a RISK measure (residual "
+        "volatility) rather than by price-return momentum/reversal/trend -- a genuinely different "
+        "mechanism SHAPE from every other crypto candidate, including Crypto Volatility-Managed "
+        "Exposure (crypto_vol_managed, already implemented, REJECT), which TIME-SCALES one "
+        "portfolio's net exposure by its own trailing realized volatility over time rather than "
+        "cross-sectionally ranking coins against each other. Shares this program's 'risk_based' "
+        "factor tag with the already-implemented, INCONCLUSIVE equity Idiosyncratic Volatility "
+        "Anomaly -- not the same signal (crypto vs. India equities, OPPOSITE documented sign), but "
+        "real conceptual/mechanical lineage (both are residual-volatility measures from a "
+        "market-model regression), so a meaningful, not full, diversification credit is warranted. "
+        "The sign of this effect is genuinely contested in the broader crypto-volatility "
+        "literature (e.g. crypto 'low volatility anomaly' studies report the opposite, negative "
+        "relationship in different samples/periods) -- this implementation tests the paper's own "
+        "documented positive-sign finding empirically on this platform's own universe, not a "
+        "settled direction assumed going in."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. Single-factor (not Fama-French multi-factor) "
+        "residual volatility: NEGLIGIBLE -- the source paper's own primary specification is "
+        "already a single-factor crypto market model, unlike the equity Idiosyncratic Volatility "
+        "Anomaly's documented 3-factor-to-1-factor reduction. Equal-weighted, universe-built "
+        "market-factor proxy (vs. a separately-fetched index): MINOR -- the small self-weight "
+        "inflates every coin's own correlation with the factor symmetrically across the "
+        "cross-section, so it does not favor one coin's rank over another's. 30-calendar-day (vs "
+        "equity's 21-trading-day) formation window: MINOR -- matches the paper's own monthly "
+        "re-formation, just a day-count convention. Monthly reformation cadence: MINOR -- matches "
+        "the paper's own Fama-MacBeth cadence directly. Top-decile threshold (percentile >=90): "
+        "MINOR. 20% crypto-scaled stop (not the equity strategy's 8%): MODERATE, one-directional. "
+        "2.5% risk-per-unit / 12.5%-of-book sizing: MINOR. USDT book / USD-INR conversion: "
+        "NEGLIGIBLE for the verdict. Costs and 31.2% no-offset tax: MAJOR and one-directional -- "
+        "the lane's standing question."
+    ),
+)

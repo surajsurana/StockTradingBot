@@ -14,6 +14,8 @@ import numpy as np
 
 from swing_research.cross_sectional import (
     compute_52w_high_nearness_percentile_ranks, compute_52w_high_nearness_score,
+    compute_crypto_idiosyncratic_volatility_percentile_ranks, compute_crypto_idiosyncratic_volatility_score,
+    compute_crypto_market_factor_close,
     compute_idiosyncratic_volatility_percentile_ranks, compute_idiosyncratic_volatility_score,
     compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
@@ -469,6 +471,115 @@ class TestComputeIdiosyncraticVolatilityPercentileRanks(unittest.TestCase):
         last_date = data["B"].index[-1]
         # B has the lowest idiosyncratic volatility of the four -> rank 1/4 -> 25th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
+
+
+# A non-constant 30-value return pattern (CRYPTO_IVOL_FORMATION_DAYS), deliberately not
+# monotonic, mirroring _MARKET_RETURNS_21's construction above but for the crypto lane's
+# longer (calendar-day) formation window.
+_CRYPTO_MARKET_RETURNS_30 = [(-0.02 + 0.001 * i) if i % 2 == 0 else (0.02 - 0.001 * i) for i in range(30)]
+
+
+class TestComputeCryptoMarketFactorClose(unittest.TestCase):
+    def test_equal_weighted_mean_of_two_coins_matches_independent_calculation(self):
+        coin_a = _ohlcv_from_close(_close_from_returns([0.01, 0.02, -0.01]))
+        coin_b = _ohlcv_from_close(_close_from_returns([0.03, -0.02, 0.04]))
+        index = compute_crypto_market_factor_close({"A": coin_a, "B": coin_b})
+
+        expected_r1 = (0.01 + 0.03) / 2
+        expected_r2 = (0.02 + -0.02) / 2
+        expected_r3 = (-0.01 + 0.04) / 2
+        self.assertAlmostEqual(index.iloc[0], 1.0)
+        self.assertAlmostEqual(index.iloc[1], 1.0 * (1 + expected_r1))
+        self.assertAlmostEqual(index.iloc[2], 1.0 * (1 + expected_r1) * (1 + expected_r2))
+        self.assertAlmostEqual(index.iloc[3], 1.0 * (1 + expected_r1) * (1 + expected_r2) * (1 + expected_r3))
+
+    def test_a_coin_missing_a_day_is_excluded_not_treated_as_zero(self):
+        coin_a = _ohlcv_from_close(_close_from_returns([0.02, 0.02]))
+        # B has no row for the second date at all (e.g. a later listing) -- its missing
+        # return must not pull the index average down toward zero that day.
+        short_b = _ohlcv_from_close(_close_from_returns([0.02]))
+        index = compute_crypto_market_factor_close({"A": coin_a, "B": short_b})
+        last_date = coin_a.index[-1]
+        # Only A has a valid return on the last day -> the index should move by exactly A's
+        # own return that day, not be diluted by a phantom zero for B.
+        prev_index = index.loc[index.index[-2]]
+        self.assertAlmostEqual(index.loc[last_date], prev_index * 1.02)
+
+    def test_empty_data_returns_empty_series(self):
+        result = compute_crypto_market_factor_close({})
+        self.assertTrue(result.empty)
+
+
+class TestComputeCryptoIdiosyncraticVolatilityScore(unittest.TestCase):
+    def test_perfectly_correlated_coin_has_zero_idiosyncratic_volatility(self):
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        coin_returns = [2 * r for r in _CRYPTO_MARKET_RETURNS_30]
+        coin_close = _close_from_returns(coin_returns)
+        score = compute_crypto_idiosyncratic_volatility_score(_ohlcv_from_close(coin_close), market_close)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=6)
+
+    def test_score_matches_independent_closed_form_calculation(self):
+        noise = [0.004 if i % 2 == 0 else -0.004 for i in range(30)]
+        coin_returns = [m + n for m, n in zip(_CRYPTO_MARKET_RETURNS_30, noise)]
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        coin_close = _close_from_returns(coin_returns)
+
+        score = compute_crypto_idiosyncratic_volatility_score(_ohlcv_from_close(coin_close), market_close)
+
+        rho = np.corrcoef(coin_returns, _CRYPTO_MARKET_RETURNS_30)[0, 1]
+        sigma_coin = np.std(coin_returns, ddof=1)
+        expected = sigma_coin * np.sqrt(1 - rho ** 2)
+        self.assertAlmostEqual(score.iloc[-1], expected, places=8)
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        short_returns = _CRYPTO_MARKET_RETURNS_30[:15]   # short of the 30-day formation window
+        market_close = _close_from_returns(short_returns)
+        coin_close = _close_from_returns(short_returns)
+        score = compute_crypto_idiosyncratic_volatility_score(_ohlcv_from_close(coin_close), market_close)
+        self.assertTrue(pd.isna(score.iloc[-1]))
+
+
+class TestComputeCryptoIdiosyncraticVolatilityPercentileRanks(unittest.TestCase):
+    def _coin(self, extra_noise_scale):
+        noise = [extra_noise_scale if i % 2 == 0 else -extra_noise_scale for i in range(30)]
+        returns = [m + n for m, n in zip(_CRYPTO_MARKET_RETURNS_30, noise)]
+        return _ohlcv_from_close(_close_from_returns(returns))
+
+    def test_higher_residual_vol_coin_ranks_higher(self):
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        data = {
+            "CALM": self._coin(0.0005),
+            "MODERATE": self._coin(0.004),
+            "NOISY": self._coin(0.02),
+        }
+        ranks = compute_crypto_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["CALM"].index[-1]
+        self.assertLess(ranks["CALM"].loc[last_date], ranks["MODERATE"].loc[last_date])
+        self.assertLess(ranks["MODERATE"].loc[last_date], ranks["NOISY"].loc[last_date])
+
+    def test_percentiles_are_between_0_and_100(self):
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        data = {"A": self._coin(0.001), "B": self._coin(0.03),
+                "C": self._coin(0.0002), "D": self._coin(0.015)}
+        ranks = compute_crypto_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        self.assertEqual(compute_crypto_idiosyncratic_volatility_percentile_ranks({}, market_close), {})
+
+    def test_noisiest_coin_lands_at_highest_percentile(self):
+        market_close = _close_from_returns(_CRYPTO_MARKET_RETURNS_30)
+        data = {"A": self._coin(0.01), "B": self._coin(0.0002),
+                "C": self._coin(0.03), "D": self._coin(0.02)}
+        ranks = compute_crypto_idiosyncratic_volatility_percentile_ranks(data, market_close)
+        last_date = data["C"].index[-1]
+        # C has the highest idiosyncratic volatility of the four -> rank 4/4 -> 100th pct
+        self.assertAlmostEqual(ranks["C"].loc[last_date], 100.0)
 
 
 if __name__ == "__main__":

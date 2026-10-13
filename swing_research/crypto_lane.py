@@ -291,6 +291,34 @@ def run_crypto_trend_timing_weekly_experiment(data: dict, start_date: date, end_
     )
 
 
+def run_crypto_idiosyncratic_volatility_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Zhang & Li (2020) crypto idiosyncratic volatility factor (crypto_idiosyncratic_volatility
+    candidate, 2026-10-12)."""
+    from swing_research.strategies.crypto_idiosyncratic_volatility import (
+        HOLDING_PERIOD_DAYS, IVOL_PERCENTILE_THRESHOLD, STOP_LOSS_PCT, CryptoIdiosyncraticVolatilityStrategy,
+    )
+    from swing_research.published_research_analyst import CRYPTO_IDIOSYNCRATIC_VOLATILITY
+    from swing_research.cross_sectional import (
+        CRYPTO_IVOL_FORMATION_DAYS, compute_crypto_idiosyncratic_volatility_percentile_ranks,
+        compute_crypto_market_factor_close,
+    )
+
+    market_close = compute_crypto_market_factor_close(data)
+    ranks = compute_crypto_idiosyncratic_volatility_percentile_ranks(data, market_close)
+    extra_columns = {symbol: series.rename("crypto_ivol_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoIdiosyncraticVolatilityStrategy(), CRYPTO_IDIOSYNCRATIC_VOLATILITY, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_ivol_formation_days": CRYPTO_IVOL_FORMATION_DAYS,
+                          "crypto_ivol_percentile_threshold": IVOL_PERCENTILE_THRESHOLD,
+                          "crypto_ivol_holding_period_days": HOLDING_PERIOD_DAYS,
+                          "crypto_rebalance": "last UTC calendar day of each month",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_ivol_single_vintage": True,
+                          "crypto_market_factor": "equal-weighted index of this experiment's own universe"},
+        **kwargs,
+    )
+
+
 def run_crypto_trend_timing_daily_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
     """Faber's rule at daily cadence (2026-09-17) -- see crypto_trend_timing_daily.py."""
     from swing_research.strategies.crypto_trend_timing_daily import (
