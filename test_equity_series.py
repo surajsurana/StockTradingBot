@@ -92,6 +92,32 @@ class TestDollarBooks(unittest.TestCase):
         self.assertFalse(series_for(self.d, "alpha", usdinr=95.0)["converted"])
 
 
+class TestEveryBookOnTheDeskCanBeCharted(unittest.TestCase):
+    """Pool G and Pool D were the only two that never wrote a daily record, so theirs were the only
+    empty charts on the page. Both write one now; these pin the lookup that finds them."""
+
+    def test_pool_g_and_pool_d_are_found_at_their_pool_root(self):
+        from reporting.equity_series import SINGLE_BOOKS
+        self.assertEqual(SINGLE_BOOKS.get("portfolio_g"), "pool_g")
+        self.assertEqual(SINGLE_BOOKS.get("pool_d_vwap_fade"), "pool_d")
+
+    def test_pool_g_is_read_in_dollars_and_pool_d_in_rupees(self):
+        from reporting.equity_series import USD_ROOTS
+        self.assertIn("pool_g", USD_ROOTS)
+        self.assertNotIn("pool_d", USD_ROOTS)
+
+    def test_both_runners_record_one(self):
+        """The write itself lives with each book's own state module, and neither may fail a run."""
+        for module, fn in (("portfolio_g.state", "append_daily_equity"),
+                           ("pool_d.state", "append_daily_equity")):
+            mod = __import__(module, fromlist=[fn])
+            self.assertTrue(callable(getattr(mod, fn)), module)
+            with open(mod.__file__, encoding="utf-8") as f:
+                body = f.read()
+            body = body[body.index("def " + fn):]
+            self.assertIn("except Exception:", body[:body.index(chr(10) + "def ", 1)])
+
+
 class TestItOnlyReads(unittest.TestCase):
     def test_it_writes_nothing_anywhere(self):
         import reporting.equity_series as mod

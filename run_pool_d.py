@@ -50,7 +50,8 @@ from research_lab.backtesting_engineer import _compute_day_context
 from swing_research.universe import get_swing_universe
 
 from pool_d.engine import process_tick
-from pool_d.state import POOL_D_LOCK_PATH, POOL_D_STATE_DIR, load_state, save_state
+from pool_d.state import (POOL_D_LOCK_PATH, POOL_D_STATE_DIR, append_daily_equity,
+                          load_state, save_state)
 
 POOL_D_SYMBOLS = [s[:-3] if s.endswith(".NS") else s for s in get_swing_universe()]   # Kite wants bare symbols
 STARTING_CAPITAL = settings.RESEARCH_LAB_VIRTUAL_CAPITAL   # Rs.1,00,000 -- ONE shared book
@@ -166,6 +167,12 @@ def _run_tick_locked(now: datetime.datetime) -> dict:
 
     result = process_tick(state, todays_bars, state["context_by_symbol"], now=now)
     save_state(state)
+    # What the book is worth after this tick, for the dashboard's equity curve: cash plus every open
+    # position at the last bar this tick used, so it agrees with the fills above.
+    _last = {sym: float(bars[-1]["close"]) for sym, bars in todays_bars.items() if bars}
+    _held = sum(float(p.get("quantity", 0) or 0) * _last.get(sym, float(p.get("entry_price", 0) or 0))
+                for sym, p in state["positions"].items())
+    append_daily_equity(today.isoformat(), state["cash"], state["cash"] + _held)
 
     print(f"[{now.strftime('%H:%M')}] {len(result['new_entries'])} new entr{'y' if len(result['new_entries']) == 1 else 'ies'}, "
           f"{len(result['new_exits'])} new exit{'s' if len(result['new_exits']) != 1 else ''}; "

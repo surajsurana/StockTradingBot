@@ -97,6 +97,29 @@ def save_state(state: dict) -> None:
         json.dump(state, f, indent=2)
 
 
+def append_daily_equity(date_iso: str, cash: float, equity: float) -> None:
+    """One line a day: what the book was worth at the end of this tick.
+
+    Pool D was the last book on the desk with no daily record, so its strategy was the last with an
+    empty chart. Append-only, last write wins for a date -- an intraday book ticks many times a day
+    and only the latest matters -- and wrapped so a bookkeeping line can never fail a trading tick.
+    """
+    try:
+        path = os.path.join(POOL_D_STATE_DIR, "daily_equity.jsonl")
+        os.makedirs(POOL_D_STATE_DIR, exist_ok=True)
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                rows = [l for l in f.read().splitlines()
+                        if l.strip() and json.loads(l).get("date") != date_iso]
+        rows.append(json.dumps({"date": date_iso, "cash": round(float(cash), 2),
+                                "equity": round(float(equity), 2)}))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(chr(10).join(rows) + chr(10))
+    except Exception:
+        pass
+
+
 def append_trade(trade: dict) -> None:
     os.makedirs(POOL_D_STATE_DIR, exist_ok=True)
     with open(POOL_D_TRADES_PATH, "a", encoding="utf-8") as f:
