@@ -22,9 +22,13 @@ class TestNoticingTheOutage(unittest.TestCase):
         self.state = tempfile.mkdtemp()
         self.logs = tempfile.mkdtemp()
 
-    def _log(self, name, text):
-        with open(os.path.join(self.logs, name), "w", encoding="utf-8") as f:
+    def _log(self, name, text, when=None):
+        path = os.path.join(self.logs, name)
+        with open(path, "w", encoding="utf-8") as f:
             f.write(text)
+        if when is not None:
+            os.utime(path, (when, when))
+        return path
 
     def _state(self, rel, when=None):
         path = os.path.join(self.state, rel)
@@ -42,20 +46,36 @@ class TestNoticingTheOutage(unittest.TestCase):
         self.assertEqual(r["message"], "")
 
     def test_a_credit_refusal_with_no_run_since_is_blocked(self):
-        self._log("pool_g.log", "[2026-10-11] starting\n" + ERROR_LINE)
+        self._log("pool_g.log", "starting" + chr(10) + ERROR_LINE,
+                  when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
         self._state("pool_g/portfolio.json", when=time.mktime((2026, 10, 11, 8, 30, 0, 0, 0, -1)))
         r = check(self.state, self.logs)
         self.assertTrue(r["blocked"])
-        self.assertEqual(r["since"], "2026-10-11")
+        self.assertTrue(r["since"].startswith("2026-10-13"), r["since"])
+        self.assertTrue(r["books"][0]["last_ran"].startswith("2026-10-11"))
         self.assertIn("Pool G", r["books"][0]["name"])
         self.assertIn("real positions", r["message"])
 
     def test_a_book_that_has_run_since_is_not_blocked(self):
         """Whatever that was, it is over -- and a warning that stays up after the thing is fixed is
         a warning people learn to ignore."""
-        self._log("pool_g.log", "[2026-10-11] starting\n" + ERROR_LINE)
+        self._log("pool_g.log", "starting" + chr(10) + ERROR_LINE,
+                  when=time.mktime((2026, 10, 11, 8, 30, 0, 0, 0, -1)))
         self._state("pool_g/portfolio.json", when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
         self.assertFalse(check(self.state, self.logs)["blocked"])
+
+    def test_a_log_with_no_dates_in_it_is_still_noticed(self):
+        """THE BUG THIS REPLACED. The first version read the newest date stamp ABOVE the error, and
+        Pool G prints none near its traceback -- so it matched a stamp from two runs earlier, decided
+        the book had run since, and the live book read as healthy while it was down."""
+        self._log("pool_g.log", "Traceback" + chr(10) + ERROR_LINE,
+                  when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
+        self._state("pool_g/portfolio.json", when=time.mktime((2026, 10, 11, 8, 30, 0, 0, 0, -1)))
+        self.assertTrue(check(self.state, self.logs)["blocked"])
+
+    def test_a_book_with_no_state_file_at_all_is_blocked(self):
+        self._log("pool_g.log", ERROR_LINE, when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
+        self.assertTrue(check(self.state, self.logs)["blocked"])
 
     def test_an_ordinary_error_is_not_this_error(self):
         self._log("pool_g.log", "[2026-10-11] RuntimeError: data provider outage\n")
