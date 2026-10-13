@@ -370,6 +370,31 @@ class TestPaperLooksLikeLive(unittest.TestCase):
         self.assertIn("(s.pool_i || {}).books", fn)
 
 
+class TestTheCreditWarningBar(unittest.TestCase):
+    """The one thing on this page that interrupts you: a LIVE book that cannot manage its own open
+    positions. On 2026-10-13 Pool G had been down since the 11th and nothing on screen said so."""
+
+    def test_the_bar_is_stuck_to_the_top_and_can_be_dismissed(self):
+        page = _page()
+        self.assertIn('id="creditbar"', page)
+        self.assertIn('id="creditbar-x"', page)
+        css = page[page.index(".alertbar{"):]
+        self.assertIn("position:sticky", css[:css.index("}")])
+        self.assertIn(".alertbar[hidden]{display:none}", page)   # or sticky would beat hidden
+
+    def test_dismissing_it_remembers_which_outage(self):
+        """Hiding today's must not hide tomorrow's, and it has to come back if the books stop again
+        after a recovery."""
+        body = _script(_page())
+        fn = body[body.index("function renderCreditBar"):body.index("document.getElementById(\"creditbar-x\")")]
+        self.assertIn('(h.since || "") + "|"', fn)       # the stamp is the outage, not a flag
+        self.assertIn("seen === stamp", fn)
+
+    def test_it_is_drawn_on_every_load(self):
+        body = _script(_page())
+        self.assertIn("renderCreditBar(s); renderLive(s);", body)
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many

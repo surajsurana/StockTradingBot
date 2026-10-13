@@ -95,6 +95,16 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pboard tr.total td{border-top:2px solid var(--ink);font-weight:600}
 .pboard .venue{display:block;font-weight:600}
 .pboard .venue small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
+/* STUCK TO THE TOP OF THE PAGE, not to the flow: the thing it reports (a live book that cannot
+   manage its own positions) does not stop mattering because you scrolled. */
+.alertbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;
+  background:var(--loss);color:#fff;padding:9px 14px;border-radius:4px;margin:0 0 12px;
+  font-size:13px;font-weight:500;box-shadow:0 2px 10px color-mix(in srgb,var(--ink) 22%,transparent)}
+.alertbar[hidden]{display:none}
+.alertbar .ab-what{flex:1 1 auto}
+.alertbar .ab-what b{font-weight:700}
+.alertbar .ab-x{all:unset;cursor:pointer;font-size:19px;line-height:1;padding:0 4px;opacity:.85}
+.alertbar .ab-x:hover{opacity:1}
 .livetop{display:flex;justify-content:flex-end;margin:0 0 8px}
 .livetop:empty{margin:0}
 /* display:flex BEATS the hidden attribute, so without this the retired chip and its ticker stayed
@@ -498,7 +508,7 @@ dialog button.primary{background:var(--accent);color:var(--accent-ink);border-co
    already relative; in a toolbar nothing is, and the calendar flew to the page's top-left corner. */
 /* The equity chart behind a strategy's Capital and Net Profit figures. Drawn as an inline SVG --
    no library, no network, and it scales with the dialog. */
-#equity{min-width:min(560px,92vw)}
+#equity{min-width:min(560px,92vw);overflow:hidden}
 #equity .segbtns{margin:4px 0 10px}
 #equity-chart{position:relative}
 #equity-chart svg{display:block;width:100%;height:170px;overflow:visible}
@@ -580,6 +590,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 </aside>
 <div class="content">
 <p id="modenote" class="note" hidden></p>
+<div class="alertbar" id="creditbar" hidden>
+  <span class="ab-what"></span>
+  <button class="ab-x" id="creditbar-x" title="Hide until it happens again" aria-label="Dismiss">×</button>
+</div>
 <main class="shellmain">
 <p id="error" class="err" hidden></p>
 
@@ -881,7 +895,7 @@ function render(){
   const liveEmpty = s.mode==="live" && s.books.every(b => !b.exists) && !s.pool_d.starting_capital && !s.pool_e.exists && !(s.pools && s.pools.H);
   note.hidden = !liveEmpty;
   note.textContent = liveEmpty ? "Live mode: no real-money trading books exist yet — every strategy currently runs as paper trading (switch to Paper to see them). Your real long-term holdings are in Pool H." : "";
-  renderLive(s); applyLiveView(); renderOrders(s); renderNotifications(s); renderTeam(s); renderBoard(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
+  renderCreditBar(s); renderLive(s); applyLiveView(); renderOrders(s); renderNotifications(s); renderTeam(s); renderBoard(s); renderRegistry(s); renderResearch(s); renderStatement(s); renderMine(s); renderReports(s); renderAdvice(s);
   animateChanges();
 }
 
@@ -1349,8 +1363,16 @@ function renderEquity(){
     for(const el of [guide, hdot, tip]) el.style.display = "";
     guide.style.left = x + "px";
     hdot.style.left = x + "px"; hdot.style.top = y + "px";
-    tip.style.left = x + "px"; tip.style.top = y + "px";
     tip.innerHTML = `<i>${esc(p.date)}</i><b>${money(p.equity)}</b>`;
+    // KEEP IT INSIDE THE CHART. Centred on the cursor it ran off the right-hand edge on the last
+    // few days -- the label clipped, and the dialog grew a scrollbar to chase it. Clamped to the
+    // plot, and flipped below the line when the curve is near the top.
+    tip.style.left = "0px"; tip.style.top = "0px";
+    const tw = tip.offsetWidth || 90, th = tip.offsetHeight || 22;
+    const left = Math.min(Math.max(x, tw / 2 + 2), box2.width - tw / 2 - 2);
+    const below = y < th + 14;
+    tip.style.left = left + "px";
+    tip.style.top = (below ? y + th + 16 : y) + "px";
   });
   plot.addEventListener("mouseleave", () => {
     for(const el of [guide, hdot, tip]) el.style.display = "none";
@@ -1690,6 +1712,33 @@ function applyLiveView(){
   if(board) board.hidden = false;
   if(STATE) renderLiveBoard(STATE);
 }
+
+// THE ONE THING ON THIS PAGE THAT INTERRUPTS YOU. Everything else can wait for you to look; a live
+// book that cannot manage its open positions cannot. Dismissal is remembered against the DATE of
+// the outage, so hiding today's does not hide tomorrow's -- and it comes back by itself if the
+// books stop again after a recovery.
+const CREDIT_SEEN_KEY = "desk.creditSeen";
+function renderCreditBar(s){
+  const bar = document.getElementById("creditbar");
+  const h = s.ai_credits || {};
+  if(!h.blocked){ bar.hidden = true; return; }
+  const stamp = (h.since || "") + "|" + (h.books || []).map(b => b.name).join(",");
+  let seen = "";
+  try { seen = localStorage.getItem(CREDIT_SEEN_KEY) || ""; } catch(e){}
+  bar.dataset.stamp = stamp;
+  if(seen === stamp){ bar.hidden = true; return; }
+  const books = (h.books || []).map(b =>
+    `${esc(b.name)}${b.last_ran ? ` (last ran ${esc(b.last_ran)})` : ""}`).join(" &middot; ");
+  bar.querySelector(".ab-what").innerHTML =
+    `<b>Anthropic credits have run out.</b> ${esc(h.message || "")} Top up at Plans &amp; Billing; `
+    + `the books restart by themselves at the next run. Stopped: ${books}`;
+  bar.hidden = false;
+}
+document.getElementById("creditbar-x").addEventListener("click", () => {
+  const bar = document.getElementById("creditbar");
+  try { localStorage.setItem(CREDIT_SEEN_KEY, bar.dataset.stamp || ""); } catch(e){}
+  bar.hidden = true;
+});
 
 // What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
 // and no errors -- it looks exactly like a book that had no signals -- so without this the honest

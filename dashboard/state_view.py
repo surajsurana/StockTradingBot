@@ -1706,6 +1706,15 @@ def agents_view(queues: Optional[dict] = None) -> list:
     return [{**a, "live_status": "working"} if a["id"] == "research_routine" else a for a in AGENTS]
 
 
+def _ai_credit_health(state_dir: str, logs_dir: str) -> dict:
+    """Never raises: a health check that can take the whole page down is worse than no check."""
+    try:
+        from reporting.ai_credit_health import check
+        return check(state_dir, logs_dir)
+    except Exception:
+        return {"blocked": False, "books": [], "since": "", "message": ""}
+
+
 def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list, prices: dict,
                           prices_as_of: Optional[str], now: Optional[datetime] = None,
                           roadmap: Optional[dict] = None, mode: str = "paper",
@@ -1838,6 +1847,11 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
     overall["unrealised"] = round(overall["unrealised"] + pool_d["unrealised"], 2)
     lifecycles = {}
     state = {
+        # Whether the AI books have stopped for want of Anthropic credit. Read here rather than
+        # predicted: the balance itself needs an Admin API this plan does not have, so the API's own
+        # refusal in the log is the only signal there is -- and it is the one that matters, because
+        # Pool G is LIVE and cannot manage its open positions while it is down.
+        "ai_credits": _ai_credit_health(state_dir, logs_dir),
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},
