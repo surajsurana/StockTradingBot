@@ -296,6 +296,48 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         self.assertIn(".boardrow .bigpot{max-width:none;flex:none;height:100%}", page)
 
 
+class TestTheStrategiesPeriodFilter(unittest.TestCase):
+    """A date range on the Strategies tab, All time by default. What a window can honestly answer
+    comes off the ledger -- the trades that CLOSED inside it -- so it rewrites exactly the realised
+    P&L, the closed count and the win rate. Capital and age are as-of-today figures and a position
+    still open has no "P&L during March", so those are left alone."""
+
+    def test_the_control_exists_and_defaults_to_all_time(self):
+        page = _page()
+        self.assertIn('id="reg-cal"', page)
+        self.assertIn('>All time</button>', page)
+        self.assertIn('id="reg-pop"', page)
+
+    def test_it_has_a_range_of_its_own(self):
+        """Filtering the trade list and asking how a strategy did in March are different questions
+        and must not move together."""
+        body = _script(_page())
+        self.assertIn("const REG_CAL = {y: null, m: null, from: \"\", to: \"\"}", body)
+        self.assertIn("cal: CAL,", body)        # the Live-day tape keeps its own
+        self.assertIn("cal: REG_CAL,", body)
+
+    def test_only_closed_trades_inside_the_window_are_counted(self):
+        body = _script(_page())
+        fn = body[body.index("function periodFigures"):body.index("function renderRegistry")]
+        self.assertIn('String(r.status || "").toLowerCase() === "open"', fn)   # skipped
+        self.assertIn("within(r.date)", fn)
+        self.assertIn("v.wins += 1", fn)
+
+    def test_a_window_leaves_the_as_of_today_columns_alone(self):
+        """Capital and the costed Net P&L are whole-life figures; recomputing them per window would
+        be inventing a number, so the window hands back null and the row shows a dash."""
+        body = _script(_page())
+        body = body[body.index("const period = periodFigures"):]
+        body = body[:body.index("const winOf")]
+        self.assertIn("pnl: p ? p.pnl : null", body)
+        self.assertIn("net: undefined", body)        # gross only -- marked with the * convention
+        self.assertNotIn("capital:", body)
+
+    def test_the_page_number_resets_when_the_window_changes(self):
+        body = _script(_page())
+        self.assertIn("REG_CAL.from, REG_CAL.to]", body)
+
+
 class TestHidingActuallyHides(unittest.TestCase):
     """CSS `display:` on an element BEATS the [hidden] attribute, so setting hidden does nothing at
     all. It has bitten twice: .profilemenu's display:flex kept the Settings menu open however many

@@ -671,7 +671,9 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <section id="tab-registry" hidden>
   <h2>Strategies</h2>
   <div id="alloc-panel" hidden></div>
-  <div class="tools"><span id="reg-count" class="note"></span><span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
+  <div class="tools"><span id="reg-count" class="note"></span>
+    <span class="hf" style="margin-left:14px"><button id="reg-cal" class="fbtn" title="Show each strategy's results for a chosen period only">All time</button><div id="reg-pop" class="pop" hidden></div></span>
+    <span class="note" style="margin-left:auto">click a strategy to see how it works</span></div>
   <div class="tblwrap" id="reg-wrap"><table><thead id="reg-head"></thead><tbody id="registry"></tbody></table></div>
   <div class="pager" id="reg-pager">
     <label class="note">Rows per page <select id="reg-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
@@ -865,20 +867,27 @@ const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["t
 let TAPE_SORT = {key:"bought_on", dir:-1};
 let TODAY = null;      // the day's P&L as renderLive worked it out -- see renderLive()
 const CAL = {y: null, m: null, from: "", to: ""};
+// The Strategies tab's own range, kept apart from the Live-day one: filtering the trade list and
+// asking "how did this strategy do in March" are different questions and must not move together.
+const REG_CAL = {y: null, m: null, from: "", to: ""};
+const CAL_TAPE = {pop: "tape-pop", clear: "tape-clear", cal: CAL, after: () => { if(STATE) renderTape(STATE); }};
+const CAL_REG  = {pop: "reg-pop",  clear: "reg-clear",  cal: REG_CAL, after: () => { if(STATE) renderRegistry(STATE); }};
 function pad(n){ return String(n).padStart(2, "0"); }
-function calRender(){
+function calRender(ctx){
+  const CAL = ctx.cal, POP = ctx.pop;
   const now = new Date(); if(CAL.y === null){ CAL.y = now.getFullYear(); CAL.m = now.getMonth(); }
   const first = new Date(CAL.y, CAL.m, 1), start = (first.getDay() + 6) % 7, days = new Date(CAL.y, CAL.m + 1, 0).getDate();
   const iso = d => `${CAL.y}-${pad(CAL.m + 1)}-${pad(d)}`;
   let cells = ["M","T","W","T","F","S","S"].map(h => `<div class="h">${h}</div>`).join("") + `<div class="o"></div>`.repeat(start);
   for(let d = 1; d <= days; d++){ const v = iso(d); const cl = (v === CAL.from || v === CAL.to) ? "end" : (CAL.from && CAL.to && v > CAL.from && v < CAL.to) ? "in" : ""; cells += `<div class="d ${cl}" data-d="${v}">${d}</div>`; }
-  document.getElementById("tape-pop").innerHTML = `<div class="cal"><div class="nav"><button data-nav="-1">&#8249;</button><span>${first.toLocaleString("en-IN",{month:"long",year:"numeric"})}</span><button data-nav="1">&#8250;</button></div><div class="grid">${cells}</div><div class="foot"><span>${CAL.from ? (CAL.to ? `${CAL.from} → ${CAL.to}` : `${CAL.from} → pick the end`) : "pick a start day"}</span><button id="tape-clear" class="iconbtn" style="font-size:11.5px">Clear</button></div></div>`;
-  document.querySelectorAll("#tape-pop [data-nav]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); CAL.m += +b.dataset.nav; if(CAL.m < 0){ CAL.m = 11; CAL.y--; } if(CAL.m > 11){ CAL.m = 0; CAL.y++; } calRender(); }));
-  document.querySelectorAll("#tape-pop .d[data-d]").forEach(c => c.addEventListener("click", e => { e.stopPropagation(); const v = c.dataset.d;
+  document.getElementById(POP).innerHTML = `<div class="cal"><div class="nav"><button data-nav="-1">&#8249;</button><span>${first.toLocaleString("en-IN",{month:"long",year:"numeric"})}</span><button data-nav="1">&#8250;</button></div><div class="grid">${cells}</div><div class="foot"><span>${CAL.from ? (CAL.to ? `${CAL.from} → ${CAL.to}` : `${CAL.from} → pick the end`) : "pick a start day"}</span><button id="${ctx.clear}" class="iconbtn" style="font-size:11.5px">Clear</button></div></div>`;
+  document.querySelectorAll(`#${POP} [data-nav]`).forEach(b => b.addEventListener("click", e => { e.stopPropagation(); CAL.m += +b.dataset.nav; if(CAL.m < 0){ CAL.m = 11; CAL.y--; } if(CAL.m > 11){ CAL.m = 0; CAL.y++; } calRender(ctx); }));
+  document.querySelectorAll(`#${POP} .d[data-d]`).forEach(c => c.addEventListener("click", e => { e.stopPropagation(); const v = c.dataset.d;
     if(!CAL.from || (CAL.from && CAL.to)){ CAL.from = v; CAL.to = ""; } else if(v < CAL.from){ CAL.to = CAL.from; CAL.from = v; } else { CAL.to = v; }
-    calRender(); if(STATE) renderTape(STATE); }));
-  document.getElementById("tape-clear").addEventListener("click", e => { e.stopPropagation(); CAL.from = ""; CAL.to = ""; calRender(); if(STATE) renderTape(STATE); });
+    calRender(ctx); ctx.after(); }));
+  document.getElementById(ctx.clear).addEventListener("click", e => { e.stopPropagation(); CAL.from = ""; CAL.to = ""; calRender(ctx); ctx.after(); });
 }
+
 // A column header with its own filter, Excel-style: label (sorts) + a small funnel that opens the control.
 function hcell(label, k, control, extraClass=""){
   if(!control) return `<th class="${extraClass}"><span class="hf"><span class="lbl">${label}</span><button data-sort="${k}" class="sortbtn" title="Sort">↕</button></span></th>`;
@@ -913,7 +922,7 @@ function buildTapeHead(){
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
   ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
-  document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(); });
+  document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(CAL_TAPE); });
   document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
   document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
 }
@@ -1311,6 +1320,16 @@ function wireRegPager(){
   const pager = document.getElementById("reg-pager"); if(pager.dataset.wired) return;
   pager.dataset.wired = "1";
   document.getElementById("reg-pagesize").addEventListener("change", e => { REG_PAGE_SIZE = +e.target.value; REG_PAGE = 1; if(STATE) renderRegistry(STATE); });
+  // The period picker. Same calendar as Live day's "Bought on", its own range.
+  document.getElementById("reg-cal").addEventListener("click", e => {
+    e.stopPropagation();
+    const pop = document.getElementById("reg-pop"), open = pop.hidden;
+    document.querySelectorAll(".hpop").forEach(x => x.hidden = true);
+    pop.hidden = !open;
+    if(!pop.hidden) calRender(CAL_REG);
+  });
+  document.getElementById("reg-pop").addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => { const p = document.getElementById("reg-pop"); if(p) p.hidden = true; });
   document.getElementById("reg-prev").addEventListener("click", () => { REG_PAGE--; if(STATE) renderRegistry(STATE); });
   document.getElementById("reg-next").addEventListener("click", () => { REG_PAGE++; if(STATE) renderRegistry(STATE); });
 }
@@ -2731,6 +2750,27 @@ function renderFuture(s){
 // first paint: honour a #reports/... or #advice link (also what the browser's back button restores)
 readRoute();
 
+// WHAT A PERIOD CAN HONESTLY SAY. Capital, unrealised P&L and the tax/charges breakdown are all
+// as-of-today figures -- a position still open has no "P&L during March", and the costed Net P&L is
+// computed over a strategy's whole life, not per window. What a window CAN answer comes off the
+// ledger: the trades that CLOSED inside it, what they booked, and how many of them won. So a range
+// rewrites exactly those three columns and leaves the rest alone, and the figure it shows is gross
+// -- marked with the same * the pool sub-rows already use for "not costed".
+function periodFigures(s, from, to){
+  if(!from && !to) return null;
+  const within = d => (!from || (d || "") >= from) && (!to || (d || "") <= to);
+  const out = {};
+  for(const r of (s.ledger || [])){
+    const key = r.book_key;
+    if(!key || String(r.status || "").toLowerCase() === "open" || !within(r.date)) continue;
+    const v = out[key] || (out[key] = {pnl: 0, closed: 0, wins: 0});
+    v.pnl += (+r.pnl || 0);
+    v.closed += 1;
+    if((+r.pnl || 0) > 0) v.wins += 1;
+  }
+  return out;
+}
+
 function renderRegistry(s){
   buildRegHead();
   markSort(document.getElementById("reg-head"), REG_SORT);
@@ -2740,7 +2780,23 @@ function renderRegistry(s){
   ALLOC_BY_KEY = Object.fromEntries(((s.live_capital || {}).strategies || []).map(x => [x.key, x.allocated]));
   // In Live mode only strategies actually running real money belong here. Showing all 34 with
   // blank capital and P&L made the Live view read as if everything were live but flat.
-  const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live");
+  const period = periodFigures(s, REG_CAL.from, REG_CAL.to);
+  const calBtn = document.getElementById("reg-cal");
+  calBtn.classList.toggle("on", !!period);
+  calBtn.textContent = period ? `${REG_CAL.from || "…"} → ${REG_CAL.to || "…"}` : "All time";
+  calBtn.title = period
+    ? "Realised P&L, closed trades and win rate for this period only (gross) -- capital and age are as of today. Click to change."
+    : "Show each strategy's results for a chosen period only";
+  // A strategy with no trade closed inside the window reads as a dash, not a zero: nothing happened
+  // is not the same as it made nothing.
+  const inPeriod = r => period ? (period[r.key] || null) : null;
+  const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live")
+    .map(r => {
+      if(!period) return r;
+      const p = inPeriod(r);
+      return {...r, pnl: p ? p.pnl : null, net: undefined, closed_trades: p ? p.closed : null,
+              wins: p ? p.wins : null, pools_breakdown: []};
+    });
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? netOf(r) / r.capital * 100 : null;   // net return on capital allocated, null if never deployed
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
@@ -2757,7 +2813,8 @@ function renderRegistry(s){
       if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
-  const sig = JSON.stringify([q, poolF, typeF, verdictF, statusF, REG_SORT.key, REG_SORT.dir]);
+  const sig = JSON.stringify([q, poolF, typeF, verdictF, statusF, REG_SORT.key, REG_SORT.dir,
+                              REG_CAL.from, REG_CAL.to]);
   if(sig !== REG_LAST_SIG){ REG_PAGE = 1; REG_LAST_SIG = sig; }
   wireRegPager();
   const pageSize = REG_PAGE_SIZE;
