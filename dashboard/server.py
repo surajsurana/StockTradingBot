@@ -34,6 +34,7 @@ Kept alive by cron (@reboot + a 5-minute watchdog), see the crontab.
 import argparse
 import json
 import os
+import re
 import ssl
 import sys
 import threading

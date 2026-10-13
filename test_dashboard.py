@@ -1296,3 +1296,27 @@ class TestNextResearchRun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheEquityRouteCanActuallyRun(unittest.TestCase):
+    """server.py's /api/equity shipped using re.fullmatch with no `import re`, and nothing noticed
+    until a click produced a 500 -- a route's imports are only exercised when somebody uses it."""
+
+    def test_every_name_the_route_uses_is_imported(self):
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        body = code[code.index('if parsed.path == "/api/equity":'):code.index('if parsed.path == "/api/state":')]
+        for name in ("re.", "os.", "json."):
+            if name in body:
+                self.assertIn(chr(10) + "import " + name[:-1] + chr(10), code,
+                              name + " used but not imported")
+
+    def test_it_asks_for_the_strategy_by_a_name_the_access_key_has_not_taken(self):
+        """?key= is the dashboard's own access key in every URL."""
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        body = code[code.index('if parsed.path == "/api/equity":'):code.index('if parsed.path == "/api/state":')]
+        self.assertIn('query.get("strategy"', body)
+        self.assertNotIn('query.get("key"', body)
