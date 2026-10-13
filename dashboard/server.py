@@ -1048,7 +1048,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             from reporting.equity_series import series_for
             mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
             root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
-            key = (query.get("key", [""])[0] or "").strip()
+            # NOT `key`: that is the dashboard's own access key in every URL, and a second meaning
+            # for the same name made every one of these requests read as a bad access key.
+            key = (query.get("strategy", [""])[0] or "").strip()
             if not key or not re.fullmatch(r"[A-Za-z0-9_\-]+", key):
                 self._send(400, json.dumps({"error": "a strategy key is required"}).encode("utf-8"),
                            "application/json")

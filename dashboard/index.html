@@ -1331,7 +1331,7 @@ async function showEquity(key, name, meta){
   document.getElementById("equity-foot").textContent = "";
   document.getElementById("equity").showModal();
   try {
-    const r = await fetch(`/api/equity?key=${encodeURIComponent(key)}&mode=${MODE}`, {cache: "no-store"});
+    const r = await fetch(`/api/equity?strategy=${encodeURIComponent(key)}&mode=${MODE}`, {cache: "no-store"});
     EQUITY.series = await r.json();
   } catch(e){ EQUITY.series = {points: []}; }
   if(EQUITY.key === key) renderEquity();
