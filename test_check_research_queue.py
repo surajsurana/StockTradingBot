@@ -62,5 +62,36 @@ class TestPlan(unittest.TestCase):
         self.assertEqual(due, [])
 
 
+
+class TestAClaimWaitingOnAMergeIsNotStuck(unittest.TestCase):
+    """The routine's job ENDS at pushing its branch -- the backtest only runs on code already
+    merged to main. Telling you it "likely crashed" sent you to a cloud run log when the thing to
+    do was merge a pull request (2026-10-13, nifty_momentum_30_style: implemented 10-11, branch
+    pushed, never merged, and the clock threw the week away)."""
+
+    QUEUE = {"current": {"key": "alpha", "started": "2026-10-11", "in_progress": True},
+             "history": [{"key": "alpha", "name": "Alpha", "started": "2026-10-11", "resolved": None}]}
+    NOW = datetime(2026, 10, 13, 9, 15)
+
+    def test_a_delivered_claim_asks_for_a_merge(self):
+        due, _ = crq.plan(self.NOW, self.QUEUE, {}, delivered=True)
+        self.assertEqual(len(due), 1)
+        alert_id, text = due[0]
+        self.assertIn("waiting for your merge", text)
+        self.assertNotIn("crashed", text)
+        self.assertTrue(alert_id.startswith("awaiting-merge-"))
+
+    def test_an_undelivered_one_still_reads_as_stuck(self):
+        due, _ = crq.plan(self.NOW, self.QUEUE, {}, delivered=False)
+        self.assertEqual(len(due), 1)
+        alert_id, text = due[0]
+        self.assertIn("likely crashed", text)
+        self.assertIn("no branch for it has appeared", text)
+        self.assertTrue(alert_id.startswith("stuck-progress-"))
+
+    def test_delivered_defaults_to_false_so_old_callers_are_unchanged(self):
+        due, _ = crq.plan(self.NOW, self.QUEUE, {})
+        self.assertIn("likely crashed", due[0][1])
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,11 +3,13 @@ routine's old (broken, confirmed TCP-unreachable 2026-09-27/28) direct-HTTP-to-t
 import json
 import os
 import tempfile
+from unittest.mock import patch
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import research_queue
+import research_queue_github_sync as sync
 from research_queue_github_sync import _outcome_from_pr, publish_snapshot, sync_from_github
 
 
@@ -221,6 +223,42 @@ class TestSyncFromGithubLanes(unittest.TestCase):
         row = research_queue.load(d, lane="crypto")["history"][-1]
         self.assertEqual(row["branch"], "research-crypto/beta")
 
+
+
+class TestWorkDeliveredIsNotWorkAbandoned(unittest.TestCase):
+    """A claim is expired after STALE_LOCK_DAYS on the assumption the routine holding it died. But
+    the routine's job ENDS at pushing a branch -- the backtest only runs once a human merges it --
+    so a claim that sat there is usually waiting on a person. On 2026-10-13 nifty_momentum_30_style
+    was abandoned exactly that way: implemented 10-11, branch pushed, never merged, week thrown
+    away."""
+
+    def _queue(self, in_progress):
+        d = tempfile.mkdtemp()
+        research_queue._save(d, {"current": {"key": "alpha", "started": "2026-10-11",
+                                             "in_progress": in_progress},
+                                 "history": []}, "india")
+        return d
+
+    def test_a_claim_with_its_branch_pushed_counts_as_delivered(self):
+        d = self._queue(True)
+        with patch.object(sync, "_branch_exists", return_value=True):
+            self.assertTrue(sync.work_delivered(d, "india"))
+
+    def test_a_claim_with_no_branch_does_not(self):
+        d = self._queue(True)
+        with patch.object(sync, "_branch_exists", return_value=False):
+            self.assertFalse(sync.work_delivered(d, "india"))
+
+    def test_an_unclaimed_candidate_is_never_delivered(self):
+        """Nothing has been handed over, so there is nothing to wait on."""
+        d = self._queue(False)
+        with patch.object(sync, "_branch_exists", return_value=True):
+            self.assertFalse(sync.work_delivered(d, "india"))
+
+    def test_each_lane_asks_about_its_own_branch(self):
+        self.assertEqual(sync.branch_for("india", "alpha"), "research/alpha")
+        self.assertEqual(sync.branch_for("crypto", "alpha"), "research-crypto/alpha")
+        self.assertEqual(sync.branch_for("us", "alpha"), "research-us/alpha")
 
 if __name__ == "__main__":
     unittest.main()

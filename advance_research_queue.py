@@ -67,10 +67,17 @@ def run_lane(lane: str, state_dir: str, send: bool, token: str, chat_id: str) ->
     # six-hourly advance expired a claim out from under a walk-forward that was still going, and the
     # finished run had nowhere to report its verdict (2026-10-10, US lane, EXP-096).
     from run_queued_backtest import running_claim
+    from research_queue_github_sync import work_delivered
     held = running_claim() or {}
+    running = bool(held) and held.get("lane") in ("", lane)
+    # ...and a claim whose branch is already on GitHub is waiting on a MERGE, not on a routine that
+    # died. The routine's job ends at pushing the branch; the backtest cannot run until a human has
+    # read the code. Expiring it there throws away a finished week's work and re-queues the same
+    # candidate later to be implemented all over again.
+    delivered = work_delivered(state_dir, lane)
     entry = advance(state_dir, roadmap, lane=lane,
                     exclude={r.strategy_key for r in list_strategies()},
-                    claim_is_busy=bool(held) and held.get("lane") in ("", lane))
+                    claim_is_busy=running or delivered)
     if entry is None:
         print(f"[{lane}] Nothing to change: the current pick is already the best available, research "
               "is already under way, it was picked by hand, or nothing eligible remains.")

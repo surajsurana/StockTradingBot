@@ -80,6 +80,27 @@ def _branch_exists(branch: str) -> bool:
         return False
 
 
+def branch_for(lane: str, key: str) -> str:
+    """The branch a routine pushes when it has finished implementing `key`."""
+    return f"{LANE_BRANCH_PREFIX[lane]}{key}"
+
+
+def work_delivered(state_dir: str, lane: str = "india") -> bool:
+    """True when this lane's CLAIMED candidate already has its implementation on GitHub.
+
+    WHY ANYONE ASKS. A claim is expired after STALE_LOCK_DAYS on the assumption that the routine
+    holding it died. But the routine's job ENDS at pushing a branch -- the backtest only runs once a
+    human merges it -- so a candidate sitting there is usually waiting on a person, not gone. On
+    2026-10-13 nifty_momentum_30_style was abandoned exactly that way: implemented on 10-11, branch
+    pushed, never merged, and the clock threw the week away. Work that exists is not abandoned work.
+    """
+    data = research_queue.load(state_dir, lane)
+    current = data.get("current") or {}
+    if not current.get("in_progress"):
+        return False
+    return _branch_exists(branch_for(lane, current["key"]))
+
+
 def _find_pr_for_branch(branch: str) -> Optional[dict]:
     owner = GITHUB_REPO.split("/")[0]
     try:

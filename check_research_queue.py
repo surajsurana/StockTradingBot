@@ -41,7 +41,7 @@ def _hours_since(iso_date: str, now: datetime) -> float:
     return (now - datetime.fromisoformat(iso_date)).total_seconds() / 3600.0
 
 
-def plan(now: datetime, queue: dict, sent: dict) -> Tuple[List[Tuple[str, str]], dict]:
+def plan(now: datetime, queue: dict, sent: dict, delivered: bool = False) -> Tuple[List[Tuple[str, str]], dict]:
     """The alerts due now as [(id, message)] and `sent` after them. Pure: no network, no clock, no
     files -- `now` and `queue` (research_queue.load()'s own shape) are passed in. An alert id already
     in `sent` is never sent again; each id folds in the day so a still-stuck issue repeats daily."""
@@ -68,12 +68,23 @@ def plan(now: datetime, queue: dict, sent: dict) -> Tuple[List[Tuple[str, str]],
     # matching (still-open) history row, appended by _set_current() the same day it was queued.
     name = next((h["name"] for h in queue.get("history", []) if h.get("key") == key and h.get("resolved") is None), key)
     if current.get("in_progress"):
-        if _hours_since(current["started"], now) >= STUCK_IN_PROGRESS_HOURS:
+        if delivered:
+            # NOT STUCK -- WAITING FOR YOU. The routine's job ends at pushing its branch; the
+            # backtest only runs on code already merged to main, so this one is sitting on a human.
+            # Telling you it "likely crashed" sent you to a cloud run log when the thing to do was
+            # merge a pull request (2026-10-13, nifty_momentum_30_style).
+            if _hours_since(current["started"], now) >= STUCK_IN_PROGRESS_HOURS:
+                add(f"awaiting-merge-{key}-{today}",
+                    f"*Research is waiting for your merge*: '{name}' was implemented and pushed, and its "
+                    f"branch is on GitHub. The backtest runs on this VPS and only on code already merged "
+                    f"to main, so nothing more happens until you review and merge that pull request. "
+                    f"Nothing is lost while it waits -- the queue will not move past it.")
+        elif _hours_since(current["started"], now) >= STUCK_IN_PROGRESS_HOURS:
             add(f"stuck-progress-{key}-{today}",
                 f"*Research routine looks stuck*: '{name}' has been marked in-progress since {current['started']} "
-                f"-- a real run normally finishes in minutes. It likely crashed without reporting back. "
-                f"Check the routine's run log at claude.ai/code, and consider resolving it by hand on the "
-                f"dashboard so the queue can move on.")
+                f"-- a real run normally finishes in minutes, and no branch for it has appeared on GitHub. "
+                f"It likely crashed without reporting back. Check the routine's run log at claude.ai/code, "
+                f"and consider resolving it by hand on the dashboard so the queue can move on.")
     else:
         if _hours_since(current["started"], now) >= STUCK_QUEUED_DAYS * 24:
             add(f"stuck-queued-{key}-{today}",
@@ -104,7 +115,14 @@ def main() -> None:
     now = datetime.now()
 
     queue = research_queue.load(state_dir)
-    due, sent = plan(now, queue, watchdog_state.get("sent", {}))
+    # Whether the routine has already delivered. Network, so it is read HERE and passed in -- plan()
+    # stays pure and testable, same as it is for the clock and the queue.
+    try:
+        from research_queue_github_sync import work_delivered
+        delivered = work_delivered(state_dir)
+    except Exception:
+        delivered = False
+    due, sent = plan(now, queue, watchdog_state.get("sent", {}), delivered=delivered)
     for alert_id, text in due:
         print(text)
         if args.send:
