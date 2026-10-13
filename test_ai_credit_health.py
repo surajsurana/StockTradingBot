@@ -94,6 +94,33 @@ class TestNoticingTheOutage(unittest.TestCase):
         self._state("pool_g/portfolio.json", when=failed - 12 * 3600)
         self.assertTrue(check(self.state, self.logs)["blocked"])
 
+    def test_one_book_working_clears_it_for_all_of_them(self):
+        """CREDIT IS ONE ACCOUNT-WIDE THING. Pool G recovered at 20:30 on 2026-10-13 and proved the
+        balance was back; Portfolio B and C had not had a turn yet -- they run on weekday mornings,
+        fourteen hours away -- and the bar stayed up telling the user credit had run out when a
+        successful call had just disproved it."""
+        ok = time.mktime((2026, 10, 13, 20, 30, 0, 0, 0, -1))
+        earlier = time.mktime((2026, 10, 13, 15, 50, 0, 0, 0, -1))
+        # Pool G: worked at 20:30 (state and log seconds apart)
+        self._log("pool_g.log", ERROR_LINE + chr(10) + "then it worked", when=ok + 15)
+        self._state("pool_g/portfolio.json", when=ok)
+        # Portfolio B: refused at 15:50 and has not run since 2026-10-09
+        self._log("portfolio_b.log", ERROR_LINE, when=earlier)
+        self._state("portfolio_b/portfolio.json",
+                    when=time.mktime((2026, 10, 9, 15, 51, 0, 0, 0, -1)))
+        self.assertFalse(check(self.state, self.logs)["blocked"])
+
+    def test_a_refusal_newer_than_every_success_still_blocks(self):
+        """The other direction: if the most recent thing that happened anywhere was a refusal, the
+        account really is short and the warning belongs on screen."""
+        worked = time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1))
+        refused = time.mktime((2026, 10, 13, 20, 30, 0, 0, 0, -1))
+        self._log("pool_g.log", ERROR_LINE, when=refused)
+        self._state("pool_g/portfolio.json", when=worked)
+        self._log("portfolio_b.log", "all fine" + chr(10), when=worked + 15)
+        self._state("portfolio_b/portfolio.json", when=worked)
+        self.assertTrue(check(self.state, self.logs)["blocked"])
+
     def test_an_ordinary_error_is_not_this_error(self):
         self._log("pool_g.log", "[2026-10-11] RuntimeError: data provider outage\n")
         self.assertFalse(check(self.state, self.logs)["blocked"])

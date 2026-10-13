@@ -59,38 +59,51 @@ def _when(path: str) -> str:
 def check(state_dir: str, logs_dir: str, now: Optional[datetime] = None) -> dict:
     """{"blocked": bool, "books": [{"name", "last_error", "last_ran"}], "since": "YYYY-MM-DD HH:MM"}.
 
-    A book counts as blocked when the credit refusal is in its recent output AND its LOG has been
-    written more recently than its STATE -- it has failed since it last got anything done.
+    CREDIT IS ONE ACCOUNT-WIDE THING, which is the whole point of this check and what the first
+    version got wrong. It asked each book separately -- "have YOU run since YOUR error?" -- so when
+    Pool G recovered at 20:30 on 2026-10-13 and proved the balance was back, the bar stayed up for
+    Portfolio B and C. They were not short of credit. They had not had a turn yet: they run on
+    weekday mornings, and the next one was fourteen hours away.
 
-    Compared by FILE TIME, not by dates read out of the log. The first version parsed the newest
-    date stamp above the error, and Pool G does not print one near its traceback, so it matched a
-    stamp from two runs earlier and the live book read as healthy while it was down.
+    So one successful model call ANYWHERE clears it. The newest success across the books is
+    compared with the newest refusal across the books, and a success that is more recent settles
+    the question for all of them.
+
+    A book's own run still has to be told from a failure, and the two are distinguished by a GAP:
+    a run that works writes its state file and its log seconds apart, while a failed one leaves the
+    state a whole cron interval behind (a success writes the log LAST, so "the log is newer" is
+    true even then, and the warning would never come down at all).
     """
     now = now or datetime.now()
-    blocked = []
+    refused, succeeded, books = [], [], []
     for name, log_name, state_file in AI_BOOKS:
         log_path = os.path.join(logs_dir, log_name)
-        if not _refused_recently(_tail(log_path)):
-            continue
         state_path = os.path.join(state_dir, state_file)
-        try:
-            failed_at = os.path.getmtime(log_path)
-        except OSError:
-            continue
         try:
             ran_at = os.path.getmtime(state_path)
         except OSError:
             ran_at = 0.0
-        # HOW IT CLEARS BY ITSELF. A successful run writes its state file and its log within
-        # seconds of each other; a failed one leaves the state file untouched, so it falls a whole
-        # cron interval behind. Requiring a GAP rather than plain "log is newer" is what makes the
-        # two distinguishable -- a success always writes the log last, so "log is newer" is true
-        # even then, and the warning would never have come down.
-        if failed_at - ran_at <= RECOVERED_WITHIN_SECONDS:
+        if not _refused_recently(_tail(log_path)):
+            if ran_at:
+                succeeded.append(ran_at)
             continue
-        blocked.append({"name": name, "last_error": _when(log_path), "last_ran": _when(state_path)})
-    return {"blocked": bool(blocked), "books": blocked,
-            "since": min((b["last_error"] for b in blocked if b["last_error"]), default=""),
+        try:
+            failed_at = os.path.getmtime(log_path)
+        except OSError:
+            continue
+        if failed_at - ran_at <= RECOVERED_WITHIN_SECONDS:
+            succeeded.append(ran_at)      # it has worked since, so the account had credit then
+            continue
+        refused.append(failed_at)
+        books.append({"name": name, "last_error": _when(log_path), "last_ran": _when(state_path)})
+
+    # Anything that worked more recently than the last refusal proves the balance is back; the
+    # books still listed are simply waiting for their own next run.
+    newest_ok = max(succeeded, default=0.0)
+    newest_refusal = max(refused, default=0.0)
+    blocked = bool(refused) and newest_ok <= newest_refusal
+    return {"blocked": blocked, "books": books if blocked else [],
+            "since": min((b["last_error"] for b in books if b["last_error"]), default="") if blocked else "",
             "message": ("The Anthropic account is out of credit, so the AI books have stopped. "
                         "Pool G holds real positions and cannot manage them until this is topped up.")
             if blocked else ""}
