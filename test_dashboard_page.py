@@ -345,10 +345,25 @@ class TestHidingActuallyHides(unittest.TestCase):
     view. Any selector that sets display needs a [hidden] partner."""
 
     def test_every_display_rule_has_a_hidden_partner(self):
+        """GENERAL, not a list of the ones that already bit. Every element the markup marks `hidden`
+        is checked against every class it carries: if that class sets `display:` anywhere in the
+        stylesheet, it needs a `[hidden]` partner or the attribute does nothing.
+
+        The hand-written list this replaced named four selectors and missed the fifth -- .livetop,
+        which kept the retired Today's P&L chip on screen above the cards after Classic was removed.
+        """
         page = _page()
-        for selector in (".profilemenu", ".cards", ".tickerrow", ".todaybar"):
-            if f"{selector}{{display:" in page or f"{selector}{{display:" in page.replace(" ", ""):
-                self.assertIn(f"{selector}[hidden]{{display:none}}", page, selector)
+        css = page[page.index("<style>"):page.index("</style>")]
+        sets_display = {m.group(1) for m in re.finditer(r"\.([A-Za-z0-9_-]+)\{display:", css)}
+        has_partner = {m.group(1) for m in re.finditer(r"\.([A-Za-z0-9_-]+)\[hidden\]\{display:none\}", css)}
+        missing = []
+        for tag in re.finditer(r"<\w+[^>]*\shidden[\s>]", page):
+            classes = re.search(r'class="([^"]+)"', tag.group(0))
+            for cls_name in (classes.group(1).split() if classes else []):
+                if cls_name in sets_display and cls_name not in has_partner:
+                    missing.append(cls_name)
+        self.assertEqual(sorted(set(missing)), [],
+                         "hidden does nothing on these -- a display: rule beats it")
 
     def test_the_per_card_width_caps_are_overridden_after_they_are_set(self):
         """Equal specificity with .bigpot.onecard, so the later rule is the only thing that wins --
