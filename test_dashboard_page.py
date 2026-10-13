@@ -62,27 +62,31 @@ def _control_chars(text: str) -> list:
 
 
 class TestTheLiveSummaryCard(unittest.TestCase):
-    """One card with the combined figures, each line opening to the account-by-account split. The
-    Classic cards were retired on 2026-10-09 once New had earned it; their markup stays, hidden,
-    because the same render pass produces the Today's P&L chip."""
+    """One row of cards, each line opening to the account-by-account split. Classic was retired on
+    2026-10-13 once the new layout had earned it."""
 
-    def test_both_layouts_exist_with_a_switch(self):
-        """New is not finalised, so Classic stays until it is."""
+    def test_there_is_one_layout_and_nothing_to_switch(self):
         page = _page()
-        self.assertIn('id="livecards"', page)
         self.assertIn('id="liveboard"', page)
-        self.assertIn('data-view="old"', page)
-        self.assertIn('data-view="new"', page)
+        for gone in ('id="livecards"', 'data-view="old"', 'data-view="new"', "LIVE_VIEW_KEY",
+                     "viewswitch"):
+            self.assertNotIn(gone, page, gone)
 
-    def test_exactly_one_layout_is_on_screen(self):
+    def test_the_board_is_always_the_one_on_screen(self):
         body = _script(_page())
         body = body[body.index("function applyLiveView()"):]
         body = body[:body.index(chr(10) + "}")]
-        self.assertIn('cards.hidden = which === "new"', body)
-        self.assertIn('board.hidden = which !== "new"', body)
+        self.assertIn("board.hidden = false", body)
+        self.assertIn("renderLiveBoard(STATE)", body)
 
-    def test_classic_is_still_the_default(self):
-        self.assertIn('localStorage.getItem(LIVE_VIEW_KEY) || "old"', _script(_page()))
+    def test_the_chip_elements_survive_even_though_nothing_shows_them(self):
+        """renderLiveCards still WRITES these -- the same pass computes the day the card displays.
+        Deleting the elements under a renderer that writes to them is how this page has blanked
+        itself before, so they stay, hidden."""
+        page = _page()
+        for kept in ('id="todaybar"', 'id="ticker"', 'id="todayhome"'):
+            self.assertIn(kept, page, kept)
+        self.assertIn('<div class="livetop" id="todayhome" hidden>', page)
 
     def test_every_line_can_be_opened(self):
         body = _script(_page())
@@ -251,17 +255,11 @@ class TestTheDayIsACardLikeTheRest(unittest.TestCase):
         live = body[body.index("const todayByVenue = {}"):]
         live = live[:live.index(chr(10) + "  }")]
         self.assertIn("poolVenue(a.pool)", live)
-        self.assertIn("todayByKind[kd]", live)     # Classic's running line still needs by-type
+        self.assertIn("todayByKind[kd]", live)     # the chip's by-type line is still computed
         card = body[body.index("function renderLiveBoard"):body.index("function applyLiveView")]
         card = card[card.index("Today's P&L"):]
         self.assertIn("order.map(k => flatrow(vs[k].name", card)
 
-    def test_the_chip_is_hidden_when_the_card_is_showing(self):
-        page = _page()
-        self.assertIn("#todayhome.carded .todaybar,#todayhome.carded .tickerrow{display:none}", page)
-        body = _script(page)
-        body = body[body.index("function applyLiveView"):]
-        self.assertIn('home.classList.toggle("carded", which === "new")', body)
 
     def test_five_cards_in_five_columns(self):
         page = _page()

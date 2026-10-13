@@ -65,7 +65,6 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 @keyframes boardscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 @media (prefers-reduced-motion: reduce){.boardtrack{animation:none;overflow-x:auto}}
 /* The Live-day P&L belongs beside the work, not in the navigation. */
-.viewswitch{display:flex;justify-content:flex-end;margin:0}
 .segbtns{display:inline-flex;border:1px solid var(--rule);border-radius:20px;overflow:hidden}
 .segbtns button{all:unset;cursor:pointer;padding:4px 14px;font-size:12.5px;font-weight:600;color:var(--muted)}
 .segbtns button.on{background:var(--accent);color:var(--accent-ink)}
@@ -94,9 +93,6 @@ nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--ac
 .pboard .venue small{display:block;font-weight:400;font-size:11.5px;color:var(--muted)}
 .livetop{display:flex;justify-content:flex-end;margin:0 0 8px}
 .livetop:empty{margin:0}
-/* New draws the day as a card in the summary row, so the chip and its by-type line would be the
-   same figure twice. Only the view switch is left on this line. */
-#todayhome.carded .todaybar,#todayhome.carded .tickerrow{display:none}
 .todaystack{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
 /* A round control in the header -- the bell and the avatar read as one family. */
 .iconround{position:relative;font:inherit;font-size:15px;line-height:1;width:34px;height:34px;
@@ -240,7 +236,6 @@ section > h2:first-child,section > .tools:first-child,section > .livetop + h2{ma
 .cashcard .amt{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;font-size:22px;font-weight:700;color:var(--ink);line-height:1.15}
 .cashcard .amt.none{font-size:17px;color:var(--muted)}
 .cashcard .src{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.35}
-#livecards{flex-wrap:nowrap}#livecards .grp{flex:1 1 0;min-width:0;padding:10px 9px}#livecards .gi > span{gap:6px;padding:6px 7px}#livecards .gi b{font-size:14px}#livecards .gi > span.posrow{grid-template-columns:1fr repeat(4,auto);gap:6px}
 .cards .grp{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:4px;padding:10px 12px;animation:rise .4s ease both}
 .cards .gt{font-size:12.5px;font-weight:600;color:var(--ink);margin-bottom:8px}
 .cards .gi{display:flex;flex-direction:column;gap:6px}
@@ -557,18 +552,14 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <p id="error" class="err" hidden></p>
 
 <section id="tab-live">
-  <!-- Where the day's chip lives in Classic. In the New view it is MOVED into the summary row's
-       fourth column, so the cards do not sit under two nearly empty bands. -->
-  <div class="livetop" id="todayhome"><div class="todaystack">
+  <!-- The day's P&L is a card in the summary row. These two are still WRITTEN by renderLiveCards
+       (the chip's text and its by-type line), and kept off screen rather than deleted: the same
+       computation feeds the card, and a renderer writing to an element that no longer exists is
+       how this page has blanked itself before. -->
+  <div class="livetop" id="todayhome" hidden><div class="todaystack">
     <span class="todaybar" id="todaybar" hidden></span>
     <div class="tickerrow" id="tickerrow" hidden><div class="ticker" id="ticker"></div></div>
-    <div class="viewswitch">
-      <span class="segbtns" role="group" aria-label="Summary layout">
-        <button id="lv-old" class="on" data-view="old">Classic</button><button id="lv-new" data-view="new">New</button>
-      </span>
-    </div>
   </div></div>
-  <div class="cards" id="livecards"></div>
   <div id="liveboard" hidden></div>
   <h2>Positions and trades</h2>
   <div class="tools"><span id="tape-count" class="note"></span>
@@ -1540,29 +1531,13 @@ function renderLiveBoard(s){
     press(el, () => showStrategies(JSON.parse(el.dataset.filters))));
 }
 
-// New is not finalised, so Classic stays until it is. Exactly one is on screen: showing both would
-// put the same figures twice over with no way to tell which you were reading.
-const LIVE_VIEW_KEY = "desk.liveView";
-const liveView = () => { try { return localStorage.getItem(LIVE_VIEW_KEY) || "old"; } catch(e){ return "old"; } };
-
 function applyLiveView(){
-  const which = liveView();
-  const cards = document.getElementById("livecards"), board = document.getElementById("liveboard");
-  if(!cards || !board) return;
-  cards.hidden = which === "new";
-  board.hidden = which !== "new";
-  for(const b of document.querySelectorAll(".viewswitch [data-view]"))
-    b.classList.toggle("on", b.dataset.view === which);
-  // In New the day is a CARD in the row, so the chip and its by-type line would be the same figure
-  // twice. The switch itself stays -- it is the only thing left on that line, and it is 24px.
-  const home = document.getElementById("todayhome");
-  if(home) home.classList.toggle("carded", which === "new");
-  if(which === "new" && STATE) renderLiveBoard(STATE);
+  // One layout (2026-10-13: "the classic view for live day we can now remove"). Kept as a function
+  // because load() and the mode switch both call it, and the board has to be redrawn on each.
+  const board = document.getElementById("liveboard");
+  if(board) board.hidden = false;
+  if(STATE) renderLiveBoard(STATE);
 }
-document.querySelectorAll(".viewswitch [data-view]").forEach(b => b.addEventListener("click", () => {
-  try { localStorage.setItem(LIVE_VIEW_KEY, b.dataset.view); } catch(e){}
-  applyLiveView();
-}));
 
 // What the desk wanted to do and could not, with the reason. An underfunded book produces no trades
 // and no errors -- it looks exactly like a book that had no signals -- so without this the honest
@@ -1769,26 +1744,6 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   const flat = open - inProfit - inLoss;
   const posrow = (label, win, loss, flatN, total, title) => `<span class="posrow" title="${esc(title||"")}"><i>${label}</i><em class="gain" title="in profit">&#9650; ${win}</em><em class="loss" title="in loss">&#9660; ${loss}</em><em class="flat" title="at zero (no move yet or no quote)">&#9679; ${flatN}</em><b title="total">${total}</b></span>`;
   const currentValue = cash + deployed + unbooked;
-  const link = (html, label, title, filters) => `<span class="link" title="${esc(title||"")}" data-filters='${esc(JSON.stringify(filters))}'>${html}<i>${label}</i></span>`;
-  document.getElementById("livecards").innerHTML = [
-    grp("Capital", [
-      item(val("live.capital", capital, false), "Starting capital", `what the selected books were given · ${scope}`),
-      item(val("live.total", booked + unbooked, true), "Total P&L", `${money(booked, true)} booked since start + ${money(unbooked, true)} on open positions = ${money(booked + unbooked - today - openMove, true)} up to yesterday's close + ${money(today + openMove, true)} today`),
-      item(val("live.value", currentValue, false), "Current value", `starting capital + total P&L = cash + open positions at the latest quote · ${scope}`),
-    ], 0),
-    grp("Deployed", [
-      item(val("live.deployed", deployed, false), "Deployed", `open positions at cost · ${scope}`),
-      item(val("live.cash", cash, false), "Cash available", scope),
-    ], 1),
-    grp("Positions", [
-      posrow("Open", inProfit, inLoss, flat, open, `green in profit, red in loss, grey at zero, then the total · ${scope}`),
-      posrow("Closed", closedWin, closedLoss, closedFlat, closedRowsAll.length, `green in profit, red in loss, grey at zero, then the total · all closed trades on record · ${scope}`),
-    ], 2),
-    grp("Strategies", [
-      link(`<b>${strategies}</b>`, "Active", `books trading in ${scope}${keys.some(k => k==="B"||k==="C") ? " (Pools B and C count as one AI book each)" : ""} · click to see them`, {"reg-status": live ? "Live" : "Paper", "reg-pool": poolF || ""}),
-      link(`<b>${researched}</b>`, "Researched", `every strategy with a backtest on record, trading or not (${allStrats.filter(r => r.experiment && r.status !== "PAPER_TRADING").length} of them rejected, inconclusive or not promoted) · click to see them`, {}),
-    ], 3),
-  ].join("");
   // Today's P&L chip, top right; follows the same filters as the cards.
   const todayTotal = today + openMove;
   // ONE COMPUTATION, two displays. Classic shows it as the chip below; New draws it as a card in
@@ -1807,8 +1762,6 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   document.getElementById("ticker").innerHTML = kinds.length
     ? `<span class="run" style="animation-duration:${Math.max(6, kinds.length * 3.5)}s">${run.repeat(8)}</span>` : "";
   syncTicker();
-  document.querySelectorAll("#livecards .link[data-filters]").forEach(el => el.addEventListener("click", () => showStrategies(JSON.parse(el.dataset.filters))));
-  // Today's P&L sits above the cards, top right, and follows the same filters as the cards.
 }
 
 // Robot avatars drawn inline, one colour scheme per agent. Round heads with a lit antenna =
