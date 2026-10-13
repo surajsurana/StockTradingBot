@@ -22,7 +22,9 @@ from typing import Optional
 
 # Where each pool keeps its books. A directory holding the book folders, or a single book itself.
 BOOK_ROOTS = ("paper_trading", "pool_f", "pool_e", "pool_e1", "pool_i", "pool_d", "archived")
-SINGLE_BOOKS = {"portfolio_b": "portfolio_b", "portfolio_c": "portfolio_c"}
+# A pool that IS one book keeps its file at the pool's own root rather than under a key.
+SINGLE_BOOKS = {"portfolio_b": "portfolio_b", "portfolio_c": "portfolio_c",
+                "portfolio_g": "pool_g", "pool_d_vwap_fade": "pool_d"}
 # Books kept in dollars; everything else is already rupees.
 USD_ROOTS = ("pool_e", "pool_e1", "pool_i", "pool_g")
 

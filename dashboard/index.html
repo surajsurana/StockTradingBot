@@ -1735,10 +1735,11 @@ function renderCreditBar(s){
   // ONE LINE. The detail -- which books, when each last ran -- is on hover, because a warning you
   // have to read a paragraph of is a warning you stop reading.
   const what = bar.querySelector(".ab-what");
-  what.textContent = "Anthropic credits have run out \u2014 the AI books have stopped";
+  const n = (h.books || []).length;
+  what.textContent = `Anthropic credits ran out \u2014 ${n} AI book${n === 1 ? "" : "s"} still stopped`;
   what.title = (h.books || []).map(b =>
-    `${b.name}: last ran ${b.last_ran || "never"}`).join("\n") + "\n\nTop up at Plans & Billing; "
-    + "the books restart by themselves at the next run.";
+    `${b.name}: last ran ${b.last_ran || "never"}`).join("\n")
+    + "\n\nEach clears itself on its next successful run. Top up at Plans & Billing if that is still needed.";
   bar.hidden = false;
 }
 document.getElementById("creditbar-x").addEventListener("click", () => {

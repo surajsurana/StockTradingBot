@@ -26,7 +26,8 @@ import datetime
 from typing import Optional
 
 from portfolio_g.agent import MAX_SLEEVE_PCT, STOP_LOSS_PCT, get_decisions
-from portfolio_g.state import append_decision_log, append_trade, load_portfolio, save_portfolio
+from portfolio_g.state import (append_daily_equity, append_decision_log, append_trade,
+                               load_portfolio, save_portfolio)
 
 RISK_PCT_PER_UNIT = MAX_SLEEVE_PCT * STOP_LOSS_PCT   # quantity formula collapses to `capital_fraction / entry`
 
@@ -148,6 +149,12 @@ def run_pool_g_cycle(daily_history: dict, fetch_live_prices_fn, api_key: str, no
     execution = _apply_decisions(portfolio, result["decisions"], live_prices, now)
     portfolio["last_run_at"] = now.isoformat(timespec="minutes")
     save_portfolio(portfolio)
+    # What the book is worth right now, for the dashboard's equity curve. Cash plus every open
+    # position at the price this cycle just used, so it agrees with the decisions above rather
+    # than with a later quote.
+    _held_value = sum(float(p.get("quantity", 0) or 0) * float(live_prices.get(sym) or 0)
+                      for sym, p in portfolio["positions"].items())
+    append_daily_equity(now.date().isoformat(), portfolio["cash"], portfolio["cash"] + _held_value)
 
     append_decision_log({
         "at": now.isoformat(timespec="minutes"), "web_search_used": result["web_search_used"],

@@ -58,6 +58,33 @@ def save_portfolio(portfolio: dict) -> None:
         json.dump(portfolio, f, indent=2)
 
 
+def _daily_equity_path() -> str:
+    return os.path.join(PORTFOLIO_G_STATE_DIR, "daily_equity.jsonl")
+
+
+def append_daily_equity(date_iso: str, cash: float, equity: float) -> None:
+    """One line a day: what the book was worth at this run.
+
+    WHY IT EXISTS (2026-10-13). Every other paper book has written one since it started, and the
+    dashboard draws a strategy's curve from it -- so Pool G's chart was the only empty one on the
+    page. Append-only, last-write-wins for a date, and never allowed to fail a run: a bookkeeping
+    line is worth less than the cycle that produced it."""
+    try:
+        path = _daily_equity_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        rows = []
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                rows = [l for l in f.read().splitlines()
+                        if l.strip() and json.loads(l).get("date") != date_iso]
+        rows.append(json.dumps({"date": date_iso, "cash": round(float(cash), 4),
+                                "equity": round(float(equity), 4)}))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(chr(10).join(rows) + chr(10))
+    except Exception:
+        pass
+
+
 def append_trade(trade: dict) -> None:
     """trade: symbol, entry_date, exit_date, entry_price, exit_price,
     quantity, pnl, exit_reason ("stop_loss" or "llm_sell"), reasoning."""
