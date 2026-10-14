@@ -602,7 +602,7 @@ class TestTheStrategiesPanelCountsStrategies(unittest.TestCase):
         self.script = _script(self.page)
 
     def _fn(self):
-        start = self.script.index("function renderStrategyCounts(s){")
+        start = self.script.index("function renderStrategyCounts(")
         return self.script[start:self.script.index("function renderAllocations(s){")]
 
     def test_paper_gets_the_counts_instead_of_the_money(self):

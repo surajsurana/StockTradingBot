@@ -387,6 +387,7 @@ STRATEGY_BRIEFS = {
     "pool_d_vwap_fade": ("Intraday", "Pool D: when a stock stretches unusually far from its day's average price and then stalls, bets on it snapping back; everything is squared off by 15:25. A known-reject rule kept running to test the intraday machinery."),
     "minervini_trend_template_filter_us": ("US Equity", "The same Minervini trend-template rule as the India version, backtested fresh against real S&P 500 data (EXP-094, PASS) rather than reused on the India verdict. Only buys US stocks in a strong uptrend: price above its rising 50, 150 and 200-day averages, well off its 52-week low, near its 52-week high, and stronger than most of the S&P 500."),
     "cross_sectional_momentum_us": ("US Equity", "The same cross-sectional momentum rule as the India version, backtested fresh against real S&P 500 data (EXP-095, PASS) rather than reused on the India verdict. Every month, buys the S&P 500 stocks that rose the most over the last six months and holds them for a month."),
+    "us_short_term_reversal": ("US Equity", "The same one-month reversal rule as the India version, backtested fresh against real S&P 500 data (EXP-096, PASS) rather than reused on the India verdict. Buys the S&P 500 stocks that fell the most over the last month and holds them a month; short sharp drops tend to bounce back."),
 }
 
 
@@ -428,6 +429,7 @@ STRATEGY_HOW = {
     "pool_d_vwap_fade": {"entry": "During the day, when a stock has stretched unusually far from its volume-weighted average price and stalls, sell (or buy) it expecting a snap back.", "exit": "Target at the average price, tight stop, or the 15:25 square-off.", "risk": "1% risk per trade on one shared Rs.1,00,000 book, at most 25% of the book per name, 3 trades a day per stock, 2% daily loss limit.", "source": "Proposed by the Quant Researcher; rejected in EXP-008 and kept as a framework test."},
     "minervini_trend_template_filter_us": {"entry": "Buy only S&P 500 stocks meeting all eight trend checks (rising 50/150/200-day averages in the right order, at least 30% above the 52-week low, within 25% of the 52-week high, stronger than 70% of the S&P 500), on the day they first qualify.", "exit": "Sell when the stock stops meeting the template, or at the 8% stop; fills queue to the next day's open.", "risk": "1% of the book risked per position against an 8% stop; at most 10 positions, $1,042 book.", "source": "Mark Minervini, Trade Like a Stock Market Wizard (2013) -- backtested fresh against US data, EXP-094 PASS."},
     "cross_sectional_momentum_us": {"entry": "Rank every S&P 500 stock by its return over the past six months; buy the top decile on the day a stock enters it.", "exit": "Sell after one month (single vintage), or at the 8% stop; fills queue to the next day's open.", "risk": "1% risk per position, 8% stop, 10 positions ranked by momentum, $1,042 book.", "source": "Jegadeesh and Titman (1993), Journal of Finance -- backtested fresh against US data, EXP-095 PASS."},
+    "us_short_term_reversal": {"entry": "Rank every S&P 500 stock by its return over the past month; buy the bottom decile on the day a stock enters it.", "exit": "Sell after one month, or at the 8% stop; fills queue to the next day's open.", "risk": "1% risk per position, 8% stop, 10 positions, $1,042 book.", "source": "Jegadeesh (1990), Journal of Finance -- backtested fresh against US data, EXP-096 PASS."},
 }
 
 
@@ -532,7 +534,16 @@ def notifications_view(state_dir: str, limit: int = 200) -> dict:
         for reason in (row.get("reasons") or ["no reason recorded"]):
             key = str(reason).split(" -- ")[0].strip()
             by_reason[key] = by_reason.get(key, 0) + 1
-    return {"rows": rows, "count": len(rows),
+    # AND WHAT HAS HAPPENED TO THE STRATEGIES THEMSELVES, on the same page and the same clock:
+    # promotions, retirements and research results, newest first. A blocked order says what the desk
+    # could not do today; this says what changed. reporting/lifecycle.py records nothing -- it reads
+    # what the running system already wrote.
+    from reporting.lifecycle import timeline
+    try:
+        activity = timeline(state_dir)
+    except Exception:                            # noqa: BLE001 -- never blank the page over a view
+        activity = []
+    return {"rows": rows, "count": len(rows), "activity": activity,
             # The headline: how many distinct things are standing in the way, commonest first. One
             # recurring cause reads very differently from twenty unrelated ones.
             "by_reason": [{"reason": k, "count": v}

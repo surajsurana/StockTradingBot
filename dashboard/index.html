@@ -653,7 +653,12 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-notifications" hidden>
   <h2>Notifications</h2>
-  <div class="tools"><span id="notif-count" class="note"></span></div>
+  <!-- RECENT ACTIVITY FIRST, newest at the top. Every one of these events already happened
+       somewhere -- a verdict in an experiment folder, a promotion in the status overlay -- but each
+       was only visible by opening the thing it happened to. This is the one place that answers
+       "what has changed?", which is the question you ask before any other. -->
+  <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>What happened</th><th>Strategy</th><th>Where</th><th>Detail</th></tr></thead><tbody id="notif-activity"></tbody></table></div>
+  <h3 class="advsec" style="margin-top:26px">What the desk could not act on<small id="notif-count"></small></h3>
   <div id="notif-reasons" class="poolchips"></div>
   <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>Strategy</th><th>Pool</th><th>Type</th><th>Wanted to</th><th class="n">Rate</th><th class="n">Value</th><th>Why it did not happen</th></tr></thead><tbody id="notif-rows"></tbody></table></div>
 </section>
@@ -775,6 +780,10 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <div class="ltnav" id="research-nav" role="group" aria-label="Research view">
       <button data-view="queue" class="on">Next up</button><button data-view="results">Results</button></div></div>
   <div id="research-queue-view">
+    <!-- The same four counts as the Strategies tab. Research is the front of that pipeline, so the
+         question "and then what happened to them?" belongs on this page too, answered by the same
+         numbers rather than a second set that could disagree. -->
+    <div id="research-counts"></div>
     <div id="lane-strip" class="lanestrip"></div>
     <div id="lane-filter" class="poolchips" role="group" aria-label="Research lane" style="margin:12px 0 10px"></div>
     <div class="tblwrap"><table class="roadmaptbl"><thead id="roadmap-head"></thead><tbody id="roadmap"></tbody></table></div>
@@ -1625,7 +1634,10 @@ function wireOrdersPager(){
 // ignore it. Opening the bell marks everything currently showing as seen.
 const NOTIF_SEEN_KEY = "desk.notifSeen";
 const notifSeen = () => { try { return localStorage.getItem(NOTIF_SEEN_KEY) || ""; } catch(e){ return ""; } };
-const newestAt = n => (n.rows || []).reduce((m, r) => String(r.at || "") > m ? String(r.at) : m, "");
+// THE BELL WATCHES BOTH LISTS. A strategy going live is at least as much news as an order the book
+// could not place, and reading one of the two would leave the dot dark on the day that happened.
+const newestAt = n => [...(n.rows || []), ...(n.activity || [])]
+  .reduce((m, r) => String(r.at || "") > m ? String(r.at) : m, "");
 function markUnread(n){
   const dot = document.getElementById("bell-dot");
   if(!dot) return;
@@ -1853,8 +1865,9 @@ function renderNotifications(s){
   const n = s.notifications || {rows:[], count:0, by_reason:[]};
   markUnread(n);
   document.getElementById("notif-count").textContent = n.count
-    ? `${n.count} decision${n.count===1?"":"s"} the desk could not act on`
-    : "Nothing was blocked — every decision the desk made was acted on.";
+    ? `${n.count} decision${n.count===1?"":"s"}`
+    : "nothing was blocked";
+  renderActivity(n.activity || []);
   // Grouped by cause, commonest first: one recurring reason reads very differently from twenty
   // unrelated ones, and tells you whether there is a single thing to fix.
   document.getElementById("notif-reasons").innerHTML = (n.by_reason || [])
@@ -1870,7 +1883,24 @@ function renderNotifications(s){
          + `<td><span class="pill due" title="${esc(kind)}">${esc((r.reasons || []).join(" "))}</span></td></tr>`;
   }).join("") || `<tr><td colspan="9" class="note">Nothing blocked.</td></tr>`;
 }
-const short = t => { t = String(t || ""); return t.length > 44 ? t.slice(0, 42) + "…" : t; };
+// THE TIMELINE. One row per thing that happened to a strategy, newest first, with the time it
+// happened where a time was actually recorded -- a research result carries only the day it resolved,
+// and a blank beats a 00:00 nobody wrote.
+const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"", result:"", research:"info", status:"info"};
+function renderActivity(rows){
+  const body = document.getElementById("notif-activity");
+  body.innerHTML = rows.map(r => {
+    // A verdict is the headline, so it keeps the colour of its own answer rather than its stage.
+    const cls = /PASS/.test(r.what) ? "ok" : /REJECT/.test(r.what) ? "miss" : (ACTIVITY_PILL[r.kind] || "");
+    const who = [r.sid, r.name].filter(Boolean).join(" · ");
+    return `<tr><td class="n nowrap">${esc(ddmmyy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
+         + `<td class="nowrap"><span class="pill ${cls}">${esc(r.what)}</span></td>`
+         + `<td>${esc(who || r.key || "")}</td>`
+         + `<td class="nowrap">${esc(r.pool || r.experiment || "—")}</td>`
+         + `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="note">Nothing has happened to a strategy yet.</td></tr>`;
+}
+const short = (t, at) => { t = String(t || ""); const n = at || 44; return t.length > n ? t.slice(0, n - 2) + "…" : t; };
 // ddmmyy, per Suraj. ISO reads as a machine's date; this is the one people write by hand here.
 const ddmmyy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : (iso || "—"); };
 
@@ -2376,7 +2406,7 @@ function cashByVenue(s){
 // the same ledger. On a page whose every row is a strategy, the question is not how much money there
 // is; it is how many strategies there are and what stage each one has reached. So the cards count
 // strategies, one per view in the rail beside them, and clicking one opens that view.
-function renderStrategyCounts(s){
+function renderStrategyCounts(s, into){
   const rows = s.strategies || [];
   const by = pred => rows.filter(pred);
   const paper = by(r => r.status === "PAPER_TRADING");
@@ -2411,7 +2441,8 @@ function renderStrategyCounts(s){
   const neverRan = gone.filter(r => !r.started).length;
   const ranThenRetired = gone.length - neverRan;
 
-  document.getElementById("alloc-panel").innerHTML = `<div class="cashcards four">`
+  const panel = document.getElementById(into || "alloc-panel");
+  panel.innerHTML = `<div class="cashcards four">`
     + card("Research", "In research", ready, laneRows,
            "Candidates ranked and ready to be researched, by lane -- not strategies yet")
     + card("Paper", "Paper trading", paper.length, byType(paper),
@@ -2424,7 +2455,7 @@ function renderStrategyCounts(s){
            ] : [],
            "Archived: never deployed after a REJECT, or a paper book that had 120 days and no profit")
     + `</div>`;
-  document.querySelectorAll("#alloc-panel [data-view]").forEach(el => {
+  panel.querySelectorAll("[data-view]").forEach(el => {
     const go = () => stratButton(el.dataset.view).click();
     el.addEventListener("click", go);
     el.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); go(); } });
@@ -3321,6 +3352,7 @@ function renderRegistry(s){
 
 // The Research tab: the shared candidate roadmap across every horizon, and the one-at-a-time queue.
 function renderResearch(s){
+  renderStrategyCounts(s, "research-counts");     // the same four counts the Strategies tab shows
   const rm = s.roadmap || {ready:[], deferred:[]};
   const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };
   const bars = ax => `<span class="axes" title="${Object.entries(ax).map(([k,v])=>`${k.replace(/_/g," ")}: ${v}`).join(" · ")}">${Object.values(ax).map(v=>`<i style="height:${Math.max(3, Math.round(v*1.4))}px"></i>`).join("")}</span>`;

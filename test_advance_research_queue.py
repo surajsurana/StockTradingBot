@@ -66,10 +66,19 @@ class TestAdvanceResearchQueue(unittest.TestCase):
                 self.assertIsNotNone(data["current"], lane)
                 picked[lane] = data["current"]["key"]
             self.assertEqual(len(set(picked.values())), 3)   # three lanes, three different candidates
-        # each lane picks ITS OWN top-ranked candidate -- derived from the real roadmap rather than
-        # hardcoded, so adding a candidate changes the expectation automatically instead of failing here
+        # Each lane picks ITS OWN top-ranked candidate -- derived from the real roadmap rather than
+        # hardcoded, so adding a candidate changes the expectation automatically instead of failing
+        # here. TOP-RANKED THAT IS STILL OUTSTANDING: the roadmap's list deliberately lags, keeping a
+        # candidate after it has been built and judged (the dashboard drops those via roadmap_view's
+        # `taken`), and advance() is given the registry as `exclude` for exactly that reason. This
+        # compared against the raw top, which agreed only for as long as the registry happened to
+        # hold none of the leaders -- it broke the moment a researched one was registered.
+        from deployment.deployment_manager import list_strategies
+        registered = {r.strategy_key for r in list_strategies()}
         for lane, key in picked.items():
-            self.assertEqual(key, build_roadmap(lane=lane)["researchable_now"][0].candidate.key, lane)
+            outstanding = [c.candidate.key for c in build_roadmap(lane=lane)["researchable_now"]
+                           if c.candidate.key not in registered]
+            self.assertEqual(key, outstanding[0], lane)
         mock_run.assert_called()   # confirms the git path was actually exercised, just safely mocked
         self.assertFalse(any(call.args[0][:2] == ["git", "push"] for call in mock_run.call_args_list))   # returncode=0 on the diff-check means no commit was ever attempted -- confirms that, not just that push is mocked
 
