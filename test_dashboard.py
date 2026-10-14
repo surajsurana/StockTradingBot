@@ -677,6 +677,43 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(gate["days"], 147)                     # from the EARLIEST book's own start
         self.assertTrue(gate["eligible"], gate["reasons"])
 
+    def test_a_losing_book_is_not_eligible_for_real_money(self):
+        """GATE E, which LIVE_PROMOTION_CRITERIA.md has always required and the promote endpoint
+        never checked. A strategy past both floors with a PASS verdict could lose money for months
+        and still read as eligible -- on 2026-10-14 four were on course to, three of them PASS."""
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        root = tempfile.mkdtemp()
+        record = StrategyRecord(strategy_key="loser", display_name="Loser", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        book = os.path.join(root, "paper_trading", "loser")
+        os.makedirs(book)
+        with open(os.path.join(book, "trades.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(25):
+                f.write(json.dumps({"entry_date": "2026-01-05", "pnl": -40.0}) + chr(10))
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))
+        self.assertGreaterEqual(gate["trades"], 20)          # it has the evidence...
+        self.assertFalse(gate["eligible"])                   # ...and the evidence says no
+        self.assertEqual(gate["state"], "not_qualified")
+        self.assertIn("Gate E", " ".join(gate["reasons"]))
+
+    def test_waiting_means_waiting_not_failing(self):
+        """"Waiting" has to mean the evidence is still arriving, or it cannot be used to decide
+        anything -- a strategy past both floors and losing would sit in it for ever."""
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        root = tempfile.mkdtemp()
+        record = StrategyRecord(strategy_key="young", display_name="Young", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        book = os.path.join(root, "paper_trading", "young")
+        os.makedirs(book)
+        with open(os.path.join(book, "trades.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"entry_date": "2026-05-28", "pnl": -5.0}) + chr(10))
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))
+        self.assertEqual(gate["state"], "waiting")           # three days old, one trade
+
     def test_the_recheck_ignores_the_live_book_so_the_gate_stays_about_paper(self):
         # the live book sits a level deeper (live/paper_trading/<key>); counting its trades towards the
         # paper bar would let a strategy's own live activity argue for its own promotion

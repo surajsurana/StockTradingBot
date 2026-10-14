@@ -99,7 +99,8 @@ class PilotEligibilityResult:
 def check_pilot_eligibility(record: StrategyRecord, paper_trading_days_elapsed: int,
                              paper_trading_trade_count: int,
                              min_days: int = MIN_PAPER_TRADING_DAYS_ELAPSED,
-                             min_trades: int = MIN_PAPER_TRADING_TRADES) -> PilotEligibilityResult:
+                             min_trades: int = MIN_PAPER_TRADING_TRADES,
+                             net_of_costs: Optional[float] = None) -> PilotEligibilityResult:
     """
     Pure evaluation function -- no side effects, does not read or write
     any state itself (caller supplies the facts). Eligibility is
@@ -125,6 +126,22 @@ def check_pilot_eligibility(record: StrategyRecord, paper_trading_days_elapsed: 
     if paper_trading_trade_count < min_trades:
         reasons.append(f"Only {paper_trading_trade_count} paper trades recorded, "
                         f"below the {min_trades}-trade floor.")
+    # GATE E -- positive expectancy net of real costs. It has been in LIVE_PROMOTION_CRITERIA.md
+    # since that document was written, and the dashboard's promotion SCORE has always included it;
+    # this function, the one that actually decides qualified or not, never did -- only because it
+    # was never handed the figure. So a strategy could lose money for months and still read as
+    # eligible for real capital (2026-10-14: four were on course to, three of them PASS verdicts).
+    #
+    # Unknown counts as not met, which is this document's own rule for a gate that cannot be
+    # evaluated: "a FAIL rather than a pending". A book with no closed trades fails the trade floor
+    # above anyway, so in practice this only ever speaks about a strategy that HAS traded.
+    # Evaluated only when the caller actually has the figure. This function is pure over what it is
+    # given, and its two real callers learn the net at different moments: the dashboard only after
+    # costs are attached, the promote recheck from the books on disk. A default of "unknown means
+    # fail" would have made every caller that cannot yet know it report a failure it had not tested.
+    if net_of_costs is not None and net_of_costs <= 0:
+        reasons.append(f"Net of costs is {net_of_costs:,.0f}, not positive -- Gate E of "
+                        f"deployment/LIVE_PROMOTION_CRITERIA.md.")
 
     eligible = len(reasons) == 0
     return PilotEligibilityResult(

@@ -640,7 +640,15 @@ def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], no
                   and (record.research_verdict != ResearchVerdict.NOT_YET_EVALUATED
                        or backtest_is_impossible(record)))
     status_ok = record.deployment_status == DeploymentStatus.PAPER_TRADING
-    state = "qualified" if result.eligible else ("waiting" if verdict_ok and status_ok else "not_qualified")
+    # Waiting means the EVIDENCE is still accumulating and will arrive on its own. Once the day and
+    # trade floors are met, anything still failing is a decision, not a wait -- which is what makes
+    # "not qualified" usable as a retirement signal. Before this, a strategy past both floors and
+    # losing money read as "waiting" for ever.
+    from deployment.pilot_live import MIN_PAPER_TRADING_DAYS_ELAPSED, MIN_PAPER_TRADING_TRADES
+    floors_pending = (days or 0) < MIN_PAPER_TRADING_DAYS_ELAPSED or trades < MIN_PAPER_TRADING_TRADES
+    state = ("qualified" if result.eligible
+             else "waiting" if (verdict_ok and status_ok and floors_pending)
+             else "not_qualified")
     return {"eligible": result.eligible, "state": state, "reasons": list(result.reasons),
             "allocation_pct": result.recommended_allocation_pct, "days": days or 0, "trades": trades,
             "backtest_impossible": backtest_is_impossible(record)}
@@ -659,14 +667,26 @@ def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None) -
     The live book is at <state_dir>/live/paper_trading/<key> -- a level deeper, so it does not match
     here, which is what we want: the gate is about the PAPER record."""
     import glob as _glob
-    trades, starts = 0, []
+    trades, starts, gross = 0, [], 0.0
     for book_dir in _glob.glob(os.path.join(state_dir, "*", record.strategy_key)):
         book_trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         trades += len(book_trades)
+        gross += sum(float(t.get("pnl") or 0) for t in book_trades)
         started = _book_started(book_dir, book_trades)
         if started:
             starts.append(started)
-    return _pilot_gate(record, min(starts) if starts else _paper_trading_started(record), trades, now)
+    gate = _pilot_gate(record, min(starts) if starts else _paper_trading_started(record), trades, now)
+    # GATE E on the path that actually guards the money. The books on disk carry GROSS P&L, not net
+    # of charges, so this is the weaker half of the criterion -- but a strategy that has not made
+    # money even before costs has certainly not made it after them, and the alternative here was no
+    # performance test at all on the promote endpoint.
+    if gross <= 0 and gate.get("eligible"):
+        gate["eligible"] = False
+        gate["state"] = "not_qualified"
+        gate.setdefault("reasons", []).append(
+            f"Paper P&L is {gross:,.0f} before charges, not positive -- Gate E of "
+            f"deployment/LIVE_PROMOTION_CRITERIA.md.")
+    return gate
 
 
 def _paper_trading_started(r) -> Optional[str]:
@@ -829,6 +849,27 @@ def attach_promotion_score(strategy_rows: list) -> None:
         if not pilot:
             continue
         pilot.update(promotion_score(pilot, row.get("net"), row.get("verdict", "")))
+        # GATE E, which only becomes knowable here. _pilot_gate runs before costs are attached, so
+        # it evaluates every other gate and leaves this one out; re-deciding it now is what stops a
+        # losing strategy reading as eligible for real capital.
+        _apply_gate_e(pilot, row)
+
+
+def _apply_gate_e(pilot: dict, row: dict) -> None:
+    """Fold "positive net of costs" into an already-computed gate, in place."""
+    net = (row.get("net") or {}).get("net")
+    if net is not None and net > 0:
+        return                      # the gate passes; nothing to add
+    shown = "not known" if net is None else f"{net:,.0f}"
+    reason = (f"Net of costs is {shown}, not positive -- Gate E of "
+              f"deployment/LIVE_PROMOTION_CRITERIA.md.")
+    if reason not in pilot.get("reasons", []):
+        pilot.setdefault("reasons", []).append(reason)
+    pilot["eligible"] = False
+    # Still "waiting" while the floors are unmet: a young book has not failed Gate E, it has not
+    # had the chance to answer it yet.
+    if pilot.get("state") == "qualified":
+        pilot["state"] = "not_qualified"
 
 
 def attach_net_pnl(strategy_rows: list, statement: list) -> None:
