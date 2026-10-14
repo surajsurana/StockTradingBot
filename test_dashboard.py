@@ -9,6 +9,8 @@ import json
 import os
 import tempfile
 import unittest
+
+DQ = chr(34)
 from datetime import date, datetime
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -1382,3 +1384,54 @@ class TestTheEquityRouteCanActuallyRun(unittest.TestCase):
         body = code[code.index('if parsed.path == "/api/equity":'):code.index('if parsed.path == "/api/state":')]
         self.assertIn('query.get("strategy"', body)
         self.assertNotIn('query.get("key"', body)
+
+
+# The two route markers the slice below runs between, kept as names so a reordering cannot silently
+# make one route's test read half the file.
+_ROUTE_PAPER = "if parsed.path == " + DQ + "/api/paper/capital" + DQ + ":"
+_ROUTE_CREDS = "if parsed.path == " + DQ + "/api/credentials" + DQ + ":"
+
+
+class TestThePaperCapitalRoute(unittest.TestCase):
+    """The paper twin of /api/live/allocate. Paper and live must offer the same control, and that
+    control must not become a second way into real money."""
+
+    def _route(self) -> str:
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        start = code.index(_ROUTE_PAPER)
+        return code[start:code.index(_ROUTE_CREDS, start)]
+
+    def test_the_route_exists_and_is_a_post(self):
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        post = code[code.index("def do_POST"):code.index("def do_GET")]
+        self.assertIn("/api/paper/capital", post)
+
+    def test_it_reads_the_current_figures_itself_rather_than_trusting_the_page(self):
+        """A resize is a change FROM what is on screen, and a page can be hours stale."""
+        body = self._route()
+        self.assertIn("_build_state", body)
+        self.assertNotIn("body.get(" + DQ + "shown" + DQ + ")", body)
+
+    def test_it_passes_the_registry_record_so_a_live_strategy_is_refused(self):
+        self.assertIn("record=record", self._route())
+
+    def test_it_supplies_the_rate_the_dollar_books_need(self):
+        self.assertIn("usdinr", self._route())
+
+    def test_it_drops_the_cached_state_so_the_row_redraws(self):
+        self.assertIn("state_cache.invalidate()", self._route())
+
+    def test_every_name_the_route_uses_is_imported(self):
+        """/api/equity shipped using re.fullmatch with no `import re`, and nothing noticed until a
+        click produced a 500 -- a route's imports are only exercised when somebody uses it."""
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        for name in ("os.", "json."):
+            if name in self._route():
+                self.assertIn(chr(10) + "import " + name[:-1] + chr(10), code,
+                              name + " used but not imported")

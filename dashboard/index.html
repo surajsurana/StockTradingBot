@@ -40,6 +40,16 @@ nav#sidenav button{text-align:left;font:inherit;font-weight:500;border:1px solid
   background:transparent;color:var(--chrome-muted);border-radius:6px;padding:9px 12px;cursor:pointer}
 nav#sidenav button:hover{background:var(--chrome-hover);color:var(--chrome-ink)}
 nav#sidenav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+nav#sidenav .navgroup{display:flex;flex-direction:column;gap:2px}
+nav#sidenav .navparent{display:flex;align-items:center;justify-content:space-between;gap:8px}
+nav#sidenav .navparent .caret{font-size:10px;opacity:.7;transition:transform .12s}
+nav#sidenav .navparent[aria-expanded="false"] .caret{transform:rotate(-90deg)}
+nav#sidenav .navkids{display:flex;flex-direction:column;gap:2px}
+nav#sidenav .navkids[hidden]{display:none}
+/* Indented, and a hair smaller: these are views of one page, not seven peers. */
+nav#sidenav .navkids button{padding-left:26px;font-size:13.5px}
+@media (max-width:860px){nav#sidenav .navgroup,nav#sidenav .navkids{flex-direction:row;flex-wrap:wrap}
+  nav#sidenav .navkids button{padding-left:12px}}
 .col{display:flex;flex-direction:column;min-width:0}
 .content{padding:20px clamp(16px,2vw,30px) 60px;min-width:0}
 @media (max-width:860px){
@@ -590,8 +600,18 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
     <button role="tab" aria-selected="true" data-tab="live">Live day</button>
     <button role="tab" aria-selected="false" data-tab="team">The team</button>
     <button role="tab" aria-selected="false" data-tab="orders">Orders</button>
-    <button role="tab" aria-selected="false" data-tab="registry">Strategies</button>
-    <button role="tab" aria-selected="false" data-tab="research">Research</button>
+    <!-- STRATEGIES IS A GROUP, not a page. A strategy's whole life is here -- researched, paper
+         traded, promoted to live, retired -- and each stage is one view of the same list, so
+         Research came out of the top level and sits with the three it feeds. -->
+    <div class="navgroup">
+      <button class="navparent" id="nav-strat" aria-expanded="true" aria-controls="nav-strat-kids">Strategies<span class="caret">▾</span></button>
+      <div class="navkids" id="nav-strat-kids">
+        <button role="tab" aria-selected="false" data-tab="research">Research</button>
+        <button role="tab" aria-selected="false" data-tab="registry" data-strat="Paper">Paper</button>
+        <button role="tab" aria-selected="false" data-tab="registry" data-strat="Live">Live</button>
+        <button role="tab" aria-selected="false" data-tab="registry" data-strat="Retired">Retired</button>
+      </div>
+    </div>
     <button role="tab" aria-selected="false" data-tab="statement">P&amp;L</button>
     <button role="tab" aria-selected="false" data-tab="reports">Reports</button>
     <button role="tab" aria-selected="false" data-tab="advice" id="tab-btn-advice" hidden>Advice</button>
@@ -827,6 +847,9 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEve
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
   document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
   syncLiveTabs();
+  // The rail now carries the status filter, so switching mode has to move it: landing on Live mode
+  // still looking at the paper books would be the old pre-filter's bug with extra steps.
+  if(CUR_TAB === "registry") stratButton(lastStratView()).click();
   load();
 }));
 document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
@@ -841,14 +864,31 @@ function syncTicker(){
   if(!tb.hidden && tb.offsetWidth) t.style.width = tb.offsetWidth + "px";
 }
 window.addEventListener("resize", syncTicker);
+// Which page is open. Declared here, above the first click that fires on load: aria-selected cannot
+// answer it any more now that three rail buttons open the same section and the highlight among them
+// is allowed to be none (a card may open the list with no status filter at all).
+let CUR_TAB = "live";
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
+  CUR_TAB = b.dataset.tab;
   const pm = document.getElementById("profile-menu");
   if(pm){ pm.hidden = true; document.getElementById("profile-btn").setAttribute("aria-expanded", "false"); }
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x===b));
   document.querySelectorAll("section").forEach(s => s.hidden = s.id !== "tab-"+b.dataset.tab);
   document.getElementById("todaybar").hidden = b.dataset.tab !== "live";
   syncTicker();
-  try { localStorage.setItem("desk.tab", b.dataset.tab); } catch(e){}
+  try { localStorage.setItem("desk.tab", b.dataset.tab);
+        // PER MODE. The view you want in Live is not the view you want in Paper, and carrying one
+        // across is how you end up looking at paper books under a Live header.
+        if(b.dataset.strat) localStorage.setItem("desk.strat." + MODE, b.dataset.strat); } catch(e){}
+  // A STRATEGIES SUB-VIEW IS THE STATUS FILTER, not a separate page -- Paper, Live and Retired are
+  // three readings of one list, so picking one in the rail just sets the filter the column header
+  // already had. Which means the header's own dropdown and the rail can never disagree.
+  if(b.dataset.strat){
+    buildRegHead();                                  // the select has to exist before it can be set
+    document.getElementById("reg-status").value = b.dataset.strat;
+    if(typeof STATE !== "undefined" && STATE) renderRegistry(STATE);
+  }
+  syncStratNav();
   // fetched on demand rather than folded into /api/state: credential status has nothing to do with
   // trading data, and the state payload is already ~2MB rebuilt on every poll
   if(b.dataset.tab === "settings" && typeof loadCredentials === "function") loadCredentials();
@@ -870,13 +910,57 @@ document.getElementById("bell").addEventListener("click", markNotificationsRead)
   document.addEventListener("keydown", e => { if(e.key === "Escape") close(); });
 })();
 
+// THE RAIL FOLLOWS THE FILTER, NOT THE OTHER WAY ROUND. A card can open Strategies with any filter
+// it likes (a pool, a verdict, no status at all), so the highlighted sub-view is whichever one
+// matches what the list is actually showing -- and none of them when the answer is "all of it".
+// Highlighting Paper over a list that is showing everything would be a lie the page tells itself.
+function syncStratNav(){
+  const shown = document.getElementById("reg-status");
+  const on = CUR_TAB === "registry" ? (shown ? shown.value : "") : null;
+  document.querySelectorAll("#nav-strat-kids [data-strat]").forEach(b =>
+    b.setAttribute("aria-selected", String(on !== null && b.dataset.strat === on)));
+  // The group stays open while you are inside it, whatever you last collapsed it to.
+  if(["registry","research"].includes(CUR_TAB)) setStratGroup(true);
+}
+// Live mode lands on Live, paper mode on Paper, unless you last chose otherwise IN THAT MODE.
+function lastStratView(){
+  const fallback = MODE === "live" ? "Live" : "Paper";
+  try { return localStorage.getItem("desk.strat." + MODE) || fallback; } catch(e){ return fallback; }
+}
+function stratButton(view){
+  return document.querySelector(`#nav-strat-kids [data-strat="${view}"]`)
+      || document.querySelector('#nav-strat-kids [data-strat="Paper"]');
+}
+function setStratGroup(open){
+  const btn = document.getElementById("nav-strat");
+  btn.setAttribute("aria-expanded", String(open));
+  document.getElementById("nav-strat-kids").hidden = !open;
+}
+document.getElementById("nav-strat").addEventListener("click", () => {
+  const open = document.getElementById("nav-strat").getAttribute("aria-expanded") === "true";
+  // Clicking the group when you are not in it takes you there, to the view you were last on --
+  // a header that only ever folded would make every strategies page two clicks away.
+  if(!["registry","research"].includes(CUR_TAB)){
+    setStratGroup(true);
+    stratButton(lastStratView()).click();
+    return;
+  }
+  setStratGroup(!open);
+});
+
 // Advice is about the real Groww money, so it exists only in Live mode; Reports exists in both, with different reports.
 function syncLiveTabs(){
   const btn = document.getElementById("tab-btn-advice");
   btn.hidden = MODE !== "live";
   if(MODE !== "live" && btn.getAttribute("aria-selected") === "true") document.querySelector('[data-tab="live"]').click();
 }
-try { const t = localStorage.getItem("desk.tab"); if (t && !((t === "advice") && MODE !== "live")) document.querySelector(`[data-tab="${t}"]`)?.click(); } catch(e){}
+try { const t = localStorage.getItem("desk.tab");
+      // "registry" matches three buttons now, so reopen the one that was actually left open.
+      const sel = t === "registry"
+        ? `[data-tab="registry"][data-strat="${lastStratView()}"]`
+        : `[data-tab="${t}"]`;
+      if (t && !((t === "advice") && MODE !== "live")) (document.querySelector(sel)
+        || document.querySelector(`[data-tab="${t}"]`))?.click(); } catch(e){}
 syncLiveTabs();
 
 async function load(){
@@ -2238,6 +2322,10 @@ function wirePromoteButtons(){
 // DeploymentStatus -> the three states the user actually cares about: real money running,
 // paper (virtual) money running, or not deployed at all (research-only or retired).
 const liveState = status => status === "PILOT_LIVE" || status === "PRODUCTION" ? "Live" : status === "PAPER_TRADING" ? "Paper" : "Off";
+// WHAT THE STATUS FILTER AND THE LEFT-HAND NAV SORT BY. liveState has three states because the
+// toggle on each row has three lamps; this has four, because a strategy that was retired is not the
+// same thing as one that was never deployed -- and Retired is now a view of its own.
+const regClass = status => status === "ARCHIVED" ? "Retired" : liveState(status);
 // Live capital: one real pool, sliced per strategy. The slice is assigned on the strategy's own row
 // in the table below -- only strategies already promoted to live can be given capital, and one that
 // is promoted but unfunded sizes every position to zero, so it holds nothing until funded.
@@ -2370,8 +2458,10 @@ function renderAllocations(s){
     + (lc.over_allocated ? `<p class="note" style="color:var(--loss)">More is assigned than one of these accounts can cover.</p>` : "");
 }
 
-// Live capital is a Live-mode-only column, so the header is rebuilt when the mode changes.
-const regCols = () => (MODE === "live" ? [...REG_COLS, ["live_capital","Live capital"]] : REG_COLS)
+// THE SAME COLUMN IN BOTH MODES -- it is "Live capital" against real money and "Paper capital"
+// against notional, but the control is the same control, because paper and live must not differ.
+// The header carries the mode's own label and is rebuilt when the mode changes.
+const regCols = () => [...REG_COLS, ["live_capital", MODE === "live" ? "Live capital" : "Paper capital"]]
   .concat([["promote",""]]);
 // An editable capital box on the strategy's own row. Only a strategy already promoted to live can
 // be funded: anything else has no business holding real money, and the ordering matters -- promote
@@ -2380,9 +2470,26 @@ function allocCell(r){
   const amount = (ALLOC_BY_KEY[r.key] || 0);
   if(liveState(r.status) !== "Live")
     return `<span class="note" title="Only a strategy promoted to PILOT_LIVE or PRODUCTION can be given real capital.">—</span>`;
+  return capBox(r.key, amount, "Assign this much of the real cash pool");
+}
+// The paper twin. The figure shown is the row's OWN combined capital -- the same number in the
+// Capital column -- because that is what the change is measured from. A live strategy is blank
+// here: its money is real, and real money is assigned in Live mode under its own checks.
+function paperCapCell(r){
+  if(liveState(r.status) === "Live")
+    return `<span class="note" title="This strategy is live. Its real capital is set in Live mode.">—</span>`;
+  // A retired book is the record that retired it; resizing it would rewrite the return it was
+  // judged on. A research candidate has no book at all.
+  if(liveState(r.status) !== "Paper")
+    return `<span class="note" title="Not paper trading, so there is no book to size.">—</span>`;
+  if(r.capital == null)
+    return `<span class="note" title="No paper book yet, so there is nothing to size.">—</span>`;
+  return capBox(r.key, Math.round(r.capital), "How much notional cash this paper book trades with");
+}
+function capBox(key, amount, title){
   return `<span style="display:inline-flex;gap:4px;align-items:center">
-    <input class="allocinput" data-key="${esc(r.key)}" type="number" min="0" step="100" value="${amount}" style="width:100px">
-    <button class="iconbtn allocsave" data-key="${esc(r.key)}" title="Assign this much of the real cash pool">Save</button></span>`;
+    <input class="allocinput" data-key="${esc(key)}" type="number" min="0" step="100" value="${amount}" style="width:100px">
+    <button class="iconbtn allocsave" data-key="${esc(key)}" title="${esc(title)}">Save</button></span>`;
 }
 let ALLOC_BY_KEY = {};
 function wireAllocInputs(){
@@ -2392,11 +2499,14 @@ function wireAllocInputs(){
     const input = document.querySelector(`#registry .allocinput[data-key="${CSS.escape(key)}"]`);
     b.disabled = true; b.textContent = "Saving…";
     try {
-      const res = await fetch("/api/live/allocate", {method:"POST", headers:{"Content-Type":"application/json"},
-                                                     body: JSON.stringify({key, rupees: Number(input.value)})});
+      // Each mode writes to its own kind of money, through its own checks. Nothing about the box
+      // decides which: the mode does.
+      const res = await fetch(MODE === "live" ? "/api/live/allocate" : "/api/paper/capital",
+                              {method:"POST", headers:{"Content-Type":"application/json"},
+                               body: JSON.stringify({key, rupees: Number(input.value)})});
       const body = await res.json();
       if(!body.ok) throw new Error(body.error || "refused");
-    } catch(err){ alert("Could not assign capital: " + err.message); b.disabled = false; b.textContent = "Save"; return; }
+    } catch(err){ alert("Could not set capital: " + err.message); b.disabled = false; b.textContent = "Save"; return; }
     if(typeof load === "function") load();
   }));
   document.querySelectorAll("#registry .allocinput").forEach(i =>
@@ -2411,7 +2521,7 @@ function buildRegHead(){
     pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
-    status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Off">Off</option></select>`,
+    status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Retired">Retired</option><option value="Off">Off</option></select>`,
     pilot: `<select id="reg-pilot"><option value="">All</option><option value="qualified">Qualified</option><option value="waiting">Waiting</option><option value="not_qualified">Not qualified</option></select>`,
   })[k] || "";
   // Match each header's alignment to its column's own value cells (td.n/td.c below), or the
@@ -2424,8 +2534,13 @@ function buildRegHead(){
 }
 function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
   buildRegHead();
+  // The sub-view is chosen FIRST so its own click does not overwrite the card's filters, and it is
+  // chosen to match them -- a card asking for Live opens on Live, one asking for everything opens
+  // wherever and then highlights nothing.
+  stratButton(filters["reg-status"] || lastStratView()).click();
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"]) document.getElementById(id).value = filters[id] || "";
-  document.querySelector('[data-tab="registry"]').click(); if(STATE) renderRegistry(STATE);
+  syncStratNav();
+  if(STATE) renderRegistry(STATE);
 }
 function goLive(pool, kind, book){   // from a Strategies row: open Live day filtered to that pool and strategy
   buildTapeHead();
@@ -2617,7 +2732,7 @@ document.getElementById("research-nav").addEventListener("click", e => {
   document.getElementById("research-results-view").hidden = RESEARCH_VIEW !== "results";
   document.getElementById("research-title").textContent = RESEARCH_VIEW === "queue" ? "Next up for research" : "Completed research";
 });
-const currentTab = () => (document.querySelector('nav button[aria-selected="true"]') || {dataset: {}}).dataset.tab;
+const currentTab = () => CUR_TAB;
 function pushRoute(){
   const h = currentTab() === "advice" ? "#advice" : "#reports" + (REP_SUB ? "/" + REP_SUB : "");
   try { if(location.hash !== h) history.pushState(null, "", h); } catch(e){}
@@ -3005,8 +3120,11 @@ function renderRegistry(s){
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
   renderAllocations(s);
   ALLOC_BY_KEY = Object.fromEntries(((s.live_capital || {}).strategies || []).map(x => [x.key, x.allocated]));
-  // In Live mode only strategies actually running real money belong here. Showing all 34 with
-  // blank capital and P&L made the Live view read as if everything were live but flat.
+  // ONE FILTER, NOT TWO. Live mode used to quietly drop every non-live row, because showing all 34
+  // with blank capital read as if everything were live but flat. The Live entry in the rail now
+  // says that out loud -- and says it in both modes, so Paper, Live and Retired mean the same thing
+  // whichever mode you are in, which is the standing rule. What the mode still decides is which one
+  // you land on: Live mode opens on Live.
   const period = periodFigures(s, REG_CAL.from, REG_CAL.to);
   const calBtn = document.getElementById("reg-cal");
   calBtn.classList.toggle("on", !!period);
@@ -3017,7 +3135,7 @@ function renderRegistry(s){
   // A strategy with no trade closed inside the window reads as a dash, not a zero: nothing happened
   // is not the same as it made nothing.
   const inPeriod = r => period ? (period[r.key] || null) : null;
-  const all = (s.strategies || []).filter(r => MODE !== "live" || liveState(r.status) === "Live")
+  const all = (s.strategies || [])
     .map(r => {
       if(!period) return r;
       const p = inPeriod(r);
@@ -3026,7 +3144,7 @@ function renderRegistry(s){
     });
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
   const pctOf = r => r.capital ? netOf(r) / r.capital * 100 : null;   // net return on capital allocated, null if never deployed
-  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || liveState(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
+  const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || regClass(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
     .sort((a,b) => { const k=REG_SORT.key;
       if(k==="pnl"){ const nx=netOf(a), ny=netOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
       if(k==="capital"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
@@ -3054,13 +3172,14 @@ function renderRegistry(s){
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
     const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n cap-link" title="Click for this book's day-by-day equity">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}" title="Click for this book's day-by-day equity">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td>${MODE === "live" ? `<td class="n">${allocCell(r)}</td>` : ""}<td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
+    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n cap-link" title="Click for this book's day-by-day equity">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}" title="Click for this book's day-by-day equity">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td><td class="n">${MODE === "live" ? allocCell(r) : paperCapCell(r)}</td><td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
     const subRows = expandable ? pb.map(p => { const ppct = p.capital ? (p.net == null ? p.pnl : p.net) / p.capital * 100 : null, pdays = daysSince(p.started);
-      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td>${MODE === "live" ? "<td></td>" : ""}<td class="c">${poolPromoteBtn(p, r)}</td></tr>`;
+      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td><td></td><td class="c">${poolPromoteBtn(p, r)}</td></tr>`;
     }).join("") : "";
     return mainRow + subRows; }).join("")
-    || `<tr><td colspan="${regCols().length}" class="note">${MODE === "live"
-         ? "No strategy is running real money yet. Everything is still in paper trading -- switch to Paper to see it."
+    || `<tr><td colspan="${regCols().length}" class="note">${
+         statusF === "Live" ? "No strategy is running real money yet. Everything is still in paper trading."
+         : statusF === "Retired" ? "Nothing has been retired. A paper book is archived after 120 days with no profit and no route to live."
          : "No strategies match these filters."}</td></tr>`;
   const toggleExpand = key => {
     const btn = document.querySelector(`#registry .expand-toggle[data-key="${CSS.escape(key)}"]`); if(!btn) return;

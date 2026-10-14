@@ -19,6 +19,7 @@ import subprocess
 import tempfile
 import unittest
 
+DQ = chr(34)
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard", "index.html")
 
 
@@ -438,6 +439,106 @@ class TestHidingActuallyHides(unittest.TestCase):
         page = _page()
         self.assertIn(".profilemenu[hidden]{display:none}", page)
         self.assertIn(".cards[hidden]{display:none}", page)
+
+
+class TestTheCapitalBoxIsInBothModes(unittest.TestCase):
+    """The standing rule: paper and live must not differ. Live mode had an editable capital box on
+    each row and paper had none, so a paper book's size could not be changed at all."""
+
+    def setUp(self):
+        self.page = _page()
+        self.script = _script(self.page)
+
+    def test_the_column_is_not_live_only(self):
+        self.assertNotIn("MODE === " + DQ + "live" + DQ + " ? [...REG_COLS", self.script)
+        self.assertIn("? " + DQ + "Live capital" + DQ + " : " + DQ + "Paper capital" + DQ, self.script)
+
+    def test_the_cell_is_drawn_in_both_modes(self):
+        self.assertIn("? allocCell(r) : paperCapCell(r)", self.script)
+
+    def test_the_header_and_the_row_agree_on_how_many_columns_there_are(self):
+        """A conditional <td> against an unconditional <th> shifts every value one column left --
+        the sub-rows carried exactly that bug the first time this column was added."""
+        self.assertNotIn(DQ + "<td></td>" + DQ + " : " + DQ + DQ, self.script)
+        self.assertNotIn("${allocCell(r)}</td>` : " + DQ + DQ, self.script)
+
+    def test_each_mode_writes_to_its_own_endpoint(self):
+        self.assertIn("/api/live/allocate" + DQ + " : " + DQ + "/api/paper/capital", self.script)
+
+    def test_a_paper_box_starts_at_the_figure_in_the_capital_column(self):
+        """It is the number the change is measured from, so showing anything else would mean typing
+        a figure against one base and having it applied to another."""
+        fn = self.script[self.script.index("function paperCapCell"):self.script.index("function capBox")]
+        self.assertIn("Math.round(r.capital)", fn)
+
+    def test_only_a_paper_book_gets_a_box(self):
+        """A live strategy's money is real; a retired book is the record that retired it."""
+        fn = self.script[self.script.index("function paperCapCell"):self.script.index("function capBox")]
+        self.assertIn("liveState(r.status) === " + DQ + "Live" + DQ, fn)
+        self.assertIn("liveState(r.status) !== " + DQ + "Paper" + DQ, fn)
+
+
+class TestTheStrategiesRail(unittest.TestCase):
+    """Research, Paper, Live and Retired are four readings of one list, so they sit together under
+    Strategies instead of Research having a top-level entry of its own."""
+
+    def setUp(self):
+        self.page = _page()
+        self.script = _script(self.page)
+
+    def test_research_moved_into_the_group(self):
+        nav = self.page[self.page.index("<nav role=" + DQ + "tablist" + DQ):self.page.index("</nav>")]
+        self.assertIn("nav-strat-kids", nav)
+        self.assertGreater(nav.index(">Research<"), nav.index("nav-strat-kids"))
+
+    def test_all_four_views_are_there(self):
+        kids = self.page[self.page.index("id=" + DQ + "nav-strat-kids" + DQ):]
+        kids = kids[:kids.index("</div>")]
+        for view in ("Research", "Paper", "Live", "Retired"):
+            self.assertIn(">" + view + "<", kids, view)
+
+    def test_the_group_can_actually_be_collapsed(self):
+        """CSS `display:` beats the [hidden] attribute, so a flex container needs a [hidden]
+        partner or folding the group does nothing at all."""
+        css = self.page[self.page.index("<style>"):self.page.index("</style>")]
+        self.assertIn(".navkids{display:flex", css)
+        self.assertIn(".navkids[hidden]{display:none}", css)
+
+    def test_a_sub_view_sets_the_same_filter_the_column_header_has(self):
+        """So the rail and the header dropdown can never disagree about what is on screen."""
+        self.assertIn("reg-status" + DQ + ").value = b.dataset.strat", self.script)
+
+    def test_retired_is_its_own_state_and_not_lumped_in_with_off(self):
+        """A strategy that was retired is not the same thing as one that was never deployed."""
+        self.assertIn("ARCHIVED" + DQ + " ? " + DQ + "Retired" + DQ + " : liveState(status)", self.script)
+        self.assertIn("regClass(r.status) === statusF", self.script)
+        self.assertIn("<option value=" + DQ + "Retired" + DQ + ">Retired</option>", self.script)
+
+    def test_the_mode_no_longer_hides_rows_behind_the_rails_back(self):
+        """Two filters for one question: the mode dropped every non-live row AND the rail filters by
+        status, so Paper and Retired came up empty in Live mode for no stated reason."""
+        self.assertNotIn("filter(r => MODE !== " + DQ + "live" + DQ + " || liveState(r.status)", self.script)
+
+    def test_which_view_you_land_on_is_remembered_per_mode(self):
+        """Live mode opening on the paper books would be the old pre-filter's bug with extra steps."""
+        self.assertIn(DQ + "desk.strat." + DQ + " + MODE", self.script)
+        self.assertIn("MODE === " + DQ + "live" + DQ + " ? " + DQ + "Live" + DQ + " : " + DQ + "Paper" + DQ,
+                      self.script)
+
+    def test_switching_mode_moves_the_view_with_it(self):
+        self.assertIn("stratButton(lastStratView()).click()", self.script)
+
+    def test_which_page_is_open_has_one_source(self):
+        """aria-selected cannot answer it any more: three rail buttons open the same section, and
+        the highlight among them is allowed to be none when a card opens the list unfiltered."""
+        self.assertIn("const currentTab = () => CUR_TAB;", self.script)
+        self.assertIn("CUR_TAB = b.dataset.tab;", self.script)
+
+    def test_a_cards_own_filters_still_win(self):
+        """The sub-view is clicked FIRST, so its own filter cannot overwrite the card's."""
+        fn = self.script[self.script.index("function showStrategies"):]
+        fn = fn[:fn.index("function goLive")]
+        self.assertLess(fn.index("stratButton("), fn.index("reg-pool"))
 
 
 class TestNoStrayControlCharacters(unittest.TestCase):

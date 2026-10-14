@@ -859,6 +859,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
                            "application/json")
             return
+        if parsed.path == "/api/paper/capital":   # Paper view: resize one strategy's paper book
+            # THE PAPER TWIN of /api/live/allocate, because paper and live must look and work the
+            # same. Validation lives in deployment/paper_capital.py; this only supplies the two facts
+            # it cannot know -- what the page is currently showing per pool, and today's USD/INR rate
+            # for the books kept in dollars.
+            #
+            # THE CURRENT FIGURES ARE RE-READ HERE rather than taken from the request. The browser
+            # sent what it was showing, but a page can be hours stale, and the resize is a change
+            # FROM that figure -- so the server's own freshly built state decides.
+            from deployment.paper_capital import set_capital
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                key = str(body.get("key", ""))
+                record = next((r for r in list_strategies() if r.strategy_key == key), None)
+                if record is None:
+                    raise ValueError(f"{key or 'That strategy'} is not in the deployment registry.")
+                row = next((r for r in json.loads(self._build_state("paper", STATE_DIR, None, query)
+                                                  .decode("utf-8")).get("strategies") or []
+                            if r.get("key") == key), None)
+                shown = {p.get("pool"): p.get("capital")
+                         for p in ((row or {}).get("pools_breakdown") or []) if p.get("capital") is not None}
+                result = set_capital(STATE_DIR, key, body.get("rupees"), shown,
+                                     usdinr=float(getattr(self.price_cache, "usdinr", 0) or 0),
+                                     record=record)
+                self.state_cache.invalidate()          # the cards and the row both change
+                self._send(HTTPStatus.OK if result["ok"] else HTTPStatus.BAD_REQUEST,
+                           json.dumps(result).encode("utf-8"), "application/json")
+            except (ValueError, OSError) as e:
+                self._send(HTTPStatus.BAD_REQUEST, json.dumps({"ok": False, "error": str(e)}).encode("utf-8"),
+                           "application/json")
+            return
         if parsed.path == "/api/credentials":   # Settings tab: store broker API credentials
             # REFUSED OVER PLAIN HTTP, deliberately and without an override. The dashboard is reachable
             # at http://<vps>:8085 across the public internet; an API secret typed into that form
