@@ -116,6 +116,30 @@ GROWW_REFRESH_SECONDS = 600   # re-read the Groww holdings (a read-only call)
 LIVE_SECONDS = 20             # Kite quote refresh while the market is open (2 requests per pass)
 COOKIE_NAME = "dash_key"
 
+# What an unauthorised request gets instead of a dead end. Deliberately standalone -- no fonts, no
+# scripts from anywhere, nothing that needs the session it has not got.
+_ACCESS_PAGE = b"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>StockTradingBot Desk</title>
+<style>
+:root{color-scheme:light dark}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F6F5F1;color:#1E2430;
+  font:15px/1.5 "IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif}
+@media (prefers-color-scheme:dark){body{background:#15181E;color:#E6E4DD}
+  .card{background:#1A1E25;border-color:#2C3039}input{background:#15181E;color:#E6E4DD;border-color:#2C3039}}
+.card{background:#fff;border:1px solid #D8D6CF;border-radius:6px;padding:26px 28px;width:min(420px,92vw)}
+h1{margin:0 0 4px;font-size:17px}
+p{margin:0 0 18px;color:#5C6270;font-size:13px}
+form{display:flex;gap:8px}
+input{flex:1;font:inherit;padding:8px 10px;border:1px solid #D8D6CF;border-radius:4px}
+button{font:inherit;font-weight:600;padding:8px 16px;border:0;border-radius:4px;
+  background:#1F6F78;color:#fff;cursor:pointer}
+</style></head><body><div class="card">
+<h1>StockTradingBot Desk</h1>
+<p>This browser does not have the access key. Paste it once and it will be remembered for a year.</p>
+<form method="get" action="/"><input name="key" autofocus placeholder="access key"
+  autocomplete="off" spellcheck="false"><button type="submit">Open</button></form>
+</div></body></html>"""
+
 
 def load_access_key() -> str:
     if not os.path.exists(KEY_PATH):
@@ -1020,11 +1044,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
         if not is_authorized(query, self.headers.get("Cookie", ""), self.access_key):
-            self._send(HTTPStatus.FORBIDDEN, b"Forbidden: add ?key=<access key> to the URL once.", "text/plain")
+            # A DOOR, NOT A WALL. This was a line of plain text with nothing to do about it: the
+            # cookie lasts a month, so every so often the bookmark comes back forbidden and the only
+            # way in is to remember where the key is written down. The key is in the URL anyway --
+            # pasting it here just puts it there.
+            self._send(HTTPStatus.FORBIDDEN, _ACCESS_PAGE, "text/html; charset=utf-8")
             return
         extra = {}
         if self.access_key and query.get("key", [""])[0] == self.access_key:
-            extra["Set-Cookie"] = f"{COOKIE_NAME}={self.access_key}; Path=/; Max-Age=2592000; SameSite=Lax"
+            # A year, not a month. This is a private dashboard on an IP address and the key travels
+            # in the URL regardless; expiring the cookie monthly only ever locked out the person who
+            # already had it.
+            extra["Set-Cookie"] = f"{COOKIE_NAME}={self.access_key}; Path=/; Max-Age=31536000; SameSite=Lax"
 
         if parsed.path == "/api/live/run":
             self._send(HTTPStatus.OK, json.dumps(self.live_runner.status()).encode("utf-8"),

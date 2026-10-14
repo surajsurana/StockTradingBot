@@ -1335,6 +1335,31 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class TestTheLockedOutPage(unittest.TestCase):
+    """A browser without the cookie used to get one line of plain text and no way forward."""
+
+    def test_it_offers_somewhere_to_put_the_key(self):
+        from dashboard.server import _ACCESS_PAGE
+        page = _ACCESS_PAGE.decode("utf-8")
+        self.assertIn('<form method="get" action="/"', page)
+        self.assertIn('name="key"', page)
+
+    def test_it_needs_nothing_it_has_not_got(self):
+        """No fonts, no scripts, no asset behind the same door it is locked out of."""
+        from dashboard.server import _ACCESS_PAGE
+        page = _ACCESS_PAGE.decode("utf-8")
+        for forbidden in ("<script", "https://", "src="):
+            self.assertNotIn(forbidden, page, forbidden)
+
+    def test_the_cookie_outlasts_a_month(self):
+        """It expired monthly, which only ever locked out the person who already had the key."""
+        import dashboard.server as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        self.assertIn("Max-Age=31536000", code)
+        self.assertNotIn("Max-Age=2592000", code)
+
+
 class TestTheEquityRouteCanActuallyRun(unittest.TestCase):
     """server.py's /api/equity shipped using re.fullmatch with no `import re`, and nothing noticed
     until a click produced a 500 -- a route's imports are only exercised when somebody uses it."""
