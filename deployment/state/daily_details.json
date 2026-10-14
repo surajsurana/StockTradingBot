@@ -14,5 +14,6 @@
     "High-Volume Return Premium": "*\ud83e\uddea SW-017 | High-Volume Return Premium*\n\n*Queued for Next Open (not yet bought)*\n\nBEML.NS\nSignal 2,096.30\nPlanned stop 1,928.60\n\nBIKAJI.NS\nSignal 580.15\nPlanned stop 533.74\n\nCOALINDIA.NS\nSignal 416.70\nPlanned stop 383.36\n\nGODREJCP.NS\nSignal 867.60\nPlanned stop 798.19\n\nGRASIM.NS\nSignal 3,310.00\nPlanned stop 3,045.20\n\nPOLYMED.NS\nSignal 1,739.00\nPlanned stop 1,599.88\n\nPVRINOX.NS\nSignal 1,135.00\nPlanned stop 1,044.20\n\nTEJASNET.NS\nSignal 598.90\nPlanned stop 550.99\n\n*Open Positions*\n\n(none)\n\n*Summary*\nDaily P&L: n/a\nTotal Equity: 100,000.00\nDrawdown: n/a\nWin Rate: 0.00\nExpectancy: 0.00\n\n*Reports*\nExperiment: EXP-080\nDaily Report: deployment/reports/high\\_volume\\_return\\_premium/2026-09-07.md\nDrift Report: deployment/reports/high\\_volume\\_return\\_premium/DRIFT\\_REPORT.md"
   },
   "2026-09-10": {
-    "Fake Strategy fills": "*\ud83e\uddea EXECUTED -- SW-000 | Fake Strategy*\n\n*Bought*\n\n1. SYM.NS\n10 x 105.00 = 1,050.00\nStop: 90.00\n\nTotal Bought = 1,050.00\nTotal Sold = 0.00",
-    "Pool A summary": 
+    "Fake Strategy fills": "*\ud83e\uddea EXECUTED -- SW-000 | Fake Strategy*\n\n*Bought*\n\n1. SYM.NS\n10 x 105.00 = 1,050.00\nStop: 90.00\n\nTotal Bought = 1,050.00\nTotal Sold = 0.00"
+  }
+}
