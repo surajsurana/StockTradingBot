@@ -1903,7 +1903,13 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         # predicted: the balance itself needs an Admin API this plan does not have, so the API's own
         # refusal in the log is the only signal there is -- and it is the one that matters, because
         # Pool G is LIVE and cannot manage its open positions while it is down.
-        "ai_credits": _ai_credit_health(state_dir, logs_dir),
+        # THE CANONICAL STATE DIR, NOT THE VIEW'S. Whether the Anthropic account has credit is one
+        # account-wide fact and has nothing to do with which mode is being looked at. Passed the
+        # view's root, Live mode looked for the AI books under state/live/, where two of the three
+        # have never existed -- so it could not see their successful runs, read every old refusal
+        # still sitting in their logs as current, and showed "credits ran out" permanently in Live
+        # while Paper said everything was fine.
+        "ai_credits": _ai_credit_health(STATE_DIR_CANONICAL, logs_dir),
         "mode": mode, "generated_at": now.isoformat(timespec="seconds"), "today": today.isoformat(),
         "market_open": market_open, "prices_as_of": prices_as_of, "priced_symbols": len(prices),
         "quotes": {k: round(float(v), 2) for k, v in prices.items()},

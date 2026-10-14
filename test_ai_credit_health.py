@@ -17,6 +17,21 @@ ERROR_LINE = ("Traceback (most recent call last):\n"
               + CREDIT_MESSAGE + " to access the Anthropic API.'}\n")
 
 
+def _log(logs_dir, name, text):
+    path = os.path.join(logs_dir, name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return path
+
+
+def _state(state_dir, rel):
+    path = os.path.join(state_dir, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("{}")
+    return path
+
+
 class TestNoticingTheOutage(unittest.TestCase):
     def setUp(self):
         self.state = tempfile.mkdtemp()
@@ -156,3 +171,40 @@ class TestItOnlyReads(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTheCheckIsAccountWideNotPerView(unittest.TestCase):
+    """WHAT WENT WRONG ON 2026-10-14. The dashboard passed the VIEW's state root, so in Live mode the
+    check looked for the AI books under deployment/state/live/. Portfolio B and C are paper books and
+    have never existed there, so their state files could not be found, their successful runs were
+    invisible, and an old refusal still sitting in their never-rotated logs was read as current --
+    for ever. Live showed "the Anthropic account is out of credit" permanently while Paper, reading
+    the same logs from the right root, said everything was fine. The account had credit throughout.
+
+    Whether the account has credit is one account-wide fact. It has nothing to do with which mode
+    somebody is looking at."""
+
+    def test_the_dashboard_passes_the_canonical_state_dir(self):
+        import dashboard.state_view as mod
+        with open(mod.__file__, encoding="utf-8") as f:
+            code = f.read()
+        self.assertIn('"ai_credits": _ai_credit_health(STATE_DIR_CANONICAL, logs_dir)', code)
+        self.assertNotIn('"ai_credits": _ai_credit_health(state_dir, logs_dir)', code)
+
+    def test_a_book_whose_state_file_is_missing_entirely(self):
+        """What the live root looked like: the log is there with an old refusal in it, the state
+        file is not. Reported blocked, with a run time it could not name -- which is the shape the
+        bug showed up in (last_ran: "")."""
+        logs, state = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _log(logs, "portfolio_b.log", "boom: credit balance is too low")
+        out = check(state, logs)
+        self.assertTrue(out["blocked"])
+        self.assertEqual([b["last_ran"] for b in out["books"]], [""])
+
+    def test_the_same_logs_read_from_the_right_root_are_not_an_outage(self):
+        """The fix, end to end: give it the root where those books actually live and the recent run
+        beside the old refusal settles it."""
+        logs, state = tempfile.mkdtemp(), tempfile.mkdtemp()
+        _log(logs, "portfolio_b.log", "boom: credit balance is too low")
+        _state(state, os.path.join("portfolio_b", "portfolio.json"))
+        self.assertFalse(check(state, logs)["blocked"])
