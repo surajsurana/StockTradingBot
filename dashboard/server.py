@@ -876,8 +876,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 record = next((r for r in list_strategies() if r.strategy_key == key), None)
                 if record is None:
                     raise ValueError(f"{key or 'That strategy'} is not in the deployment registry.")
-                row = next((r for r in json.loads(self._build_state("paper", STATE_DIR, None, query)
-                                                  .decode("utf-8")).get("strategies") or []
+                # Through the cache, under the same key the page's own GET uses: a warm cache costs
+                # nothing, and "at most twelve seconds old" IS what the page is showing, which is
+                # the figure this change is measured from. A cold cache pays one rebuild.
+                shown_state = self.state_cache.get(
+                    ("paper", ""), lambda: self._build_state("paper", STATE_DIR, None, {}))
+                row = next((r for r in json.loads(shown_state.decode("utf-8")).get("strategies") or []
                             if r.get("key") == key), None)
                 shown = {p.get("pool"): p.get("capital")
                          for p in ((row or {}).get("pools_breakdown") or []) if p.get("capital") is not None}
