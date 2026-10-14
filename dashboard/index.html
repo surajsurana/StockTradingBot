@@ -196,7 +196,15 @@ section > h2:first-child,section > .tools:first-child,section > .livetop + h2{ma
 /* ONE ROW. A flex basis let the three cards wrap to a second row at some widths, which put the same
    three platforms in two places and made the set read as more than it is. A grid cannot wrap. */
 .cashcards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 14px}
-@media (max-width:1000px){.cashcards{grid-template-columns:minmax(0,1fr)}}
+.cashcards.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+.cashcards [data-view]{cursor:pointer}
+.cashcards [data-view]:hover{border-color:var(--accent)}
+.cashcards [data-view]:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+/* The count cards are small enough for two across before they have to stack; the money cards are
+   not. .four needs naming here or its own rule outranks this one and stays four wide on a phone. */
+@media (max-width:1000px){.cashcards{grid-template-columns:minmax(0,1fr)}
+  .cashcards.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.cashcards.four{grid-template-columns:minmax(0,1fr)}}
 .bigpot{min-width:0;max-width:none;padding:12px 14px}
 /* After .bigpot, or its max-width:none wins at equal specificity. Narrow enough to read without
    moving your eyes across the screen. */
@@ -868,6 +876,9 @@ window.addEventListener("resize", syncTicker);
 // answer it any more now that three rail buttons open the same section and the highlight among them
 // is allowed to be none (a card may open the list with no status filter at all).
 let CUR_TAB = "live";
+// The sub-view the rail has asked for and the renderer has not applied yet; null when there is
+// nothing pending.
+let STRAT_VIEW = null;
 document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click", () => {
   CUR_TAB = b.dataset.tab;
   const pm = document.getElementById("profile-menu");
@@ -883,9 +894,12 @@ document.querySelectorAll("[data-tab]").forEach(b => b.addEventListener("click",
   // A STRATEGIES SUB-VIEW IS THE STATUS FILTER, not a separate page -- Paper, Live and Retired are
   // three readings of one list, so picking one in the rail just sets the filter the column header
   // already had. Which means the header's own dropdown and the rail can never disagree.
+  //
+  // IT IS RECORDED HERE AND APPLIED BY THE RENDERER, not written to the select now. The very first
+  // click happens while the page is still being parsed -- restoring the tab you left open -- and at
+  // that point the header, and half the code that builds it, do not exist yet.
   if(b.dataset.strat){
-    buildRegHead();                                  // the select has to exist before it can be set
-    document.getElementById("reg-status").value = b.dataset.strat;
+    STRAT_VIEW = b.dataset.strat;
     if(typeof STATE !== "undefined" && STATE) renderRegistry(STATE);
   }
   syncStratNav();
@@ -2357,6 +2371,66 @@ function cashByVenue(s){
   return {kite: kite, coindcx: coindcx, groww: null, us: us || null};
 }
 
+// WHAT THIS PAGE IS ACTUALLY ABOUT. The panel above the table used to carry cash, invested and
+// holdings -- the same three figures the Live day board already shows, in the same shapes, read off
+// the same ledger. On a page whose every row is a strategy, the question is not how much money there
+// is; it is how many strategies there are and what stage each one has reached. So the cards count
+// strategies, one per view in the rail beside them, and clicking one opens that view.
+function renderStrategyCounts(s){
+  const rows = s.strategies || [];
+  const by = pred => rows.filter(pred);
+  const paper = by(r => r.status === "PAPER_TRADING");
+  const live = by(r => liveState(r.status) === "Live");
+  const gone = by(r => r.status === "ARCHIVED");
+  const lanes = ((s.roadmap || {}).lanes) || [];
+
+  // One line per kind, biggest first, and nothing for a kind with none of them -- a column of
+  // zeroes says less than a shorter list.
+  const byType = list => {
+    const n = {};
+    for(const r of list) n[r.type] = (n[r.type] || 0) + 1;
+    return Object.entries(n).sort((a, b) => b[1] - a[1])
+      .map(([t, c]) => `<tr><td>${esc(t)}</td><td class="n">${c}</td><td></td></tr>`);
+  };
+  const none = what => [`<tr><td class="note" colspan="3">${esc(what)}</td></tr>`];
+
+  const card = (view, title, total, rows_, hint) => `<div class="desk bigpot countcard" tabindex="0"
+      role="button" data-view="${esc(view)}" title="${esc(hint)}">
+      <div class="head"><span class="nm">${esc(title)}</span><b class="potsum">${total}</b></div>
+      <table class="pottbl">${(rows_.length ? rows_ : none("none")).join("")}</table></div>`;
+
+  // RESEARCH counts candidates, not strategies: nothing in that lane is a strategy yet. The
+  // headline is what is researchable now, which is the number the Research tab is ranking.
+  const laneRows = lanes.map(l => `<tr><td>${esc(l.label)}</td><td class="n">${l.ready || 0}</td>`
+    + `<td class="note">${l.current ? "1 in progress" : ""}</td></tr>`);
+  const ready = lanes.reduce((t, l) => t + (l.ready || 0), 0);
+
+  // Retired splits on whether it ever actually traded, which is the difference between the two
+  // retirement rules: rejected in research and never deployed, or archived after a paper book had
+  // long enough to make its case.
+  const neverRan = gone.filter(r => !r.started).length;
+  const ranThenRetired = gone.length - neverRan;
+
+  document.getElementById("alloc-panel").innerHTML = `<div class="cashcards four">`
+    + card("Research", "In research", ready, laneRows,
+           "Candidates ranked and ready to be researched, by lane -- not strategies yet")
+    + card("Paper", "Paper trading", paper.length, byType(paper),
+           "Strategies running a paper book right now")
+    + card("Live", "Live", live.length, byType(live),
+           "Strategies promoted to real money")
+    + card("Retired", "Retired", gone.length, gone.length ? [
+             `<tr><td>Rejected in research</td><td class="n">${neverRan}</td><td></td></tr>`,
+             `<tr><td>Retired from paper</td><td class="n">${ranThenRetired}</td><td></td></tr>`,
+           ] : [],
+           "Archived: never deployed after a REJECT, or a paper book that had 120 days and no profit")
+    + `</div>`;
+  document.querySelectorAll("#alloc-panel [data-view]").forEach(el => {
+    const go = () => stratButton(el.dataset.view).click();
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", e => { if(e.key === "Enter" || e.key === " "){ e.preventDefault(); go(); } });
+  });
+}
+
 function renderAllocations(s){
   const panel = document.getElementById("alloc-panel");
   panel.hidden = false;
@@ -2451,6 +2525,9 @@ function renderAllocations(s){
         ...(heldBy.us ? [line("US (paper) · US equities", heldBy.us, "")] : []),
       ]),
   ].join("");
+  // Live keeps the money cards: they are what the Live capital column on each row is assigned out
+  // of, so they belong beside it. Paper's notional cash has no such pool and no such question.
+  if(MODE !== "live") return renderStrategyCounts(s);
   panel.innerHTML = `<div class="cashcards">${cards}</div>`
     + (lc.balance == null
         ? `<p class="note" style="color:var(--loss)">Capital cannot be assigned while the Kite balance is unknown.</p>`
@@ -2514,8 +2591,10 @@ function wireAllocInputs(){
 }
 
 function buildRegHead(){
+  // MARKED BUILT AT THE END, NOT THE START. Stamping it first meant that a throw anywhere below
+  // left an empty <thead> that every later call then skipped as already done -- so the Strategies
+  // tab came up with no column headers, and the first sel("reg-status") read .value off null.
   const head = document.getElementById("reg-head"); if(head.dataset.built === MODE) return;
-  head.dataset.built = MODE;
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
     pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option value="-">Not trading</option></select>`,
@@ -2531,6 +2610,7 @@ function buildRegHead(){
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
   ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
+  head.dataset.built = MODE;
 }
 function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
   buildRegHead();
@@ -2539,6 +2619,7 @@ function showStrategies(filters){   // from the cards: open the Strategies tab w
   // wherever and then highlights nothing.
   stratButton(filters["reg-status"] || lastStratView()).click();
   for(const id of ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"]) document.getElementById(id).value = filters[id] || "";
+  STRAT_VIEW = null;                 // the card has just set every filter; nothing is pending
   syncStratNav();
   if(STATE) renderRegistry(STATE);
 }
@@ -3115,6 +3196,7 @@ function periodFigures(s, from, to){
 
 function renderRegistry(s){
   buildRegHead();
+  if(STRAT_VIEW !== null){ document.getElementById("reg-status").value = STRAT_VIEW; STRAT_VIEW = null; syncStratNav(); }
   markSort(document.getElementById("reg-head"), REG_SORT);
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
@@ -3265,6 +3347,18 @@ function renderResearch(s){
   // here, nightly, and only once a human has merged the code. Three stages, three different things
   // the reader can do about them.
   const BACKTEST_AT = "02:30";
+  // The next time the nightly backtest fires -- tonight if 02:30 has not come round yet today,
+  // otherwise tomorrow. Named by the night, not by the clock alone, because a bare "02:30" beside a
+  // claim date reads as a time that has already passed.
+  const nextBacktest = () => {
+    const now = new Date(), at = new Date(now);
+    at.setHours(2, 30, 0, 0);
+    if(at <= now) at.setDate(at.getDate() + 1);
+    const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
+    return at.toDateString() === tomorrow.toDateString()
+      ? "tonight " + BACKTEST_AT
+      : at.toLocaleDateString(undefined, {weekday:"short", day:"numeric", month:"short"}) + " " + BACKTEST_AT;
+  };
   const claimedOn = c => {
     const t = (c.queue || {}).claimed_at;
     if(!t) return "";
@@ -3276,7 +3370,7 @@ function renderResearch(s){
   const stageChip = c => c.queue.backtesting
     ? `<span class="pill ok" title="A backtest process is running on the server right now">Researching now</span>`
     : c.queue.implemented
-    ? `<span class="pill" title="The strategy is written and merged, so the nightly backtest can run it. Claimed ${esc(claimedOn(c))}; the backtest runs at ${BACKTEST_AT} and records a PASS or REJECT">Queued · backtest ${BACKTEST_AT}</span>`
+    ? `<span class="pill" title="The strategy is written and merged to main, so the nightly backtest can run it. Claimed ${esc(claimedOn(c))}; the backtest runs ${esc(nextBacktest())} and records a PASS or REJECT">Written · backtest ${esc(nextBacktest())}</span>`
     : `<span class="pill" title="A research routine claimed it ${esc(claimedOn(c))} and is writing the strategy. It cannot backtest where it runs -- it pushes a branch, and the backtest runs here once that is merged">Being written · since ${esc(claimedOn(c))}</span>`;
   const queueAction = c => c.queue && c.queue.state === "current"
     ? c.queue.stale
@@ -3300,7 +3394,10 @@ function renderResearch(s){
       ? `Stalled · claimed ${heldDays(cur)}d ago, never reported back`
       : cur && cur.queue.in_progress
       ? (cur.queue.backtesting ? "Researching now"
-         : cur.queue.implemented ? `Queued · backtest ${BACKTEST_AT}, claimed ${esc(claimedOn(cur))}`
+         // WHICH NIGHT. "backtest 02:30, claimed Oct 13" read as a backtest that was due on the
+         // 13th and never happened; both are true statements about different things sat next to
+         // each other. The date that matters is the next one, so that is the one shown.
+         : cur.queue.implemented ? `Written · backtest runs ${esc(nextBacktest())}`
          : `Being written · since ${esc(claimedOn(cur))}`)
       : "Queued · starts " + esc(laneRun[(l || {}).lane]);
     const what = cur

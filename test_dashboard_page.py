@@ -191,7 +191,9 @@ class TestTheResearchStageIsTheRealOne(unittest.TestCase):
         self.assertIn("c.queue.backtesting", body)     # a live process, not a claim
         self.assertIn("c.queue.implemented", body)     # merged, so tonight's run can have it
         self.assertIn("Being written", body)
-        self.assertIn("Queued · backtest", body)
+        # "Written", not "Queued": it is not waiting in the queue, it is merged and waiting for the
+        # next nightly run -- see TestTheBacktestIsDatedByItsNextRun.
+        self.assertIn("Written · backtest", body)
 
     def test_only_a_running_backtest_is_called_research(self):
         body = _script(_page())
@@ -505,8 +507,11 @@ class TestTheStrategiesRail(unittest.TestCase):
         self.assertIn(".navkids[hidden]{display:none}", css)
 
     def test_a_sub_view_sets_the_same_filter_the_column_header_has(self):
-        """So the rail and the header dropdown can never disagree about what is on screen."""
-        self.assertIn("reg-status" + DQ + ").value = b.dataset.strat", self.script)
+        """So the rail and the header dropdown can never disagree about what is on screen. The rail
+        records the view and the renderer writes it to the select -- see
+        TestTheFirstClickHappensBeforeTheCodeExists for why it cannot write it itself."""
+        self.assertIn("STRAT_VIEW = b.dataset.strat;", self.script)
+        self.assertIn("reg-status" + DQ + ").value = STRAT_VIEW", self.script)
 
     def test_retired_is_its_own_state_and_not_lumped_in_with_off(self):
         """A strategy that was retired is not the same thing as one that was never deployed."""
@@ -539,6 +544,149 @@ class TestTheStrategiesRail(unittest.TestCase):
         fn = self.script[self.script.index("function showStrategies"):]
         fn = fn[:fn.index("function goLive")]
         self.assertLess(fn.index("stratButton("), fn.index("reg-pool"))
+
+
+class TestTheFirstClickHappensBeforeTheCodeExists(unittest.TestCase):
+    """THE BUG. Restoring the tab you left open clicks a rail button while the page's script is
+    still being parsed, so at that moment half the script's own consts are in their temporal dead
+    zone. The Strategies sub-views made that click do real work -- build the table header, write to
+    the status filter -- and buildRegHead stamped the header "built" on its FIRST line before
+    reaching regCols() and throwing. The stamp made every later call skip the rebuild, so the header
+    stayed empty for the life of the page, and the first sel("reg-status") read .value off null:
+
+        Could not load state: Cannot read properties of null (reading 'value')
+
+    Every tab came up blank. The restore is wrapped in try/catch, so nothing was logged."""
+
+    def setUp(self):
+        self.script = _script(_page())
+
+    def _fn(self, name):
+        start = self.script.index("function " + name + "(")
+        end = self.script.index(chr(10) + "}", start)
+        return self.script[start:end]
+
+    def test_the_header_is_marked_built_only_once_it_is(self):
+        """A header that threw half way through is not a built header, and must be rebuilt."""
+        fn = self._fn("buildRegHead")
+        self.assertIn("head.dataset.built = MODE;", fn)
+        self.assertGreater(fn.index("head.dataset.built = MODE;"), fn.index("head.innerHTML ="),
+                           "the built stamp must come after the header is actually written")
+
+    def test_the_rail_click_does_no_dom_work_of_its_own(self):
+        """It records which view was asked for; the renderer applies it, by which time everything
+        the renderer needs exists. Calling buildRegHead from the click is what detonated."""
+        start = self.script.index("let CUR_TAB")
+        handler = self.script[start:self.script.index("document.getElementById(" + DQ + "bell" + DQ + ")", start)]
+        self.assertIn("STRAT_VIEW = b.dataset.strat;", handler)
+        self.assertNotIn("buildRegHead()", handler)
+        self.assertNotIn("reg-status", handler)
+
+    def test_the_renderer_applies_the_pending_view_and_clears_it(self):
+        """Left pending it would re-apply itself over the header dropdown on the next poll, so
+        changing the filter by hand would silently snap back every fifteen seconds."""
+        fn = self.script[self.script.index("function renderRegistry(s){"):]
+        fn = fn[:fn.index("markSort(")]
+        self.assertIn("STRAT_VIEW !== null", fn)
+        self.assertIn("STRAT_VIEW = null;", fn)
+
+
+class TestTheStrategiesPanelCountsStrategies(unittest.TestCase):
+    """The panel above the table carried cash, invested and holdings -- the same three figures the
+    Live day board already shows, off the same ledger. On a page whose every row is a strategy the
+    question is not how much money there is, it is how many strategies there are and what stage each
+    has reached. So in Paper it counts strategies, one card per view in the rail beside it."""
+
+    def setUp(self):
+        self.page = _page()
+        self.script = _script(self.page)
+
+    def _fn(self):
+        start = self.script.index("function renderStrategyCounts(s){")
+        return self.script[start:self.script.index("function renderAllocations(s){")]
+
+    def test_paper_gets_the_counts_instead_of_the_money(self):
+        self.assertIn("if(MODE !== " + DQ + "live" + DQ + ") return renderStrategyCounts(s);", self.script)
+
+    def test_live_keeps_the_money_cards(self):
+        """They are the pool the Live capital column on each row is assigned out of, so they belong
+        beside it. Paper's notional cash answers no such question."""
+        fn = self.script[self.script.index("function renderAllocations(s){"):]
+        fn = fn[:fn.index("// THE SAME COLUMN IN BOTH MODES")]
+        self.assertIn("Cash available", fn)
+        self.assertIn("renderStrategyCounts(s);", fn)
+
+    def test_there_is_one_card_per_view_in_the_rail(self):
+        """Four cards, four rail entries, same four words -- or the page is telling two stories
+        about the same list."""
+        fn = self._fn()
+        for view in ("Research", "Paper", "Live", "Retired"):
+            self.assertIn("card(" + DQ + view + DQ, fn, view)
+
+    def test_each_card_opens_its_own_view(self):
+        fn = self._fn()
+        self.assertIn("stratButton(el.dataset.view).click()", fn)
+
+    def test_a_card_is_reachable_from_the_keyboard(self):
+        """It is a button that happens to look like a card."""
+        fn = self._fn()
+        self.assertIn('tabindex="0"', fn)
+        self.assertIn('role="button"', fn)
+        self.assertIn('e.key === "Enter"'.replace('"', DQ), fn)
+
+    def test_research_counts_candidates_and_says_so(self):
+        """Nothing in that lane is a strategy yet, so counting it among the strategies would be
+        wrong in a way no label could fix."""
+        fn = self._fn()
+        self.assertIn("l.ready", fn)
+        self.assertIn("not strategies yet", fn)
+
+    def test_retired_splits_on_whether_it_ever_traded(self):
+        """That is the difference between the two retirement rules: rejected in research and never
+        deployed, or archived after a paper book had 120 days to make its case."""
+        fn = self._fn()
+        self.assertIn("Rejected in research", fn)
+        self.assertIn("Retired from paper", fn)
+        self.assertIn("r.started", fn)
+
+    def test_four_cards_do_not_stay_four_wide_on_a_phone(self):
+        """.four has its own rule, so it outranks the stacking one unless that names it too."""
+        css = self.page[self.page.index("<style>"):self.page.index("</style>")]
+        self.assertIn(".cashcards.four{grid-template-columns:repeat(4", css)
+        self.assertIn(".cashcards.four{grid-template-columns:repeat(2", css)
+        self.assertIn(".cashcards.four{grid-template-columns:minmax(0,1fr)}", css)
+
+
+class TestTheBacktestIsDatedByItsNextRun(unittest.TestCase):
+    """A card read "Queued - backtest 02:30, claimed Oct 13 06:00 AM" and was reported as a backtest
+    that had been due on the 13th and never happened. Both halves were true statements about
+    different things sitting next to each other: 02:30 is when the nightly backtest fires, the 13th
+    is when the writing started. The date that matters is the next one."""
+
+    def setUp(self):
+        self.script = _script(_page())
+
+    def test_the_label_names_the_night_it_will_run(self):
+        self.assertIn("backtest runs ${esc(nextBacktest())}", self.script)
+        self.assertNotIn("backtest ${BACKTEST_AT}, claimed", self.script)
+
+    def test_it_rolls_to_tomorrow_once_todays_run_has_gone(self):
+        """Otherwise it points at a time this morning, which is exactly the reading that caused the
+        confusion."""
+        fn = self.script[self.script.index("const nextBacktest = () =>"):]
+        fn = fn[:fn.index("};")]
+        self.assertIn("at.setHours(2, 30, 0, 0)", fn)
+        self.assertIn("if(at <= now) at.setDate(at.getDate() + 1)", fn)
+
+    def test_tonight_is_called_tonight(self):
+        fn = self.script[self.script.index("const nextBacktest = () =>"):]
+        fn = fn[:fn.index("};")]
+        self.assertIn("tonight", fn)
+
+    def test_written_not_queued(self):
+        """"Queued" was the other half of the confusion: it is not waiting in the queue, it is
+        written, merged and waiting for the next nightly run."""
+        self.assertIn("Written · backtest", self.script)
 
 
 class TestNoStrayControlCharacters(unittest.TestCase):
