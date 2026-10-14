@@ -653,14 +653,18 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 
 <section id="tab-notifications" hidden>
   <h2>Notifications</h2>
-  <!-- RECENT ACTIVITY FIRST, newest at the top. Every one of these events already happened
-       somewhere -- a verdict in an experiment folder, a promotion in the status overlay -- but each
-       was only visible by opening the thing it happened to. This is the one place that answers
-       "what has changed?", which is the question you ask before any other. -->
-  <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>What happened</th><th>Strategy</th><th>Where</th><th>Detail</th></tr></thead><tbody id="notif-activity"></tbody></table></div>
-  <h3 class="advsec" style="margin-top:26px">What the desk could not act on<small id="notif-count"></small></h3>
+  <!-- ONE TIMELINE, newest at the top. Two tables meant deciding which of them a thing belonged in
+       before you could read either, and the answer to "what happened recently?" was split across
+       both. A strategy going live and an order the book could not place are both things that
+       happened at a time; they belong on one clock. -->
+  <div class="tools"><span id="notif-count" class="note"></span></div>
   <div id="notif-reasons" class="poolchips"></div>
-  <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>Strategy</th><th>Pool</th><th>Type</th><th>Wanted to</th><th class="n">Rate</th><th class="n">Value</th><th>Why it did not happen</th></tr></thead><tbody id="notif-rows"></tbody></table></div>
+  <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>What happened</th><th>Strategy</th><th>Where</th><th>Detail</th></tr></thead><tbody id="notif-activity"></tbody></table></div>
+  <div class="pager" id="notif-pager">
+    <label class="note">Rows per page <select id="notif-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
+    <span class="note" id="notif-pageinfo"></span>
+    <span class="pagebtns"><button id="notif-prev" class="iconbtn">‹ Prev</button><button id="notif-next" class="iconbtn">Next ›</button></span>
+  </div>
 </section>
 <section id="tab-orders" hidden>
   <h2>Orders</h2>
@@ -1867,42 +1871,81 @@ function renderNotifications(s){
   document.getElementById("notif-count").textContent = n.count
     ? `${n.count} decision${n.count===1?"":"s"}`
     : "nothing was blocked";
-  renderActivity(n.activity || []);
   // Grouped by cause, commonest first: one recurring reason reads very differently from twenty
   // unrelated ones, and tells you whether there is a single thing to fix.
   document.getElementById("notif-reasons").innerHTML = (n.by_reason || [])
     .map(r => `<span class="pchip static" title="${esc(r.reason)}">${esc(short(r.reason))} · ${r.count}</span>`).join("");
-  document.getElementById("notif-rows").innerHTML = (n.rows || []).map(r => {
+  renderActivity(timelineRows(n));
+}
+
+// THE TWO SOURCES, AS ONE LIST OF THINGS THAT HAPPENED. A blocked order is already a dated event
+// with a strategy, a place and a reason, which is exactly the shape of a lifecycle row -- so it is
+// rewritten into that shape here rather than kept in a table of its own. What it loses is the
+// rate/value columns, which were never the point: the reason is.
+function timelineRows(n){
+  const blocked = (n.rows || []).map(r => {
     const [day, clock] = String(r.at || "").split("T");
-    const kind = r.stage === "refused" ? "the guard stopped it" : "the book could not act";
-    return `<tr><td class="n nowrap">${esc(ddmmyy(day))}</td><td class="n nowrap">${esc((clock||"").slice(0,5))}</td>`
-         + `<td>${esc(r.name || r.strategy || "")}</td><td class="nowrap">${esc(r.pool || "—")}</td><td class="nowrap">${esc(r.type || "—")}</td>`
-         + `<td class="nowrap">${esc(r.side || "")} ${r.quantity ?? ""} ${esc(r.symbol || "")}</td>`
-         + `<td class="n">${r.rate == null ? "—" : money(r.rate)}</td>`
-         + `<td class="n">${r.value == null ? "—" : money(r.value)}</td>`
-         + `<td><span class="pill due" title="${esc(kind)}">${esc((r.reasons || []).join(" "))}</span></td></tr>`;
-  }).join("") || `<tr><td colspan="9" class="note">Nothing blocked.</td></tr>`;
+    const wanted = [r.side, r.quantity, r.symbol].filter(v => v !== null && v !== undefined && v !== "").join(" ");
+    const money_ = r.value == null ? "" : ` (${money(r.value)})`;
+    return {date: day || "", time: (clock || "").slice(0, 5),
+            kind: r.stage === "refused" ? "refused" : "not_taken",
+            what: r.stage === "refused" ? "Blocked by the guard" : "Could not be taken",
+            sid: "", name: r.name || r.strategy || "", key: r.strategy || "",
+            pool: r.pool || "", experiment: "",
+            detail: [wanted + money_, (r.reasons || []).join(" ")].filter(Boolean).join(" — "),
+            at: r.at || ""};
+  });
+  // Newest first across both. A date-only row sorts to the start of its day, which is the honest
+  // place for an event nobody recorded a time for.
+  return [...(n.activity || []), ...blocked]
+    .sort((a, b) => String(b.at || b.date || "").localeCompare(String(a.at || a.date || "")));
 }
 // THE TIMELINE. One row per thing that happened to a strategy, newest first, with the time it
 // happened where a time was actually recorded -- a research result carries only the day it resolved,
 // and a blank beats a 00:00 nobody wrote.
-const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"", result:"", research:"info", status:"info"};
+const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"", result:"", research:"info",
+                       status:"info", refused:"due", not_taken:"due"};
+let NOTIF_PAGE = 1, NOTIF_PAGE_SIZE = 50;
 function renderActivity(rows){
-  const body = document.getElementById("notif-activity");
-  body.innerHTML = rows.map(r => {
+  wireNotifPager();
+  const pages = Math.max(1, Math.ceil(rows.length / NOTIF_PAGE_SIZE));
+  NOTIF_PAGE = Math.min(Math.max(1, NOTIF_PAGE), pages);
+  const from = (NOTIF_PAGE - 1) * NOTIF_PAGE_SIZE;
+  const page = rows.slice(from, from + NOTIF_PAGE_SIZE);
+  document.getElementById("notif-count").textContent = rows.length
+    ? `${rows.length} event${rows.length === 1 ? "" : "s"}, newest first`
+    : "Nothing has happened yet.";
+  document.getElementById("notif-pageinfo").textContent = rows.length
+    ? `Page ${NOTIF_PAGE} of ${pages} (rows ${from + 1}–${Math.min(from + NOTIF_PAGE_SIZE, rows.length)})` : "";
+  document.getElementById("notif-prev").disabled = NOTIF_PAGE <= 1;
+  document.getElementById("notif-next").disabled = NOTIF_PAGE >= pages;
+  document.getElementById("notif-pager").hidden = rows.length <= NOTIF_PAGE_SIZE && NOTIF_PAGE === 1;
+  document.getElementById("notif-activity").innerHTML = page.map(r => {
     // A verdict is the headline, so it keeps the colour of its own answer rather than its stage.
     const cls = /PASS/.test(r.what) ? "ok" : /REJECT/.test(r.what) ? "miss" : (ACTIVITY_PILL[r.kind] || "");
     const who = [r.sid, r.name].filter(Boolean).join(" · ");
-    return `<tr><td class="n nowrap">${esc(ddmmyy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
+    return `<tr><td class="n nowrap">${esc(dmy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
          + `<td class="nowrap"><span class="pill ${cls}">${esc(r.what)}</span></td>`
          + `<td>${esc(who || r.key || "")}</td>`
          + `<td class="nowrap">${esc(r.pool || r.experiment || "—")}</td>`
          + `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`;
-  }).join("") || `<tr><td colspan="6" class="note">Nothing has happened to a strategy yet.</td></tr>`;
+  }).join("") || `<tr><td colspan="6" class="note">Nothing has happened yet.</td></tr>`;
+}
+function wireNotifPager(){
+  const pager = document.getElementById("notif-pager"); if(pager.dataset.wired) return;
+  pager.dataset.wired = "1";
+  const again = () => { if(STATE) renderNotifications(STATE); };
+  document.getElementById("notif-pagesize").addEventListener("change", e => {
+    NOTIF_PAGE_SIZE = +e.target.value; NOTIF_PAGE = 1; again(); });
+  document.getElementById("notif-prev").addEventListener("click", () => { NOTIF_PAGE--; again(); });
+  document.getElementById("notif-next").addEventListener("click", () => { NOTIF_PAGE++; again(); });
 }
 const short = (t, at) => { t = String(t || ""); const n = at || 44; return t.length > n ? t.slice(0, n - 2) + "…" : t; };
-// ddmmyy, per Suraj. ISO reads as a machine's date; this is the one people write by hand here.
-const ddmmyy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : (iso || "—"); };
+// "10 Oct 2026", per Suraj, for the timeline. Every row here is a different day as often as not,
+// and a month in words cannot be misread as a day the way 10-10-26 can.
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : (iso || "—"); };
 
 function renderOrders(s){
   buildOrdersHead();

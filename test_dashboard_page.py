@@ -689,6 +689,107 @@ class TestTheBacktestIsDatedByItsNextRun(unittest.TestCase):
         self.assertIn("Written · backtest", self.script)
 
 
+class TestNotificationsAreOneTimeline(unittest.TestCase):
+    """Two tables meant deciding which of them a thing belonged in before you could read either, and
+    the answer to "what happened recently?" was split across both. A strategy going live and an order
+    the book could not place are both things that happened at a time."""
+
+    def setUp(self):
+        self.page = _page()
+        self.script = _script(self.page)
+
+    def _section(self):
+        start = self.page.index("id=" + DQ + "tab-notifications" + DQ)
+        return self.page[start:self.page.index("</section>", start)]
+
+    def test_there_is_exactly_one_table(self):
+        self.assertEqual(self._section().count("<table>"), 1)
+
+    def test_the_blocked_orders_still_appear_in_it(self):
+        """Merging them must not quietly drop them: an order the guard stopped is the original
+        reason this page exists."""
+        fn = self.script[self.script.index("function timelineRows(n){"):]
+        fn = fn[:fn.index("const ACTIVITY_PILL")]
+        self.assertIn("n.rows", fn)
+        self.assertIn("Blocked by the guard", fn)
+        self.assertIn("Could not be taken", fn)
+
+    def test_both_sources_are_sorted_together(self):
+        """Interleaved by time, or it is two tables again with one border removed."""
+        fn = self.script[self.script.index("function timelineRows(n){"):]
+        fn = fn[:fn.index("const ACTIVITY_PILL")]
+        self.assertIn("n.activity", fn)
+        self.assertIn(".sort(", fn)
+
+    def test_the_reason_survives_the_merge(self):
+        """The rate and value columns went; the reason is the whole point of the row."""
+        fn = self.script[self.script.index("function timelineRows(n){"):]
+        fn = fn[:fn.index("const ACTIVITY_PILL")]
+        self.assertIn("r.reasons", fn)
+
+    def test_there_is_no_second_table_body_left_behind(self):
+        """An orphan id that nothing fills is how a renderer ends up writing to nothing."""
+        self.assertNotIn("notif-rows", self.page)
+
+
+class TestTheTimelineIsPaged(unittest.TestCase):
+    def setUp(self):
+        self.page = _page()
+        self.script = _script(self.page)
+
+    def test_fifty_rows_a_page_by_default(self):
+        self.assertIn("NOTIF_PAGE_SIZE = 50", self.script)
+        sel = self.page[self.page.index("id=" + DQ + "notif-pagesize" + DQ):]
+        self.assertIn("<option selected>50</option>", sel[:sel.index("</select>")])
+
+    def test_the_controls_exist_and_are_wired(self):
+        for el in ("notif-pagesize", "notif-prev", "notif-next", "notif-pageinfo"):
+            self.assertIn(el, self.page, el)
+        self.assertIn("function wireNotifPager()", self.script)
+
+    def test_changing_the_size_goes_back_to_the_first_page(self):
+        """Otherwise asking for 200 a page can land you on page 4 of 1, which renders nothing."""
+        fn = self.script[self.script.index("function wireNotifPager()"):]
+        self.assertIn("NOTIF_PAGE = 1", fn[:fn.index("}")+400])
+
+    def test_the_page_is_clamped_to_what_exists(self):
+        fn = self.script[self.script.index("function renderActivity(rows){"):]
+        fn = fn[:fn.index("function wireNotifPager")]
+        self.assertIn("Math.min(Math.max(1, NOTIF_PAGE), pages)", fn)
+
+    def test_the_pager_is_hidden_when_it_would_do_nothing(self):
+        fn = self.script[self.script.index("function renderActivity(rows){"):]
+        fn = fn[:fn.index("function wireNotifPager")]
+        self.assertIn("notif-pager" + DQ + ").hidden", fn)
+
+
+class TestTheTimelineDateIsReadable(unittest.TestCase):
+    """10-10-26 can be read as the 10th of October or the 10th of someone else's month. A month in
+    words cannot."""
+
+    def setUp(self):
+        self.script = _script(_page())
+
+    def test_the_timeline_uses_day_month_in_words_year(self):
+        fn = self.script[self.script.index("function renderActivity(rows){"):]
+        fn = fn[:fn.index("function wireNotifPager")]
+        self.assertIn("dmy(r.date)", fn)
+        self.assertNotIn("ddmmyy(", fn)
+
+    def test_the_formatter_produces_that_shape(self):
+        fn = self.script[self.script.index("const dmy = iso =>"):]
+        fn = fn[:fn.index(";", fn.index("return"))]
+        self.assertIn("MONTHS[+m[2] - 1]", fn)
+        self.assertIn("+m[3]", fn)          # 1 Oct, not 01 Oct
+        self.assertIn("m[1]", fn)           # the full year, not two digits
+
+    def test_the_format_it_replaced_is_gone_rather_than_left_lying_about(self):
+        """ddmmyy had exactly two call sites, both on this timeline. With them rewritten it had
+        none, and a date formatter nothing calls is the kind of thing a later edit reaches for by
+        mistake."""
+        self.assertNotIn("ddmmyy", self.script)
+
+
 class TestNoStrayControlCharacters(unittest.TestCase):
     r"""Twice in one session an escape meant for JavaScript was eaten by the tool writing the file:
     a newline escape became a real line break, which is a syntax error, and a backslash-b became a
