@@ -350,13 +350,13 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "PASS",
     "research_verdict_source": "EXP-078 (re-run after EXP-076 REJECT under a contaminated fill-timing mechanism, fixed 2026-09-06)",
-    "deployment_status": "PAPER_TRADING",
+    "deployment_status": "PILOT_LIVE",
     "deployment_status_history": [
       {
-        "from_status": "RESEARCH",
-        "to_status": "PAPER_TRADING",
-        "timestamp": 1788707432.0549371,
-        "reason": "PASS verdict (EXP-078, HIGH evidence quality, 50% walk-forward pass rate) -- promoted to Pool A per explicit direction 2026-09-06."
+        "from_status": "PAPER_TRADING",
+        "reason": "[MANUAL OVERRIDE] Promoted to pilot live from the dashboard in spite of the automated gates. Pool F is the live book. Evidence at promotion: verdict PASS, 31 paper days, 193 closed trades. Gates NOT met: Only 31 paper-trading days elapsed, below the 60-day floor. Deliberate human decision; see deployment/LIVE_PROMOTION_CRITERIA.md.",
+        "timestamp": 1791385338.2321153,
+        "to_status": "PILOT_LIVE"
       }
     ],
     "notes": "",
@@ -413,8 +413,15 @@
     "strategy_family": "crypto research published strategy",
     "research_verdict": "REJECT",
     "research_verdict_source": "EXP-082",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "ARCHIVED",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "reason": "Retired automatically -- not trading and the research verdict is REJECT. Not trading (RESEARCH) and the research verdict is REJECT. Archived as housekeeping; nothing was running to stop.",
+        "timestamp": 1791958279.2544549,
+        "to_status": "ARCHIVED"
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -483,8 +490,15 @@
     "strategy_family": "crypto research published strategy",
     "research_verdict": "REJECT",
     "research_verdict_source": "EXP-087 (pre-tax PASS-quality, post-tax REJECT: monthly realised gains taxed)",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "ARCHIVED",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "reason": "Retired automatically -- not trading and the research verdict is REJECT. Not trading (RESEARCH) and the research verdict is REJECT. Archived as housekeeping; nothing was running to stop.",
+        "timestamp": 1791958279.2693899,
+        "to_status": "ARCHIVED"
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -497,8 +511,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "REJECT",
     "research_verdict_source": "EXP-088 (HIGH evidence; OOS 2025-26 window negative, same decay as SW-009)",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "ARCHIVED",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "reason": "Retired automatically -- not trading and the research verdict is REJECT. Not trading (RESEARCH) and the research verdict is REJECT. Archived as housekeeping; nothing was running to stop.",
+        "timestamp": 1791958279.27881,
+        "to_status": "ARCHIVED"
+      }
+    ],
     "notes": "",
     "timeframe": "Daily",
     "execution_frequency": "End-of-Day",
@@ -616,13 +637,13 @@
     "strategy_family": "AI judgment book (crypto, Pool G)",
     "research_verdict": "NOT_YET_EVALUATED",
     "research_verdict_source": "no backtest possible -- LLM judgment on historical data cannot be honestly walk-forward tested",
-    "deployment_status": "PAPER_TRADING",
+    "deployment_status": "PILOT_LIVE",
     "deployment_status_history": [
       {
-        "from_status": "RESEARCH",
-        "to_status": "PAPER_TRADING",
-        "timestamp": 1789575560.8804102,
-        "reason": "live AI judgment book, 1,000 USDT, per direction 2026-09-17"
+        "from_status": "PAPER_TRADING",
+        "reason": "[MANUAL OVERRIDE] Promoted to pilot live from the dashboard in spite of the automated gates. Evidence at promotion: verdict NOT_YET_EVALUATED, 21 paper days, 0 closed trades. Gates NOT met: Only 21 paper-trading days elapsed, below the 60-day floor. Only 0 paper trades recorded, below the 20-trade floor. Deliberate human decision; see deployment/LIVE_PROMOTION_CRITERIA.md.",
+        "timestamp": 1791315415.9204764,
+        "to_status": "PILOT_LIVE"
       }
     ],
     "notes": "",
@@ -637,8 +658,15 @@
     "strategy_family": "swing_research published strategy",
     "research_verdict": "REJECT",
     "research_verdict_source": "EXP-093 (HIGH evidence, negative OOS expectancy)",
-    "deployment_status": "RESEARCH",
-    "deployment_status_history": [],
+    "deployment_status": "ARCHIVED",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "reason": "Retired automatically -- not trading and the research verdict is REJECT. Not trading (RESEARCH) and the research verdict is REJECT. Archived as housekeeping; nothing was running to stop.",
+        "timestamp": 1791958279.2889013,
+        "to_status": "ARCHIVED"
+      }
+    ],
     "notes": "",
     "timeframe": "Monthly",
     "execution_frequency": "End-of-Day",
@@ -686,5 +714,26 @@
     "execution_frequency": "End-of-Day",
     "strategy_id": "SW-033",
     "primary_experiment_id": "EXP-095"
+  },
+  "us_short_term_reversal": {
+    "strategy_key": "us_short_term_reversal",
+    "display_name": "Short-Term Reversal (US)",
+    "strategy_family": "us_equity",
+    "research_verdict": "PASS",
+    "research_verdict_source": "auto-promoted on EXP-096",
+    "deployment_status": "PAPER_TRADING",
+    "deployment_status_history": [
+      {
+        "from_status": "RESEARCH",
+        "reason": "Research returned PASS (EXP-096). Paper trading is the next test, not a deployment, so this is automatic; promotion to live stays a human decision.",
+        "timestamp": 1791624194.3400898,
+        "to_status": "PAPER_TRADING"
+      }
+    ],
+    "notes": "",
+    "timeframe": "Daily",
+    "execution_frequency": "End-of-Day",
+    "strategy_id": "SW-034",
+    "primary_experiment_id": "EXP-096"
   }
 }
