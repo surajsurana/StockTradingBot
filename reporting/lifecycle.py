@@ -64,10 +64,27 @@ def _row(at: Optional[datetime], day: str, kind: str, what: str, key: str, meta:
 
 
 def _meta(records) -> dict:
+    """{key: {sid, name, pool}} -- what to call each strategy, and where it runs.
+
+    The pool comes from the same helper the Strategies tab uses, so a row cannot say Pool A here and
+    Pool E there. A record that does not resolve to one contributes no pool rather than a guess."""
+    try:
+        from dashboard.state_view import _default_pool_label
+    except Exception:                            # noqa: BLE001
+        _default_pool_label = None
     out = {}
     for r in records or []:
+        pool = getattr(r, "live_pool", "") or ""
+        if pool:
+            pool = f"Pool {pool}"
+        elif _default_pool_label:
+            try:
+                pool = _default_pool_label(r)
+            except Exception:                    # noqa: BLE001
+                pool = ""
         out[r.strategy_key] = {"sid": getattr(r, "strategy_id", "") or "",
-                               "name": getattr(r, "display_name", r.strategy_key)}
+                               "name": getattr(r, "display_name", r.strategy_key),
+                               "pool": pool}
     return out
 
 
@@ -126,10 +143,17 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                 # queue without producing a backtest, which is a different kind of news.
                 what = (f"Research result: {verdict}" if verdict
                         else f"Research {outcome}" if outcome else "Research finished")
+                # The queue's own name where it has one; otherwise the registry's, because a
+                # candidate that got as far as a verdict has usually been registered by now and its
+                # key is not what anyone calls it. Falling straight back to the key printed
+                # "us_short_term_reversal" beside "Short-Term Reversal (US)" on the next line.
+                key = str(r.get("key") or "")
+                known = meta.get(key, {})
                 rows.append(_row(None, str(r.get("resolved")),
-                                 "result" if verdict else "research", what, str(r.get("key") or ""),
-                                 {"sid": "", "name": r.get("name") or r.get("key") or "",
-                                  "pool": research_queue.LANES and lane.upper()},
+                                 "result" if verdict else "research", what, key,
+                                 {"sid": known.get("sid", ""),
+                                  "name": r.get("name") or known.get("name") or key,
+                                  "pool": lane.upper()},
                                  detail=str(r.get("note") or ""), experiment=exp))
     except Exception:                            # noqa: BLE001
         pass

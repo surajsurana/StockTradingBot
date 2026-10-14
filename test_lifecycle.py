@@ -79,6 +79,12 @@ class TestStatusChanges(unittest.TestCase):
         r = self._rows()[0]
         self.assertEqual((r["sid"], r["name"], r["key"]), ("SW-007", "Alpha Strategy", "alpha"))
 
+    def test_it_says_where_the_strategy_runs(self):
+        """From the same helper the Strategies tab uses, so a row cannot say Pool A here and Pool E
+        there."""
+        _overlay(self.root, {"alpha": _entry("PILOT_LIVE", _h("PILOT_LIVE", SEP1))})
+        self.assertTrue(self._rows()[0]["pool"].startswith("Pool"))
+
     def test_an_unknown_status_is_shown_not_dropped(self):
         """A status this file has not been taught about is still news."""
         _overlay(self.root, {"alpha": _entry("SOMETHING_NEW", _h("SOMETHING_NEW", SEP1))})
@@ -122,6 +128,24 @@ class TestResearchResults(unittest.TestCase):
                                   "outcome": "abandoned", "experiment_id": None}])
         self.assertEqual(rows[0]["what"], "Research abandoned")
         self.assertEqual(rows[0]["kind"], "research")
+
+    def test_a_result_with_no_name_of_its_own_borrows_the_registrys(self):
+        """A candidate that got as far as a verdict has usually been registered by now, and its key
+        is not what anyone calls it."""
+        q = {"current": {}, "history": [{"key": "alpha", "resolved": "2026-10-10",
+                                         "outcome": "researched", "experiment_id": "E"}]}
+        with patch("research_queue.load", return_value=q),              patch("research_queue.LANES", ("india",)),              patch("reporting.lifecycle._verdict_of", return_value="PASS"):
+            rows = timeline(self.root, records=[_Rec("alpha", "SW-007", "Alpha Strategy")])
+        self.assertEqual((rows[0]["name"], rows[0]["sid"]), ("Alpha Strategy", "SW-007"))
+
+    def test_the_queues_own_name_still_wins_when_it_has_one(self):
+        """It is the name the candidate was proposed under, before anything was registered."""
+        q = {"current": {}, "history": [{"key": "alpha", "name": "As Proposed",
+                                         "resolved": "2026-10-10", "outcome": "researched",
+                                         "experiment_id": "E"}]}
+        with patch("research_queue.load", return_value=q),              patch("research_queue.LANES", ("india",)),              patch("reporting.lifecycle._verdict_of", return_value="PASS"):
+            rows = timeline(self.root, records=[_Rec("alpha", "SW-007", "Alpha Strategy")])
+        self.assertEqual(rows[0]["name"], "As Proposed")
 
     def test_an_unresolved_candidate_is_not_on_the_timeline(self):
         """It has not happened yet."""
