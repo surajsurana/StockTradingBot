@@ -52,7 +52,14 @@ class TestStatusChanges(unittest.TestCase):
                                              _h("ARCHIVED", OCT1, frm="PILOT_LIVE"))})
         rows = self._rows()
         self.assertEqual([r["what"] for r in rows],
-                         ["Retired", "Promoted to live", "Started paper trading"])
+                         ["Retired", "Promoted to live", "Promoted to paper trading"])
+
+    def test_the_three_stage_changes_are_named_the_same_way(self):
+        """They are one kind of event. Calling one of them "Started ..." made it read as something
+        else going on nearby, and a promotion to paper was looked for on a page showing it."""
+        from reporting.lifecycle import STATUS_EVENTS
+        for status in ("PAPER_TRADING", "PILOT_LIVE", "PRODUCTION"):
+            self.assertTrue(STATUS_EVENTS[status][0].startswith("Promoted to"), status)
 
     def test_the_newest_is_first(self):
         """It is a timeline, and the question it answers is "what just happened"."""

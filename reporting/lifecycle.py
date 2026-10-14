@@ -34,8 +34,11 @@ from typing import Optional
 
 # to_status -> what to call it and which family of event it belongs to. Anything not here is still
 # shown, under its own raw name, rather than being dropped for being unfamiliar.
+# "Promoted to ...", not "Started ...": these three are the same kind of event -- a strategy moving
+# a stage -- and naming one of them differently made it read as something else going on nearby, so
+# the paper promotion was looked for and not found on a page that was showing it.
 STATUS_EVENTS = {
-    "PAPER_TRADING": ("Started paper trading", "paper"),
+    "PAPER_TRADING": ("Promoted to paper trading", "paper"),
     "PILOT_LIVE": ("Promoted to live", "live"),
     "PRODUCTION": ("Promoted to production", "live"),
     "ARCHIVED": ("Retired", "retired"),

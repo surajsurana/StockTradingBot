@@ -1903,7 +1903,9 @@ function timelineRows(n){
 // THE TIMELINE. One row per thing that happened to a strategy, newest first, with the time it
 // happened where a time was actually recorded -- a research result carries only the day it resolved,
 // and a blank beats a 00:00 nobody wrote.
-const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"", result:"", research:"info",
+// A promotion to paper is good news and should look like it. It was the only lifecycle event drawn
+// without a pill, which is exactly the one that got overlooked in a column of them.
+const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"ok", result:"", research:"info",
                        status:"info", refused:"due", not_taken:"due"};
 let NOTIF_PAGE = 1, NOTIF_PAGE_SIZE = 50;
 function renderActivity(rows){
