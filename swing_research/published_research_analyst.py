@@ -1130,6 +1130,46 @@ HIGH_VOLUME_RETURN_PREMIUM = PublishedStrategy(
 )
 
 
+HIGH_VOLUME_RETURN_PREMIUM_US = PublishedStrategy(
+    name="High-Volume Return Premium (US)",
+    source_citation=HIGH_VOLUME_RETURN_PREMIUM.source_citation,
+    mechanism=HIGH_VOLUME_RETURN_PREMIUM.mechanism,
+    rules=HIGH_VOLUME_RETURN_PREMIUM.rules,
+    variant_chosen=HIGH_VOLUME_RETURN_PREMIUM.variant_chosen,
+    scope_reductions=(
+        "Same 5-day-recent/252-day-baseline volume-shock construction, single-vintage holding, "
+        "21-day time-stop, protective stop and position sizing adaptations as the India version "
+        "(see HIGH_VOLUME_RETURN_PREMIUM above for the full reasoning) -- unchanged, none of it is "
+        "India-specific. Long-only: this codebase has no short-selling infrastructure for ANY "
+        "market yet (not an NSE-specific gap -- the constraint is this codebase's own execution "
+        "layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS verdict (high_volume_return_premium, live in "
+        "paper trading). Gervais, Kaniel & Mingelgrin (2001)'s own sample IS US (NYSE) data, so "
+        "this test is closer to the paper's own native market than the India application ever "
+        "was -- but unlike Minervini and Cross-Sectional Momentum US, this candidate carries a "
+        "real open question the roadmap itself flags: the 1963-1996 NYSE sample predates "
+        "today's fragmented, largely algorithmic US trading volume, so 'unusually high volume' "
+        "may no longer signal the same attention/visibility effect it did in the original sample. "
+        "A REJECT here is a genuinely informative test of whether that 1960s-90s mechanism "
+        "survives in the modern tape, not a wasted cycle -- see the candidate's own "
+        "evidence_sufficiency_note in research_roadmap.py."
+    ),
+    assumptions_impact=(
+        HIGH_VOLUME_RETURN_PREMIUM.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here. One market-specific "
+        "addition: modern US trading volume is split across many venues and heavily "
+        "algorithmic, a structural difference from the paper's 1963-1996 NYSE sample that this "
+        "program's cross-sectional volume-shock ratio has no way to correct for -- see this "
+        "variant's own distinctiveness note above."
+    ),
+)
+
+
 EARNINGS_ANNOUNCEMENT_PREMIUM = PublishedStrategy(
     name="Earnings Announcement Premium",
     source_citation=(
