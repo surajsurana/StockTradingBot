@@ -4,8 +4,8 @@
     "name": "High-Volume Return Premium (US)",
     "mode": "backtest",
     "in_progress": true,
-    "stale": false,
-    "claimed_days_ago": 1.9999534519444444,
+    "stale": true,
+    "claimed_days_ago": 2.2500176875462965,
     "horizon_lane": "swing"
   }
 }
