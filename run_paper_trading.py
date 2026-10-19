@@ -67,9 +67,31 @@ Example Windows Task Scheduler actions:
 NEVER sends a broker order, NEVER touches execution/ or cio/ -- see
 deployment/paper_trading_engine.py's module docstring for the full
 isolation/execution-assumption disclosure.
+
+POOLS A2 AND A3 (2026-10-19, per explicit direction -- "same pools of 2
+lakh and 3 lakhs for india strategies also", the India counterpart of
+Pools I2/I3): every Pool A strategy also runs on its own fresh book of
+Rs.2,00,000 (deployment/state/pool_a2/<key>/) and Rs.3,00,000
+(pool_a3/<key>/). Capital is the ONLY difference -- same Strategy
+instance type, universe, data, execution config, fill timing, notional
+floor and engine call as Pool A -- with sizing_capital_cap, and the
+capital wind-down's target and reduced floor, each scaled to the book's
+own capital (FUND ALLOCATION in ARCHITECTURE.md: size is a percentage of
+the book's own capital), or positions would never grow past Pool A's.
+They run INSIDE this script's own invocations, strategy by strategy, off
+the data Pool A has just fetched for that strategy (the VPS has 458 MB of
+RAM -- the Nifty universe is never fetched an extra time), so there is
+no new cron line: --all-due runs them at 15:35 and --resolve-at-open at
+09:30. Silent like Pool F: no report, drift report, Telegram message or
+Details cache entry of their own -- Pool A's are untouched. Each pool,
+and each strategy within it, fails on its own; a failure there never
+reaches Pool A's run or the other pool. Only strategies the registry
+has at PAPER_TRADING get books, exactly Pool F's rule.
 """
 
 import argparse
+import os
+from contextlib import contextmanager
 from datetime import date as date_type
 
 from data.fetch_historical import fetch_all
@@ -77,7 +99,9 @@ from swing_research.universe import get_swing_universe
 from reporting.telegram_notifier import send_telegram_message
 from reporting.telegram_templates import format_daily_summary, format_execution_notification, format_strategy_notification
 
-from deployment.base import DeploymentStatus
+import deployment.capital_winddown as _cwd
+import deployment.paper_trading_engine as _pte
+from deployment.base import DeploymentStatus, is_pool_a_record
 from deployment.capital_winddown import apply_capital_winddown, cumulative_withdrawn_up_to
 from deployment.daily_details_store import save_detail
 from deployment.deployment_manager import get_strategy, list_strategies
@@ -87,7 +111,9 @@ from deployment.paper_trading_engine import (
     resolve_pending_fills_at_open, run_daily,
 )
 from deployment.scheduler import is_due_now, strategies_due_now
-from deployment.settings import REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY
+from deployment.settings import (POOL_A_CAPITAL_MULTIPLES, PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET,
+                                 REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY,
+                                 pool_a_subpool_capital)
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
 from swing_research.broker_costs import min_viable_notional
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
@@ -137,6 +163,162 @@ _STRATEGY_FACTORIES["pead"] = {
     # handled entirely by run_pead_daily(), see _run_one() below.
     "is_forward_evidence_experiment": True,
 }
+
+
+# Pools A2 and A3 -- label -> folder beside Pool A's paper_trading/ (see the module docstring).
+# Deliberately not "pool_a1": Pool A1 is the unrelated legacy Rs.10,00,000 books in
+# paper_trading_legacy/, run by run_pool_a1_legacy.py.
+POOL_A_SUBPOOLS = {"Pool A2": "pool_a2", "Pool A3": "pool_a3"}
+
+
+def _subpools_apply(strategy_key: str) -> bool:
+    """Pool F's rule: a book only for a strategy the registry has at PAPER_TRADING, in Pool A's family."""
+    record = get_strategy(strategy_key)
+    return (record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING
+            and is_pool_a_record(record))
+
+
+@contextmanager
+def _in_subpool(dirname: str):
+    """Points the engine, and the wind-down's own log, at Pool A2's or A3's folder -- the sibling of
+    wherever Pool A's is -- and ALWAYS puts Pool A's back, error or not, so nothing Pool A does
+    afterwards in this process can land in the wrong book."""
+    import deployment.pead_forward_engine as pfe
+    saved = (_pte.PAPER_TRADING_STATE_DIR, _cwd.PAPER_TRADING_STATE_DIR, pfe.STATE_DIR_OVERRIDE)
+    path = os.path.join(os.path.dirname(saved[0]), dirname)
+    _pte.PAPER_TRADING_STATE_DIR = _cwd.PAPER_TRADING_STATE_DIR = path
+    try:
+        yield path
+    finally:
+        _pte.PAPER_TRADING_STATE_DIR, _cwd.PAPER_TRADING_STATE_DIR, pfe.STATE_DIR_OVERRIDE = saved
+
+
+def _seed_if_missing(strategy_key: str, capital: float, label: str) -> None:
+    """A fresh book at the pool's own capital. The engine's own fresh-book default is Pool A's
+    Rs.1,00,000, so without this a new Pool A2/A3 book would simply be another Pool A book."""
+    if os.path.exists(_pte._portfolio_path(strategy_key)):
+        return
+    _pte._save_portfolio(strategy_key, {"cash": capital, "starting_capital": capital, "positions": {},
+                                        "last_processed_date": None, "pending_entries": {}, "pending_exits": {}})
+    print(f"[{strategy_key}] {label}: new book seeded with Rs.{capital:,.0f}")
+
+
+def _cached(fn):
+    """`fn(data)` worked out at most once, for Pool A and both sub-pools: the same data gives the
+    same percentile columns, and ranking the whole universe three times over is wasted time.
+    `.clear()` lets the caller drop the result the moment the last pool is done with it."""
+    memo = {}
+
+    def cached(data):
+        if "v" not in memo:
+            memo["v"] = fn(data)
+        return memo["v"]
+    cached.clear = memo.clear
+    return cached
+
+
+def _shared_fetch(period: str):
+    """fetch_all() that never asks twice for a symbol within one run: the first caller's request is
+    exactly the call it always made, and a later pool only fetches what that did not cover."""
+    cache, asked = {}, set()
+
+    def fetch(symbols):
+        missing = [s for s in symbols if s not in asked]
+        if missing:
+            cache.update(fetch_all(missing, period=period))
+            asked.update(missing)
+        return {s: cache[s] for s in symbols if s in cache}
+    return fetch
+
+
+def _shared_earnings_events():
+    """PEAD's universe-wide earnings scan, run once and handed to every pool."""
+    memo = {}
+
+    def fetch(symbols, target_date, lookback_days):
+        import deployment.pead_forward_engine as pfe
+        k = (tuple(symbols), target_date, lookback_days)
+        if k not in memo:
+            memo[k] = pfe.fetch_recent_earnings_events_chunked(symbols, target_date, lookback_days=lookback_days)
+        return memo[k]
+    return fetch
+
+
+def _run_subpools(strategy_key: str, config: dict, force: bool = False, fetch_data=None, extra_fn=None,
+                  symbols=None, pead_ohlcv=None, pead_events=None) -> list:
+    """Pools A2 and A3's end-of-day run for one strategy, off what Pool A has just fetched. Never
+    raises: each pool fails on its own and is printed to the log, like Pool F."""
+    try:
+        if not _subpools_apply(strategy_key):
+            return []
+    except Exception as e:
+        print(f"ERROR: Pools A2/A3 '{strategy_key}' registry check failed: {type(e).__name__}: {e}")
+        return []
+    results = []
+    for label, dirname in POOL_A_SUBPOOLS.items():
+        capital = pool_a_subpool_capital(dirname)
+        try:
+            with _in_subpool(dirname) as pool_dir:
+                _seed_if_missing(strategy_key, capital, label)
+                if config.get("is_forward_evidence_experiment"):
+                    from deployment.pead_forward_engine import run_pead_daily
+                    result = run_pead_daily(
+                        symbols, fetch_ohlcv_fn=pead_ohlcv, force=force, execution_config=_DEFAULT_EXECUTION_CONFIG,
+                        state_dir=pool_dir, sizing_capital_cap=capital, fetch_events_fn=pead_events,
+                    )
+                else:
+                    result = run_daily(
+                        strategy_key, config["strategy_factory"](), fetch_data_fn=fetch_data,
+                        compute_extra_columns_fn=extra_fn,
+                        force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
+                        min_position_value_rupees=min_viable_notional(),
+                        sizing_capital_cap=capital,
+                    )
+                print(f"[{strategy_key}] {label}: {result}")
+                if result["status"] == "processed":
+                    # Pool A's own wind-down, at this book's scale: idle cash above the book's own
+                    # capital is swept the way Pool A's above Rs.1,00,000 is.
+                    winddown = apply_capital_winddown(
+                        strategy_key, risk_pct_per_unit=_strategy_instance_for(strategy_key).risk_pct_per_unit,
+                        as_of_date=date_type.fromisoformat(result["as_of_date"]),
+                        current_equity=result.get("mark_to_market_equity"), target_active_capital=capital,
+                        reduced_floor_while_above_target=(PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET
+                                                          * POOL_A_CAPITAL_MULTIPLES[dirname]),
+                    )
+                    if winddown["withdrawn"] > 0:
+                        print(f"[{strategy_key}] {label} capital wind-down: withdrew {winddown['withdrawn']}")
+                results.append({"pool": label, "result": result})
+        except Exception as e:
+            print(f"ERROR: {label} '{strategy_key}' failed: {type(e).__name__}: {e}")
+    return results
+
+
+def _resolve_subpools_at_open(strategy_key: str, fetch_open) -> None:
+    """Pools A2 and A3's near-market-open pass for one strategy: their own queued fills, against the
+    same short window of Open prices Pool A's pass uses (only symbols Pool A did not already ask
+    for are fetched). Silent like Pool F, and never raises."""
+    try:
+        if not _subpools_apply(strategy_key):
+            return
+    except Exception as e:
+        print(f"ERROR: Pools A2/A3 '{strategy_key}' registry check failed at the open: {type(e).__name__}: {e}")
+        return
+    for label, dirname in POOL_A_SUBPOOLS.items():
+        try:
+            with _in_subpool(dirname):
+                if not os.path.exists(_pte._portfolio_path(strategy_key)):
+                    continue   # no book yet, so nothing can be queued
+                portfolio = load_portfolio(strategy_key)
+                pending = sorted(set(portfolio.get("pending_entries", {})) | set(portfolio.get("pending_exits", {})))
+                if not pending:
+                    continue
+                result = resolve_pending_fills_at_open(
+                    strategy_key, _strategy_instance_for(strategy_key), fetch_open_data_fn=lambda p=pending: fetch_open(p),
+                    execution_config=_DEFAULT_EXECUTION_CONFIG, sizing_capital_cap=pool_a_subpool_capital(dirname),
+                )
+                print(f"[{strategy_key}] {label} open: {result}")
+        except Exception as e:
+            print(f"ERROR: {label} '{strategy_key}' failed at the open: {type(e).__name__}: {e}")
 
 
 def _report_links(strategy_key: str, record, result: dict) -> dict:
@@ -206,6 +388,13 @@ def _resolve_at_open_one(strategy_key: str) -> None:
     record = get_strategy(strategy_key)
     if record is None:
         return
+    fetch_open = _shared_fetch("5d")   # Pools A2/A3 below reuse whatever this fetches
+    _resolve_pool_a_at_open(strategy_key, record, fetch_open)
+    _resolve_subpools_at_open(strategy_key, fetch_open)
+
+
+def _resolve_pool_a_at_open(strategy_key: str, record, fetch_open) -> None:
+    """Pool A's own part of _resolve_at_open_one(), exactly as it always ran."""
     try:
         portfolio = load_portfolio(strategy_key)
         pending_symbols = sorted(set(portfolio.get("pending_entries", {})) | set(portfolio.get("pending_exits", {})))
@@ -215,7 +404,7 @@ def _resolve_at_open_one(strategy_key: str) -> None:
         print(f"[{strategy_key}] Resolving {len(pending_symbols)} pending fill(s) at today's real Open...")
         strategy = _strategy_instance_for(strategy_key)
         result = resolve_pending_fills_at_open(
-            strategy_key, strategy, fetch_open_data_fn=lambda: fetch_all(pending_symbols, period="5d"),
+            strategy_key, strategy, fetch_open_data_fn=lambda: fetch_open(pending_symbols),
             execution_config=_DEFAULT_EXECUTION_CONFIG,
         )
         print(f"[{strategy_key}] {result}")
@@ -323,10 +512,17 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
             # simultaneously with a 450+-symbol earnings-history scan.
             from deployment.pead_forward_engine import run_pead_daily
             print(f"[{strategy_key}] Scanning {len(symbols)} symbol(s) for earnings events...")
-            result = run_pead_daily(
-                symbols, fetch_ohlcv_fn=lambda syms: fetch_all(syms, period="3y"), force=force,
-                execution_config=_DEFAULT_EXECUTION_CONFIG,
-            )
+            # Shared with Pools A2/A3 below: one earnings scan, and each symbol's prices fetched once.
+            pead_ohlcv, pead_events = _shared_fetch("3y"), _shared_earnings_events()
+            try:
+                result = run_pead_daily(
+                    symbols, fetch_ohlcv_fn=pead_ohlcv, force=force,
+                    execution_config=_DEFAULT_EXECUTION_CONFIG, fetch_events_fn=pead_events,
+                )
+            finally:
+                # Pools A2/A3 run whatever happened to Pool A's own call -- they never raise.
+                _run_subpools(strategy_key, config, force=force, symbols=symbols,
+                              pead_ohlcv=pead_ohlcv, pead_events=pead_events)
         else:
             print(f"[{strategy_key}] Fetching data for {len(symbols)} symbol(s)...")
             data = fetch_all(symbols, period="3y")   # >= 252-day lookback + buffer for any strategy tested so far
@@ -334,18 +530,27 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
 
             strategy = config["strategy_factory"]()
             extra_fn = config.get("compute_extra_columns_fn")
+            # The same data and the same percentile columns for Pool A and Pools A2/A3 (computed once).
+            fetch_data = lambda: data   # noqa: E731
+            shared_extra = _cached(extra_fn) if extra_fn else None
 
-            result = run_daily(
-                strategy_key, strategy, fetch_data_fn=lambda: data,
-                compute_extra_columns_fn=(lambda d: extra_fn(d)) if extra_fn else None,
-                force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
-            # A position too small to carry its own flat charges is skipped. The DP charge is
-            # Rs13.5 per scrip whatever the trade is worth, so the Rs3,532 median position these
-            # books were taking paid 0.45% in DP alone and 0.68% all in -- against the 0.2% the
-            # research that approved them assumed. Derived from the charge model, not chosen; see
-            # swing_research/broker_costs.py. Crypto and US pools pass their own value.
-                min_position_value_rupees=min_viable_notional(),
-            )
+            try:
+                result = run_daily(
+                    strategy_key, strategy, fetch_data_fn=fetch_data,
+                    compute_extra_columns_fn=shared_extra,
+                    force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
+                # A position too small to carry its own flat charges is skipped. The DP charge is
+                # Rs13.5 per scrip whatever the trade is worth, so the Rs3,532 median position these
+                # books were taking paid 0.45% in DP alone and 0.68% all in -- against the 0.2% the
+                # research that approved them assumed. Derived from the charge model, not chosen; see
+                # swing_research/broker_costs.py. Crypto and US pools pass their own value.
+                    min_position_value_rupees=min_viable_notional(),
+                )
+            finally:
+                # Pools A2/A3 run whatever happened to Pool A's own call -- they never raise.
+                _run_subpools(strategy_key, config, force=force, fetch_data=fetch_data, extra_fn=shared_extra)
+                if shared_extra:
+                    shared_extra.clear()   # the percentile columns are not needed past this point
         print(f"[{strategy_key}] {result}")
 
         if result["status"] != "processed":

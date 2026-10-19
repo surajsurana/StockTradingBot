@@ -436,7 +436,8 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
 
 def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_open_data_fn: Callable[[], dict],
                                    as_of_date: Optional[date_type] = None,
-                                   execution_config: Optional[ExecutionRealismConfig] = None) -> dict:
+                                   execution_config: Optional[ExecutionRealismConfig] = None,
+                                   sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL) -> dict:
     """
     NEAR-MARKET-OPEN runner (added 2026-08-18, per explicit direction --
     "I should be getting a Telegram message at the live time when
@@ -475,6 +476,13 @@ def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_o
     from the data provider yet -- safely retried by this same function
     tomorrow morning, or picked up as a fallback by that day's own EOD
     run_daily() call, whichever comes first).
+
+    sizing_capital_cap: the same ceiling run_daily() takes, and the same
+    default. Added 2026-10-19 for Pools A2 and A3 (Pool A's strategies on
+    Rs.2,00,000 and Rs.3,00,000 books): without it an entry resolved here
+    was always sized off at most Rs.1,00,000, so a bigger book's morning
+    fills would come out Pool A's size. Every existing caller leaves it at
+    the default, so nothing they do changes.
     """
     execution_config = execution_config or ExecutionRealismConfig()
     target_date = as_of_date or date_type.today()
@@ -486,6 +494,7 @@ def resolve_pending_fills_at_open(strategy_key: str, strategy: Strategy, fetch_o
     data = fetch_open_data_fn()
     new_entries, new_exits, not_taken = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
+        sizing_capital_cap=sizing_capital_cap,
         fractional_quantities=getattr(strategy, "fractional_quantities", False),
     )
     _save_portfolio(strategy_key, portfolio)

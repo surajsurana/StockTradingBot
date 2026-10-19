@@ -27,9 +27,14 @@ US_EASTERN = ZoneInfo("America/New_York")
 # Pool A1 (the legacy wind-down books) is deliberately absent from the
 # dashboard, per explicit direction 2026-09-11 -- it stays in the daily
 # Telegram summary only.
-POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "F": "pool_f"}
+POOL_DIRS = {"A": "paper_trading", "B": "portfolio_b", "C": "portfolio_c", "F": "pool_f", "A2": "pool_a2", "A3": "pool_a3"}
 POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": "Pool E", "F": "Pool F", "E1": "Pool E1", "I": "Pool I",
-               "I2": "Pool I2", "I3": "Pool I3"}
+               "I2": "Pool I2", "I3": "Pool I3", "A2": "Pool A2", "A3": "Pool A3"}
+# The stock pools that keep one book per strategy (a folder per key) rather than being one book:
+# Pool A, its partial-booking twin F, and A2 / A3 -- Pool A's strategies on Rs.2,00,000 and
+# Rs.3,00,000 books (2026-10-19). Matched by exact code, never by prefix: "A1" is the unrelated
+# legacy books, which the dashboard does not show at all.
+PER_STRATEGY_POOLS = ("A", "F", "A2", "A3")
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -38,6 +43,8 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": 
 # One plain line per pool, shown on the Team tab.
 POOLS_INFO = [
     {"pool": "A", "name": "Swing strategies", "text": "Each researched swing strategy trades its own ₹1,00,000 paper book on NSE stocks, holding for days to weeks."},
+    {"pool": "A2", "name": "Pool A with twice the money", "text": "The same swing strategies as Pool A on fresh ₹2,00,000 books, to see how they do with more capital."},
+    {"pool": "A3", "name": "Pool A with three times the money", "text": "The same swing strategies as Pool A on fresh ₹3,00,000 books, to see how they do with more capital."},
     {"pool": "B", "name": "AI watchlist", "text": "Stocks from your watchlist; the AI team debates each one and decides whether and how much to buy."},
     {"pool": "C", "name": "AI overlay", "text": "The AI team reviews the signals Pool A's strategies produce each day and only takes the ones it agrees with."},
     {"pool": "D", "name": "Intraday", "text": "One shared book that bets on stretched stocks snapping back within the day, everything closed by 15:25."},
@@ -175,8 +182,9 @@ DESKS = [
     {"id": "swing_research", "name": "Swing Research (feeds Pool A)", "icon": "\U0001F4DA",
      "blurb": "The backtest machinery every literature-sourced candidate runs through -- swing, medium or "
               "long-term -- whether a human is at the keyboard or the Feeder's Strategy Implementer is."},
-    {"id": "trading_desk", "name": "Trading Desk (Pools A, D and F)", "icon": "\U0001F4C8",
-     "blurb": "Runs every approved strategy as a paper book, day after day."},
+    {"id": "trading_desk", "name": "Trading Desk (Pools A, A2, A3, D and F)", "icon": "\U0001F4C8",
+     "blurb": "Runs every approved strategy as a paper book, day after day. Pools A2 and A3 run Pool A's "
+              "books again on twice and three times the money."},
     {"id": "portfolio_team", "name": "Portfolio Team (Pools B and C)", "icon": "\U0001F9E0",
      "blurb": "AI analysts who debate each candidate the way a small fund's team would."},
     {"id": "crypto_desk", "name": "Crypto Desk (Pools E, E1 and G)", "icon": "\u20BF",
@@ -239,9 +247,10 @@ AGENTS = [
      "detail": "Permanent SW-IDs, research verdicts, deployment status and the audit trail. Nothing "
                "trades unless it is marked PAPER_TRADING here."},
     {"id": "paper_trading_engine", "avatar": {"type": "robot", "body": "#5A6E7F", "eye": "#F2C14E", "shape": "square"}, "name": "Swing Trader", "icon": "\U0001F4BC", "desk": "trading_desk", "kind": "Mechanical",
-     "job": "Runs the Pool A and Pool F books after the close", "status_from": "eod_a",
+     "job": "Runs the Pool A, A2, A3 and F books after the close", "status_from": "eod_a",
      "detail": "Checks stops and targets, asks each strategy for exits and entries, queues the entries for "
-               "the next open, marks the book and writes the report."},
+               "the next open, marks the book and writes the report. Pools A2 and A3 run the same "
+               "strategies again on their own ₹2,00,000 and ₹3,00,000 books, off the same day's data."},
     {"id": "pool_d_engine", "avatar": {"type": "robot", "body": "#3F4C5A", "eye": "#E0706A", "shape": "square"}, "name": "Intraday Trader", "icon": "\u26A1", "desk": "trading_desk", "kind": "Mechanical",
      "job": "Trades Pool D every 5 minutes", "status_from": "market",
      "detail": "Fetches today's bars for the Nifty 500, catches stops even on a missed poll, takes new "
@@ -339,7 +348,7 @@ FLOWS = {
             {"id": "prep", "icon": "\U0001F305", "label": "09:00", "text": "Intraday Trader studies 90 days of history for 457 stocks"},
             {"id": "open", "icon": "\U0001F514", "label": "09:30", "text": "Yesterday's queued swing orders fill at the open"},
             {"id": "ticks", "icon": "\u26A1", "label": "09:15-15:30", "text": "Pool D checks every stock every 5 minutes"},
-            {"id": "eod_a", "icon": "\U0001F4BC", "label": "15:35", "text": "Swing Trader closes what needs closing, queues new entries"},
+            {"id": "eod_a", "icon": "\U0001F4BC", "label": "15:35", "text": "Swing Trader closes what needs closing, queues new entries (Pools A, A2 and A3)"},
             {"id": "eod_f", "icon": "\U0001F4BC", "label": "15:38", "text": "Pool F -- Pool A's partial-booking twin -- marks its own book"},
             {"id": "eod_a1", "icon": "\U0001F4BC", "label": "15:40", "text": "Pool A1 (legacy) marks its own book"},
             {"id": "eod_c", "icon": "\U0001F9E0", "label": "15:45", "text": "Portfolio B & C team debates today's candidates"},
@@ -397,6 +406,8 @@ STRATEGY_BRIEFS = {
     "portfolio_b": ("AI", "Pool B: your watchlist. The AI team (fundamentals, news, research analyst, portfolio manager, risk manager) debates each stock you add and decides whether and how much to buy."),
     "portfolio_c": ("AI", "Pool C: the AI team reviews the signals Pool A's strategies produce each day and picks the ones it agrees with, sized by the risk manager."),
     "pool_f": ("Swing", "Pool F: the same strategies as Pool A on their own books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool A so the two can be compared."),
+    "pool_a2": ("Swing", "Pool A2: the same swing strategies as Pool A on their own books of twice the money -- ₹2,00,000 each. Positions are sized off the bigger book, so each trade is about twice Pool A's. Runs side by side with Pool A so the two can be compared."),
+    "pool_a3": ("Swing", "Pool A3: the same swing strategies as Pool A on their own books of three times the money -- ₹3,00,000 each. Positions are sized off the bigger book, so each trade is about three times Pool A's. Runs side by side with Pool A so the two can be compared."),
     "pool_e1": ("Crypto", "Pool E1: the same crypto strategies as Pool E on their own 1,000 USDT books, with one addition -- when a position is up 5% at any point in the day, half is sold there and the stop on the rest is raised to the entry price. Runs side by side with Pool E so the two can be compared."),
     "pool_i2": ("US Equity", "Pool I2: the same US strategies as Pool I on their own books of twice the money -- $2,085, about ₹2 lakh each. Positions are sized off the bigger book, so each trade is about twice Pool I's. Runs side by side with Pool I so the two can be compared."),
     "pool_i3": ("US Equity", "Pool I3: the same US strategies as Pool I on their own books of three times the money -- $3,127, about ₹3 lakh each. Positions are sized off the bigger book, so each trade is about three times Pool I's. Runs side by side with Pool I so the two can be compared."),
@@ -441,6 +452,8 @@ STRATEGY_HOW = {
     "portfolio_b": {"entry": "You add a stock to the watchlist on Telegram; the Fundamentals, News and Research analysts each grade it; the Portfolio Manager decides whether to buy and how much; the Risk Manager sizes it against its stop.", "exit": "The team reviews holdings daily and sells on an unfavourable verdict, or at the stop.", "risk": "Risk Manager: 1% risk per position, book-level limits.", "source": "This program's own AI team; no published paper."},
     "portfolio_c": {"entry": "Each day the AI team looks at every entry signal Pool A's strategies produced and buys the ones it agrees with.", "exit": "Follows the originating strategy's exit, the team's verdict, or the stop.", "risk": "Risk Manager sizing, 1% per position.", "source": "This program's own AI team; no published paper."},
     "pool_f": {"entry": "Exactly as the Pool A strategy it mirrors: same signals, same universe, same data, same fills.", "exit": "The moment a position is up 5% during the day, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same 1% risk sizing and 8% initial stop as Pool A; the raised stop applies from the next day.", "source": "This program's own experiment (2026-09-16); the 5% / half / stop-to-entry numbers are a disclosed a-priori choice."},
+    "pool_a2": {"entry": "Exactly as the Pool A strategy it mirrors: same stocks, same signal, same next-day-open fills, the same day's data.", "exit": "Exactly as Pool A.", "risk": "Same rule as Pool A -- a percentage of the book -- on a fresh ₹2,00,000 book, so each position is about twice the size. The flat ₹13.5 DP charge weighs half as much, and fewer signals fall under the minimum trade size.", "source": "This program's own comparison (2026-10-19): what the same strategies do with more money, without a retest and without restarting Pool A."},
+    "pool_a3": {"entry": "Exactly as the Pool A strategy it mirrors: same stocks, same signal, same next-day-open fills, the same day's data.", "exit": "Exactly as Pool A.", "risk": "Same rule as Pool A -- a percentage of the book -- on a fresh ₹3,00,000 book, so each position is about three times the size. The flat ₹13.5 DP charge weighs a third as much, and fewer signals fall under the minimum trade size.", "source": "This program's own comparison (2026-10-19): what the same strategies do with more money, without a retest and without restarting Pool A."},
     "pool_e1": {"entry": "Exactly as the Pool E strategy it mirrors: same coins, same signal, same fill timing.", "exit": "The moment a position's day High is up 5%, half is sold at that level and the stop on the rest moves to the entry price; the rest then exits on the strategy's own rule or at the stop.", "risk": "Same sizing as Pool E, on its own fresh 1,000 USDT book.", "source": "This program's own experiment (2026-09-22), the same disclosed a-priori 5% / half / stop-to-entry numbers as Pool F."},
     "pool_i2": {"entry": "Exactly as the Pool I strategy it mirrors: same stocks, same signal, same next-day-open fills, the same day's data.", "exit": "Exactly as Pool I.", "risk": "Same rule as Pool I -- a percentage of the book -- on a fresh $2,085 book, so each position is about twice the size. Interactive Brokers' minimum $0.35 a trade weighs half as much.", "source": "This program's own comparison (2026-10-19): what the same strategies do with more money, without a retest and without restarting Pool I."},
     "pool_i3": {"entry": "Exactly as the Pool I strategy it mirrors: same stocks, same signal, same next-day-open fills, the same day's data.", "exit": "Exactly as Pool I.", "risk": "Same rule as Pool I -- a percentage of the book -- on a fresh $3,127 book, so each position is about three times the size. Interactive Brokers' minimum $0.35 a trade weighs a third as much.", "source": "This program's own comparison (2026-10-19): what the same strategies do with more money, without a retest and without restarting Pool I."},
@@ -776,7 +789,7 @@ def _strategy_pool_breakdown(key: str, books: list, state_dir: str, d_trades: li
     for b in books:
         if b.get("key") != key:
             continue
-        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], key) if b["pool"] in ("A", "F") \
+        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], key) if b["pool"] in PER_STRATEGY_POOLS \
             else os.path.join(state_dir, POOL_DIRS[b["pool"]])
         trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         out.append({"pool": POOL_LABELS.get(b["pool"], "Pool " + b["pool"]),
@@ -996,7 +1009,7 @@ def statement_lines(books: list, pool_d: dict, pool_e: dict, pool_g: dict, regis
 
     for b in books:
         pool_letter = b["pool"]
-        book_dir = os.path.join(state_dir, POOL_DIRS[pool_letter], b["key"]) if pool_letter in ("A", "F") \
+        book_dir = os.path.join(state_dir, POOL_DIRS[pool_letter], b["key"]) if pool_letter in PER_STRATEGY_POOLS \
             else os.path.join(state_dir, POOL_DIRS[pool_letter])
         trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl")) if state_dir else []
         opens = [{"entry_price": p["entry"], "price": p["price"], "quantity": p["qty"]} for p in b.get("positions_detail", [])]
@@ -1408,6 +1421,8 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
     e1_keys = {b["key"] for b in pool_e1.get("books", [])}
     i2_keys = {b["key"] for b in (pool_i2 or {}).get("books", [])}
     i3_keys = {b["key"] for b in (pool_i3 or {}).get("books", [])}
+    a2_keys = {b["key"] for b in books if b.get("pool") == "A2"}
+    a3_keys = {b["key"] for b in books if b.get("pool") == "A3"}
     rows = []
     for r in registry_records:
         status = str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
@@ -1425,8 +1440,12 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
             pool = "Pool I" if running else "-"
         else:
             pool = ("Pool E" if crypto else "Pool A") if running else "-"
-        if pool == "Pool A" and r.strategy_key in (pool_f_keys or set()):
-            pool = "Pool A, F"
+        # Pool A's twins: F (partial booking) and A2 / A3 (Pool A on 2x and 3x the money, 2026-10-19),
+        # each listed only once its book exists. A strategy with only an F twin reads "Pool A, F", as before.
+        a_twins = [code for code, keys_ in (("F", pool_f_keys or set()), ("A2", a2_keys), ("A3", a3_keys))
+                   if r.strategy_key in keys_]
+        if pool == "Pool A" and a_twins:
+            pool = ", ".join(["Pool A"] + a_twins)
         if pool == "Pool E" and r.strategy_key in e1_keys:
             pool = "Pool E, E1"
         # Pool I2 and I3 are Pool I's strategies on 2x and 3x the money; listed only once their books exist.
@@ -1466,10 +1485,11 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
                      "pools_breakdown": pools_breakdown,
                      "how": STRATEGY_HOW.get(r.strategy_key, {}), "research": _experiment_summary(exp),
                      # one tab per pool the strategy runs in; a twin pool carries only what it changes
-                     "variants": ([{"pool": "Pool A", "diff": False},
-                                   {"pool": "Pool F", "diff": True, "title": "What Pool F does differently",
-                                    "brief": STRATEGY_BRIEFS["pool_f"][1], "how": STRATEGY_HOW["pool_f"]}]
-                                  if pool == "Pool A, F" else
+                     "variants": ([{"pool": "Pool A", "diff": False}]
+                                  + [{"pool": "Pool " + code, "diff": True, "title": f"What Pool {code} does differently",
+                                      "brief": STRATEGY_BRIEFS["pool_" + code.lower()][1],
+                                      "how": STRATEGY_HOW["pool_" + code.lower()]} for code in a_twins]
+                                  if pool.startswith("Pool A, ") else
                                   [{"pool": "Pool E", "diff": False},
                                    {"pool": "Pool E1", "diff": True, "title": "What Pool E1 does differently",
                                     "brief": STRATEGY_BRIEFS["pool_e1"][1], "how": STRATEGY_HOW["pool_e1"]}]
@@ -1508,8 +1528,8 @@ SCHEDULE = [
     {"id": "pool_g", "label": "Pool G crypto AI judgment", "at": "08:30 & 20:30", "log": "pool_g.log"},
     {"id": "prep", "label": "Pool D prepare", "at": "09:00", "log": "pool_d.log"},
     {"id": "ticks", "label": "Pool D ticks", "at": "09:15-15:30 every 5 min", "log": "pool_d.log"},
-    {"id": "open", "label": "Fill-at-open passes (A, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
-    {"id": "eod_a", "label": "Pool A end-of-day", "at": "15:35", "log": "paper_trading.log"},
+    {"id": "open", "label": "Fill-at-open passes (A, A2, A3, A1, B, C)", "at": "09:30-09:32", "log": "paper_trading_open.log"},
+    {"id": "eod_a", "label": "Pools A, A2, A3 end-of-day", "at": "15:35", "log": "paper_trading.log"},
     {"id": "eod_f", "label": "Pool F end-of-day (partial booking twin)", "at": "15:38", "log": "pool_f.log"},
     {"id": "eod_a1", "label": "Pool A1 end-of-day", "at": "15:40", "log": "pool_a1.log"},
     {"id": "eod_c", "label": "Portfolio C", "at": "15:45", "log": "portfolio_c.log"},
@@ -1845,7 +1865,7 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
 
     books = []
     for pool, dirname in POOL_DIRS.items():
-        if pool in ("A", "F"):
+        if pool in PER_STRATEGY_POOLS:
             for b in summary["books"][pool]:
                 book_dir = os.path.join(state_dir, dirname, b["key"])
                 rec = next((r for r in registry_records if r.strategy_key == b["key"]), None)
@@ -2108,7 +2128,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         return round((float(price) - float(ref)) * qty, 2) if ref else None
 
     for b in books:
-        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] in ("A", "F") else "")
+        book_dir = os.path.join(state_dir, POOL_DIRS[b["pool"]], b["key"] if b["pool"] in PER_STRATEGY_POOLS else "")
         pf = _read_json(os.path.join(book_dir, "portfolio.json")) or {}
         unbooked_by_symbol = {d["symbol"]: d["unbooked"] for d in b.get("positions_detail", [])}
         for symbol, p in (pf.get("positions") or {}).items():
@@ -2116,7 +2136,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
             entered_today = p.get("entry_date") == today_iso
             qty, entry = int(p["quantity"]), float(p["entry_price"])
             rows.append({"date": p.get("entry_date"), "time": "09:30" if entered_today else "", "action": "BUY",
-                         "symbol": bare, "symbol_key": symbol, "book_key": b["key"] if b["pool"] in ("A", "F") else None,
+                         "symbol": bare, "symbol_key": symbol, "book_key": b["key"] if b["pool"] in PER_STRATEGY_POOLS else None,
                          "qty": qty, "price": round(entry, 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Open",
                          "pnl": unbooked_by_symbol.get(bare), "note": "", "fill_today": entered_today,
@@ -2126,7 +2146,7 @@ def _ledger(state_dir: str, books: list, d_pf: dict, d_trades: list, today: date
         for t in _read_jsonl(os.path.join(book_dir, "trades.jsonl")):
             rows.append({"date": t.get("exit_date"), "time": "09:30", "action": "SELL",
                          "symbol": str(t.get("symbol", "")).replace(".NS", ""),
-                         "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] in ("A", "F") else None,
+                         "symbol_key": t.get("symbol"), "book_key": b["key"] if b["pool"] in PER_STRATEGY_POOLS else None,
                          "qty": t.get("quantity"), "price": round(float(t.get("exit_price", 0) or 0), 2),
                          "pool": POOL_LABELS[b["pool"]], "book": b["display_name"], "status": "Closed",
                          "fill_today": t.get("exit_date") == today_iso, "bought_on": t.get("entry_date"),

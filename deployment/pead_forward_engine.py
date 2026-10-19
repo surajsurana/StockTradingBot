@@ -61,7 +61,7 @@ from deployment.paper_trading_engine import (
     run_daily,
 )
 from deployment.pead_signal import PEAD_RISK_PCT_PER_UNIT, PEAD_STOP_LOSS_PCT, compute_sue, evaluate_pead_signal
-from deployment.settings import PAPER_TRADING_STATE_DIR
+from deployment.settings import PAPER_TRADING_STATE_DIR, PAPER_TRADING_WINDDOWN_TARGET_CAPITAL
 
 STRATEGY_KEY = "pead"
 EARNINGS_LOOKBACK_DAYS = 10   # how far back an announcement can be and still be considered "recent"
@@ -121,7 +121,9 @@ def load_events(strategy_key: str = STRATEGY_KEY) -> list:
 def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force: bool = False,
                     fetch_ohlcv_fn=None,
                     execution_config: Optional[ExecutionRealismConfig] = None,
-                    partial_booking=None, state_dir: Optional[str] = None) -> dict:
+                    partial_booking=None, state_dir: Optional[str] = None,
+                    sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
+                    fetch_events_fn=None) -> dict:
     """
     The idempotent daily PEAD runner -- call once per trading day, after
     market close, same cadence as every other paper-trading strategy.
@@ -142,6 +144,15 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     needed for the EXIT side (run_daily() checks stop-loss/holding-period
     against real price bars) and for pricing a NEW entry at today's close.
 
+    sizing_capital_cap / fetch_events_fn (added 2026-10-19, for Pools A2
+    and A3 -- Pool A's strategies on Rs.2,00,000 and Rs.3,00,000 books):
+    the cap is passed straight to run_daily(), whose default it shares, so
+    a bigger book's queued entries are sized off that book; fetch_events_fn
+    (callable(symbols, target_date, lookback_days) -> events) lets the
+    caller run the universe-wide earnings scan once and hand the same
+    answer to every pool. Left at their defaults -- every caller before
+    2026-10-19 -- nothing changes.
+
     Returns a summary dict: {"status": ..., "events_detected": N,
     "events_eligible": N, "signals_generated": N, "new_entries": [...],
     "new_exits": [...], ...} -- open_positions/cash/mark_to_market_equity
@@ -158,7 +169,8 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
                 "last_processed_date": last_processed}
 
     processed_events = _load_processed_events()
-    raw_events = fetch_recent_earnings_events_chunked(symbols, target_date, lookback_days=EARNINGS_LOOKBACK_DAYS)
+    raw_events = (fetch_events_fn or fetch_recent_earnings_events_chunked)(
+        symbols, target_date, lookback_days=EARNINGS_LOOKBACK_DAYS)
 
     events_detected = len(raw_events)
     events_eligible = 0
@@ -297,7 +309,7 @@ def run_pead_daily(symbols: list, as_of_date: Optional[date_type] = None, force:
     strategy = PEADStrategy()
     daily_result = run_daily(STRATEGY_KEY, strategy, fetch_data_fn=lambda: data,
                               as_of_date=target_date, force=force, execution_config=execution_config,
-                              partial_booking=partial_booking)
+                              partial_booking=partial_booking, sizing_capital_cap=sizing_capital_cap)
 
     if daily_result["status"] != "processed":
         return daily_result

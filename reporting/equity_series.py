@@ -5,7 +5,7 @@ WHERE IT COMES FROM. Every paper book already writes a daily_equity.jsonl as it 
 own record of what the book was worth at each day's close. Nothing new is computed here and no
 number is derived a second way: this reads those files and lines them up by date.
 
-A STRATEGY CAN BE SEVERAL BOOKS. The same key runs in Pool A and Pool F, Pool E and Pool E1, or
+A STRATEGY CAN BE SEVERAL BOOKS. The same key runs in Pools A, F, A2 and A3, Pool E and Pool E1, or
 Pools I, I2 and I3, and the Strategies row shows their combined capital, so the series adds them up
 the same way. A date only one book has is still a real date for the strategy -- the others are
 carried forward from their last known value rather than dropped, or the total would dip on a day a
@@ -22,7 +22,8 @@ import os
 from typing import Optional
 
 # Where each pool keeps its books. A directory holding the book folders, or a single book itself.
-BOOK_ROOTS = ("paper_trading", "pool_f", "pool_e", "pool_e1", "pool_i", "pool_i2", "pool_i3", "pool_d", "archived")
+BOOK_ROOTS = ("paper_trading", "pool_f", "pool_a2", "pool_a3", "pool_e", "pool_e1", "pool_i", "pool_i2", "pool_i3",
+              "pool_d", "archived")
 # A pool that IS one book keeps its file at the pool's own root rather than under a key.
 SINGLE_BOOKS = {"portfolio_b": "portfolio_b", "portfolio_c": "portfolio_c",
                 "portfolio_g": "pool_g", "pool_d_vwap_fade": "pool_d"}

@@ -24,6 +24,7 @@ the row shows their combined capital, so the typed figure is the combined one an
 between them. For the ordinary one-book strategy that is simply the number itself. Pools I2 and I3
 are the exception: they exist to be 2x and 3x Pool I's size, so a US strategy's figure is split
 1:2:3 (BOOK_WEIGHTS) -- an even split would erase the very difference they are there to measure.
+Pools A2 and A3 (2026-10-19) are the same for Pool A: 2 and 3 shares to Pool A's (and Pool F's) one.
 
 CURRENCY. The crypto and US books are kept in dollars and the row shows them converted, so a rupee
 figure typed against them is converted back at the same rate the page used. Without a rate those
@@ -49,9 +50,10 @@ from deployment.base import DeploymentStatus
 # Where each pool keeps its books -- the same roots reporting/equity_series.py reads, minus
 # "archived": a retired book is a record, not something to resize.
 POOL_OF_ROOT = {"paper_trading": "Pool A", "pool_f": "Pool F", "pool_e": "Pool E",
-                "pool_e1": "Pool E1", "pool_i": "Pool I", "pool_i2": "Pool I2", "pool_i3": "Pool I3"}
+                "pool_e1": "Pool E1", "pool_i": "Pool I", "pool_i2": "Pool I2", "pool_i3": "Pool I3",
+                "pool_a2": "Pool A2", "pool_a3": "Pool A3"}
 # How many shares of the typed figure each book takes; anything unlisted takes one.
-BOOK_WEIGHTS = {"pool_i2": 2, "pool_i3": 3}
+BOOK_WEIGHTS = {"pool_i2": 2, "pool_i3": 3, "pool_a2": 2, "pool_a3": 3}
 # A pool that IS one book keeps its file at the pool's own root rather than under a key.
 SINGLE_BOOKS = {"portfolio_b": ("portfolio_b", "Pool B"), "portfolio_c": ("portfolio_c", "Pool C"),
                 "portfolio_g": ("pool_g", "Pool G"), "pool_d_vwap_fade": ("pool_d", "Pool D")}

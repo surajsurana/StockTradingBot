@@ -1080,7 +1080,7 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool A2</option><option>Pool A3</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -1107,7 +1107,7 @@ function renderTape(s){
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool A2","Pool A3","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
   // jumps straight to it via the browser's own select typeahead, which matches the visible text).
@@ -1617,7 +1617,7 @@ function buildOrdersHead(){
   const cell = k => ({
     status: `<select id="orders-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     symbol: `<input id="orders-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
+    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool A2</option><option>Pool A3</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
     kind: `<select id="orders-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="orders-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -1960,7 +1960,7 @@ function renderOrders(s){
   const statusF = sel("orders-status"), poolF = sel("orders-pool"), kindF = sel("orders-kind");
   // the Book dropdown only offers books that actually appear within the selected pool/type scope
   const bookSel = document.getElementById("orders-book"), prevBook = bookSel.value;
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool A2","Pool A3","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   const bookNames = [...new Set(s.ledger.filter(a => inScope(a.pool)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option value="${esc(n)}"${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
@@ -2029,16 +2029,18 @@ function showSymbolLedger(row){
 function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I","I2","I3"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H","I","I2","I3"];
+  const poolsOf = {Swing: ["A","A2","A3","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I","I2","I3"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","A2","A3","B","C","D","E","E1","F","G","H","I","I2","I3"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const kindOfPool = Object.fromEntries(Object.entries(poolsOf).flatMap(([kd, ps]) => ps.map(x => [x, kd])));
   const todayByKind = {};                                   // type -> booked today (open-position move is added below)
   const live = s.mode === "live";
   const booksIn = live
-    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: s.pool_g.exists ? 1 : 0}
-    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: 1};
+    ? {A: s.books.filter(b => b.pool === "A" && b.exists).length, F: s.books.filter(b => b.pool === "F" && b.exists).length,
+       A2: s.books.filter(b => b.pool === "A2" && b.exists).length, A3: s.books.filter(b => b.pool === "A3" && b.exists).length, B: s.books.some(b => b.pool === "B" && b.exists) ? 1 : 0, C: s.books.some(b => b.pool === "C" && b.exists) ? 1 : 0, D: s.pool_d.starting_capital ? 1 : 0, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: s.pool_g.exists ? 1 : 0}
+    : {A: s.books.filter(b => b.pool === "A").length, F: s.books.filter(b => b.pool === "F").length,
+       A2: s.books.filter(b => b.pool === "A2").length, A3: s.books.filter(b => b.pool === "A3").length, B: 1, C: 1, D: s.pool_d.strategies_live || 1, E: s.pool_e.exists ? s.pool_e.books.length : 0, E1: s.pool_e1.exists ? s.pool_e1.books.length : 0, G: 1};
   if(s.pools && s.pools.H) booksIn.H = 1;
   // A single strategy/book picked from the "Strategy" filter -- the cards should show THAT
   // book's own numbers, not the whole pool's. Look it up directly rather than summing `keys`.
@@ -2257,7 +2259,8 @@ function livePriceFor(r){
   if(!STATE) return null;
   if(r.pool === "Pool E"){ const b = STATE.pool_e.books.find(x => x.key === r.book); const p = b && b.open_positions.find(x => x.symbol === r.symbol); return p && p.priced ? p.price : null; }
   if(r.pool === "Pool D"){ const p = STATE.pool_d.open_positions.find(x => x.symbol === r.symbol); return p && p.priced ? p.price : null; }
-  const b = STATE.books.find(x => `Pool ${x.pool}` === r.pool && (r.pool !== "Pool A" || x.key === r.book));
+  // Pools A, A2 and A3 (and F) keep a book per strategy, so the book key decides which one
+  const b = STATE.books.find(x => `Pool ${x.pool}` === r.pool && (!["Pool A", "Pool A2", "Pool A3"].includes(r.pool) || x.key === r.book));
   const p = b && b.positions_detail.find(x => x.symbol === r.shown);
   if(p && p.priced) return p.price;
   const q = (STATE.quotes || {})[r.symbol]; return q || null;
@@ -2365,6 +2368,10 @@ const poolCode = label => (String(label || "").match(/Pool\s+([A-Z0-9]+)/) || []
 const poolPromoteBtn = (p, r) => {
   const code = poolCode(p.pool);
   if(!code || !r) return "";
+  // Pools A2/A3 and I2/I3 are the same strategies on more paper money -- a comparison, never a live
+  // book (the server refuses them too; this just does not offer a button that can only fail).
+  if(["A2", "A3", "I2", "I3"].includes(code))
+    return `<span class="note" title="${esc(p.pool)} runs the same strategy on more paper money, to compare; it is not a pool that goes live.">—</span>`;
   const live = liveState(r.status) === "Live";
   const isThisOne = (r.live_pool || "") === code;
   if(live)
@@ -2442,7 +2449,7 @@ function cashByVenue(s){
     return {kite: lc.balance, coindcx: lc.crypto_balance,
             groww: (s.pools && s.pools.H) ? s.pools.H.cash : null, us: null};
   const pools = s.pools || {}, add = (t, v) => t + (+v || 0);
-  const kite = ["A", "B", "C", "F"].reduce((t, k) => add(t, (pools[k] || {}).cash), 0)
+  const kite = ["A", "A2", "A3", "B", "C", "F"].reduce((t, k) => add(t, (pools[k] || {}).cash), 0)
              + (+((s.pool_d || {}).cash) || 0);
   const rate = (s.pool_g || {}).usdinr || (s.pool_e || {}).usdinr || 0;
   const coindcx = (+(((s.pool_e || {}).inr || {}).cash) || 0)
@@ -2681,7 +2688,7 @@ function buildRegHead(){
   const head = document.getElementById("reg-head"); if(head.dataset.built === MODE) return;
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option><option value="-">Not trading</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool A2</option><option>Pool A3</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Retired">Retired</option><option value="Off">Off</option></select>`,

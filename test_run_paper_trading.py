@@ -145,9 +145,21 @@ def _legacy_per_run_messages(test_case):
     test_case.addCleanup(patcher.stop)
 
 
+def _without_subpools(test_case):
+    """These tests are about Pool A's own run, with a PAPER_TRADING fake record and a mocked engine.
+    Pools A2/A3 (2026-10-19) would otherwise also run for that record -- seeding real books beside
+    the real deployment/state/paper_trading/ and calling the mocked engine again. They have their
+    own tests (test_pools_a2_a3.py)."""
+    for name in ("_run_subpools", "_resolve_subpools_at_open"):
+        patcher = patch.object(rpt, name)
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
+
 class TestRunOneExceptionIsolation(unittest.TestCase):
     def setUp(self):
         _legacy_per_run_messages(self)
+        _without_subpools(self)
         self.record = _fake_record("fake_strategy", "Fake Strategy")
         rpt._STRATEGY_FACTORIES["fake_strategy"] = {
             "display_name": "Fake Strategy",
@@ -321,6 +333,7 @@ class TestResolveAtOpenOne(unittest.TestCase):
 
     def setUp(self):
         _legacy_per_run_messages(self)
+        _without_subpools(self)
         self.record = _fake_record("fake_strategy", "Fake Strategy")
         rpt._STRATEGY_FACTORIES["fake_strategy"] = {
             "display_name": "Fake Strategy",
@@ -595,6 +608,7 @@ class TestSingleDailySummarySwitch(unittest.TestCase):
         patcher = patch.object(rpt, "TELEGRAM_SINGLE_DAILY_SUMMARY", True)
         patcher.start()
         self.addCleanup(patcher.stop)
+        _without_subpools(self)
         self.record = _fake_record("fake_strategy", "Fake Strategy")
 
     @patch("run_paper_trading.save_detail")

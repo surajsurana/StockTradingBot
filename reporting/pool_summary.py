@@ -3,7 +3,8 @@ The one Telegram message of the day (added 2026-09-10, per explicit
 direction): capital deployed, cash, unrealised and realised P&L for every
 paper-trading pool -- A (active Rs.1,00,000 swing books), A1 (the legacy
 Rs.10,00,000 books winding down), B, C, D and E (crypto, USDT, shown pre-
-and post-tax via reporting/pool_e.py) -- read straight from each
+and post-tax via reporting/pool_e.py), plus Pool A's twins F, A2 and A3
+(Pool A on Rs.2,00,000 / Rs.3,00,000 books) -- read straight from each
 pool's own state files under deployment/state/. Replaces the per-strategy
 fill alerts, the per-pool daily messages and Pool A's own end-of-day
 summary (all gated off by deployment.settings.TELEGRAM_SINGLE_DAILY_SUMMARY).
@@ -35,6 +36,10 @@ POOL_B_DIRNAME = "portfolio_b"
 POOL_C_DIRNAME = "portfolio_c"
 POOL_D_DIRNAME = "pool_d"
 POOL_F_DIRNAME = "pool_f"   # Pool A's twin with partial profit booking (2026-09-16): same keys, own books
+# Pools A2 and A3 (2026-10-19): Pool A's strategies on Rs.2,00,000 and Rs.3,00,000 books -- same keys,
+# own books, treated exactly like Pool F here. Not to be confused with A1, the legacy books above.
+POOL_A2_DIRNAME = "pool_a2"
+POOL_A3_DIRNAME = "pool_a3"
 
 
 def _read_json(path: str) -> Optional[dict]:
@@ -87,7 +92,8 @@ def _book(book_dir: str, key: str, display_name: str, today: date, prices: dict)
 def _held_symbols(state_dir: str) -> set:
     symbols = set()
     for pattern in (f"{POOL_A_DIRNAME}/*/portfolio.json", f"{POOL_A1_DIRNAME}/*/portfolio.json",
-                    f"{POOL_F_DIRNAME}/*/portfolio.json",
+                    f"{POOL_F_DIRNAME}/*/portfolio.json", f"{POOL_A2_DIRNAME}/*/portfolio.json",
+                    f"{POOL_A3_DIRNAME}/*/portfolio.json",
                     f"{POOL_B_DIRNAME}/portfolio.json", f"{POOL_C_DIRNAME}/portfolio.json"):
         for path in glob.glob(os.path.join(state_dir, pattern)):
             pf = _read_json(path) or {}
@@ -137,6 +143,9 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
                for d in sorted(glob.glob(os.path.join(state_dir, POOL_A1_DIRNAME, "*/")))]
     pool_f = [_book(os.path.join(state_dir, POOL_F_DIRNAME, key), key, name, today, prices)
               for key, name in active_pool_a.items() if os.path.exists(os.path.join(state_dir, POOL_F_DIRNAME, key, "portfolio.json"))]
+    pool_a2, pool_a3 = ([_book(os.path.join(state_dir, dirname, key), key, name, today, prices)
+                         for key, name in active_pool_a.items() if os.path.exists(os.path.join(state_dir, dirname, key, "portfolio.json"))]
+                        for dirname in (POOL_A2_DIRNAME, POOL_A3_DIRNAME))
     pool_b = [_book(os.path.join(state_dir, POOL_B_DIRNAME), "portfolio_b", "Portfolio B", today, prices)]
     pool_c = [_book(os.path.join(state_dir, POOL_C_DIRNAME), "portfolio_c", "Portfolio C", today, prices)]
 
@@ -161,10 +170,12 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
     }
 
     pools = {"A": _pool_totals(pool_a), "A1": _pool_totals(pool_a1), "B": _pool_totals(pool_b),
-             "C": _pool_totals(pool_c), "F": _pool_totals(pool_f)}
+             "C": _pool_totals(pool_c), "F": _pool_totals(pool_f),
+             "A2": _pool_totals(pool_a2), "A3": _pool_totals(pool_a3)}
     # "All pools" deliberately EXCLUDES A1 (per explicit direction, 2026-09-10:
     # the legacy books are winding down and are not part of the live picture).
-    counted = [pools["A"], pools["B"], pools["C"], pools["F"]]
+    # A2 and A3 are counted, like Pool F -- they are live paper books, not legacy ones.
+    counted = [pools["A"], pools["B"], pools["C"], pools["F"], pools["A2"], pools["A3"]]
     # Pool E enters the totals in rupees, POST-TAX (fees and India's VDA tax
     # taken out), at the usdinr rate -- the only figure an Indian resident
     # would actually keep. Its own block shows the pre-tax side too.
@@ -186,7 +197,8 @@ def build_pool_summary(state_dir: str, active_pool_a: dict, price_fn: Callable[[
         "positions": sum(p["positions"] for p in counted) + pool_e["usdt"]["positions"] + pool_e1["usdt"]["positions"] + pool_g.get("positions", 0),
     }
     return {"as_of": today.isoformat(), "pools": pools, "pool_d": pool_d, "pool_e": pool_e, "pool_e1": pool_e1, "overall": overall,
-            "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c, "F": pool_f}, "pool_g": pool_g}
+            "books": {"A": pool_a, "A1": pool_a1, "B": pool_b, "C": pool_c, "F": pool_f, "A2": pool_a2, "A3": pool_a3},
+            "pool_g": pool_g}
 
 
 def inr(amount: float, signed: bool = False) -> str:
@@ -232,6 +244,10 @@ def format_pool_summary(summary: dict) -> str:
         f_ = pools["F"]
         lines += _pool_block("Pool F (Pool A twin, partial profit booking)", f_,
                              f"{f_['positions']} positions, {f_['updated_today']}/{f_['books']} books updated")
+    for code, title in (("A2", "Pool A2 (Pool A on Rs.2,00,000 books)"), ("A3", "Pool A3 (Pool A on Rs.3,00,000 books)")):
+        if pools.get(code, {}).get("books"):
+            p_ = pools[code]
+            lines += _pool_block(title, p_, f"{p_['positions']} positions, {p_['updated_today']}/{p_['books']} books updated")
     if summary.get("pool_g", {}).get("exists"):
         from reporting.pool_e import usdt as _usdt
         g_ = summary["pool_g"]
@@ -254,13 +270,15 @@ def format_pool_summary(summary: dict) -> str:
     from reporting.pool_e import format_pool_e_block
     lines += format_pool_e_block(summary.get("pool_e") or {"exists": False})
     lines += format_pool_e_block(summary.get("pool_e1") or {"exists": False}, label="Pool E1")
+    sub = "".join(f", {c}" for c in ("A2", "A3") if pools.get(c, {}).get("books"))
     lines += [
-        f"*All pools (A, B, C, D, F, E, E1 post-tax -- A1 not counted)* -- {o['positions']} positions",
+        f"*All pools (A, B, C, D, F{sub}, E, E1 post-tax -- A1 not counted)* -- {o['positions']} positions",
         f"Deployed {inr(o['deployed'])} | Cash {inr(o['cash'])}",
         f"Unrealised {inr(o['unrealised'], signed=True)} | Realised {inr(o['realised'], signed=True)} "
         f"(today {inr(o['realised_today'], signed=True)})",
     ]
     missing = a["not_updated"] + a1["not_updated"] + pools["B"]["not_updated"] + pools["C"]["not_updated"] + [f"F {n}" for n in pools.get("F", {}).get("not_updated", [])]
+    missing += [f"{c} {n}" for c in ("A2", "A3") for n in pools.get(c, {}).get("not_updated", [])]
     if not d["updated_today"]:
         missing.append("Pool D")
     missing += (summary.get("pool_e") or {}).get("not_updated", [])

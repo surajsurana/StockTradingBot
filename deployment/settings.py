@@ -123,6 +123,19 @@ PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET = float(
     os.environ.get("PAPER_TRADING_WINDDOWN_REDUCED_FLOOR_WHILE_ABOVE_TARGET",
                     PAPER_TRADING_WINDDOWN_TARGET_CAPITAL * 0.10))
 
+# POOLS A2 AND A3 (2026-10-19, per explicit direction: "same pools of 2 lakh and 3 lakhs for india
+# strategies also"): Pool A's strategies on their own books of 2x and 3x Pool A's capital, under
+# deployment/state/pool_a2/ and pool_a3/. By folder: how many Pool A books' worth of capital each
+# one's books start with. A multiple of the one setting rather than a separate rupee figure, so the
+# three stay in exact 1:2:3 proportion -- and so does everything sized off it (sizing_capital_cap,
+# the wind-down target and its reduced floor). Capital is the ONLY difference from Pool A.
+POOL_A_CAPITAL_MULTIPLES = {"pool_a2": 2, "pool_a3": 3}
+
+
+def pool_a_subpool_capital(dirname: str) -> float:
+    """Starting capital, sizing cap and wind-down target of every book in Pool A2 or A3."""
+    return PAPER_TRADING_WINDDOWN_TARGET_CAPITAL * POOL_A_CAPITAL_MULTIPLES[dirname]
+
 # NARROW, EXPLICIT EXCEPTION (2026-08-04, per explicit direction): the ONLY
 # thing ever imported from config/settings.py anywhere in deployment/.
 # Exists solely so paper-trading Telegram notifications land in the same
