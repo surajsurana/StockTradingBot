@@ -130,6 +130,18 @@ class TestDollarBooks(unittest.TestCase):
         self.assertTrue(r["ok"], r["error"])
         self.assertAlmostEqual(_read(self.path)["cash"], 2000.0, places=2)      # $1,000 -> $2,000
 
+    def test_pools_i_i2_i3_keep_their_one_two_three_proportion(self):
+        """I2 and I3 exist to be 2x and 3x Pool I; an even split would erase that difference."""
+        key = "us_short_term_reversal"
+        paths = {d: _write(self.root, f"{d}/{key}", cash=100.0 * m, starting_capital=100.0 * m)
+                 for d, m in (("pool_i", 1), ("pool_i2", 2), ("pool_i3", 3))}
+        shown = {"Pool I": 10_000.0, "Pool I2": 20_000.0, "Pool I3": 30_000.0}     # $100/$200/$300 at 100
+        r = set_capital(self.root, key, 120_000, shown, usdinr=100.0, record=_record(key), now=NOW)
+        self.assertTrue(r["ok"], r["error"])
+        self.assertAlmostEqual(_read(paths["pool_i"])["cash"], 200.0, places=2)
+        self.assertAlmostEqual(_read(paths["pool_i2"])["cash"], 400.0, places=2)
+        self.assertAlmostEqual(_read(paths["pool_i3"])["cash"], 600.0, places=2)
+
     def test_without_a_rate_it_refuses_rather_than_sizing_in_the_wrong_currency(self):
         """Sizing a 1,000 USDT book at 1,76,000 USDT is the bug this prevents."""
         r = set_capital(self.root, "crypto_tsmom", 176000, {"Pool E": 88000.0}, usdinr=0,

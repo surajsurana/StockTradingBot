@@ -1080,7 +1080,7 @@ function buildTapeHead(){
     status: `<select id="tape-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     date: "",
     symbol: `<input id="q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option></select>`,
+    pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -1107,7 +1107,7 @@ function renderTape(s){
   document.getElementById("tape-cal").classList.toggle("on", !!(fromF || toF)); document.getElementById("tape-cal").title = fromF || toF ? `${fromF || "…"} → ${toF || "…"} (click to change)` : "Filter by date";
   document.getElementById("tape-cal").textContent = fromF || toF ? "Bought on ●" : "Bought on";
   const inRange = a => (!fromF || (a.bought_on || "") >= fromF) && (!toF || (a.bought_on || "") <= toF);
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   // Each book's SW code, so the dropdown can show, sort and be searched by it (typing "SW-014"
   // jumps straight to it via the browser's own select typeahead, which matches the visible text).
@@ -1117,7 +1117,7 @@ function renderTape(s){
     if(ab && ab.sid) return ab.sid;
     const eb = s.pool_e.exists ? s.pool_e.books.find(b => b.display_name === name) : null;
     if(eb && eb.sid) return eb.sid;
-    const ib = s.pool_i.exists ? s.pool_i.books.find(b => b.display_name === name) : null;
+    const ib = usPools(s).map(([, p]) => p.books.find(b => b.display_name === name)).find(Boolean);
     if(ib && ib.sid) return ib.sid;
     if(name === "Intraday") return (strategyByKey["pool_d_vwap_fade"] || {}).sid || "";
     if(name === "AI judgment") return (strategyByKey["portfolio_g"] || {}).sid || "";
@@ -1129,7 +1129,7 @@ function renderTape(s){
     ...(inScope("Pool D") ? ["Intraday"] : []),
     ...(inScope("Pool E") && s.pool_e.exists ? s.pool_e.books.map(b => b.display_name) : []),
     ...(inScope("Pool G") && s.pool_g.exists ? ["AI judgment"] : []),
-    ...(inScope("Pool I") && s.pool_i.exists ? s.pool_i.books.map(b => b.display_name) : []),
+    ...usPools(s).filter(([code]) => inScope("Pool " + code)).flatMap(([, p]) => p.books.map(b => b.display_name)),
     ...s.ledger.filter(a => inScope(a.pool)).map(a => a.book),
   ].filter(Boolean))].sort((a, b) => sidNumber(sidFor(a)) - sidNumber(sidFor(b)) || a.localeCompare(b));
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => {
@@ -1535,6 +1535,7 @@ const TAX_ITEMS = {
   stt: ["STT", "Delivery 0.1% on buy and sell; intraday 0.025% on sell"],
   stamp: ["Stamp duty", "Buy side: delivery 0.015%, intraday 0.003%"],
   crypto_fee: ["Exchange fee and spread", "the exchange's actual fee where it has charged one; 0.30% plus 10 bps a side modelled for legs not yet traded"],
+  us_fee: ["Interactive Brokers fees", "US Tiered: $0.0035 a share, at least $0.35 and at most 1% of the order; plus ~$0.003 a share exchange (estimate), $0.0002 clearing, and SEC/CAT fees on sales. Open positions as if sold today"],
 };
 function showTax(idx){
   const set = idx === "all" ? ST_VIEW : [ST_VIEW[+idx]].filter(Boolean); if(!set.length) return;
@@ -1549,10 +1550,10 @@ function showTax(idx){
     rows.push(line(["Subtotal", "GST is charged on the charges above"], sub, "subt"));
     rows.push(line(["GST", "18% of the subtotal"], sumK("gst")));
   }
-  ["stt", "stamp", "crypto_fee"].filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
+  ["stt", "stamp", "crypto_fee", "us_fee"].filter(k => comp(k) > 0).forEach(k => rows.push(line(TAX_ITEMS[k], comp(k))));
   const rates = [...new Set(set.filter(l => l.tax_rate).map(l => l.tax_rate))].map(r => (r * 100).toFixed(1) + "%").join(" / ");
   const taxBasis = set.length === 1
-    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Long-term" ? "Estimated as if everything were sold today: 12.5% on long-term gains above ₹1.25 lakh a year, 20% on short-term gains. Charges are the real ones Groww has taken" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : set[0].type === "US Equity" ? "No STT-linked concessional rate applies to foreign shares: held >24 months, 20% + 4% cess flat; held less, your own progressive income-tax slab (set in config.settings.US_EQUITY_OTHER_ANNUAL_INCOME), no set-off for losses" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
+    ? (set[0].type === "Crypto" ? "31.2% on each profitable trade, no set-off for losses" : set[0].type === "Long-term" ? "Estimated as if everything were sold today: 12.5% on long-term gains above ₹1.25 lakh a year, 20% on short-term gains. Charges are the real ones Groww has taken" : set[0].type === "Intraday" ? "31.2% assumed (top slab + cess) on the net gain, as business income" : set[0].type === "US Equity" ? "No STT-linked concessional rate applies to foreign shares: held >24 months, 12.5% + 4% cess flat; held less, your own progressive income-tax slab (set in config.settings.US_EQUITY_OTHER_ANNUAL_INCOME), no set-off for losses" : "20.8% (20% short-term capital gains + 4% cess) on the net gain after charges")
     : `${rates} of the net gain after charges (crypto: per profitable trade)`;
   rows.push(line(["Income tax", taxBasis], sumK("tax")));
   rows.push(line(["Total tax and charges", ""], sumK("charges") + sumK("gst") + sumK("tax"), "total"));
@@ -1616,7 +1617,7 @@ function buildOrdersHead(){
   const cell = k => ({
     status: `<select id="orders-status"><option value="">All</option><option>Open</option><option>Partial</option><option>Closed</option></select>`,
     symbol: `<input id="orders-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option></select>`,
+    pool: `<select id="orders-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
     kind: `<select id="orders-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="orders-book"><option value="">All</option></select>`,
   })[k] || "";
@@ -1660,6 +1661,9 @@ function markNotificationsRead(){
 // measures across, with the combined row kept visually apart so a total is never read as a fourth
 // account. Classic is untouched and the switch remembers which you chose.
 
+// Pool I and its twins on 2x and 3x the capital (I2, I3), as [code, pool] for whichever have books.
+function usPools(s){ return [["I", s.pool_i], ["I2", s.pool_i2], ["I3", s.pool_i3]].filter(([, p]) => p && p.exists); }
+
 // Which account a pool's money actually sits in. Matched on the pool CODE, because the same pool is
 // written "Pool G" in one place and "G" in another.
 const poolVenue = pool => {
@@ -1668,7 +1672,7 @@ const poolVenue = pool => {
   // added to the Kite account's rupees -- Rs3.8L of them, on a page whose whole point is that it
   // shows what the broker shows.
   return ["G", "E", "E1"].includes(code) ? "coindcx"
-       : code === "H" ? "groww" : code === "I" ? "us" : "kite";
+       : code === "H" ? "groww" : ["I", "I2", "I3"].includes(code) ? "us" : "kite";
 };
 
 function renderLiveBoard(s){
@@ -1956,7 +1960,7 @@ function renderOrders(s){
   const statusF = sel("orders-status"), poolF = sel("orders-pool"), kindF = sel("orders-kind");
   // the Book dropdown only offers books that actually appear within the selected pool/type scope
   const bookSel = document.getElementById("orders-book"), prevBook = bookSel.value;
-  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I"]};
+  const poolsOfKind = {Swing: ["Pool A","Pool B","Pool C","Pool F"], Intraday: ["Pool D"], Crypto: ["Pool E","Pool E1","Pool G"], "Long-term": ["Pool H"], "US Equity": ["Pool I","Pool I2","Pool I3"]};
   const inScope = pool => (!poolF || pool === poolF) && (!kindF || poolsOfKind[kindF].includes(pool));
   const bookNames = [...new Set(s.ledger.filter(a => inScope(a.pool)).map(a => a.book).filter(Boolean))].sort();
   bookSel.innerHTML = `<option value="">All</option>` + bookNames.map(n => `<option value="${esc(n)}"${n===prevBook?" selected":""}>${esc(n)}</option>`).join("");
@@ -2025,8 +2029,8 @@ function showSymbolLedger(row){
 function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
   // Pool-level totals for the selected pools (Type: Swing = A,B,C; Intraday = D; Crypto = E) -- these are
   // whole-book numbers, not just the rows on screen.
-  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I"]};
-  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H","I"];
+  const poolsOf = {Swing: ["A","B","C","F"], Intraday: ["D"], Crypto: ["E","E1","G"], "Long-term": ["H"], "US Equity": ["I","I2","I3"]};
+  let keys = poolF ? [poolF.replace("Pool ", "")] : ["A","B","C","D","E","E1","F","G","H","I","I2","I3"];
   if(kindF) keys = keys.filter(k => poolsOf[kindF].includes(k));
   let deployed = 0, cash = 0, booked = 0, unbooked = 0, today = 0, open = 0, capital = 0, strategies = 0;
   const kindOfPool = Object.fromEntries(Object.entries(poolsOf).flatMap(([kd, ps]) => ps.map(x => [x, kd])));
@@ -2048,6 +2052,8 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
     const ebMatches = [
       s.pool_e.exists ? {b: s.pool_e.books.find(b => b.display_name === bookF), rate: e_rate, pool: "E"} : null,
       s.pool_e1.exists ? {b: s.pool_e1.books.find(b => b.display_name === bookF), rate: e1_rate, pool: "E1"} : null,
+      // Pool I and its 2x / 3x twins I2 and I3 share display names the same way
+      ...usPools(s).map(([code, p]) => ({b: p.books.find(b => b.display_name === bookF), rate: p.usdinr || 0, pool: code})),
     ].filter(m => m && m.b);
     if(abMatches.length) bookOne = {pools: abMatches.map(b => b.pool),
                       capital: abMatches.reduce((t,b) => t+(+b.capital||0), 0), deployed: abMatches.reduce((t,b) => t+(+b.deployed||0), 0),
@@ -2080,7 +2086,7 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       else if(k === "G"){ const g = s.pool_g, r = g.usdinr||0; if(g.exists) p = {capital: g.capital*r, deployed: g.deployed*r, cash: g.cash*r, realised: g.booked.raw*r, unrealised: g.unbooked.raw*r, realised_today: g.booked_today.raw*r, positions: g.positions}; }
       // Pool I is already converted to rupees server-side (reporting/pool_i.py, real USD/INR rate), so
       // it reads straight off .inr like Pool E -- it is NOT in s.pools, which is why it needs its own branch.
-      else if(k === "I"){ if(s.pool_i.exists) p = {capital: s.pool_i.inr.capital, deployed: s.pool_i.inr.deployed, cash: s.pool_i.inr.cash, realised: s.pool_i.inr.booked.raw, unrealised: s.pool_i.inr.unbooked.raw, realised_today: s.pool_i.inr.booked_today.raw, positions: s.pool_i.usd.positions}; }
+      else if(["I", "I2", "I3"].includes(k)){ const pi = s["pool_" + k.toLowerCase()] || {}; if(pi.exists) p = {capital: pi.inr.capital, deployed: pi.inr.deployed, cash: pi.inr.cash, realised: pi.inr.booked.raw, unrealised: pi.inr.unbooked.raw, realised_today: pi.inr.booked_today.raw, positions: pi.usd.positions}; }
       else p = s.pools[k];
       if(!p) continue;
       capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; open += +p.positions || 0;
@@ -2442,7 +2448,9 @@ function cashByVenue(s){
   const coindcx = (+(((s.pool_e || {}).inr || {}).cash) || 0)
                 + (+(((s.pool_e1 || {}).inr || {}).cash) || 0)
                 + (+((s.pool_g || {}).cash) || 0) * rate;
-  const us = ((s.pool_i || {}).books || []).reduce((t, b) => add(t, b.cash), 0) * rate;
+  // Pool I and its 2x / 3x twins I2 and I3 are all US paper books
+  const us = [(s.pool_i || {}).books, (s.pool_i2 || {}).books, (s.pool_i3 || {}).books]
+    .reduce((t, books) => (books || []).reduce((u, b) => add(u, b.cash), t), 0) * rate;
   return {kite: kite, coindcx: coindcx, groww: null, us: us || null};
 }
 
@@ -2555,7 +2563,7 @@ function renderAllocations(s){
   // added to the Kite account's rupees -- Rs3.8L of them, on a page whose whole point is that it
   // shows what the broker shows.
   return ["G", "E", "E1"].includes(code) ? "coindcx"
-       : code === "H" ? "groww" : code === "I" ? "us" : "kite";
+       : code === "H" ? "groww" : ["I", "I2", "I3"].includes(code) ? "us" : "kite";
   };
   // The same cost basis the P&L is measured against -- `amount` includes the buy fee, `order_value`
   // does not, and the broker's own "Invested" is the fee-exclusive one.
@@ -2673,7 +2681,7 @@ function buildRegHead(){
   const head = document.getElementById("reg-head"); if(head.dataset.built === MODE) return;
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
-    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option value="-">Not trading</option></select>`,
+    pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option><option value="-">Not trading</option></select>`,
     type: `<select id="reg-type"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>AI</option><option>Long-term</option><option>US Equity</option></select>`,
     verdict: `<select id="reg-verdict"><option value="">All</option><option>PASS</option><option>REJECT</option><option>INCONCLUSIVE</option><option value="NOT_YET_EVALUATED">Not yet evaluated</option></select>`,
     status: `<select id="reg-status"><option value="">All</option><option value="Paper">Paper</option><option value="Live">Live</option><option value="Retired">Retired</option><option value="Off">Off</option></select>`,

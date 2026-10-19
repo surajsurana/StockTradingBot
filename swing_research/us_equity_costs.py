@@ -9,11 +9,12 @@ As understood on 2026-10-01 -- confirm with a CA before any real money:
 
 CAPITAL GAINS on foreign/US shares do NOT qualify for 111A/112A's
 concessional STT-linked rates (no Indian STT is paid on a US trade):
-  - LONG-TERM (held > 24 months): 20% flat. Indexation benefit exists in law
-    but needs Cost Inflation Index data this program doesn't maintain -- NOT
-    modeled, a disclosed simplification that slightly OVERSTATES long-term
-    tax (the same conservative-direction choice as India VDA tax's "harshest
-    reading, deliberately").
+  - LONG-TERM (held > 24 months): 12.5% flat, NO indexation -- the rate for
+    transfers on or after 23-Jul-2024 under the Finance (No.2) Act 2024
+    (accounts/feasibility_report_2026-10-19.md, section 6). Was 20% here
+    until 2026-10-19, the pre-2024 rate; corrected on that report's finding.
+    Indexation no longer applies to these transfers, so nothing is being
+    left out by not modelling it.
   - SHORT-TERM (held <= 24 months): added to total income, taxed at the
     investor's MARGINAL SLAB RATE under the New Tax Regime's progressive
     brackets -- NOT a flat percentage, since it stacks on top of whatever
@@ -32,6 +33,12 @@ concessional STT-linked rates (no Indian STT is paid on a US trade):
     same "don't assume a benefit" conservative direction as the rest of this
     program's cost models.
 
+BROKER FEES (added 2026-10-19, per explicit direction): Interactive Brokers'
+US Tiered commission and the per-share/regulatory fees that ride on it --
+IBKRUSTieredCostModel below. Applied in REPORTING only (reporting/pool_i.py),
+exactly the way this module's tax already is, so the paper books' trades,
+cash and positions are untouched and no book restarts.
+
 NOT modeled (disclosed, out of scope for a paper book):
   - Dividend withholding (25% US withholding, then taxable in India again
     with a foreign tax credit via Form 67) -- these are price-based swing
@@ -46,7 +53,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 LONG_TERM_HOLDING_DAYS = 24 * 30   # ~24 months, approximated as 30-day months -- disclosed
-LTCG_RATE = 0.20   # flat, no indexation modeled
+LTCG_RATE = 0.125   # flat, no indexation -- Finance (No.2) Act 2024, transfers on/after 23-Jul-2024
 CESS_RATE = 0.04   # health & education cess, on the tax amount
 
 # New Tax Regime slabs, FY2025-26 (AY2026-27), as understood on 2026-10-01 --
@@ -119,3 +126,55 @@ def classify_and_tax(entry_date: str, exit_date: str, pnl: float, stcg_booked_so
         rate = marginal_stcg_rate(model.other_annual_income, stcg_booked_so_far, gain) if gain else 0.0
         tax = gain * rate
     return {"is_long_term": is_long_term, "rate": rate, "tax": tax}
+
+
+@dataclass(frozen=True)
+class IBKRUSTieredCostModel:
+    """Interactive Brokers' US Tiered pricing, per ORDER (one leg), in USD --
+    accounts/feasibility_report_2026-10-19.md section 2d, read 2026-10-19:
+
+      commission   max(0.35, 0.0035 x shares), capped at 1% of the order's value
+      exchange     0.003 x shares -- UNVERIFIED: an estimate for orders that take
+                   liquidity; the real figure varies by venue and IBKR's venue
+                   table was not parsed. Orders that add liquidity can earn a
+                   rebate instead, so this errs on the costly side.
+      clearing     0.0002 x shares
+      sells only   SEC fee 0.0000206 x value, CAT fee 0.000003 x shares
+
+    The 1% cap binds the commission alone, as IBKR words it -- below about
+    $35 of order value the cap is smaller than the $0.35 minimum and wins.
+    Currency conversion is NOT here: the desk converts its money once, in a
+    block (report section 2c), not per trade.
+    """
+    commission_per_share: float = 0.0035
+    commission_min: float = 0.35
+    commission_cap_pct: float = 0.01
+    exchange_per_share: float = 0.003     # Unverified -- see docstring
+    clearing_per_share: float = 0.0002
+    sec_fee_pct_of_sell_value: float = 0.0000206
+    cat_fee_per_share_sold: float = 0.000003
+
+    def order_cost(self, shares: float, price: float, side: str) -> float:
+        """One order's fees in USD. `side` is "BUY" or "SELL"."""
+        shares, value = abs(float(shares)), abs(float(shares)) * float(price)
+        if shares <= 0:
+            return 0.0
+        commission = min(max(self.commission_min, self.commission_per_share * shares),
+                         self.commission_cap_pct * value)
+        fee = commission + (self.exchange_per_share + self.clearing_per_share) * shares
+        if side.upper() == "SELL":
+            fee += self.sec_fee_pct_of_sell_value * value + self.cat_fee_per_share_sold * shares
+        return fee
+
+    def round_trip_cost(self, shares: float, entry_price: float, exit_price: float) -> float:
+        """Both legs of one position: the buy at entry, the sell at exit."""
+        return self.order_cost(shares, entry_price, "BUY") + self.order_cost(shares, exit_price, "SELL")
+
+    def describe(self) -> dict:
+        return {"broker": "Interactive Brokers, US Tiered",
+                "commission_per_share": self.commission_per_share, "commission_min_usd": self.commission_min,
+                "commission_cap_pct_of_value": self.commission_cap_pct * 100,
+                "exchange_per_share_unverified": self.exchange_per_share,
+                "clearing_per_share": self.clearing_per_share,
+                "sec_fee_pct_of_sell_value": self.sec_fee_pct_of_sell_value * 100,
+                "cat_fee_per_share_sold": self.cat_fee_per_share_sold}

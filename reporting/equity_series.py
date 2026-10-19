@@ -5,10 +5,11 @@ WHERE IT COMES FROM. Every paper book already writes a daily_equity.jsonl as it 
 own record of what the book was worth at each day's close. Nothing new is computed here and no
 number is derived a second way: this reads those files and lines them up by date.
 
-A STRATEGY CAN BE SEVERAL BOOKS. The same key runs in Pool A and Pool F, or Pool E and Pool E1, and
-the Strategies row shows their combined capital, so the series adds them up the same way. A date
-only one book has is still a real date for the strategy -- the others are carried forward from their
-last known value rather than dropped, or the total would dip on a day a book simply had no entry.
+A STRATEGY CAN BE SEVERAL BOOKS. The same key runs in Pool A and Pool F, Pool E and Pool E1, or
+Pools I, I2 and I3, and the Strategies row shows their combined capital, so the series adds them up
+the same way. A date only one book has is still a real date for the strategy -- the others are
+carried forward from their last known value rather than dropped, or the total would dip on a day a
+book simply had no entry.
 
 CURRENCY. The crypto and US books keep their equity in USD. The row beside the chart is in rupees,
 so these are converted at one rate -- today's -- which is exactly what the row does. That makes the
@@ -21,12 +22,12 @@ import os
 from typing import Optional
 
 # Where each pool keeps its books. A directory holding the book folders, or a single book itself.
-BOOK_ROOTS = ("paper_trading", "pool_f", "pool_e", "pool_e1", "pool_i", "pool_d", "archived")
+BOOK_ROOTS = ("paper_trading", "pool_f", "pool_e", "pool_e1", "pool_i", "pool_i2", "pool_i3", "pool_d", "archived")
 # A pool that IS one book keeps its file at the pool's own root rather than under a key.
 SINGLE_BOOKS = {"portfolio_b": "portfolio_b", "portfolio_c": "portfolio_c",
                 "portfolio_g": "pool_g", "pool_d_vwap_fade": "pool_d"}
 # Books kept in dollars; everything else is already rupees.
-USD_ROOTS = ("pool_e", "pool_e1", "pool_i", "pool_g")
+USD_ROOTS = ("pool_e", "pool_e1", "pool_i", "pool_i2", "pool_i3", "pool_g")
 
 
 def _read(path: str) -> list:

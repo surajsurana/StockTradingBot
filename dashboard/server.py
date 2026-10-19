@@ -268,9 +268,10 @@ class PriceCache:
         import glob
         import json
         held = set()
-        for path in glob.glob(os.path.join(self.state_dir, "pool_i", "*", "portfolio.json")):
-            with open(path, encoding="utf-8") as f:
-                held |= set((json.load(f).get("positions") or {}).keys())
+        for pool_dir in ("pool_i", "pool_i2", "pool_i3"):   # pool_i2/i3 (2026-10-19): Pool I on 2x and 3x the capital
+            for path in glob.glob(os.path.join(self.state_dir, pool_dir, "*", "portfolio.json")):
+                with open(path, encoding="utf-8") as f:
+                    held |= set((json.load(f).get("positions") or {}).keys())
         return sorted(held)
 
     def refresh_us_equity(self) -> None:

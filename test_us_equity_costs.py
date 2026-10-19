@@ -2,6 +2,7 @@ import unittest
 
 from swing_research.us_equity_costs import (
     USEquityCostModel, classify_and_tax, financial_year_start, marginal_stcg_rate, LTCG_RATE, CESS_RATE,
+    IBKRUSTieredCostModel,
 )
 
 
@@ -88,6 +89,57 @@ class TestClassifyAndTax(unittest.TestCase):
         result = classify_and_tax("2023-01-01", "2026-06-01", -5_000, stcg_booked_so_far=0, model=self.model)
         self.assertTrue(result["is_long_term"])
         self.assertEqual(result["tax"], 0.0)
+
+
+
+class TestLongTermRate(unittest.TestCase):
+    def test_ltcg_is_12_5_percent_without_indexation(self):
+        # Finance (No.2) Act 2024, transfers on or after 23-Jul-2024 -- was wrongly 20% until 2026-10-19
+        self.assertEqual(LTCG_RATE, 0.125)
+        result = classify_and_tax("2023-01-01", "2026-01-01", 1_000.0, 0.0, USEquityCostModel())
+        self.assertTrue(result["is_long_term"])
+        self.assertAlmostEqual(result["tax"], 1_000.0 * 0.125 * 1.04, places=6)
+
+
+class TestIBKRUSTieredCostModel(unittest.TestCase):
+    """accounts/feasibility_report_2026-10-19.md section 2d."""
+
+    def setUp(self):
+        self.m = IBKRUSTieredCostModel()
+
+    def test_per_share_commission_above_the_minimum(self):
+        # 200 shares x $0.0035 = $0.70 > $0.35 min, well under 1% of $10,000
+        expected = 0.70 + 200 * 0.003 + 200 * 0.0002
+        self.assertAlmostEqual(self.m.order_cost(200, 50.0, "BUY"), expected, places=9)
+
+    def test_the_minimum_applies_to_a_small_order(self):
+        # 10 shares x $0.0035 = $0.035 -> lifted to the $0.35 minimum (1% of $500 = $5, not binding)
+        expected = 0.35 + 10 * 0.003 + 10 * 0.0002
+        self.assertAlmostEqual(self.m.order_cost(10, 50.0, "BUY"), expected, places=9)
+
+    def test_the_one_percent_cap_beats_the_minimum_on_a_tiny_order(self):
+        # 2 shares of a $5 stock: $10 of value, 1% = $0.10 < the $0.35 minimum, so the cap wins
+        expected = 0.10 + 2 * 0.003 + 2 * 0.0002
+        self.assertAlmostEqual(self.m.order_cost(2, 5.0, "BUY"), expected, places=9)
+
+    def test_the_cap_binds_the_per_share_rate_on_a_penny_stock(self):
+        # 10,000 shares at $0.20: per-share $35 > 1% of $2,000 = $20
+        expected = 20.0 + 10_000 * 0.003 + 10_000 * 0.0002
+        self.assertAlmostEqual(self.m.order_cost(10_000, 0.20, "BUY"), expected, places=9)
+
+    def test_sells_add_sec_and_cat_fees_buys_do_not(self):
+        buy, sell = self.m.order_cost(100, 50.0, "BUY"), self.m.order_cost(100, 50.0, "SELL")
+        self.assertAlmostEqual(sell - buy, 0.0000206 * 5_000.0 + 0.000003 * 100, places=9)
+
+    def test_round_trip_is_a_buy_at_entry_plus_a_sell_at_exit(self):
+        self.assertAlmostEqual(self.m.round_trip_cost(30, 40.0, 44.0),
+                               self.m.order_cost(30, 40.0, "BUY") + self.m.order_cost(30, 44.0, "SELL"), places=9)
+
+    def test_zero_shares_costs_nothing(self):
+        self.assertEqual(self.m.order_cost(0, 50.0, "SELL"), 0.0)
+
+    def test_describe_flags_the_exchange_fee_as_unverified(self):
+        self.assertIn("exchange_per_share_unverified", self.m.describe())
 
 
 if __name__ == "__main__":
