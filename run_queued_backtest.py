@@ -183,15 +183,63 @@ def run_lane(lane: str, state_dir: str, windows: int, send: bool, token: str, ch
     # This never raises: a verdict is worth more than a promotion, and the two must not share a fate.
     from deployment.auto_paper_promotion import line as promo_line, promote
     promo = promote(key, verdict, display_name=key, experiment_id=exp_id)
-    msg = (f"*Research complete* ({lane})\n{key}"
-           f"\nVerdict: *{verdict or 'see ' + exp_id}*  ({exp_id})\n\n"
-           f"Backtested on the VPS against real data. See the Research tab's Results view.\n\n"
-           f"{promo_line(promo)}")
+    # The full story stays in this job's log; Telegram gets one short line (2026-10-19, per explicit
+    # direction: "just a small message. not a long message"). The Research tab has the rest.
+    print(f"[{lane}] {key}: verdict {verdict or 'unreadable'} ({exp_id}). {promo_line(promo)}", flush=True)
+    msg = outcome_message(lane, strategy_name(state_dir, lane, key), verdict, exp_id, promo)
     print(msg, flush=True)
     if send:
         from reporting.telegram_notifier import send_telegram_message
-        send_telegram_message(msg, token, chat_id)
+        send_telegram_message(msg, token, chat_id, kind="research_outcome", parse_mode=None)
     return True
+
+
+LANE_SHORT = {"india": "India", "us": "US", "crypto": "crypto"}
+
+
+def strategy_name(state_dir: str, lane: str, key: str) -> str:
+    """The human name the Research tab shows for `key`: the queue row's name (the roadmap's), else
+    the registry's display_name, else the key itself. Never raises -- a name is decoration."""
+    try:
+        for row in reversed(research_queue.load(state_dir, lane).get("history", [])):
+            if row.get("key") == key and row.get("name"):
+                return row["name"]
+    except Exception:
+        pass
+    try:
+        from deployment.deployment_manager import get_strategy
+        record = get_strategy(key)
+        if record is not None and getattr(record, "display_name", "") and record.display_name != key:
+            return record.display_name
+    except Exception:
+        pass
+    return key
+
+
+def _pool_of(promo: dict) -> str:
+    """"Pool I" out of auto_paper_promotion's runner label ("run_pool_i.py (Pool I, US)")."""
+    m = re.search(r"\((Pool [A-Z0-9]+)", str(promo.get("runner") or ""))
+    return m.group(1) if m else ""
+
+
+def outcome_message(lane: str, name: str, verdict: str, exp_id: str, promo: dict) -> str:
+    """One plain line for Telegram: what was researched, the verdict, and whether it went to paper."""
+    word = (verdict or "").upper() or f"no verdict read (see {exp_id})"
+    pool = _pool_of(promo)
+    where = f" ({pool})" if pool else ""
+    reason = str(promo.get("reason") or "")
+    if promo.get("promoted"):
+        if reason.startswith("already paper trading"):
+            outcome = f"already paper trading{where}"
+        else:
+            outcome = f"promoted to paper trading{where}"
+    elif reason.startswith("could not promote"):
+        outcome = "NOT promoted -- promotion failed, see the backtest log"
+    elif "no paper-trading runner" in reason:
+        outcome = "not promoted -- no paper runner has it yet"
+    else:
+        outcome = "not promoted"
+    return f"\U0001F52C Research done \u2014 {name} ({LANE_SHORT.get(lane, lane)}): {word} \u2192 {outcome}"
 
 
 def main() -> None:

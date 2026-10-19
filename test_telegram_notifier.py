@@ -17,7 +17,7 @@ class TestSendTelegramMessageReplyMarkup(unittest.TestCase):
         fake_resp = MagicMock()
         fake_resp.json.return_value = {"ok": True}
         with patch("reporting.telegram_notifier.requests.post", return_value=fake_resp) as mock_post:
-            send_telegram_message("hi", "tok", "123")
+            send_telegram_message("hi", "tok", "123", kind="bot_reply")
         self.assertNotIn("reply_markup", mock_post.call_args.kwargs["data"])
 
     def test_reply_markup_included_and_json_encoded_when_provided(self):
@@ -25,12 +25,12 @@ class TestSendTelegramMessageReplyMarkup(unittest.TestCase):
         fake_resp.json.return_value = {"ok": True}
         keyboard = {"keyboard": [[{"text": "/watchlist"}]]}
         with patch("reporting.telegram_notifier.requests.post", return_value=fake_resp) as mock_post:
-            send_telegram_message("hi", "tok", "123", reply_markup=keyboard)
+            send_telegram_message("hi", "tok", "123", reply_markup=keyboard, kind="bot_reply")
         sent = mock_post.call_args.kwargs["data"]
         self.assertEqual(json.loads(sent["reply_markup"]), keyboard)
 
     def test_not_configured_still_prints_and_ignores_reply_markup(self):
-        result = send_telegram_message("hi", "", "", reply_markup={"keyboard": []})
+        result = send_telegram_message("hi", "", "", reply_markup={"keyboard": []}, kind="bot_reply")
         self.assertEqual(result, {"status": "not_configured"})
 
 

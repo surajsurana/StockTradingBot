@@ -23,11 +23,58 @@ throughout this project.
 """
 
 import json
+import os
+from datetime import datetime
 
 import requests
 
+# THE ONE GATE (2026-10-19, per explicit direction: "i think the daily telegram is not making sense
+# ever since the dashboard is there. so lets remove the telegram messgas for now. infact we can just
+# put messgase on telegram upon reseach completed and result of the research weather its promoted
+# to paper trade or retired. and just a small message. not a long message. rest all messages on
+# telegram lets stop.").
+#
+# Every send names its `kind`; only the kinds in deployment.settings.TELEGRAM_ALLOWED_KINDS reach
+# Telegram. Everything else is muted: not sent, one line appended to MUTED_LOG_PATH instead, so what
+# would have gone out is still findable. The scripts that used to send keep running and keep doing
+# their real work (writing the caches the dashboard reads) -- only the push is gone. Undoing this is
+# one setting, not a code change.
+DEFAULT_ALLOWED_KINDS = frozenset({"research_outcome", "bot_reply"})
+MUTED_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "logs", "telegram_muted.log")
 
-def send_telegram_message(message: str, bot_token: str, chat_id: str, reply_markup: dict = None) -> dict:
+
+def allowed_kinds() -> set:
+    """The kinds that may reach Telegram right now. Read at call time, so the setting (and a test's
+    patch of it) always wins; falls back to the default if deployment.settings can't be imported."""
+    try:
+        from deployment import settings as deployment_settings
+        return set(getattr(deployment_settings, "TELEGRAM_ALLOWED_KINDS", DEFAULT_ALLOWED_KINDS))
+    except Exception:
+        return set(DEFAULT_ALLOWED_KINDS)
+
+
+def kind_allowed(kind: str) -> bool:
+    """True if a message of this kind may be pushed to Telegram. Also the check for any other
+    Telegram API call that answers someone (portfolio_b/telegram_bot.py's answerCallbackQuery), so
+    nothing reaches the API around this gate."""
+    return kind in allowed_kinds()
+
+
+def _log_muted(kind: str, message: str) -> None:
+    """One line per muted message. Never raises: a full disk or a read-only checkout must not turn
+    a muted notification into a crashed job."""
+    try:
+        snippet = " ".join(str(message or "").split())[:200]
+        os.makedirs(os.path.dirname(MUTED_LOG_PATH), exist_ok=True)
+        with open(MUTED_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')}\t{kind}\t{snippet}\n")
+    except Exception:
+        pass
+
+
+def send_telegram_message(message: str, bot_token: str, chat_id: str, reply_markup: dict = None,
+                          kind: str = "general", parse_mode: str = "Markdown") -> dict:
     """
     Sends `message` to `chat_id` via the given bot. Falls back to printing
     (rather than raising) if bot_token or chat_id aren't configured yet --
@@ -41,7 +88,18 @@ def send_telegram_message(message: str, bot_token: str, chat_id: str, reply_mark
     (the default) omits it entirely -- a plain-text message with no
     keyboard change, exactly today's existing behavior for every other
     caller (run_paper_trading.py, run_portfolio_c.py, ...).
+
+    kind (2026-10-19): what this message is. Only kinds in TELEGRAM_ALLOWED_KINDS are sent; anything
+    else -- including every caller that doesn't say, which defaults to "general" -- is muted and
+    logged, returning {"status": "muted", "kind": kind}. See the gate's note at the top of this file.
+
+    parse_mode: "Markdown" (the long-standing default) or None for plain text -- a short message that
+    may carry a raw strategy key needs plain text, since Markdown rejects an unbalanced "_".
     """
+    if not kind_allowed(kind):
+        _log_muted(kind, message)
+        return {"status": "muted", "kind": kind}
+
     if not bot_token or not chat_id:
         print("=" * 50)
         print("[TELEGRAM -- not configured, printing instead]")
@@ -49,7 +107,9 @@ def send_telegram_message(message: str, bot_token: str, chat_id: str, reply_mark
         print("=" * 50)
         return {"status": "not_configured"}
 
-    data = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    data = {"chat_id": chat_id, "text": message}
+    if parse_mode:
+        data["parse_mode"] = parse_mode
     if reply_markup is not None:
         data["reply_markup"] = json.dumps(reply_markup)
 

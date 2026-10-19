@@ -104,7 +104,7 @@ def main() -> None:
     if args.send:
         from reporting.telegram_notifier import send_telegram_message
         res = send_telegram_message(msg, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
-        if res.get("ok") or res.get("status") == "not_configured":
+        if res.get("ok") or res.get("status") in ("not_configured", "muted"):
             ids = (sent.get("ids", []) if sent.get("when") == a["when"] else []) + [t["id"] for t in todo]
             json.dump({"when": a["when"], "ids": ids}, open(path, "w", encoding="utf-8"))
 

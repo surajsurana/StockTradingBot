@@ -40,7 +40,7 @@ from data.fetch_historical import fetch_daily_candles
 from deployment.daily_details_store import load_details
 from portfolio_b import state as pbs
 from portfolio_b.engine import get_watchlist_with_names
-from reporting.telegram_notifier import delete_bot_commands, send_telegram_message
+from reporting.telegram_notifier import delete_bot_commands, kind_allowed, send_telegram_message
 
 _WATCHLIST_PATTERN = re.compile(r"^/watchlist\b", re.IGNORECASE)
 _HELP_PATTERN = re.compile(r"^/help\b|^/start\b", re.IGNORECASE)
@@ -419,7 +419,10 @@ def _answer_callback_query(bot_token: str, callback_query_id: str) -> None:
     -- has no visible text of its own (the actual confirmation is a
     normal sendMessage, see poll_and_process_commands()). Best-effort:
     a failure here is logged, never raised, since the real user-visible
-    reply has already been sent by the time this runs."""
+    reply has already been sent by the time this runs. Asks the same gate as every send
+    (kind "bot_reply"), so no Telegram call goes around deployment/settings.TELEGRAM_ALLOWED_KINDS."""
+    if not kind_allowed("bot_reply"):
+        return
     try:
         resp = requests.post(f"https://api.telegram.org/bot{bot_token}/answerCallbackQuery",
                               json={"callback_query_id": callback_query_id}, timeout=10)
@@ -490,7 +493,7 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
                 reply = _handle_callback_query(data, name_fn=name_fn)
             except Exception as e:
                 reply = f"Something went wrong processing that: {e}"
-            send_telegram_message(reply, bot_token, chat_id, reply_markup=MAIN_MENU_KEYBOARD)
+            send_telegram_message(reply, bot_token, chat_id, reply_markup=MAIN_MENU_KEYBOARD, kind="bot_reply")
             _answer_callback_query(bot_token, callback_query.get("id", ""))
             processed.append((f"[button] {data}", reply))
             continue
@@ -507,10 +510,12 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
             reply = CommandReply(f"Something went wrong processing that command: {e}")
 
         if reply is not None:
+            # Replies to a command Suraj himself just sent are not pushed notifications, so they stay
+            # allowed under the 2026-10-19 Telegram mute (deployment/settings.TELEGRAM_ALLOWED_KINDS).
             send_telegram_message(reply.text, bot_token, chat_id,
-                                   reply_markup=reply.reply_markup or MAIN_MENU_KEYBOARD)
+                                   reply_markup=reply.reply_markup or MAIN_MENU_KEYBOARD, kind="bot_reply")
             for extra in (reply.extra_messages or []):
-                send_telegram_message(extra, bot_token, chat_id)
+                send_telegram_message(extra, bot_token, chat_id, kind="bot_reply")
             processed.append((message["text"], reply.text))
 
     if max_update_id > offset:

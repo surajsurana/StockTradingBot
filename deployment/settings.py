@@ -158,6 +158,20 @@ from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID   # noqa: F401 
 # that failed to run shows up there as "not updated today".
 TELEGRAM_SINGLE_DAILY_SUMMARY = os.environ.get("TELEGRAM_SINGLE_DAILY_SUMMARY", "1") == "1"
 
+# TELEGRAM_ALLOWED_KINDS (added 2026-10-19, per explicit direction: "i think the daily telegram is
+# not making sense ever since the dashboard is there. so lets remove the telegram messgas for now.
+# infact we can just put messgase on telegram upon reseach completed and result of the research
+# weather its promoted to paper trade or retired. and just a small message. not a long message.
+# rest all messages on telegram lets stop."). The ONLY kinds of message that reach Telegram;
+# reporting/telegram_notifier.send_telegram_message() mutes everything else (including the daily
+# pool summary above) and logs it to logs/telegram_muted.log. "research_outcome" = one short line
+# when a backtest finishes (verdict + whether it went to paper) or a paper strategy is retired;
+# "bot_reply" = the Portfolio B bot answering a command Suraj just sent it. To bring every message
+# back, set this to include "general" (env: TELEGRAM_ALLOWED_KINDS="research_outcome,bot_reply,general").
+TELEGRAM_ALLOWED_KINDS = frozenset(
+    k.strip() for k in os.environ.get("TELEGRAM_ALLOWED_KINDS", "research_outcome,bot_reply").split(",")
+    if k.strip())
+
 DEPLOYMENT_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.join(DEPLOYMENT_DIR, "state")
 PAPER_TRADING_STATE_DIR = os.path.join(STATE_DIR, "paper_trading")
