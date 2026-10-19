@@ -1047,3 +1047,59 @@ def compute_crypto_idiosyncratic_volatility_percentile_ranks(
     wide = pd.DataFrame(scores)
     pct_ranks = wide.rank(axis=1, pct=True) * 100
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS = 60  # ~2 calendar months -- the midpoint of this
+    # candidate's own disclosed "roughly 1-3 month" strongest-reversal band (research_roadmap.py's
+    # typical_holding_period field), not independently re-derived from Dobrynskaya (2023) /
+    # Ficura & Colak (2023)'s own full papers (the candidate's own known_weaknesses field flags the
+    # exact switch-point as needing that confirmation before implementation, which this module does
+    # not have access to -- see the strategy's module docstring for the full disclosure). Crypto
+    # trades every day, so calendar days are bars, same "every day is a bar" convention as
+    # CRYPTO_ILLIQ_FORMATION_DAYS (252->365) and CRYPTO_IVOL_FORMATION_DAYS (21->30) above.
+
+
+def compute_crypto_long_horizon_reversal_score(
+        price_history: pd.DataFrame, lookback_days: int = CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS) -> pd.Series:
+    """Dobrynskaya (2023) / Ficura & Colak (2023)'s long-horizon formation return: trailing
+    `lookback_days` calendar-day Close-to-Close return, as of each day's close -- the SAME
+    single-period cumulative-return construction as compute_crypto_momentum_score() (just a much
+    longer lookback: 60 calendar days vs. that function's 21-day/3-week horizon), since the two
+    papers' documented finding is that this longer window is where crypto's short-horizon momentum
+    switches sign into reversal. No .shift() needed before the ratio -- the value at row i uses
+    only Close prices up to and including row i, no lookahead."""
+    close = price_history["Close"]
+    return close / close.shift(lookback_days) - 1
+
+
+def compute_crypto_long_horizon_reversal_percentile_ranks(
+        data: dict, lookback_days: int = CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of crypto_reversal_percentile (0-100), indexed by date} -- each
+    coin's cross-sectional percentile rank, among whatever coins have a valid (non-NaN, i.e.
+    >=`lookback_days` bars of history) trailing formation-period return that day, of its own
+    60-calendar-day return. LOW percentile means a WORSE recent 60-day return -- this strategy's
+    entry condition is percentile <=10 (the bottom decile, past LOSERS), the candidate's own
+    disclosed long-only reduction of the papers' long-short reversal factor (direction field:
+    "Long-only top-decile (past LOSERS...)"), the same <=10/bottom-decile polarity convention as
+    compute_short_term_reversal_percentile_ranks() above -- a structurally identical mechanism at
+    a much longer horizon, not a duplicated signal (short-term reversal's 21-trading-day equity
+    formation window targets a completely different (1-month equity) effect than crypto's
+    1-3-month "faster metabolism" switch this candidate's mechanism field describes). Same
+    vectorized .rank(axis=1, pct=True) construction as every other cross-sectional signal in this
+    module -- one call ranks every coin for every day simultaneously.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_crypto_long_horizon_reversal_score(df.sort_index(), lookback_days)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

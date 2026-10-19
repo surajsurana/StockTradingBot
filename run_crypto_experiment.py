@@ -33,6 +33,8 @@ RUNNERS = {
     "crypto_illiquidity_premium": (lambda: _lane().run_crypto_illiquidity_premium_experiment, CRYPTO_UNIVERSE, 5),
     "crypto_idiosyncratic_volatility": (lambda: _lane().run_crypto_idiosyncratic_volatility_experiment,
                                         CRYPTO_UNIVERSE, 5),
+    "crypto_long_horizon_reversal": (lambda: _lane().run_crypto_long_horizon_reversal_experiment,
+                                     CRYPTO_UNIVERSE, 5),
 }
 
 

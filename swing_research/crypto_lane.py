@@ -319,6 +319,32 @@ def run_crypto_idiosyncratic_volatility_experiment(data: dict, start_date: date,
     )
 
 
+def run_crypto_long_horizon_reversal_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Dobrynskaya (2023) / Ficura & Colak (2023) crypto long-horizon reversal (crypto_long_horizon_
+    reversal candidate, 2026-10-19) -- the crypto lane's first reversal (not momentum/trend/
+    volatility) mechanism."""
+    from swing_research.strategies.crypto_long_horizon_reversal import (
+        BOTTOM_DECILE_PERCENTILE_THRESHOLD, HOLDING_PERIOD_DAYS, STOP_LOSS_PCT, CryptoLongHorizonReversalStrategy,
+    )
+    from swing_research.published_research_analyst import CRYPTO_LONG_HORIZON_REVERSAL
+    from swing_research.cross_sectional import (
+        CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS, compute_crypto_long_horizon_reversal_percentile_ranks,
+    )
+
+    ranks = compute_crypto_long_horizon_reversal_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("crypto_reversal_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoLongHorizonReversalStrategy(), CRYPTO_LONG_HORIZON_REVERSAL, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_reversal_formation_days": CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS,
+                          "crypto_bottom_decile_percentile_threshold": BOTTOM_DECILE_PERCENTILE_THRESHOLD,
+                          "crypto_holding_period_days": HOLDING_PERIOD_DAYS,
+                          "crypto_rebalance": "last UTC calendar day of each month",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_reversal_single_vintage": True},
+        **kwargs,
+    )
+
+
 def run_crypto_trend_timing_daily_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
     """Faber's rule at daily cadence (2026-09-17) -- see crypto_trend_timing_daily.py."""
     from swing_research.strategies.crypto_trend_timing_daily import (
