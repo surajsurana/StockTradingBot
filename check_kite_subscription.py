@@ -161,7 +161,9 @@ def main() -> None:
         print(text)
         if args.send:
             from reporting.telegram_notifier import send_telegram_message
-            send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            # Allowed through the 2026-10-19 Telegram mute: Suraj, 2026-10-20, "the kite-renewal
+            # message should come on telegram" -- the subscription lapses silently otherwise.
+            send_telegram_message(text, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, kind="kite_renewal")
             state["sent"][alert_id] = now.isoformat(timespec="seconds")
     if not due:
         print(f"Nothing to send (key {'ok' if alive else 'DEAD' if alive is False else 'unknown'}, expires {state['expires']}, {days_left} days).")

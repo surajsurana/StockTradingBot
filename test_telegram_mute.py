@@ -72,10 +72,11 @@ class TestTheGate(_TempLog):
             self._sent("general").assert_called_once()
             self.assertEqual(self._sent("research_outcome").call_count, 0)
 
-    def test_the_default_setting_is_research_outcome_and_bot_reply(self):
+    def test_the_default_setting_is_research_outcome_bot_reply_and_kite_renewal(self):
         from deployment import settings
         if "TELEGRAM_ALLOWED_KINDS" not in os.environ:
-            self.assertEqual(set(settings.TELEGRAM_ALLOWED_KINDS), {"research_outcome", "bot_reply"})
+            self.assertEqual(set(settings.TELEGRAM_ALLOWED_KINDS),
+                             {"research_outcome", "bot_reply", "kite_renewal"})
 
 
 class TestResearchOutcomeMessage(unittest.TestCase):
@@ -224,6 +225,21 @@ class TestNothingGoesAroundTheGate(unittest.TestCase):
         self.assertTrue(calls)
         for c in calls:
             self.assertIn('kind="bot_reply"', c)
+
+
+class TestKiteRenewalStillReachesTelegram(unittest.TestCase):
+    """Suraj, 2026-10-20: "the kite-renewal message should come on telegram"."""
+
+    def test_kite_renewal_is_an_allowed_kind_by_default(self):
+        from deployment import settings as deployment_settings
+        from reporting.telegram_notifier import DEFAULT_ALLOWED_KINDS
+        self.assertIn("kite_renewal", deployment_settings.TELEGRAM_ALLOWED_KINDS)
+        self.assertIn("kite_renewal", DEFAULT_ALLOWED_KINDS)
+
+    def test_check_kite_subscription_sends_as_kite_renewal(self):
+        import inspect
+        import check_kite_subscription
+        self.assertIn('kind="kite_renewal"', inspect.getsource(check_kite_subscription.main))
 
 
 if __name__ == "__main__":
