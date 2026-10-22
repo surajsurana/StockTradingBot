@@ -129,6 +129,14 @@ class TestResearchResults(unittest.TestCase):
         import reporting.lifecycle as mod
         self.assertIn("verdict.md", inspect.getsource(mod._verdict_of))
 
+    def test_a_superseded_candidate_is_not_on_the_timeline(self):
+        """Swapped out of the queue before any research began -- housekeeping, hidden 2026-10-22."""
+        rows = self._with_queue([{"key": "k", "name": "Some Factor", "resolved": "2026-10-22",
+                                  "outcome": "superseded", "experiment_id": None},
+                                 {"key": "j", "name": "Other", "resolved": "2026-10-13",
+                                  "outcome": "abandoned", "experiment_id": None}])
+        self.assertEqual([r["key"] for r in rows], ["j"])
+
     def test_a_candidate_that_produced_no_backtest_reads_differently(self):
         """Abandoned is not a result. Calling it one would put a verdict on something never run."""
         rows = self._with_queue([{"key": "k", "name": "Some Factor", "resolved": "2026-10-07",

@@ -37,6 +37,8 @@ from typing import Optional
 # "Promoted to ...", not "Started ...": these three are the same kind of event -- a strategy moving
 # a stage -- and naming one of them differently made it read as something else going on nearby, so
 # the paper promotion was looked for and not found on a page that was showing it.
+HIDDEN_QUEUE_OUTCOMES = frozenset({"superseded"})   # queue housekeeping, not shown (2026-10-22)
+
 STATUS_EVENTS = {
     "PAPER_TRADING": ("Promoted to paper trading", "paper"),
     "PILOT_LIVE": ("Promoted to live", "live"),
@@ -142,6 +144,11 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                 exp = str(r.get("experiment_id") or "")
                 verdict = _verdict_of(exp)
                 outcome = str(r.get("outcome") or "")
+                # "superseded" = the queue swapped a candidate out before any research began. Queue
+                # housekeeping, not news -- hidden 2026-10-22 at Suraj's request. A stuck queue is
+                # the pipeline-health grid's job now.
+                if outcome in HIDDEN_QUEUE_OUTCOMES and not verdict:
+                    continue
                 # A verdict is the result; an outcome without one means the candidate left the
                 # queue without producing a backtest, which is a different kind of news.
                 what = (f"Research result: {verdict}" if verdict
