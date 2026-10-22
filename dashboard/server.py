@@ -33,6 +33,7 @@ Kept alive by cron (@reboot + a 5-minute watchdog), see the crontab.
 
 import argparse
 import json
+import math
 import os
 import re
 import ssl
@@ -567,6 +568,23 @@ class KiteBalanceCache:
                 self._value = None
                 self._error = f"{type(e).__name__}: {e}"[:200]
             return self._value, self._error
+
+
+def json_safe(obj):
+    """`obj` with every NaN / +-Infinity float replaced by None, so the state is STRICT JSON.
+
+    Python's json.dumps writes NaN and Infinity happily; no browser will parse them. On 2026-10-22 a
+    single NaN S&P 500 quote from the price feed made every /api/state response unreadable -- Safari
+    said "The string did not match the expected pattern", the page kept the last payload it had, and
+    switching to Live went on showing Paper's numbers. One bad quote must never blank the page: it
+    becomes null, which every renderer already shows as a dash."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [json_safe(v) for v in obj]
+    return obj
 
 
 class StateCache:
@@ -1184,7 +1202,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       advice_done=_advice_done() if mode == "live" else None,
                                       advice_results=_advice_results() if mode == "live" else None,
                                       advice_extra=_advice_extra() if mode == "live" else None)
-        return json.dumps(state).encode("utf-8")
+        return json.dumps(json_safe(state), allow_nan=False).encode("utf-8")
 
 
 
