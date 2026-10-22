@@ -667,7 +667,6 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
        both. A strategy going live and an order the book could not place are both things that
        happened at a time; they belong on one clock. -->
   <div class="tools"><span id="notif-count" class="note"></span></div>
-  <div id="notif-reasons" class="poolchips"></div>
   <div class="tblwrap"><table><thead><tr><th class="n">Date</th><th class="n">Time</th><th>What happened</th><th>Strategy</th><th>Where</th><th>Detail</th></tr></thead><tbody id="notif-activity"></tbody></table></div>
   <div class="pager" id="notif-pager">
     <label class="note">Rows per page <select id="notif-pagesize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label>
@@ -1885,10 +1884,9 @@ function renderNotifications(s){
   document.getElementById("notif-count").textContent = n.count
     ? `${n.count} decision${n.count===1?"":"s"}`
     : "nothing was blocked";
-  // Grouped by cause, commonest first: one recurring reason reads very differently from twenty
-  // unrelated ones, and tells you whether there is a single thing to fix.
-  document.getElementById("notif-reasons").innerHTML = (n.by_reason || [])
-    .map(r => `<span class="pchip static" title="${esc(r.reason)}">${esc(short(r.reason))} · ${r.count}</span>`).join("");
+  // The reason-count chips above the timeline were removed 2026-10-22 at Suraj's request: the only
+  // one ever shown counted two orders refused minutes before live trading was first switched on, and
+  // each blocked order already carries its reason on its own row below.
   renderActivity(timelineRows(n));
 }
 
