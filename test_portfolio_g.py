@@ -111,6 +111,27 @@ class TestStopLossIsMechanicalAndFirst(unittest.TestCase):
 
 
 class TestApplyDecisions(unittest.TestCase):
+    # A SELL here appends a trade, so this class must write to a temp dir like its neighbours. It did
+    # not until 2026-10-22, and every server-side test run appended a fake "ETH 3000 -> 3300" trade
+    # to whichever Pool G book was current -- 10 in the paper book and 3 in the LIVE book, which
+    # showed CoinDCX at +Rs3,860 total P&L on an account that had lost money.
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.orig = pgs.PORTFOLIO_G_STATE_DIR
+        pgs.PORTFOLIO_G_STATE_DIR = self.tmp
+
+    def tearDown(self):
+        pgs.PORTFOLIO_G_STATE_DIR = self.orig
+
+    def test_a_sell_writes_its_trade_to_the_temp_book_only(self):
+        portfolio = {"cash": 750.0, "positions": {
+            "ETH": {"entry_price": 3000.0, "entry_date": "2026-09-10", "entry_time": "2026-09-10T08:00",
+                    "quantity": 0.05, "stop_loss": 2500.0}}}
+        _apply_decisions(portfolio, [CoinDecision(symbol="ETH", action="SELL", conviction=0.6, reason="x")],
+                         {"ETH": 3300.0}, datetime(2026, 9, 17, 8, 0, tzinfo=timezone.utc))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, "trades.jsonl")))
+        self.assertTrue(pgs._trades_path().startswith(self.tmp))
+
     def test_buy_sizes_to_max_sleeve_and_sets_the_mechanical_stop(self):
         portfolio = {"cash": 1000.0, "positions": {}}
         decisions = [CoinDecision(symbol="BTC", action="BUY", conviction=0.7, reason="strong trend")]
