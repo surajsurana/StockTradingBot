@@ -2016,3 +2016,94 @@ CRYPTO_IDIOSYNCRATIC_VOLATILITY = PublishedStrategy(
         "the lane's standing question."
     ),
 )
+
+CRYPTO_LONG_HORIZON_REVERSAL = PublishedStrategy(
+    name="Cryptocurrency Long-Horizon Reversal",
+    source_citation=(
+        "Dobrynskaya, V. (2023), \"Cryptocurrency Momentum and Reversal,\" The Journal of "
+        "Alternative Investments, Vol. 26, No. 1, 65-76; corroborated by Ficura, M. and Colak, G. "
+        "(2023), \"Impact of Size and Volume on Cryptocurrency Momentum and Reversal,\" SSRN "
+        "working paper."
+    ),
+    mechanism=(
+        "Using a sample of up to 2,000 cryptocurrencies (2014-2020), Dobrynskaya finds momentum "
+        "at SHORT horizons (up to 2-4 weeks) but a significant REVERSAL once the formation/"
+        "holding horizon extends beyond roughly one month -- past losers over these longer "
+        "windows subsequently outperform. Ficura & Colak corroborate a related horizon-dependent "
+        "momentum/reversal switch, also modulated by coin size and volume. The authors describe "
+        "crypto's much faster switch from momentum to reversal (about 1 month) than equities' "
+        "multi-year De Bondt-Thaler-style reversal as evidence of a 'faster metabolism' in crypto "
+        "markets -- the first genuinely REVERSAL mechanism in this program's crypto lane; every "
+        "other crypto strategy implemented so far is either short-horizon momentum/trend-following "
+        "(crypto_xs_momentum, crypto_tsmom, crypto_trend_timing*) or volatility-based "
+        "(crypto_vol_managed, crypto_idiosyncratic_volatility), never reversal."
+    ),
+    rules=(
+        "Cross-sectional sort of coins by their formation-period return; momentum at short (2-4 "
+        "week) horizons, reversal once the horizon extends beyond ~1 month, strongest in the "
+        "roughly 1-3 month band. Long the top decile of past LOSERS over the longer-horizon "
+        "formation window -- each paper's own long-short construction reduced to long-only, the "
+        "same disclosed interpretive step already used by every prior strategy in this program."
+    ),
+    variant_chosen=(
+        "60-CALENDAR-day formation AND holding horizon -- this module's own conservative midpoint "
+        "of the candidate's disclosed 'roughly 1-3 month' strongest-reversal band (research_"
+        "roadmap.py's typical_holding_period field), NOT a number taken directly from either "
+        "paper's own stated rule; the candidate's own known_weaknesses field explicitly flags that "
+        "the exact switch-point needs confirmation against the full papers before implementation, "
+        "which this implementation does not have access to and discloses rather than assumes away "
+        "(see swing_research/cross_sectional.py's CRYPTO_LONG_HORIZON_REVERSAL_FORMATION_DAYS and "
+        "the strategy's own module docstring). Monthly single-vintage reformation (last UTC "
+        "calendar day of each month) -- the same cadence this lane's own crypto_illiquidity_"
+        "premium.py and crypto_idiosyncratic_volatility.py already use for a formation window "
+        "longer than a single rebalance period."
+    ),
+    scope_reductions=(
+        "LONG ONLY (same disclosed reason as every strategy in this program). BOTTOM-DECILE "
+        "THRESHOLD (percentile <=10, past LOSERS -- the opposite polarity from every momentum "
+        "strategy's >=90 threshold, the same <=10 convention the equity lane's own compute_short_"
+        "term_reversal_percentile_ranks() already established for a structurally identical, "
+        "much-shorter-horizon reversal effect). SINGLE-VINTAGE HOLDING: a position closes only at "
+        "the first month-end on or after 55 calendar days have elapsed (HOLDING_PERIOD_DAYS=55), "
+        "which -- combined with the month-end-only exit gate -- always resolves to 'the SECOND "
+        "month-end after entry' (~60 calendar days held, matching the 60-day formation/reversal "
+        "horizon above), never a 1-month or doubled-up exit. 20% protective stop-loss -- NOT the "
+        "equity strategy's 8%, which this lane's own crypto_xs_momentum.py/crypto_tsmom.py/"
+        "crypto_trend_timing*.py/crypto_illiquidity_premium.py/crypto_idiosyncratic_volatility.py "
+        "already disclose is an equity-volatility number inappropriate for crypto's much higher "
+        "daily volatility; 20% is reused from those strategies rather than inventing a new number. "
+        "2.5% risk-per-unit sizing (12.5% of the book per coin) -- identical sizing convention to "
+        "every other cross-sectional crypto strategy in this lane, not a new number invented for "
+        "this strategy. Book in USDT, fractional quantities. Costs (0.30%/side + 10bps spread) and "
+        "India's 31.2% per-profitable-trade VDA tax with no loss set-off are applied before the "
+        "audit, exactly as for every other crypto strategy -- the verdict is post-tax, pre-tax "
+        "recorded alongside."
+    ),
+    distinctiveness=(
+        "First crypto-lane REVERSAL strategy -- genuinely orthogonal mechanism (reversal, not "
+        "continuation) to every crypto strategy currently implemented in this program, all of "
+        "which are momentum/trend-following or volatility-based. Shares this program's "
+        "'reversal_long_horizon' factor tag with no existing crypto strategy, and shares only a "
+        "structural (not mechanistic) resemblance with the equity lane's compute_short_term_"
+        "reversal_percentile_ranks() (same bottom-decile polarity convention, a completely "
+        "different horizon and asset class). Two independent, recent (2023) studies corroborate "
+        "the same horizon-dependent momentum-to-reversal switch, a real replication -- partially "
+        "offset by at least one more recent (2026) critical paper (Grobys, \"Cryptocurrency "
+        "Momentum: Is It an Illusion?\", International Journal of Finance & Economics) actively "
+        "disputing the robustness of crypto momentum/reversal patterns more broadly, a live "
+        "academic disagreement this candidate should be read against, not treated as settled."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. 60-calendar-day formation/holding horizon "
+        "(this module's own disclosed midpoint estimate, not independently re-derived from the "
+        "full papers): MODERATE -- a materially different true switch-point could change both "
+        "signal quality and the appropriate holding period. Bottom-decile threshold (percentile "
+        "<=10): MINOR. Monthly reformation cadence: MINOR -- matches the lane's own established "
+        "cadence for longer-than-rebalance-period formation windows. 55-calendar-day/'second "
+        "month-end' holding-period resolution: MINOR, same reasoning as crypto_illiquidity_"
+        "premium.py's analogous 25-day/'next month-end' choice. 20% crypto-scaled stop (not the "
+        "equity strategy's 8%): MODERATE, one-directional. 2.5% risk-per-unit / 12.5%-of-book "
+        "sizing: MINOR. USDT book / USD-INR conversion: NEGLIGIBLE for the verdict. Costs and "
+        "31.2% no-offset tax: MAJOR and one-directional -- the lane's standing question."
+    ),
+)
