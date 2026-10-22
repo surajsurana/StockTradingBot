@@ -1647,6 +1647,10 @@ CANDIDATES = [
     ),
     CandidateProfile(
         key="intraday_momentum_half_hour",
+        # Labelled honestly 2026-10-22. Left at the "swing" default it was queued for the India lane,
+        # whose cloud routine may not build intraday work, so it refused it every week and the lane
+        # sat stuck from 2026-10-14. build_roadmap() keeps intraday out of every routine lane.
+        horizon_lane="intraday",
         name="Intraday Momentum (First Half-Hour Return Predicts Last Half-Hour Return)",
         authors="Gao, L., Han, Y., Li, S.Z. and Zhou, G.",
         publication="\"Market Intraday Momentum,\" Journal of Financial Economics, Vol. 129, No. 2, "
@@ -2748,6 +2752,9 @@ def load_portfolio(registry_path: str = REGISTRY_PATH) -> list:
 RESEARCH_LANES = ("india", "crypto", "us")
 
 
+ROUTINE_EXCLUDED_HORIZONS = frozenset({"intraday"})
+
+
 def lane_of(candidate: CandidateProfile) -> str:
     """Which of the three independent research queues (research_queue.py, added 2026-10-03, per
     explicit direction: "shall we also build this same auto research for crypto and us equity?...
@@ -2797,7 +2804,12 @@ def build_roadmap(registry_path: str = REGISTRY_PATH, weights: dict = DEFAULT_WE
       all_scored -- every ScoredCandidate, for the full comparison table.
     """
     portfolio = load_portfolio(registry_path)
-    candidates = CANDIDATES if lane is None else [c for c in CANDIDATES if lane_of(c) == lane]
+    # A lane's queue feeds that lane's cloud routine, and no routine may build intraday work (no live
+    # broker session in its sandbox) -- an intraday pick just stalls the lane (2026-10-14..22). Those
+    # candidates stay in the full roadmap (lane=None) for the Research tab; the Intraday Research Lab
+    # is where they get built.
+    candidates = CANDIDATES if lane is None else [c for c in CANDIDATES if lane_of(c) == lane
+                                                  and c.horizon_lane not in ROUTINE_EXCLUDED_HORIZONS]
     scored = [score_candidate(c, portfolio, weights) for c in candidates]
     researchable_now = sorted(
         (s for s in scored if s.feasibility_classification != "NOT_CURRENTLY_IMPLEMENTABLE"

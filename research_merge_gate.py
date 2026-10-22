@@ -108,6 +108,20 @@ def _run_suite(cwd: str, timeout: int = 2400) -> tuple:
     return done.returncode == 0, "\n".join(out.strip().splitlines()[-8:])
 
 
+def prepare_worktree(tree: str) -> None:
+    """Give a throwaway worktree the one file git does not carry: config/settings.py.
+
+    It is git-ignored (it holds the real keys), so a fresh worktree has none, and on 2026-10-22 that
+    made ~120 tests fail on import EVEN ON CLEAN MAIN -- the gate refused every research branch for
+    a week whatever it contained. The worktree gets the committed TEMPLATE, never the real file: no
+    broker credentials, no Telegram token, so nothing the suite runs here can reach an account or a
+    phone."""
+    example = os.path.join(tree, "config", "settings.example.py")
+    target = os.path.join(tree, "config", "settings.py")
+    if os.path.exists(example) and not os.path.exists(target):
+        shutil.copyfile(example, target)
+
+
 def merge(branch: str, push: bool = True) -> dict:
     """Merge `branch` into main IN A THROWAWAY WORKTREE, run the suite there, and push only if it
     passed. The live checkout is never touched, so a conflict or a red suite cannot leave the box
@@ -126,6 +140,7 @@ def merge(branch: str, push: bool = True) -> dict:
         if merged.returncode != 0:
             result["reason"] = "the merge conflicts with main and needs a person"
             return result
+        prepare_worktree(tree)
         passed, tail = _run_suite(tree)
         if not passed:
             result["reason"] = f"the test suite fails with it merged -- a person should look\n{tail}"

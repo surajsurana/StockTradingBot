@@ -436,7 +436,9 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
         r_all = build_roadmap(registry_path=_fake_registry_path())
         r_india = build_roadmap(registry_path=_fake_registry_path(), lane="india")
         non_india_keys = _CRYPTO_KEYS | _US_KEYS
-        self.assertEqual({s.candidate.key for s in r_all["all_scored"]} - non_india_keys,
+        # Intraday candidates belong to no routine lane (2026-10-22) -- the routines may not build them.
+        intraday_keys = {s.candidate.key for s in r_all["all_scored"] if s.candidate.horizon_lane == "intraday"}
+        self.assertEqual({s.candidate.key for s in r_all["all_scored"]} - non_india_keys - intraday_keys,
                          {s.candidate.key for s in r_india["all_scored"]})
         self.assertTrue(non_india_keys.isdisjoint({s.candidate.key for s in r_india["all_scored"]}))
 
@@ -460,6 +462,28 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
         # cross-market ports added 2026-10-03, all of which need only data this program already has.
         self.assertEqual({s.candidate.key for s in r_us["researchable_now"]}, _US_KEYS - {"dogs_of_the_dow"})
         self.assertEqual([s.candidate.key for s in r_us["deferred_pending_data"]], ["dogs_of_the_dow"])
+
+class TestIntradayNeverReachesARoutineLane(unittest.TestCase):
+    """2026-10-22: an intraday candidate labelled "swing" sat at the head of the India lane from
+    10-14; the cloud routine may not build intraday work and refused it every week."""
+
+    def test_the_half_hour_momentum_candidate_is_labelled_intraday(self):
+        by_key = {c.key: c for c in CANDIDATES}
+        self.assertEqual(by_key["intraday_momentum_half_hour"].horizon_lane, "intraday")
+
+    def test_no_lane_roadmap_ranks_an_intraday_candidate(self):
+        from swing_research.research_roadmap import build_roadmap
+        from research_queue import LANES
+        for lane in LANES:
+            rm = build_roadmap(lane=lane)
+            for group in ("researchable_now", "paper_direct_eligible", "all_scored"):
+                self.assertFalse([s.candidate.key for s in rm[group] if s.candidate.horizon_lane == "intraday"],
+                                 f"{lane}/{group}")
+
+    def test_intraday_candidates_still_show_in_the_full_roadmap(self):
+        from swing_research.research_roadmap import build_roadmap
+        keys = {s.candidate.key for s in build_roadmap()["all_scored"]}
+        self.assertIn("intraday_momentum_half_hour", keys)
 
 
 if __name__ == "__main__":

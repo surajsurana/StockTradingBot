@@ -201,6 +201,45 @@ class TestItChangesNoMoney(unittest.TestCase):
                           "place_order("):
             self.assertNotIn(forbidden, code, forbidden)
 
+class TestTheWorktreeHasItsSettings(unittest.TestCase):
+    """2026-10-22: a fresh worktree has no config/settings.py (git-ignored), so ~120 tests failed on
+    import even on clean main and the gate refused every research branch for a week."""
+
+    def _tree(self):
+        import os
+        import tempfile
+        tree = tempfile.mkdtemp()
+        os.makedirs(os.path.join(tree, "config"))
+        with open(os.path.join(tree, "config", "settings.example.py"), "w", encoding="utf-8") as f:
+            f.write("TELEGRAM_BOT_TOKEN = ''\n")
+        return tree
+
+    def test_the_template_is_copied_in(self):
+        import os
+        tree = self._tree()
+        gate.prepare_worktree(tree)
+        with open(os.path.join(tree, "config", "settings.py"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "TELEGRAM_BOT_TOKEN = ''\n")
+
+    def test_an_existing_settings_file_is_never_overwritten(self):
+        import os
+        tree = self._tree()
+        with open(os.path.join(tree, "config", "settings.py"), "w", encoding="utf-8") as f:
+            f.write("KEEP = 1\n")
+        gate.prepare_worktree(tree)
+        with open(os.path.join(tree, "config", "settings.py"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "KEEP = 1\n")
+
+    def test_it_runs_after_the_merge_and_before_the_suite(self):
+        with open(gate.__file__, encoding="utf-8") as f:
+            code = f.read()
+        body = code[code.index("def merge("):code.index("def _message(")]
+        self.assertLess(body.index('_git(["merge"'), body.index("prepare_worktree(tree)"))
+        self.assertLess(body.index("prepare_worktree(tree)"), body.index("_run_suite(tree)"))
+        # The template, never the real credentials file.
+        prep = code[code.index("def prepare_worktree("):code.index("def merge(")]
+        self.assertIn('"settings.example.py"', prep)
+
 
 if __name__ == "__main__":
     unittest.main()

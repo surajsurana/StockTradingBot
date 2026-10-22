@@ -193,3 +193,9 @@ USE_NIFTY500_UNIVERSE = True
 RESEARCH_LAB_VIRTUAL_CAPITAL = 100000   # never real money in this phase
 SWING_CAPITAL_ALLOCATION_PCT = 100      # unchanged default -- swing still assumes 100%
 INTRADAY_CAPITAL_ALLOCATION_PCT = 0     # 0 until a strategy is approved for production
+
+# --- US equity tax (swing_research/us_equity_costs.py, Pool I/I2/I3 reporting) ---
+# Your OTHER annual income, which decides the slab your short-term US gains are taxed at.
+# Personal: set the real figure in settings.py. This default matches USEquityCostModel's own,
+# and research_merge_gate.prepare_worktree() relies on every setting the code reads being here.
+US_EQUITY_OTHER_ANNUAL_INCOME = 1_400_000
