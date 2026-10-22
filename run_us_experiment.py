@@ -64,6 +64,10 @@ RUNNERS = {
         lambda: _director().run_short_term_reversal_us_experiment,
         "Short-Term Reversal, US variant (the unmodified India Strategy class against the frozen "
         "S&P 500 universe)"),
+    "us_high_volume_return_premium": (
+        lambda: _director().run_high_volume_return_premium_us_experiment,
+        "High-Volume Return Premium, US variant (the unmodified India Strategy class against the "
+        "frozen S&P 500 universe)"),
 }
 
 
