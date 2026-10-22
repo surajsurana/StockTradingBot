@@ -1,7 +1,7 @@
 {
   "current": {
-    "key": "intraday_momentum_half_hour",
-    "name": "Intraday Momentum (First Half-Hour Return Predicts Last Half-Hour Return)",
+    "key": "industry_momentum",
+    "name": "Industry Momentum",
     "mode": "backtest",
     "in_progress": false,
     "stale": false,
