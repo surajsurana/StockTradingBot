@@ -328,6 +328,20 @@ AGENTS = [
                "say. Never merges anything itself, never touches the registry or a live pool; promotion is "
                "always a separate, manual step. Swing, medium, long-term and crypto only -- intraday needs a "
                "live broker session it doesn't have."},
+    {"id": "pipeline_monitor", "avatar": {"type": "robot", "body": "#4A6B5D", "eye": "#E0A85A", "shape": "square"}, "name": "Pipeline Monitor", "icon": "\U0001F6A6", "desk": "research_feeder", "kind": "Rules only",
+     "job": "Checks every research lane is moving", "when": "Daily 9:20 am IST (merge-gate self-test 3:30 am)", "status_from": "research_health",
+     "detail": "For India, crypto and US, checks each stage -- queue, routine claim, merge gate, nightly "
+               "backtest, latest result -- and colours it green, amber or red on the Research tab. Once a "
+               "day it also runs the test suite on clean main the way the merge gate does, so a broken "
+               "gate shows up before it refuses a week of work. Sends one short Telegram line when a lane "
+               "turns red, and one when it recovers. Reads only; changes nothing."},
+    {"id": "research_ops", "avatar": {"type": "robot", "body": "#2F5D7C", "eye": "#4CC383", "shape": "round"}, "name": "Research Ops", "icon": "\U0001F527", "desk": "research_feeder", "kind": "AI",
+     "job": "Finds out why research is stuck", "when": "On request", "status_from": None,
+     "detail": "The on-call diagnostician for the research pipeline: reads the health check, the server's "
+               "logs and the cloud routines' own run logs, and explains in plain language what stopped "
+               "and what would fix it. Proposes code fixes as a report; never edits code on the server, "
+               "never restarts anything, never touches the strategy registry or anything with money. Only "
+               "unblocks the queue (skip or requeue a stuck candidate) when asked."},
     {"id": "discovery_routine", "avatar": {"type": "robot", "body": "#B8860B", "eye": "#5FB7C0", "shape": "round"}, "name": "Discovery Scout", "icon": "\U0001F50D", "desk": "research_feeder", "kind": "AI",
      "job": "Searches for new candidates, once a month", "when": "2nd of every month, 9:00 am IST", "status_from": None,
      "detail": "Also unattended: reads what's already tracked, then searches for genuinely new strategies "
@@ -1536,6 +1550,8 @@ SCHEDULE = [
     {"id": "eod_b", "label": "Portfolio B", "at": "15:50", "log": "portfolio_b.log"},
     {"id": "summary", "label": "Telegram daily summary", "at": "16:05", "log": "daily_pool_summary.log"},
     {"id": "research_queue", "label": "Research queue: rank and advance", "at": "every 6h", "log": "research_queue.log"},
+    {"id": "research_health", "label": "Research pipeline health check (merge-gate self-test 03:30)", "at": "09:20",
+     "log": "research_pipeline_health.log"},
 ]
 
 
@@ -1832,6 +1848,39 @@ def agents_view(queues: Optional[dict] = None) -> list:
     return [{**a, "live_status": "working"} if a["id"] == "research_routine" else a for a in AGENTS]
 
 
+HEALTH_STAGES = (("queue", "Queue"), ("routine", "Routine"), ("merge", "Merge"), ("backtest", "Backtest"),
+                 ("outcome", "Outcome"))
+
+
+def pipeline_health_view(health: Optional[dict]) -> dict:
+    """research_pipeline_health.py's last saved evaluation, shaped for the Research tab's grid: one row
+    per lane, one dot per stage. Never raises -- a missing or malformed file is "not checked yet",
+    because a health check must not be able to take the page down."""
+    lanes_out = []
+    try:
+        lanes = (health or {}).get("lanes") or {}
+        for lane in ("india", "crypto", "us"):
+            ev = lanes.get(lane)
+            if not isinstance(ev, dict):
+                continue
+            stages = ev.get("stages") or {}
+            lanes_out.append({
+                "lane": lane, "label": LANE_LABELS.get(lane, lane), "status": str(ev.get("status") or ""),
+                "red_since": ev.get("red_since"), "candidate": ev.get("candidate"),
+                "stages": [{"id": sid, "label": label,
+                            "status": str((stages.get(sid) or {}).get("status") or ""),
+                            "reason": str((stages.get(sid) or {}).get("reason") or "")}
+                           for sid, label in HEALTH_STAGES]})
+        self_test = (health or {}).get("self_test") or {}
+        return {"checked": bool(lanes_out), "checked_at": (health or {}).get("checked_at") if lanes_out else None,
+                "lanes": lanes_out, "stages": [label for _, label in HEALTH_STAGES],
+                "self_test": {"ran_at": self_test.get("ran_at"), "ok": self_test.get("ok"),
+                              "summary": str(self_test.get("summary") or "")} if isinstance(self_test, dict) else {}}
+    except Exception:
+        return {"checked": False, "checked_at": None, "lanes": [], "stages": [l for _, l in HEALTH_STAGES],
+                "self_test": {}}
+
+
 def _ai_credit_health(state_dir: str, logs_dir: str) -> dict:
     """Never raises: a health check that can take the whole page down is worse than no check."""
     try:
@@ -1854,7 +1903,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           advice_results: Optional[dict] = None, advice_extra: Optional[dict] = None,
                           research_queues: Optional[dict] = None, us_prices: Optional[dict] = None,
                           kite_balance: tuple = (None, ""),
-                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None) -> dict:
+                          us_prev_close: Optional[dict] = None, macro_quotes: Optional[dict] = None,
+                          research_health: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
     active = {r.strategy_key: r.display_name for r in registry_records
@@ -2006,6 +2056,8 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
         # change depending on which view you are looking at.
         "live_capital": live_capital, "live_orders": live_orders,
         "notifications": notifications_view(STATE_DIR_CANONICAL),
+        # Read once from the canonical state directory by the caller, so Paper and Live show the same grid.
+        "research_health": pipeline_health_view(research_health),
         "roadmap": roadmap_view(roadmap, registry_records, research_queues, now) if roadmap else {"ready": [], "deferred": [], "lanes": [], "results": [], "weights": {}, "next_run": next_research_run(now)},
     }
     # Pool H is your real Groww portfolio: real numbers in Live mode, and a listed-but-empty pool otherwise

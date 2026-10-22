@@ -167,11 +167,16 @@ TELEGRAM_SINGLE_DAILY_SUMMARY = os.environ.get("TELEGRAM_SINGLE_DAILY_SUMMARY", 
 # pool summary above) and logs it to logs/telegram_muted.log. "research_outcome" = one short line
 # when a backtest finishes (verdict + whether it went to paper) or a paper strategy is retired;
 # "bot_reply" = the Portfolio B bot answering a command Suraj just sent it. To bring every message
-# back, set this to include "general" (env: TELEGRAM_ALLOWED_KINDS="research_outcome,bot_reply,kite_renewal,general").
+# back, set this to include "general" (env: TELEGRAM_ALLOWED_KINDS="research_outcome,bot_reply,kite_renewal,research_alert,general").
 # "kite_renewal" (2026-10-20, per explicit direction: "the kite-renewal message should come on
 # telegram") = check_kite_subscription.py's renewal/dead-key/low-balance reminders.
+# "research_alert" (2026-10-22, per explicit direction: "we need an agent or a system who makes sure
+# research pipeline is working smoothly") = research_pipeline_health.py's one line when a research
+# lane turns red, and once when it recovers -- research stalled ~8 days unseen because every alert
+# that noticed was muted.
 TELEGRAM_ALLOWED_KINDS = frozenset(
-    k.strip() for k in os.environ.get("TELEGRAM_ALLOWED_KINDS", "research_outcome,bot_reply,kite_renewal").split(",")
+    k.strip() for k in os.environ.get("TELEGRAM_ALLOWED_KINDS",
+                                      "research_outcome,bot_reply,kite_renewal,research_alert").split(",")
     if k.strip())
 
 DEPLOYMENT_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -240,6 +240,42 @@ class TestTheWorktreeHasItsSettings(unittest.TestCase):
         prep = code[code.index("def prepare_worktree("):code.index("def merge(")]
         self.assertIn('"settings.example.py"', prep)
 
+class TestTheSuiteRunner(unittest.TestCase):
+    """2026-10-22: with the settings fixed, the gate still refused both branches on the VPS -- once
+    for a test that needs node (not on cron's PATH) and once for a timing test that flakes under load."""
+
+    FAILED = ("FAIL: test_spaces (test_fetch_kite_intraday.TestRateLimiter.test_spaces)\n"
+              "Ran 10 tests\nFAILED (failures=1)")
+
+    def _proc(self, code, out=""):
+        return subprocess.CompletedProcess([], code, stdout=out, stderr="")
+
+    def test_a_test_that_passes_on_one_rerun_does_not_block(self):
+        with patch("subprocess.run", side_effect=[self._proc(1, self.FAILED), self._proc(0, "OK")]) as run:
+            passed, tail = gate._run_suite("/tmp/x")
+        self.assertTrue(passed)
+        self.assertIn("test_fetch_kite_intraday.TestRateLimiter.test_spaces", run.call_args_list[1][0][0])
+        self.assertIn("re-run", tail)
+
+    def test_a_test_that_fails_twice_blocks(self):
+        with patch("subprocess.run", side_effect=[self._proc(1, self.FAILED), self._proc(1, self.FAILED)]):
+            passed, _ = gate._run_suite("/tmp/x")
+        self.assertFalse(passed)
+
+    def test_many_failures_are_never_retried(self):
+        many = "\n".join(f"ERROR: test_{i} (test_mod.T.test_{i})" for i in range(gate.MAX_RETRIED_TESTS + 1))
+        with patch("subprocess.run", side_effect=[self._proc(1, many)]) as run:
+            passed, _ = gate._run_suite("/tmp/x")
+        self.assertFalse(passed)
+        self.assertEqual(run.call_count, 1)
+
+    def test_the_suite_knows_it_is_running_under_the_gate(self):
+        self.assertEqual(gate._suite_env()["STB_RESEARCH_MERGE_GATE"], "1")
+
+    def test_the_gate_refuses_dashboard_changes_which_is_why_the_node_check_may_skip(self):
+        r = TestTheFourChecks()._review.__func__(TestTheFourChecks(), files=["dashboard/index.html", "test_a.py"])
+        self.assertFalse(r["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

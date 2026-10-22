@@ -99,13 +99,46 @@ def review(branch: str) -> dict:
     return {"ok": not failed, "branch": branch, "checks": checks, "reasons": failed, "files": files}
 
 
+MAX_RETRIED_TESTS = 5
+
+
+def _suite_env() -> dict:
+    """Marks the run as the gate's. test_dashboard_page's "node must exist" check skips on it: the VPS
+    has no node, and review() refuses any branch touching dashboard/, so the page cannot change here."""
+    env = dict(os.environ)
+    env["STB_RESEARCH_MERGE_GATE"] = "1"
+    return env
+
+
+def _failed_ids(out: str) -> list:
+    """`FAIL: test_x (module.Class.test_x)` / `ERROR: ...` lines -> unittest ids to re-run."""
+    import re
+    return sorted(set(re.findall(r"^(?:FAIL|ERROR): \S+ \(([\w.]+)\)", out, flags=re.M)))
+
+
 def _run_suite(cwd: str, timeout: int = 2400) -> tuple:
-    """(passed, tail). Uses this interpreter, so the worktree needs no environment of its own."""
+    """(passed, tail). Uses this interpreter, so the worktree needs no environment of its own.
+
+    A handful of failures get ONE re-run of just those tests: a timing test that flakes under a
+    loaded box (test_fetch_kite_intraday's rate-limiter spacing, 2026-10-22) must not cost a lane
+    its week. Anything that fails twice, or more than MAX_RETRIED_TESTS at once, is a real failure."""
     import sys
+    env = _suite_env()
     done = subprocess.run([sys.executable, "-m", "unittest", "discover", "-p", "test_*.py"],
-                          cwd=cwd, capture_output=True, text=True, timeout=timeout)
+                          cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
     out = (done.stdout or "") + (done.stderr or "")
-    return done.returncode == 0, "\n".join(out.strip().splitlines()[-8:])
+    tail = "\n".join(out.strip().splitlines()[-8:])
+    if done.returncode == 0:
+        return True, tail
+    failed = _failed_ids(out)
+    if not failed or len(failed) > MAX_RETRIED_TESTS:
+        return False, tail
+    again = subprocess.run([sys.executable, "-m", "unittest"] + failed,
+                           cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+    if again.returncode == 0:
+        return True, f"{tail}\n(passed on one re-run of: {', '.join(failed)})"
+    again_out = ((again.stdout or "") + (again.stderr or "")).strip().splitlines()
+    return False, "\n".join(again_out[-8:])
 
 
 def prepare_worktree(tree: str) -> None:

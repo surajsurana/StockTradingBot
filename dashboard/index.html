@@ -315,6 +315,15 @@ table.roadmaptbl td,table.roadmaptbl th{white-space:normal;overflow-wrap:anywher
    glance without every row growing to the height of its longest sentence. */
 #roadmap td.holding .note{font-size:11.5px;margin-top:2px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 #roadmap .pill{white-space:normal}
+.rhealth{margin:0 0 14px}
+.rhealth table{width:auto;min-width:min(560px,100%);border-collapse:collapse;background:var(--card);border:1px solid var(--rule);border-radius:4px}
+.rhealth th,.rhealth td{padding:6px 12px;text-align:center;font-size:12.5px;border-bottom:1px solid var(--rule)}
+.rhealth th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.rhealth th:first-child,.rhealth td:first-child{text-align:left}
+.rhealth tr:last-child td{border-bottom:0}
+.rhealth td.none{color:var(--muted);text-align:left}
+.hdot{display:inline-block;width:11px;height:11px;border-radius:50%;background:var(--rule);vertical-align:middle;cursor:help}
+.hdot.green{background:var(--gain)}.hdot.amber{background:var(--warn)}.hdot.red{background:var(--loss)}
 .lanestrip{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 0}
 .lanestrip .ln{flex:1 1 240px;background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:4px;padding:10px 13px}
 .lanestrip .ln.live{border-left-color:var(--gain)}
@@ -783,6 +792,7 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
   <div class="repbar" style="margin-bottom:14px"><h2 id="research-title" style="margin:0">Next up for research</h2>
     <div class="ltnav" id="research-nav" role="group" aria-label="Research view">
       <button data-view="queue" class="on">Next up</button><button data-view="results">Results</button></div></div>
+  <div id="research-health" class="rhealth tblwrap"></div>
   <div id="research-queue-view">
     <!-- The same four counts as the Strategies tab. Research is the front of that pipeline, so the
          question "and then what happened to them?" belongs on this page too, answered by the same
@@ -3411,7 +3421,27 @@ function renderRegistry(s){
 }
 
 // The Research tab: the shared candidate roadmap across every horizon, and the one-at-a-time queue.
+// Is each research lane actually moving? research_pipeline_health.py's last daily check, one dot per
+// stage; the reason is the dot's tooltip. Same in Paper and Live -- it is read from one place.
+function renderResearchHealth(s){
+  const el = document.getElementById("research-health");
+  if(!el) return;
+  const h = s.research_health || {};
+  const stages = h.stages || ["Queue", "Routine", "Merge", "Backtest", "Outcome"];
+  const word = {green: "Moving", amber: "Watch", red: "Stuck"};
+  const pill = {green: "ok", amber: "due", red: "miss"};
+  const dot = (st, tip) => `<span class="hdot ${esc(st)}" title="${esc(tip)}" aria-label="${esc((word[st] || "unknown") + ": " + tip)}"></span>`;
+  const head = `<thead><tr><th>Lane</th>${stages.map(l => `<th>${esc(l)}</th>`).join("")}<th title="${esc(h.checked_at ? "Checked " + String(h.checked_at).slice(0, 16).replace("T", " ") : "")}">Overall</th></tr></thead>`;
+  if(!h.checked || !(h.lanes || []).length){
+    el.innerHTML = `<table>${head}<tbody><tr><td class="none" colspan="${stages.length + 2}">Not checked yet</td></tr></tbody></table>`;
+    return;
+  }
+  const st = h.self_test || {};
+  const stTip = st.ran_at ? ` · merge-gate self-test ${String(st.ran_at).slice(0, 10)}: ${st.ok === true ? "clean main green" : st.ok === false ? "clean main FAILS" : (st.summary || "no result")}` : "";
+  el.innerHTML = `<table>${head}<tbody>${h.lanes.map(l => `<tr><td><b>${esc(l.label)}</b></td>${(l.stages || []).map(x => `<td>${dot(x.status, x.reason)}</td>`).join("")}<td><span class="pill ${pill[l.status] || ""}" title="${esc((l.red_since ? "Red since " + l.red_since : "") + (l.candidate ? (l.red_since ? " · " : "") + l.candidate : "") + stTip)}">${esc(word[l.status] || "—")}</span></td></tr>`).join("")}</tbody></table>`;
+}
 function renderResearch(s){
+  renderResearchHealth(s);
   renderStrategyCounts(s, "research-counts");     // the same four counts the Strategies tab shows
   const rm = s.roadmap || {ready:[], deferred:[]};
   const short = t => { t = String(t||""); const cut = t.indexOf(" -- ")>0 ? t.indexOf(" -- ") : (t.indexOf(" (")>0 ? t.indexOf(" (") : -1); return cut>0 ? t.slice(0,cut) : t; };

@@ -50,7 +50,13 @@ class TestThePageScriptParses(unittest.TestCase):
         """The parse check above is the only thing standing between a typo and a blank dashboard, and
         it skips silently without node. This fails loudly instead, so the guard cannot quietly stop
         guarding. (A quote-balance heuristic was tried and dropped -- it cannot tell an apostrophe
-        inside a string from an unterminated one, and a check that cries wolf gets deleted.)"""
+        inside a string from an unterminated one, and a check that cries wolf gets deleted.)
+
+        The research merge gate sets STB_RESEARCH_MERGE_GATE: it only ever merges branches that do
+        not touch dashboard/ (it refuses them), so the page cannot change there, and the VPS it runs
+        on has no node -- this would refuse every research branch for a reason none could cause."""
+        if os.environ.get("STB_RESEARCH_MERGE_GATE"):
+            self.skipTest("research merge gate: dashboard/ cannot change in a branch it would merge")
         self.assertIsNotNone(shutil.which("node"),
                              "node is needed to syntax-check dashboard/index.html")
 

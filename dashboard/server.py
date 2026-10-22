@@ -1184,10 +1184,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         prev_close, crypto_prev_close, us_prev_close = self.price_cache.prev_close_snapshot()
         registry = list_strategies()
         import research_queue
+        import research_pipeline_health
         state = build_dashboard_state(state_root, LOGS_DIR, registry, prices, as_of,
                                       roadmap=self.roadmap_cache.get(), mode=mode,
                                       research_queues={lane: research_queue.load(STATE_DIR, lane)
                                                        for lane in research_queue.LANES},
+                                      research_health=research_pipeline_health.load(STATE_DIR),
                                       kite_balance=self.balance_cache.get(),
                                       coindcx_balance=self.coindcx_cache.get(),
                                       coindcx_prices=self.price_cache.coindcx_snapshot(),
