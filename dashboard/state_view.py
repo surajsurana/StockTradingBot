@@ -1748,11 +1748,23 @@ def roadmap_view(roadmap: dict, registry_records: list, queues: Optional[dict] =
     # because no backtest ever ran for them, and they say so rather than showing blanks that look
     # like a zero.
     names = {s.candidate.key: s.candidate.name for s in roadmap.get("all_scored", [])}
+    # A candidate can close more than once: superseded on 2026-10-04, then researched for real on
+    # 10-23 (crypto_long_horizon_reversal, EXP-099). Keeping the FIRST row showed the stale
+    # "Superseded" and hid the REJECT. A row that settled something (researched / proposed /
+    # skipped) beats one that reopened the candidate; within the same kind, the latest wins.
+    from research_queue import REOPENING_OUTCOMES
+
+    def _rank(h):
+        return (h.get("outcome") not in REOPENING_OUTCOMES, str(h.get("resolved") or ""))
+
     queue_rows = {}
     for lane in RESEARCH_LANES:
         for h in (queues.get(lane) or {}).get("history", []):
-            if h.get("resolved") is not None:
-                queue_rows.setdefault(h["key"], (lane, h))
+            if h.get("resolved") is None:
+                continue
+            seen = queue_rows.get(h["key"])
+            if seen is None or _rank(h) >= _rank(seen[1]):
+                queue_rows[h["key"]] = (lane, h)
 
     def _sortable(exp_id: str, exp: dict) -> dict:
         """Headline numbers flattened onto the row so the dashboard's generic sortRows() can reach

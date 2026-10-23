@@ -832,6 +832,28 @@ class TestBuildDashboardState(unittest.TestCase):
                          ("researched", "EXP-096", "PASS"))
         self.assertEqual(row["status"], "")          # researched, never promoted
 
+    def test_a_later_real_result_beats_an_earlier_superseded_row(self):
+        """crypto_long_horizon_reversal was superseded on 10-04 and researched on 10-23 (EXP-099,
+        REJECT). Keeping the first history row hid the REJECT behind a stale "Superseded"."""
+        queues = {"crypto": {"current": None, "history": [
+            {"key": "k", "name": "Long-Horizon Reversal", "mode": "backtest", "resolved": "2026-10-04",
+             "outcome": "superseded", "experiment_id": None},
+            {"key": "k", "name": "Long-Horizon Reversal", "mode": "backtest", "resolved": "2026-10-23",
+             "outcome": "researched", "experiment_id": "EXP-099"},
+            {"key": "j", "name": "Other", "mode": "backtest", "resolved": "2026-10-05",
+             "outcome": "researched", "experiment_id": "EXP-090"},
+            {"key": "j", "name": "Other", "mode": "backtest", "resolved": "2026-10-20",
+             "outcome": "superseded", "experiment_id": None}]}}
+        with patch("dashboard.state_view._experiment_summary", return_value={"verdict": "REJECT"}):
+            st = build_dashboard_state(self.state_dir, self.logs_dir, self.records, {}, None,
+                                       now=self.now, roadmap={"researchable_now": [],
+                                       "deferred_pending_data": [], "weights": {}},
+                                       research_queues=queues)
+        rows = {r["key"]: r for r in st["roadmap"]["results"]}
+        self.assertEqual((rows["k"]["outcome"], rows["k"]["experiment_id"]), ("researched", "EXP-099"))
+        # a later reopening row never hides an earlier real result either
+        self.assertEqual((rows["j"]["outcome"], rows["j"]["experiment_id"]), ("researched", "EXP-090"))
+
     def test_a_real_fill_is_measured_against_the_rupees_it_actually_cost(self):
         """THE ENTRY SIDE HAS TO COME FROM THE EXCHANGE TOO. The mark was already CoinDCX's, but
         entry_price is the GLOBAL USDT price at decision time and the fill happened on an INR market
