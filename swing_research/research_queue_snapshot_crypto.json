@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "crypto_long_horizon_reversal",
-    "name": "Cryptocurrency Long-Horizon Reversal",
+    "key": "crypto_illiquidity_premium",
+    "name": "Cryptocurrency Illiquidity Premium (Amihud-style)",
     "mode": "backtest",
     "in_progress": true,
-    "stale": true,
-    "claimed_days_ago": 2.7500310390972222,
+    "stale": false,
+    "claimed_days_ago": 1.8402777777777778e-06,
     "horizon_lane": "crypto"
   }
 }
