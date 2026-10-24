@@ -174,9 +174,10 @@ TELEGRAM_SINGLE_DAILY_SUMMARY = os.environ.get("TELEGRAM_SINGLE_DAILY_SUMMARY", 
 # research pipeline is working smoothly") = research_pipeline_health.py's one line when a research
 # lane turns red, and once when it recovers -- research stalled ~8 days unseen because every alert
 # that noticed was muted.
+# "desk_answer" (2026-10-24) = desk_inbox.py's late answer to a question Suraj asked the bot.
 TELEGRAM_ALLOWED_KINDS = frozenset(
     k.strip() for k in os.environ.get("TELEGRAM_ALLOWED_KINDS",
-                                      "research_outcome,bot_reply,kite_renewal,research_alert").split(",")
+                                      "research_outcome,bot_reply,kite_renewal,research_alert,desk_answer").split(",")
     if k.strip())
 
 DEPLOYMENT_DIR = os.path.dirname(os.path.abspath(__file__))

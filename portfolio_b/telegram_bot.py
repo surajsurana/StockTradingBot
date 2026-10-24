@@ -509,6 +509,16 @@ def poll_and_process_commands(bot_token: str, chat_id: str,
         except Exception as e:
             reply = CommandReply(f"Something went wrong processing that command: {e}")
 
+        if reply is None and not message["text"].strip().startswith("/"):
+            # Not a watchlist command: a question for the desk (2026-10-24). Saved to the inbox a
+            # Claude Code session answers when it is next open -- see desk_inbox.py.
+            try:
+                import desk_inbox
+                desk_inbox.add_question(message["text"])
+                reply = CommandReply(desk_inbox.ACK_TEXT)
+            except Exception as e:
+                reply = CommandReply(f"Couldn't save that question: {e}")
+
         if reply is not None:
             # Replies to a command Suraj himself just sent are not pushed notifications, so they stay
             # allowed under the 2026-10-19 Telegram mute (deployment/settings.TELEGRAM_ALLOWED_KINDS).

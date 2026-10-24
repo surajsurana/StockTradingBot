@@ -64,3 +64,4 @@ deployment/state/dashboard_tls_key.pem
 config/credentials.json
 config/live_settings.json
 deployment/state/deployment_status.json
+deployment/state/desk_inbox.json
