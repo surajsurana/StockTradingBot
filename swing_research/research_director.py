@@ -591,6 +591,57 @@ def run_cross_sectional_momentum_experiment(data: dict, start_date: date, end_da
     )
 
 
+def run_industry_momentum_experiment(data: dict, start_date: date, end_date: date,
+                                      starting_capital: float = 1_000_000,
+                                      n_walk_forward_windows: int = 3,
+                                      narrative_api_key: str = "",
+                                      narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                      experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                      knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                      skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for Industry Momentum
+    -- computes each stock's OWN industry's J=6-month formation-return
+    cross-sectional percentile ONCE up front (same pattern as Cross-
+    Sectional Momentum's own stock-level percentile), reused across every
+    walk-forward window by run_walk_forward_generic()'s own per-window
+    slicing of extra_columns_by_symbol. Needs the same sector_map
+    run_generic_swing_experiment() itself separately loads for position
+    caps/sector-breakdown reporting -- loaded again here (read-only reuse
+    of performance_analyst.load_sector_map()/_sector_map_for_trades())
+    because the industry percentile must exist BEFORE
+    run_generic_swing_experiment() is called at all.
+    """
+    from swing_research.strategies.industry_momentum import IndustryMomentumStrategy
+    from swing_research.published_research_analyst import INDUSTRY_MOMENTUM
+    from swing_research.cross_sectional import compute_industry_momentum_percentile_ranks
+
+    sector_map = _sector_map_for_trades(performance_analyst.load_sector_map())
+    industry_percentiles = compute_industry_momentum_percentile_ranks(data, sector_map)
+    extra_columns = {symbol: series.rename("industry_momentum_percentile")
+                     for symbol, series in industry_percentiles.items()}
+
+    strategy = IndustryMomentumStrategy()
+    return run_generic_swing_experiment(
+        strategy, INDUSTRY_MOMENTUM, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "industry_momentum_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "industry_momentum_stop_loss_pct": 0.08,
+            "industry_momentum_percentile_threshold": 90.0,
+            "industry_momentum_formation_days": 126,
+            "industry_momentum_holding_period_trading_days": 126,
+            "industry_momentum_single_vintage": True,
+            "industry_momentum_skip_period": False,
+            "industry_momentum_percentile_based_early_exit": False,
+            "industry_momentum_weighting": "equal_weighted_industry_portfolio",
+        },
+    )
+
+
 def run_minervini_us_experiment(data: dict, start_date: date, end_date: date,
                                  starting_capital: float = 100_000, n_walk_forward_windows: int = 3,
                                  narrative_api_key: str = "", narrative_call_fn: Optional[Callable[[str], str]] = None,

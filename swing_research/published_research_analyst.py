@@ -2147,3 +2147,93 @@ CRYPTO_LONG_HORIZON_REVERSAL = PublishedStrategy(
         "31.2% no-offset tax: MAJOR and one-directional -- the lane's standing question."
     ),
 )
+
+
+INDUSTRY_MOMENTUM = PublishedStrategy(
+    name="Industry Momentum",
+    source_citation=(
+        "Moskowitz, T.J. and Grinblatt, M. (1999), \"Do Industries Explain Momentum?\", "
+        "The Journal of Finance, Vol. 54, No. 4."
+    ),
+    mechanism=(
+        "A large share of the well-documented individual-stock momentum effect (Jegadeesh & "
+        "Titman 1993, this program's own Cross-Sectional Momentum) is argued to be substantially "
+        "an INDUSTRY-level effect -- buying stocks in recently-strong industries, rather than "
+        "recently-strong individual stocks, captures most of the same premium with different "
+        "turnover/risk characteristics."
+    ),
+    rules=(
+        "Formation-period return: for EACH INDUSTRY, the industry portfolio's cumulative return "
+        "over the prior J months (the paper tests J=1,6,12; J=6 is the specification shared with "
+        "this program's existing Cross-Sectional Momentum headline result). Cross-sectional "
+        "decile sort of INDUSTRIES (not individual stocks) by formation-period return at each "
+        "formation date. Long the stocks belonging to top-decile industries (past winning "
+        "industries); the paper's zero-cost portfolio shorts stocks in bottom-decile industries. "
+        "Holding period K months (K=6, matching the headline J=6/K=6 specification). Standard "
+        "overlapping-portfolio construction: a new K-month portfolio formed every month, K "
+        "simultaneous vintages held at once."
+    ),
+    variant_chosen=(
+        "J=6 months formation, K=6 months holding -- the same headline specification already "
+        "used for this program's Cross-Sectional Momentum, so the two strategies are directly "
+        "comparable on formation horizon. Single-vintage holding, not the paper's overlapping-"
+        "portfolio construction -- identical structural adaptation to Cross-Sectional Momentum "
+        "and 52-Week High Momentum, approved for the identical underlying reason."
+    ),
+    scope_reductions=(
+        "LONG ONLY (approved, disclosed, same reason as every prior strategy -- no NSE SLB "
+        "infrastructure for a genuine multi-month short). EQUAL-WEIGHTED (not value/cap-weighted) "
+        "INDUSTRY PORTFOLIOS -- this program has no reliable point-in-time market-cap series to "
+        "build a cap-weighted industry return from, so each industry's formation return is an "
+        "equal-weighted average of its constituent stocks' own J=6-month formation returns. "
+        "COARSE NSE-SECTOR MAP, NOT FAMA-FRENCH INDUSTRIES -- industry membership is this "
+        "program's existing sector_map (the same mapping already used for Turtle's correlation-"
+        "group position caps), coarser than the original paper's industry classification; stocks "
+        "with no sector-map entry are excluded from every industry's average and never qualify "
+        "for entry themselves. SINGLE-VINTAGE HOLDING instead of the paper's overlapping-"
+        "portfolio construction (a new K-month position every month, K simultaneous vintages) -- "
+        "mirrors Cross-Sectional Momentum's and 52-Week High Momentum's own approved deviation "
+        "exactly. NO SKIP PERIOD between formation and holding -- not part of this paper's own "
+        "headline specification either. EXIT RULE is ONLY the 126-trading-day time-stop or the "
+        "synthetic protective stop -- deliberately no percentile-based early exit, same "
+        "discipline established for Cross-Sectional Momentum. PROTECTIVE STOP-LOSS (8%) and "
+        "POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- "
+        "the source paper is a factor-return study with no position-level risk management "
+        "whatsoever."
+    ),
+    distinctiveness=(
+        "Third strategy in this program explicitly from the broad momentum family (after Cross-"
+        "Sectional Momentum and 52-Week High Momentum) -- genuine family overlap, disclosed in "
+        "this candidate's own research_roadmap.py known_weaknesses (research_value_score=4, the "
+        "lowest in this program's momentum cluster). The mechanism is nonetheless structurally "
+        "distinct: ranking happens at the INDUSTRY level via a NEW compute_industry_momentum_"
+        "percentile_ranks() function (swing_research/cross_sectional.py) -- an equal-weighted "
+        "average of same-industry constituents' own J=6-month formation scores (reusing compute_"
+        "momentum_score(), unmodified), re-ranked cross-sectionally across INDUSTRIES rather than "
+        "across stocks -- not a relabeled copy of compute_momentum_percentile_ranks(). Every "
+        "stock in a qualifying industry shares the identical percentile value on a given date, by "
+        "construction -- a materially different signal shape (many fewer independent qualifying "
+        "episodes than stock-level momentum, clustered by industry) than Cross-Sectional "
+        "Momentum's per-stock signal, even at the identical J=6/K=6 horizon."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- omits the short side "
+        "entirely, doesn't bias the long side's own measured performance. "
+        "J=6-month formation: MINOR, a direct restatement of a documented, tested specification. "
+        "Equal-weighted (not value-weighted) industry portfolios: MODERATE, DIRECTIONALLY "
+        "UNKNOWN -- over-weights small/illiquid constituents relative to the paper's cap-weighted "
+        "construction. Coarse NSE-sector map instead of Fama-French industries: MODERATE, "
+        "DIRECTIONALLY UNKNOWN -- a coarser grouping mixes sub-industries with different momentum "
+        "profiles into one bucket, which could dilute or occasionally invert a true finer-grained "
+        "industry signal. Single-vintage holding (vs. the paper's overlapping-portfolio "
+        "construction): MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to "
+        "Cross-Sectional Momentum's and 52-Week High Momentum's own single-vintage deviation. "
+        "No skip period between formation and holding: MINOR-to-MODERATE, DIRECTIONALLY UNKNOWN "
+        "-- mirrors Cross-Sectional Momentum's own identical assumption and impact estimate. "
+        "Exit rule (126-trading-day time-stop only, no percentile-based early exit): N/A for the "
+        "time-stop itself (direct analogue of the documented K=6-month holding period). "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that NEITHER exists in the source paper at all -- the "
+        "original is a factor-return study with zero position-level risk management."
+    ),
+)
