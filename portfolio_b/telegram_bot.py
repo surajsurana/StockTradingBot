@@ -30,16 +30,15 @@ control -- there is no additional password/PIN, so anyone with access
 to the configured chat can add or remove watchlist symbols.
 """
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 import requests
 
-from data.fetch_historical import fetch_daily_candles
 from deployment.daily_details_store import load_details
 from portfolio_b import state as pbs
-from portfolio_b.engine import get_watchlist_with_names
 from reporting.telegram_notifier import delete_bot_commands, kind_allowed, send_telegram_message
 
 _WATCHLIST_PATTERN = re.compile(r"^/watchlist\b", re.IGNORECASE)
@@ -128,6 +127,24 @@ def _normalize_symbol(raw: str) -> str:
     if not symbol.endswith(".NS"):
         symbol = f"{symbol}.NS"
     return symbol
+
+
+def fetch_daily_candles(symbol: str, period: str = "5d"):
+    """Yahoo price history, imported on first use only. This bot is a 24/7 process on a 458 MB box;
+    pulling pandas + yfinance in at import cost it ~45 MB for a listener that only needs them when
+    a stock is being added (2026-10-25)."""
+    from data.fetch_historical import fetch_daily_candles as _fetch
+    return _fetch(symbol, period=period)
+
+
+def get_watchlist_with_names() -> dict:
+    """The live watchlist {symbol: name}. Reads the file directly; portfolio_b.engine (which
+    imports pandas) is loaded only to seed a brand-new file on the very first call -- same result as
+    engine.get_watchlist_with_names(), without holding pandas in memory forever (2026-10-25)."""
+    if os.path.exists(pbs._watchlist_path()):
+        return pbs.load_watchlist({})
+    from portfolio_b.engine import get_watchlist_with_names as _seeded
+    return _seeded()
 
 
 def fetch_company_name_if_tradeable(symbol: str, fetch_price_fn: Callable = fetch_daily_candles,

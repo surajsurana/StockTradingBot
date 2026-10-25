@@ -114,6 +114,19 @@ class TestTheBotSavesQuestions(unittest.TestCase):
         sent, saved = self._poll("/nonsense")
         self.assertEqual(saved, [])
 
+class TestTheBotStaysLight(unittest.TestCase):
+    """The bot is a 24/7 process on a 458 MB server: it must not load pandas or yfinance just to listen
+    (2026-10-25 -- that cost ~45 MB and helped push a US backtest out of memory)."""
+
+    def test_importing_the_bot_loads_neither_pandas_nor_yfinance(self):
+        import subprocess
+        import sys
+        out = subprocess.run([sys.executable, "-c",
+                              "import sys, portfolio_b.telegram_bot; "
+                              "print('pandas' in sys.modules, 'yfinance' in sys.modules)"],
+                             capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+        self.assertEqual(out.stdout.strip(), "False False", out.stderr[-500:])
+
 
 if __name__ == "__main__":
     unittest.main()
