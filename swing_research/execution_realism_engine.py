@@ -41,7 +41,7 @@ from typing import Optional
 
 import pandas as pd
 
-from swing_research.backtesting_engine import Trade, simulate_portfolio
+from swing_research.backtesting_engine import Trade, date_window, simulate_portfolio
 
 DEFAULT_ADV_LOOKBACK_DAYS = 20
 DEFAULT_ILLIQ_COST_CAP_PCT = 0.05
@@ -424,13 +424,13 @@ def run_walk_forward_execution_realistic(strategy, data: dict, starting_capital:
 
     for w_start, w_end in windows:
         windowed_data = {
-            sym: df[(df.index.date >= w_start) & (df.index.date <= w_end)]
+            sym: date_window(df, w_start, w_end)
             for sym, df in data.items()
         }
         windowed_extra = None
         if extra_columns_by_symbol:
             windowed_extra = {
-                sym: series[(series.index.date >= w_start) & (series.index.date <= w_end)]
+                sym: date_window(series, w_start, w_end)
                 for sym, series in extra_columns_by_symbol.items()
             }
         result = simulate_portfolio(

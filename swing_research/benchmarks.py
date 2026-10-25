@@ -22,8 +22,11 @@ data source.
 from datetime import date
 from typing import Optional
 
+import numpy as np
+
 from data.fetch_historical import fetch_daily_candles
-from swing_research.backtesting_engine import Trade, _to_date
+from swing_research.backtesting_engine import (Trade, _day_keys, _positions_on_calendar, _sorted_by_date,
+                                               _to_date)
 
 # Nifty 500's yfinance ticker. Falls back to Nifty 50 (^NSEI, already used
 # elsewhere in this codebase for the production regime filter) if this one
@@ -47,15 +50,21 @@ def simulate_buy_and_hold(data: dict, capital_per_symbol: float, fractional_quan
     Sharpe/drawdown; mark-to-market is the correct (and only sensible)
     choice specifically for this benchmark.
     """
+    # Memory-lean since 2026-10-25: each symbol keeps only its Close values plus one shared
+    # calendar and a compact position array, instead of a {date: float} dict per symbol (~100 MB
+    # on the 503-symbol US universe) and its own frame. Same closes (float() of the same values,
+    # later bar winning on a duplicated date, as the dict did), same calendar, same summation
+    # order -- so the same daily equity and trades to the last digit.
     trades = []
-    all_dates = set()
-    positions = {}       # symbol -> (quantity, entry_price)
-    close_by_date = {}   # symbol -> {date: close} -- O(1) lookups in the equity loop below
+    key_intern = {}      # union calendar of every held symbol's days -- see _day_keys
+    positions = {}       # symbol -> (quantity, entry_price, exit_price, entry_date, exit_date)
+    day_keys = {}        # symbol -> its bars' calendar days, in row order
+    close_at = {}        # symbol -> row position -> that bar's Close (as zip(df.index, df["Close"]) yielded it)
 
     for symbol, df in data.items():
         if df is None or df.empty:
             continue
-        df = df.sort_index()
+        df = _sorted_by_date(df)
         entry_price = float(df.iloc[0]["Close"])
         if entry_price <= 0:
             continue
@@ -63,26 +72,32 @@ def simulate_buy_and_hold(data: dict, capital_per_symbol: float, fractional_quan
                     else int(capital_per_symbol / entry_price))
         if quantity <= 0:
             continue
-        positions[symbol] = (quantity, entry_price, df)
-        closes = {_to_date(ts): float(c) for ts, c in zip(df.index, df["Close"])}
-        close_by_date[symbol] = closes
-        all_dates.update(closes.keys())
+        positions[symbol] = (quantity, entry_price, float(df.iloc[-1]["Close"]),
+                             _to_date(df.index[0]), _to_date(df.index[-1]))
+        close = df["Close"]
+        if isinstance(close.dtype, np.dtype) and close.dtype.kind not in "mM":
+            close_at[symbol] = np.array(close.to_numpy(), copy=True).item   # what Series iteration yields
+        else:
+            close_at[symbol] = list(close).__getitem__
+        day_keys[symbol] = _day_keys(df.index, key_intern)
+
+    all_dates = sorted(key_intern)
+    slot = {d: i for i, d in enumerate(all_dates)}
+    position_on_day = {symbol: _positions_on_calendar(day_keys.pop(symbol), slot, len(all_dates))
+                       for symbol in positions}
 
     daily_equity = {}
-    last_known_close = {symbol: entry_price for symbol, (_, entry_price, _) in positions.items()}
-    for d in sorted(all_dates):
+    last_known_close = {symbol: entry_price for symbol, (_, entry_price, _, _, _) in positions.items()}
+    for i, d in enumerate(all_dates):
         equity_today = 0.0
-        for symbol, (quantity, entry_price, df) in positions.items():
-            close_today = close_by_date[symbol].get(d)
-            if close_today is not None:
-                last_known_close[symbol] = close_today
+        for symbol, (quantity, _, _, _, _) in positions.items():
+            p = position_on_day[symbol][i]
+            if p >= 0:
+                last_known_close[symbol] = float(close_at[symbol](p))
             equity_today += quantity * last_known_close[symbol]
         daily_equity[d] = equity_today
 
-    for symbol, (quantity, entry_price, df) in positions.items():
-        exit_price = float(df.iloc[-1]["Close"])
-        exit_date = _to_date(df.index[-1])
-        entry_date = _to_date(df.index[0])
+    for symbol, (quantity, entry_price, exit_price, entry_date, exit_date) in positions.items():
         pnl = (exit_price - entry_price) * quantity
         trades.append(Trade(
             symbol=symbol, entry_date=entry_date, exit_date=exit_date,
@@ -92,7 +107,7 @@ def simulate_buy_and_hold(data: dict, capital_per_symbol: float, fractional_quan
 
     starting_capital = capital_per_symbol * len(positions)
     return {
-        "trades": trades, "trading_calendar": sorted(all_dates),
+        "trades": trades, "trading_calendar": all_dates,
         "symbols": list(positions.keys()), "daily_equity": daily_equity,
         "starting_capital": starting_capital,
     }

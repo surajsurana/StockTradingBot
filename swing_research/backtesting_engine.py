@@ -54,9 +54,13 @@ approved implementation plan's Section 9/10 discussion):
   risk manager.
 """
 
+from array import array
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
+
+import numpy as np
+import pandas as pd
 
 from swing_research.base import OpenPosition, PositionUnit, Strategy
 from swing_research.candidate_ranking import rank_candidate_symbols
@@ -107,6 +111,197 @@ def _to_date(ts) -> date:
     return ts.date() if hasattr(ts, "date") else ts
 
 
+def date_window(frame, start: date, end: date):
+    """
+    The rows of `frame` (DataFrame or Series) dated start..end inclusive -- exactly
+    frame[(frame.index.date >= start) & (frame.index.date <= end)], the walk-forward window
+    slice every lane uses.
+
+    WHY (2026-10-25). That boolean selection always copies, so each walk-forward window held a
+    second copy of a third of the universe (~25 MB for the 503-symbol US run) on top of the
+    full data. When the selected rows are one contiguous run -- always so for a date-sorted
+    index -- this returns the same rows as a positional slice, which pandas shares with the
+    full frame instead of copying. Same rows, labels, order and values; anything else (an
+    unsorted index whose selection has gaps, or no rows at all) takes the original boolean path.
+    """
+    days = frame.index.date
+    mask = (days >= start) & (days <= end)
+    hits = np.flatnonzero(mask)
+    if len(hits) and hits[-1] - hits[0] + 1 == len(hits):
+        return frame.iloc[hits[0]:hits[-1] + 1]
+    return frame[mask]
+
+
+def _sorted_by_date(df):
+    """df.sort_index() without the copy when the index is already sorted -- the usual case for
+    fetched bars. Identical rows either way: sort_index() itself returns the frame unchanged
+    (as a copy) when the index is monotonic increasing. Added 2026-10-25 so the benchmark
+    engines do not hold a second copy of the whole universe for the length of the run."""
+    return df if df.index.is_monotonic_increasing else df.sort_index()
+
+
+def _day_keys(index, key_intern: dict) -> list:
+    """_to_date() of every index entry, interned in key_intern so all symbols share one date
+    object per calendar day (2026-10-25: one fresh date per symbol per day was ~50 MB on the
+    503-symbol US universe). sorted(key_intern) is then the union calendar."""
+    return [key_intern.setdefault(k, k) for k in map(_to_date, index)]
+
+
+def _positions_on_calendar(keys: list, slot: dict, n_days: int) -> array:
+    """Calendar slot -> row position in `keys` (-1 = no bar that day), as a 4-byte-per-day array
+    instead of a {date: position} dict per symbol (2026-10-25, memory). Later rows win on a
+    duplicated date, exactly as the {date: ... for ...} dict comprehensions this replaces did."""
+    pos = array("i", [-1]) * n_days
+    for p, key in enumerate(keys):
+        pos[slot[key]] = p
+    return pos
+
+
+def _prune_dead_view_refs(df) -> None:
+    """
+    Free pandas' bookkeeping for slices of `df` that no longer exist. Under copy-on-write
+    (always on from pandas 3) every view sliced from a frame leaves a weakref on the frame,
+    and dead ones are only pruned every ~500 new views -- so the benchmark loop's daily
+    df.iloc[: i + 1] window leaves up to ~500 dead weakrefs per block per symbol alive, ~85 MB
+    across the 503-symbol US universe (measured 2026-10-25). has_reference() is what pandas
+    itself calls before a write to prune them; it reads and changes no data. Best-effort: a
+    pandas without these internals (or without copy-on-write tracking) just skips it.
+    """
+    try:
+        for block in df._mgr.blocks:
+            block.refs.has_reference()
+        index_refs = getattr(df.index, "_references", None)
+        if index_refs is not None:
+            index_refs.has_reference()
+    except AttributeError:
+        pass
+
+
+def _arrays_by_name(sources, index) -> dict:
+    """{column name: ndarray} for every uniquely named column of the frames/Series in `sources`
+    that share `index` exactly -- arrays the caller holds anyway, so a precomputed column equal
+    to one of them need not be stored twice."""
+    found = {}
+    for src in sources:
+        if src is None or not src.index.equals(index):
+            continue
+        if isinstance(src, pd.Series):
+            if isinstance(src.name, str) and isinstance(src.dtype, np.dtype):
+                found.setdefault(src.name, src.to_numpy())
+        elif src.columns.is_unique:
+            for name in src.columns:
+                if isinstance(name, str) and isinstance(src[name].dtype, np.dtype):
+                    found.setdefault(name, src[name].to_numpy())
+    return found
+
+
+class _SharedDates:
+    """One date object per distinct day, shared by every symbol's date-valued columns."""
+    __slots__ = ("code_of", "table")
+
+    def __init__(self):
+        self.code_of, self.table = {}, []
+
+    def code(self, value) -> int:
+        code = self.code_of.get(value)
+        if code is None:
+            code = self.code_of[value] = len(self.table)
+            self.table.append(value)
+        return code
+
+
+def _compact_object_column(values, shared_dates: _SharedDates):
+    """Row-position getter for an object column, returning exactly the objects
+    ndarray.item() would (see _LazySymbolRows), stored compactly when possible."""
+    if len(values) and all(type(v) is bool for v in values):
+        return np.array(values, dtype=bool).item          # .item() -> the same Python bools
+    if len(values) and all(type(v) is date for v in values):
+        codes = array("i", [shared_dates.code(v) for v in values])
+        return lambda p, _codes=codes, _table=shared_dates.table: _table[_codes[p]]
+    return np.array(values, dtype=object).item
+
+
+class _LazySymbolRows:
+    """
+    One symbol's precomputed bars, looked up by date -- a memory-lean
+    stand-in for the {date: row-namedtuple} dict simulate_portfolio() used
+    to build for every symbol up front.
+
+    WHY (2026-10-25). That dict held one namedtuple of boxed Python scalars
+    plus one fresh date object per symbol per day for the whole run: ~1.26M
+    rows for the 503-symbol, 10-year US lane, ~450 MB, which is what got
+    run_us_experiment.py OOM-killed on the 458 MB VPS. This keeps the same
+    values column by column instead (numpy arrays, never re-typed) and builds
+    a row only when the day loop asks for it. A row built here is exactly the
+    row itertuples(index=False) would have produced: the same namedtuple class
+    pandas builds (taken from pandas itself) and the same per-cell conversion
+    pandas' Series iteration does (ndarray.item for numpy-backed columns, the
+    Series' own iteration otherwise) -- so every strategy hook sees identical
+    values and every trade, fill and metric is unchanged.
+
+    Further savings, all value-preserving:
+    - A numeric column bit-identical to one the caller already holds -- the
+      input frame's own OHLCV (after the strategy's df.copy()) or the injected
+      cross-sectional column -- reuses that array instead of a second copy.
+    - An object column holding only Python bools is kept as a numpy bool
+      array: ndarray.item() gives back the very same True/False objects.
+    - An object column holding only datetime.date values (e.g. a strategy's
+      df["date"] = df.index.date) is kept as one shared date object per
+      calendar day plus a 4-byte index per row, instead of an 8-byte pointer
+      and its own date object per symbol per day. Same values, same type;
+      only object identity differs, which nothing compares.
+    """
+
+    __slots__ = ("keys", "last_key", "_pos", "_slot", "_make", "_getters")
+
+    def __init__(self, precomputed, sources, key_intern: dict, shared_dates: _SharedDates):
+        # Calendar keys, interned so every symbol shares one object per day.
+        self.keys = _day_keys(precomputed.index, key_intern)
+        self.last_key = None
+        self._pos = None
+        self._slot = None
+        self._make = (type(next(precomputed.iloc[:1].itertuples(index=False)))._make
+                      if len(precomputed) else tuple)
+        reusable = _arrays_by_name(sources, precomputed.index)
+        getters = []
+        for k, col in enumerate(precomputed.columns):
+            series = precomputed.iloc[:, k]
+            dtype = series.dtype
+            if isinstance(dtype, np.dtype) and dtype.kind not in "mM":
+                # numpy-backed: Series iteration yields ndarray.item(i) -- reproduce exactly.
+                values = series.to_numpy()
+                held = reusable.get(col) if isinstance(col, str) else None
+                if (held is not None and dtype.kind != "O" and held.dtype == dtype
+                        and held.tobytes() == values.tobytes()):   # bitwise, so -0.0/NaN payloads count
+                    getters.append(held.item)
+                elif dtype.kind == "O":
+                    getters.append(_compact_object_column(values, shared_dates))
+                else:
+                    # Own copy: a bare view would pin the precomputed frame's whole 2-D block.
+                    getters.append(np.array(values, copy=True).item)
+            else:
+                # Extension/datetime dtypes: keep exactly the objects Series iteration yields.
+                getters.append(list(series).__getitem__)
+        self._getters = tuple(getters)
+
+    def index_against(self, slot: dict, n_days: int) -> None:
+        """Attach the shared calendar (see _positions_on_calendar); the per-row key list is
+        only needed to build that, so it is dropped once the last bar's day is noted."""
+        self._pos = _positions_on_calendar(self.keys, slot, n_days)
+        self._slot = slot
+        self.last_key = max(self.keys)
+        self.keys = None
+
+    def get(self, day, default=None):
+        i = self._slot.get(day)
+        if i is None:
+            return default
+        p = self._pos[i]
+        if p < 0:
+            return default
+        return self._make([getter(p) for getter in self._getters])
+
+
 def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                         sector_map: Optional[dict] = None,
                         max_units_per_symbol: Optional[int] = None,
@@ -146,22 +341,30 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
     """
     max_units_per_symbol = max_units_per_symbol or strategy.max_units
 
-    # Precompute once per symbol (vectorized), then convert to a
-    # date-keyed dict of row-tuples for O(1) lookup in the day loop below
-    # -- avoids re-slicing/re-filtering any DataFrame inside the loop.
+    # Precompute once per symbol (vectorized), then index by date for O(1)
+    # lookup in the day loop below -- avoids re-slicing/re-filtering any
+    # DataFrame inside the loop. Since 2026-10-25 the rows are held
+    # column-wise and built on demand rather than as a {date: row} dict --
+    # see _LazySymbolRows for why, and why every row is identical to before.
     rows_by_symbol = {}
+    key_intern, shared_dates = {}, _SharedDates()
     for symbol, df in data.items():
         if df is None or df.empty or len(df) < min_bars_required:
             continue
+        sources = [df]
         df = df.sort_index()
         if extra_columns_by_symbol and symbol in extra_columns_by_symbol:
+            sources.append(extra_columns_by_symbol[symbol])
             df = df.join(extra_columns_by_symbol[symbol])
         precomputed = strategy.precompute(df)
-        rows_by_symbol[symbol] = {_to_date(ts): row for ts, row in
-                                   zip(precomputed.index, precomputed.itertuples(index=False))}
+        rows_by_symbol[symbol] = _LazySymbolRows(precomputed, sources, key_intern, shared_dates)
+        del df, precomputed, sources
 
-    all_dates = sorted({d for rows in rows_by_symbol.values() for d in rows.keys()})
-    last_bar_by_symbol = {symbol: max(rows.keys()) for symbol, rows in rows_by_symbol.items()}
+    all_dates = sorted(key_intern)
+    slot = {d: i for i, d in enumerate(all_dates)}
+    for rows in rows_by_symbol.values():
+        rows.index_against(slot, len(all_dates))
+    last_bar_by_symbol = {symbol: rows.last_key for symbol, rows in rows_by_symbol.items()}
     last_close_by_symbol = {}  # updated as we walk, for end-of-backtest force-close
 
     equity = starting_capital
@@ -465,17 +668,22 @@ def simulate_portfolio_single_unit(data: dict, strategy_factory, starting_capita
     """
     from strategies.market_regime import is_bullish_on  # local import -- read-only benchmark use only
 
+    # Per-symbol day lookup as one shared calendar + a compact position array, and no sorted
+    # copy of an already-sorted frame (2026-10-25, memory -- the old {date: position} dict per
+    # symbol and the sorted copies were ~200 MB on the 503-symbol US universe). Same rows, same
+    # positions, same calendar; see _day_keys / _positions_on_calendar / _sorted_by_date.
     prepped = {}
+    key_intern = {}
     for symbol, df in data.items():
         if df is None or df.empty or len(df) < min_bars:
             continue
-        df = df.sort_index()
-        prepped[symbol] = {
-            "df": df,
-            "date_to_pos": {_to_date(ts): i for i, ts in enumerate(df.index)},
-        }
+        df = _sorted_by_date(df)
+        prepped[symbol] = {"df": df, "keys": _day_keys(df.index, key_intern)}
 
-    all_dates = sorted({d for sym in prepped.values() for d in sym["date_to_pos"].keys()})
+    all_dates = sorted(key_intern)
+    slot = {d: i for i, d in enumerate(all_dates)}
+    for pos_info in prepped.values():
+        pos_info["positions"] = _positions_on_calendar(pos_info.pop("keys"), slot, len(all_dates))
 
     equity = starting_capital
     open_positions = {}   # symbol -> (entry_price, stop_loss, target, quantity, entry_date, direction)
@@ -494,8 +702,8 @@ def simulate_portfolio_single_unit(data: dict, strategy_factory, starting_capita
         # 1. Exits -- O(1) row lookup, single position per symbol.
         for symbol in list(open_positions.keys()):
             pos_info = prepped[symbol]
-            idx = pos_info["date_to_pos"].get(today)
-            if idx is None:
+            idx = pos_info["positions"][slot[today]]
+            if idx < 0:
                 continue
             bar = pos_info["df"].iloc[idx]
             entry_price, stop_loss, target, quantity, entry_date, direction = open_positions[symbol]
@@ -525,12 +733,13 @@ def simulate_portfolio_single_unit(data: dict, strategy_factory, starting_capita
                     continue
                 if len(open_positions) >= max_open_positions:
                     break
-                idx = pos_info["date_to_pos"].get(today)
-                if idx is None or idx < min_bars:
+                idx = pos_info["positions"][slot[today]]
+                if idx < 0 or idx < min_bars:
                     continue
 
                 window = pos_info["df"].iloc[: idx + 1]
                 signal = strategies_by_symbol[symbol].generate_signal(window)
+                _prune_dead_view_refs(pos_info["df"])   # memory only -- see its docstring
                 if signal is None:
                     continue
                 if regime_series is not None and signal.direction == "BUY" and not is_bullish_on(regime_series, window.index[-1]):

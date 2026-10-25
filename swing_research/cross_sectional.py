@@ -29,6 +29,31 @@ import pandas as pd
 _RS_WEIGHTS = {"r3": 0.4, "r6": 0.2, "r9": 0.2, "r12": 0.2}
 _TRADING_DAYS_PER_MONTH = 21
 
+# Rows (dates) ranked per slab by _percentile_rank_rows() below.
+_RANK_ROWS_PER_SLAB = 256
+
+
+def _percentile_rank_rows(wide: pd.DataFrame) -> pd.DataFrame:
+    """
+    wide.rank(axis=1, pct=True) * 100 -- every symbol's percentile among that day's valid scores
+    -- computed a slab of dates at a time into one preallocated result.
+
+    WHY (2026-10-25). Ranking the whole dates x symbols frame at once made pandas allocate
+    several full-size temporaries together (sort indexer, mask, ranks, the x100 copy): ~55 MB of
+    transient peak for the 503-symbol, 10-year US universe, on a 458 MB VPS. Each row is ranked
+    on its own (axis=1: one day's cross-section, ties averaged and NaN left out within that row
+    only), so ranking any subset of rows gives exactly the values the whole-frame call gives for
+    those rows, bit for bit -- the slabs only bound how much is allocated at once. Anything other
+    than an all-float64 frame takes the original single call unchanged.
+    """
+    if len(wide) <= _RANK_ROWS_PER_SLAB or not all(dtype == np.float64 for dtype in wide.dtypes):
+        return wide.rank(axis=1, pct=True) * 100
+    out = np.empty(wide.shape, dtype=np.float64)
+    for start in range(0, len(wide), _RANK_ROWS_PER_SLAB):
+        stop = start + _RANK_ROWS_PER_SLAB
+        out[start:stop] = (wide.iloc[start:stop].rank(axis=1, pct=True) * 100).to_numpy()
+    return pd.DataFrame(out, index=wide.index, columns=wide.columns)
+
 
 def compute_rs_score(price_history: pd.DataFrame) -> pd.Series:
     """
@@ -66,7 +91,7 @@ def compute_rs_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)  # outer-joins on the union of all symbols' date indices
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -113,7 +138,7 @@ def compute_momentum_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -159,7 +184,7 @@ def compute_short_term_reversal_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -210,7 +235,7 @@ def compute_max_effect_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -262,7 +287,7 @@ def compute_turnover_percentile_ranks(data: dict, shares_outstanding: dict) -> d
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -352,7 +377,7 @@ def compute_shrunk_beta_percentile_ranks(data: dict, market_close: pd.Series) ->
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -398,7 +423,7 @@ def compute_52w_high_nearness_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -447,7 +472,7 @@ def compute_amihud_illiq_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -537,7 +562,7 @@ def compute_idiosyncratic_volatility_percentile_ranks(data: dict, market_close: 
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -583,7 +608,7 @@ def compute_market_cap_percentile_ranks(data: dict, shares_outstanding: dict) ->
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -630,7 +655,7 @@ def compute_overnight_return_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -685,7 +710,7 @@ def compute_crypto_momentum_percentile_ranks(data: dict, lookback_days: int = CR
     if not scores:
         return {}
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -714,7 +739,7 @@ def compute_volume_shock_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -780,7 +805,7 @@ def compute_downside_beta_percentile_ranks(data: dict, market_close: pd.Series,
     if not scores:
         return {}
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -811,7 +836,7 @@ def compute_realized_volatility_percentile_ranks(data: dict,
     if not scores:
         return {}
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -876,7 +901,7 @@ def compute_nifty_momentum_30_percentile_ranks(data: dict) -> dict:
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -920,7 +945,7 @@ def compute_crypto_illiq_percentile_ranks(data: dict, lookback_days: int = CRYPT
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -1045,7 +1070,7 @@ def compute_crypto_idiosyncratic_volatility_percentile_ranks(
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
@@ -1101,5 +1126,5 @@ def compute_crypto_long_horizon_reversal_percentile_ranks(
         return {}
 
     wide = pd.DataFrame(scores)
-    pct_ranks = wide.rank(axis=1, pct=True) * 100
+    pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}

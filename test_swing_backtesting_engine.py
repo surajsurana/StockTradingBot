@@ -508,3 +508,121 @@ class TestFixedTarget(unittest.TestCase):
         rows = [(100, 101, 99, 100)] * 59 + [(100, 112, 94, 96)]
         result = simulate_portfolio(self._data(rows), self._strategy(), 100_000.0, sector_map={}, min_bars_required=1)
         self.assertEqual(result["trades"][0].exit_reason, "stop_loss")
+
+
+class TestMemoryLeanEnginesKeepIdenticalResults(unittest.TestCase):
+    """2026-10-25: simulate_portfolio(), simulate_portfolio_single_unit() and
+    simulate_buy_and_hold() stopped building a per-symbol {date: row/close/position}
+    dict (the 503-symbol US run was OOM-killed on the 458 MB VPS). These pin that
+    what the engines hand to strategies and compute is exactly what the old dicts gave."""
+
+    @staticmethod
+    def _frame(index, closes):
+        df = pd.DataFrame({"Open": closes, "High": [c + 1 for c in closes], "Low": [c - 1 for c in closes],
+                           "Close": closes, "Volume": [1000 + i for i in range(len(closes))]}, index=index)
+        df.loc[df.index[1], "Close"] = -0.0 if len(closes) > 1 else df["Close"].iloc[0]  # sign of zero must survive
+        return df
+
+    def test_rows_seen_by_the_strategy_are_exactly_itertuples_rows(self):
+        idx = pd.DatetimeIndex(["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-07", "2026-01-09"])
+        df = self._frame(idx, [10.0, 11.0, float("nan"), 13.0, 14.0])
+        seen = {}
+
+        class _Recorder(Strategy):
+            name = "recorder"
+            max_units = 1
+
+            def precompute(self, price_history):
+                out = price_history.copy()
+                out["flag"] = out["Close"] > 11
+                out["flag_prev"] = out["flag"].shift(1).fillna(False)   # object dtype
+                out["date"] = out.index.date                            # object column of dates
+                out["when"] = out.index                                 # datetime64 column
+                return out
+
+            def entry_signal_at(self, row):
+                seen[row.date] = row
+                return None
+
+            def exit_signal_at(self, row, open_position):
+                return None
+
+        simulate_portfolio({"A": df}, _Recorder(), 100_000.0, sector_map={}, min_bars_required=1)
+        expected = {}
+        pre = _Recorder().precompute(df)
+        for ts, row in zip(pre.index, pre.itertuples(index=False)):
+            expected[ts.date()] = row          # later row wins on the duplicated 2026-01-07, as before
+        self.assertEqual(sorted(seen), sorted(expected))
+        for d, row in expected.items():
+            got = seen[d]
+            self.assertEqual(type(got).__name__, type(row).__name__)
+            self.assertEqual(got._fields, row._fields)
+            self.assertEqual([type(v) for v in got], [type(v) for v in row])
+            self.assertEqual(repr(got), repr(row))   # repr keeps NaN, -0.0 and exact float digits
+
+    def test_buy_and_hold_matches_the_old_dict_formula(self):
+        from swing_research.backtesting_engine import _to_date
+        from swing_research.benchmarks import simulate_buy_and_hold
+
+        a = self._frame(pd.date_range("2026-01-05", periods=6, freq="D"), [10.0, 10.5, 9.75, 11.0, 12.25, 12.0])
+        b = self._frame(pd.DatetimeIndex(["2026-01-06", "2026-01-08", "2026-01-08", "2026-01-11"]),
+                        [20.0, 21.0, 22.5, 19.0]).iloc[::-1]          # unsorted, with a duplicated day
+        data = {"A": a, "B": b}
+        result = simulate_buy_and_hold(data, 1_000.0)
+
+        # The pre-2026-10-25 implementation, verbatim in substance.
+        positions, close_by_date, all_dates = {}, {}, set()
+        for symbol, df in data.items():
+            df = df.sort_index()
+            entry = float(df.iloc[0]["Close"])
+            positions[symbol] = (int(1_000.0 / entry), entry, df)
+            close_by_date[symbol] = {_to_date(ts): float(c) for ts, c in zip(df.index, df["Close"])}
+            all_dates.update(close_by_date[symbol])
+        last = {s: e for s, (_, e, _) in positions.items()}
+        expected_equity = {}
+        for d in sorted(all_dates):
+            total = 0.0
+            for s, (q, _, _) in positions.items():
+                c = close_by_date[s].get(d)
+                if c is not None:
+                    last[s] = c
+                total += q * last[s]
+            expected_equity[d] = total
+        self.assertEqual(repr(result["daily_equity"]), repr(expected_equity))
+        self.assertEqual(result["trading_calendar"], sorted(all_dates))
+        self.assertEqual([(t.symbol, t.entry_date, t.exit_date, t.exit_price) for t in result["trades"]],
+                         [(s, _to_date(df.index[0]), _to_date(df.index[-1]), float(df.iloc[-1]["Close"]))
+                          for s, (_, _, df) in positions.items()])
+
+    def test_calendar_positions_keep_the_last_row_of_a_duplicated_day(self):
+        from swing_research.backtesting_engine import _day_keys, _positions_on_calendar
+        intern = {}
+        keys = _day_keys(pd.DatetimeIndex(["2026-01-05", "2026-01-07", "2026-01-07"]), intern)
+        other = _day_keys(pd.DatetimeIndex(["2026-01-06", "2026-01-07"]), intern)
+        self.assertIs(keys[1], other[1])     # one shared date object per calendar day
+        calendar = sorted(intern)
+        slot = {d: i for i, d in enumerate(calendar)}
+        self.assertEqual(list(_positions_on_calendar(keys, slot, len(calendar))), [0, -1, 2])
+
+    def test_already_sorted_frame_is_not_copied_unsorted_one_is_sorted(self):
+        from swing_research.backtesting_engine import _sorted_by_date
+        df = self._frame(pd.date_range("2026-01-05", periods=3, freq="D"), [1.0, 2.0, 3.0])
+        self.assertIs(_sorted_by_date(df), df)
+        shuffled = df.iloc[[2, 0, 1]]
+        pd.testing.assert_frame_equal(_sorted_by_date(shuffled), shuffled.sort_index())
+
+    def test_date_window_selects_exactly_what_the_boolean_mask_did(self):
+        from swing_research.backtesting_engine import date_window
+        sorted_df = self._frame(pd.date_range("2026-01-05", periods=10, freq="D"), [float(i) for i in range(10)])
+        gappy = sorted_df.iloc[[5, 1, 7, 2, 9, 3]]                       # unsorted: selection not contiguous
+        for frame in (sorted_df, gappy, sorted_df["Close"], gappy["Close"]):
+            for start, end in ((date(2026, 1, 7), date(2026, 1, 11)), (date(2026, 1, 1), date(2026, 1, 30)),
+                               (date(2027, 1, 1), date(2027, 2, 1))):
+                expected = frame[(frame.index.date >= start) & (frame.index.date <= end)]
+                got = date_window(frame, start, end)
+                self.assertTrue(got.index.equals(expected.index))
+                self.assertEqual(repr(got.to_numpy().tolist()), repr(expected.to_numpy().tolist()))
+        # contiguous selection is shared with the full frame, not copied
+        import numpy as np
+        window = date_window(sorted_df, date(2026, 1, 7), date(2026, 1, 11))
+        self.assertTrue(np.shares_memory(window["Close"].to_numpy(), sorted_df["Close"].to_numpy()))

@@ -25,7 +25,7 @@ from typing import Callable, Optional
 
 from research_lab import backtesting_engineer, statistical_auditor
 from swing_research import benchmarks
-from swing_research.backtesting_engine import simulate_portfolio
+from swing_research.backtesting_engine import date_window, simulate_portfolio
 from swing_research.base import Strategy
 from swing_research.crypto_costs import (
     INDIA_VDA_TAX_RATE, CryptoCostModel, apply_crypto_costs, apply_india_tax, tax_summary,
@@ -64,10 +64,10 @@ def run_walk_forward_crypto(strategy: Strategy, data: dict, starting_capital: fl
     windows = backtesting_engineer.walk_forward_split(start_date, end_date, n_walk_forward_windows)
     post_tax_metrics, pre_tax_metrics, post_tax_trades = [], [], []
     for w_start, w_end in windows:
-        windowed_data = {sym: df[(df.index.date >= w_start) & (df.index.date <= w_end)] for sym, df in data.items()}
+        windowed_data = {sym: date_window(df, w_start, w_end) for sym, df in data.items()}
         windowed_extra = None
         if extra_columns_by_symbol:
-            windowed_extra = {sym: s[(s.index.date >= w_start) & (s.index.date <= w_end)]
+            windowed_extra = {sym: date_window(s, w_start, w_end)
                               for sym, s in extra_columns_by_symbol.items()}
         result = simulate_portfolio(windowed_data, strategy, starting_capital, sector_map=sector_map,
                                     max_units_per_sector=max_units_per_sector, max_units_total=max_units_total,

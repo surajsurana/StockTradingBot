@@ -33,7 +33,7 @@ from research_lab import backtesting_engineer, experiment_manager, performance_a
 from research_lab.knowledge_base import KNOWLEDGE_BASE_PATH as INTRADAY_KB_PATH  # noqa: F401 (documents the split)
 
 from swing_research import benchmarks
-from swing_research.backtesting_engine import simulate_portfolio, simulate_portfolio_single_unit
+from swing_research.backtesting_engine import date_window, simulate_portfolio, simulate_portfolio_single_unit
 from swing_research.base import Strategy
 from swing_research.broker_costs import apply_broker_costs, min_viable_notional
 from swing_research.evidence_quality import compute_evidence_quality
@@ -148,13 +148,13 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
 
     for w_start, w_end in windows:
         windowed_data = {
-            sym: df[(df.index.date >= w_start) & (df.index.date <= w_end)]
+            sym: date_window(df, w_start, w_end)
             for sym, df in data.items()
         }
         windowed_extra = None
         if extra_columns_by_symbol:
             windowed_extra = {
-                sym: series[(series.index.date >= w_start) & (series.index.date <= w_end)]
+                sym: date_window(series, w_start, w_end)
                 for sym, series in extra_columns_by_symbol.items()
             }
         result = simulate_portfolio(
