@@ -1942,7 +1942,11 @@ function renderActivity(rows){
          + `<td class="nowrap"><span class="pill ${cls}">${esc(r.what)}</span></td>`
          + `<td>${esc(who || r.key || "")}</td>`
          + `<td class="nowrap">${esc(r.pool || r.experiment || "—")}</td>`
-         + `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`;
+         // A research result shows its backtest in one line and the verdict's reason in plain words
+         // in another, in full -- read on a phone, where a hover tooltip does not exist (2026-10-26).
+         + (r.stats || r.why
+             ? `<td>${r.stats ? `<div>${esc(r.stats)}</div>` : ""}${r.why ? `<div class="note">${esc(r.why)}</div>` : ""}</td></tr>`
+             : `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`);
   }).join("") || `<tr><td colspan="6" class="note">Nothing has happened yet.</td></tr>`;
 }
 function wireNotifPager(){

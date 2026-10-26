@@ -28,8 +28,11 @@ gets a date and the time is left blank rather than filled with a plausible-looki
 timestamp nobody wrote is not information.
 """
 
+import json
 import os
+import re
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 # to_status -> what to call it and which family of event it belongs to. Anything not here is still
@@ -107,6 +110,82 @@ def _verdict_of(experiment_id: str) -> str:
     return ""
 
 
+_LANE_CURRENCY = {"india": "₹", "us": "$", "crypto": "$"}
+
+
+def _plain_reasons(verdict_text: str) -> list:
+    """The auditor's reasons (research_lab/statistical_auditor.py wrote them into verdict.md) in a
+    few plain words each. Suraj reads this on his phone; the full text stays in the Research tab."""
+    out = []
+    m = re.search(r"Only (\d+) total trades.*?minimum of (\d+)", verdict_text)
+    if m:
+        out.append(f"too few trades ({m.group(1)}; needs {m.group(2)})")
+    m = re.search(r"holdout only has (\d+) trade", verdict_text)
+    if m:
+        out.append(f"too few trades in the most recent period ({m.group(1)})")
+    m = re.search(r"Only (\d+)/(\d+) walk-forward windows", verdict_text)
+    if m:
+        out.append(f"made money in only {m.group(1)} of {m.group(2)} test periods")
+    if re.search(r"Out-of-sample expectancy is -|Out-of-sample expectancy is \+0\.00", verdict_text):
+        out.append("lost money in the most recent period it had never seen")
+    return out
+
+
+def research_summary(experiment_id: str, lane: str, verdict: str, roots: Optional[list] = None) -> dict:
+    """{"stats": "...", "why": "..."} for one research result -- the backtest in one line and the
+    verdict's reason in one more (2026-10-26, Suraj: "can i see somethings like backtest data showed?
+    example holding period, winning and losing trades, avg profit margin. short and where i understand
+    the reasons for reject in brief"). Empty dict when the experiment's files are missing."""
+    if not experiment_id:
+        return {}
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    roots = roots or [os.path.join(here, sub, "experiments") for sub in ("swing_research", "research_lab")]
+    folder = next((os.path.join(root, experiment_id) for root in roots
+                   if os.path.exists(os.path.join(root, experiment_id, "metrics.json"))), None)
+    if folder is None:
+        return {}
+    try:                       # read-only, like everything in this module (it records nothing)
+        m = json.loads(Path(folder, "metrics.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    parts = []
+    trades, win = m.get("total_trades"), m.get("win_rate")
+    if trades:
+        if win is not None:
+            won = round(float(win) * trades)
+            parts.append(f"{trades:,} trades ({won:,} won, {trades - won:,} lost)")
+        else:
+            parts.append(f"{trades:,} trades")
+    if m.get("avg_holding_period_days") is not None:
+        parts.append(f"held ~{float(m['avg_holding_period_days']):.0f} days")
+    if m.get("expectancy") is not None:
+        sym, e = _LANE_CURRENCY.get(lane, ""), float(m["expectancy"])
+        parts.append(f"avg {'+' if e >= 0 else '−'}{sym}{abs(e):,.0f} per trade")
+    # A backtest that keeps trading a fixed size after its book is gone records -100% a year and a
+    # drop past 100%; said as a percentage that reads like a bug, so it is said in words.
+    if m.get("cagr") is not None:
+        c = float(m["cagr"])
+        parts.append("lost the whole book" if c <= -99.5 else f"{'+' if c >= 0 else '−'}{abs(c):.0f}% a year")
+    if m.get("max_drawdown_pct") is not None:
+        d = abs(float(m["max_drawdown_pct"]))
+        parts.append("worst drop: more than the whole book" if d > 100 else f"worst drop −{d:.0f}%")
+    try:
+        text = Path(folder, "verdict.md").read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    reasons = _plain_reasons(text)
+    if verdict == "PASS":
+        why = "Passed: made money across the test periods and in the most recent one it had never seen."
+    elif reasons:
+        why = "Why rejected: " + ", and ".join(reasons) + "."
+    elif verdict:
+        body = " ".join(l.strip() for l in text.splitlines() if l.strip() and not l.startswith("#"))
+        why = (body[:157] + "...") if len(body) > 160 else body
+    else:
+        why = ""
+    return {"stats": " · ".join(parts), "why": why}
+
+
 def timeline(state_dir: str, records=None, limit: int = 120) -> list:
     """[{at, date, time, kind, what, key, sid, name, pool, detail, experiment}], newest first.
 
@@ -159,12 +238,15 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                 # "us_short_term_reversal" beside "Short-Term Reversal (US)" on the next line.
                 key = str(r.get("key") or "")
                 known = meta.get(key, {})
-                rows.append(_row(None, str(r.get("resolved")),
-                                 "result" if verdict else "research", what, key,
-                                 {"sid": known.get("sid", ""),
-                                  "name": r.get("name") or known.get("name") or key,
-                                  "pool": lane.upper()},
-                                 detail=str(r.get("note") or ""), experiment=exp))
+                row = _row(None, str(r.get("resolved")),
+                           "result" if verdict else "research", what, key,
+                           {"sid": known.get("sid", ""),
+                            "name": r.get("name") or known.get("name") or key,
+                            "pool": lane.upper()},
+                           detail=str(r.get("note") or ""), experiment=exp)
+                if verdict:
+                    row.update(research_summary(exp, lane, verdict))
+                rows.append(row)
     except Exception:                            # noqa: BLE001
         pass
 

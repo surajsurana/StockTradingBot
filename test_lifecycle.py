@@ -250,6 +250,55 @@ class TestHowMuchItShows(unittest.TestCase):
                                         _h("ARCHIVED", AUG1), _h("ARCHIVED", OCT1))})
         self.assertEqual(timeline(root, records=[], limit=1)[0]["date"], "2026-10-01")
 
+class TestResearchSummary(unittest.TestCase):
+    """2026-10-26: a research result shows its backtest in one line and the reason in plain words."""
+
+    def _exp(self, metrics, verdict_text):
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "EXP-1"))
+        with open(os.path.join(root, "EXP-1", "metrics.json"), "w") as f:
+            json.dump(metrics, f)
+        with open(os.path.join(root, "EXP-1", "verdict.md"), "w") as f:
+            f.write(verdict_text)
+        return root
+
+    def test_a_reject_reads_in_plain_words(self):
+        from reporting.lifecycle import research_summary
+        root = self._exp({"total_trades": 158, "win_rate": 0.3418, "avg_holding_period_days": 36.0,
+                          "expectancy": -5.99, "cagr": -44.24, "max_drawdown_pct": 32.0},
+                         "# Verdict: REJECT\n\nOnly 0/2 walk-forward windows (0%) showed positive expectancy -- "
+                         "below the 50% needed. Out-of-sample expectancy is -6.99 per trade -- not positive.")
+        s = research_summary("EXP-1", "crypto", "REJECT", roots=[root])
+        self.assertEqual(s["stats"], "158 trades (54 won, 104 lost) · held ~36 days · avg −$6 per trade · "
+                                     "−44% a year · worst drop −32%")
+        self.assertEqual(s["why"], "Why rejected: made money in only 0 of 2 test periods, and lost money in "
+                                   "the most recent period it had never seen.")
+
+    def test_too_few_trades_is_named(self):
+        from reporting.lifecycle import research_summary
+        root = self._exp({"total_trades": 12}, "# Verdict: REJECT\n\nOnly 12 total trades across all windows -- "
+                                               "below the minimum of 30 needed.")
+        self.assertIn("too few trades (12; needs 30)", research_summary("EXP-1", "india", "REJECT", roots=[root])["why"])
+
+    def test_a_wiped_out_book_is_said_in_words(self):
+        from reporting.lifecycle import research_summary
+        root = self._exp({"total_trades": 5, "cagr": -100.0, "max_drawdown_pct": 139.0}, "# Verdict: REJECT")
+        stats = research_summary("EXP-1", "crypto", "REJECT", roots=[root])["stats"]
+        self.assertIn("lost the whole book", stats)
+        self.assertIn("worst drop: more than the whole book", stats)
+
+    def test_rupees_for_india(self):
+        from reporting.lifecycle import research_summary
+        root = self._exp({"expectancy": 1573.2}, "# Verdict: PASS\n\nPassed all checks")
+        s = research_summary("EXP-1", "india", "PASS", roots=[root])
+        self.assertIn("avg +₹1,573 per trade", s["stats"])
+        self.assertTrue(s["why"].startswith("Passed"))
+
+    def test_a_missing_experiment_gives_nothing_and_never_raises(self):
+        from reporting.lifecycle import research_summary
+        self.assertEqual(research_summary("EXP-404", "us", "REJECT", roots=[tempfile.mkdtemp()]), {})
+        self.assertEqual(research_summary("", "us", "REJECT"), {})
+
 
 if __name__ == "__main__":
     unittest.main()
