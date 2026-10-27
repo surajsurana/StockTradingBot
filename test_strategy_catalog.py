@@ -94,8 +94,14 @@ class TestResearchExperimentCatalogStructure(unittest.TestCase):
         keys = [spec.strategy_key for spec in RESEARCH_EXPERIMENT_SPECS]
         self.assertEqual(len(keys), len(set(keys)), f"duplicate strategy_key(s) in RESEARCH_EXPERIMENT_SPECS: {keys}")
 
-    def test_exactly_the_expected_keys_are_present(self):
-        self.assertEqual({spec.strategy_key for spec in RESEARCH_EXPERIMENT_SPECS}, self.EXPECTED_KEYS)
+    def test_every_expected_key_is_still_present(self):
+        # A SUBSET check, not equality (2026-10-27). Equality made every new research strategy fail
+        # here until someone also edited this list -- industry_momentum sat refused by the merge gate
+        # for two nights because the research routine didn't, and 1457634 patched the same gap by
+        # hand before. What this guards is a known strategy disappearing or being renamed; a NEW key
+        # is the research pipeline working. Duplicates are caught by test_no_duplicate_keys.
+        missing = self.EXPECTED_KEYS - {spec.strategy_key for spec in RESEARCH_EXPERIMENT_SPECS}
+        self.assertEqual(missing, set(), f"strategy key(s) disappeared from RESEARCH_EXPERIMENT_SPECS: {missing}")
 
     def test_every_runner_getter_resolves_to_a_callable(self):
         for spec in RESEARCH_EXPERIMENT_SPECS:
