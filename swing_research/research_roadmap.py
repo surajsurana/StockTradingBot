@@ -2705,6 +2705,264 @@ CANDIDATES = [
         research_value_score=7, data_availability_score=7, implementation_feasibility_score=6,
         horizon_lane="swing", market="US",
     ),
+
+    # =================================================================================
+    # Monthly discovery pass (2026-10-27). Per-lane counts recomputed directly from this file before
+    # searching (not trusted from any stale comment above): india 11 researchable/20 blocked, crypto 3
+    # researchable/2 blocked, us 7 researchable/1 blocked -- crypto and US are still the thin lanes, so
+    # this pass is weighted toward them, same direction as the 2026-10-02/10-03 passes above.
+    #
+    # One cross-market port (US) plus two crypto candidates that are BOTH a port of an already-PASSed
+    # India mechanism AND independently corroborated by real, crypto-specific peer-reviewed literature
+    # (checked directly via WebSearch 2026-10-27, not from memory) -- stronger evidence than a pure
+    # by-analogy port, since the destination-lane evidence is primary, not borrowed.
+    #
+    # Cross-market-port bookkeeping checked before writing these: deployment/state/strategy_registry.json
+    # was read in full. 'downside_beta' (PASS, deployment_status RESEARCH) has no US-lane sibling among
+    # the existing CandidateProfile entries (the seven us_* ports above cover short_term_reversal,
+    # max_effect, turn_of_month, overnight_return_anomaly, high_volume_return_premium,
+    # earnings_announcement_premium and price_delay_factor, but not downside_beta) -- a genuine gap, not
+    # a duplicate. For crypto: no existing crypto CandidateProfile or registered strategy carries the
+    # 'behavioral_lottery' tag (max_effect's own tag) or the 'reversal_short_horizon' tag
+    # (short_term_reversal's own tag) -- crypto_long_horizon_reversal is a different tag
+    # (reversal_long_horizon, a 1-3 month momentum-to-reversal switch), not the same mechanism.
+    # =================================================================================
+    CandidateProfile(
+        key="us_downside_beta",
+        name="Downside Beta / Downside Risk (US)",
+        authors="Ang, A., Chen, J. and Xing, Y.",
+        publication="\"Downside Risk,\" The Review of Financial Studies, Vol. 19, No. 4 (2006) -- the "
+                     "citation already recorded for this program's India implementation (downside_beta, "
+                     "PASS, deployment_status RESEARCH), reused verbatim; the paper's sample is US equities.",
+        year=2006,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only TOP quintile (highest downside beta) -- the side the paper's premium accrues "
+                  "to, the same side as the India version (corrected there 2026-09-14: an earlier draft "
+                  "said 'lowest').",
+        factor_family="Risk-based (downside-conditional)",
+        factor_tags={"risk_based"},
+        mechanism="Stocks whose beta to the market is higher specifically during MARKET DOWNTURNS "
+                  "(downside beta) command a return premium beyond what ordinary (unconditional) beta "
+                  "explains -- investors dislike downside co-movement specifically and demand compensation "
+                  "for it. Identical mechanism to this program's registered India strategy 'downside_beta' "
+                  "(PASS, deployment_status RESEARCH); the open question is purely whether the premium "
+                  "survives on S&P 500 large caps, a different liquidity/ownership environment from the "
+                  "NSE universe it passed on. The US sample is also this candidate's ORIGINATING evidence "
+                  "-- Ang, Chen and Xing's own sample is US equities (CRSP), unlike the India application, "
+                  "which was already once removed from the paper's native market.",
+        typical_holding_period="Monthly rebalance, matching both the India version and the paper's own "
+                                "primary specification.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Foundational, well-cited paper in a top-tier journal (Review of Financial "
+                        "Studies), and the US sample IS the paper's own sample -- this is the factor's home "
+                        "market, not a transplant, unlike the India version it is ported from. Needs "
+                        "nothing beyond the daily OHLCV already fetched for the frozen S&P 500 universe "
+                        "(swing_research/universe_us.py). Implementation cost is close to free: every "
+                        "Strategy subclass here is market-agnostic, and the existing Pool I ports have all "
+                        "reused their India classes completely unmodified -- this is a new experiment over "
+                        "existing code, not a new strategy to write. No existing US-lane candidate or "
+                        "registered strategy carries the 'risk_based' tag yet (minervini_trend_template_"
+                        "filter_us and cross_sectional_momentum_us are both momentum/trend-based), so this "
+                        "is a genuinely new factor family for the US lane specifically.",
+        known_weaknesses="Meaningful mechanical and economic overlap with the risk-based cluster this "
+                         "program already tested in India (Betting Against Beta, REJECT; Idiosyncratic "
+                         "Volatility, INCONCLUSIVE) -- the same disclosed caveat already attached to the "
+                         "India version's own known_weaknesses, now carried into the US lane: if more than "
+                         "one risk-based candidate is eventually implemented across this program's lanes, "
+                         "the marginal diversification value of a further one is smaller than its raw score "
+                         "alone suggests. India's own downside_beta PASS carries deployment_status RESEARCH "
+                         "rather than PAPER_TRADING -- a real but lower-conviction PASS than this program's "
+                         "typical paper-trading promotions, so it should be read as encouraging context, not "
+                         "strong prior evidence for the US version; this still earns its own full "
+                         "walk-forward verdict on US data, exactly as directed for Pool I. Downside beta is "
+                         "also a narrower, more specialized literature than plain beta or idiosyncratic "
+                         "volatility, and -- like every risk-based candidate here -- a rolling-regression "
+                         "signal needs enough history per stock to estimate reliably, a real estimation-"
+                         "window cost the US lane's simpler price-only candidates (MAX, Turn-of-Month) "
+                         "don't carry.",
+        academic_replication_quality="Well-cited but a narrower, more specialized literature than plain "
+                                      "market beta or idiosyncratic volatility -- the same standing already "
+                                      "disclosed for the India version.",
+        evidence_sufficiency_note="Sufficient to research. The real question is whether a reasonably "
+                                   "well-established but second-tier risk-based premium, already PASS "
+                                   "(if lower-conviction, RESEARCH-status) on NSE data, also survives on the "
+                                   "deeper, more efficiently-priced large-cap US universe -- informative "
+                                   "either way, not assumed to replicate just because the India version did.",
+        academic_evidence_score=7, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="crypto_max_effect",
+        name="MAX Effect / Lottery-Demand Anomaly (Crypto)",
+        authors="Grobys, K. and Junttila, J.; corroborated by Yadav, M.",
+        publication="Grobys, K. and Junttila, J. (2021), \"Speculation and lottery-like demand in "
+                     "cryptocurrency markets,\" Journal of International Financial Markets, Institutions "
+                     "and Money, Vol. 71, 101289 (DOI 10.1016/j.intfin.2021.101289); corroborated at an "
+                     "intraday horizon by Yadav, M. (2025), \"Intraday lottery demands in cryptocurrency "
+                     "market,\" Studies in Economics and Finance (Emerald), DOI 10.1108/SEF-07-2024-0461 -- "
+                     "both verified real via WebSearch 2026-10-27 (confirmed authors, journals, volume/DOI "
+                     "and years), not from memory. The underlying MAX measure is Bali, T.G., Cakici, N. and "
+                     "Whitelaw, R.F. (2011), \"Maxing Out: Stocks as Lotteries and the Cross-Section of "
+                     "Expected Returns,\" Journal of Financial Economics, Vol. 99, No. 2 -- the same "
+                     "citation already recorded for this program's India implementation (max_effect, PASS, "
+                     "paper trading).",
+        year=2021,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only LOW-MAX group at a WEEKLY rebalance horizon specifically -- see "
+                  "known_weaknesses for why the horizon choice matters more here than for any other "
+                  "candidate in this program.",
+        factor_family="Behavioural / lottery demand (crypto-specific)",
+        factor_tags={"behavioral_lottery", "crypto_factor"},
+        mechanism="Adapting Bali-Cakici-Whitelaw's MAX measure (the single largest daily return over a "
+                  "trailing window) to cryptocurrencies, Grobys & Junttila sort 20 large, liquid coins into "
+                  "MAX quintiles at a WEEKLY rebalance and find a high-MAX-minus-low-MAX spread exceeding "
+                  "1.5% per week, robust to Bitcoin-risk and microstructure controls -- i.e. lottery-like "
+                  "(high-MAX) coins subsequently UNDERPERFORM, the same sign and economic story as this "
+                  "program's registered India strategy 'max_effect' (PASS, paper trading). Yadav (2025) "
+                  "corroborates the same negative sign using intraday (hourly) MAX on the top 100 most "
+                  "liquid coins. A genuinely new factor_family for this program's crypto lane: every "
+                  "existing crypto strategy (implemented or candidate) is either price-momentum/trend-based, "
+                  "volatility-time-scaled, or residual-volatility-ranked (crypto_idiosyncratic_volatility) "
+                  "-- none measures a single extreme-return lottery payoff the way MAX does.",
+        typical_holding_period="WEEKLY rebalance -- deliberately NOT this program's usual monthly cadence "
+                                "for a ported India strategy; the horizon choice is itself part of this "
+                                "candidate's open research question, see known_weaknesses.",
+        holding_days_min=7, holding_days_max=7,
+        expected_trade_frequency="High -- weekly full-book rotation.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Fully implementable TODAY from data already fetched (crypto daily OHLCV via "
+                        "data/fetch_crypto.py -- MAX is computed directly off the Close column already "
+                        "pulled, no new data source needed). Two independent studies (2021 weekly-horizon, "
+                        "2025 intraday-horizon) both find the SAME sign as this program's own registered "
+                        "India strategy -- a real, if horizon-specific, corroboration, not a single isolated "
+                        "finding. The coin universe both papers use (Grobys & Junttila: 20 large "
+                        "cryptocurrencies; Yadav: top 100 most liquid) closely matches this platform's own "
+                        "CRYPTO_UNIVERSE (40 large, liquid USDT pairs, data/fetch_crypto.py) -- a better "
+                        "universe fit than most ports on this roadmap, several of which must disclose a "
+                        "universe mismatch instead (see crypto_short_term_reversal below, added the same "
+                        "run, for the opposite case).",
+        known_weaknesses="The sign of the crypto MAX effect is GENUINELY HORIZON-DEPENDENT and contested in "
+                         "the literature, and this must be resolved empirically on this platform's own "
+                         "universe before any implementation, not assumed from the India version's "
+                         "direction: at WEEKLY (Grobys & Junttila 2021) and INTRADAY/hourly (Yadav 2025) "
+                         "horizons the sign matches this program's India strategy (high-MAX underperforms). "
+                         "But at DAILY/MONTHLY horizons -- the cadence this program's India 'max_effect' "
+                         "strategy actually trades on -- at least two other studies (Li, Urquhart, Wang & "
+                         "Zhang 2021, 'MAX momentum in cryptocurrency markets'; Ozdamar, Akdeniz & Sensoy "
+                         "2021) find the OPPOSITE sign: higher MAX predicts HIGHER subsequent returns ('MAX "
+                         "momentum', not MAX reversal). This is why the holding period above is deliberately "
+                         "pinned to the weekly horizon the negative-sign studies actually tested, NOT copied "
+                         "from the India version's monthly cadence the way every other port on this roadmap "
+                         "copies its India sibling's holding period -- using the India cadence here could "
+                         "easily test the WRONG, already-contradicted sign. Shares this program's "
+                         "'behavioral_lottery' tag conceptually with the India strategy, though the sign "
+                         "dispute above means this is a looser, less certain conceptual link than a typical "
+                         "cross-market port.",
+        academic_replication_quality="Two independent studies at adjacent short horizons (weekly, intraday) "
+                                      "agree on sign; two further studies at the longer daily/monthly "
+                                      "horizon this program's India strategy actually trades find the "
+                                      "opposite sign -- a genuinely live, horizon-dependent disagreement in "
+                                      "a young literature, not a settled replication the way momentum or "
+                                      "value is.",
+        evidence_sufficiency_note="Sufficient to catalogue and test empirically given four real, "
+                                   "peer-reviewed-or-equivalent sources, but NOT sufficient to assume a "
+                                   "direction going in -- the horizon-dependent sign split above should be "
+                                   "the FIRST thing any implementation resolves, before any backtest result "
+                                   "is trusted.",
+        academic_evidence_score=6, expected_robustness_score=3, operational_simplicity_score=8,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=7,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="crypto_short_term_reversal",
+        name="Short-Term Reversal (Crypto)",
+        authors="Kozlowski, S.E., Puleo, M.R. and Zhou, J.; Zaremba, A., Bilgin, M.H., Long, H., Mercik, A. "
+                "and Szczygielski, J.J.",
+        publication="Kozlowski, S.E., Puleo, M.R. and Zhou, J. (2021), \"Cryptocurrency return reversals,\" "
+                     "Applied Economics Letters, Vol. 28, No. 11, 887-893 (DOI 10.1080/13504851.2020."
+                     "1784831); Zaremba, A., Bilgin, M.H., Long, H., Mercik, A. and Szczygielski, J.J. "
+                     "(2021), \"Up or down? Short-term reversal, momentum, and liquidity effects in "
+                     "cryptocurrency markets,\" International Review of Financial Analysis, Vol. 78, 101908 "
+                     "(DOI 10.1016/j.irfa.2021.101908) -- both verified real via WebSearch 2026-10-27 "
+                     "(confirmed authors, journals, volume/pages/DOI and years), not from memory. The "
+                     "underlying mechanism is the same one already cited for this program's India "
+                     "implementation (short_term_reversal, PASS, paper trading): Jegadeesh, N. (1990), "
+                     "\"Evidence of Predictable Behavior of Security Returns,\" The Journal of Finance, "
+                     "Vol. 45, No. 3.",
+        year=2021,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only bottom group (prior-period losers) -- same disclosed long-only reduction as "
+                  "every candidate in this program; same side as the India strategy.",
+        factor_family="Short-horizon reversal (crypto-specific)",
+        factor_tags={"reversal_short_horizon"},
+        mechanism="Kozlowski, Puleo & Zhou test 200 cryptocurrencies (2015-2019) and find a return-reversal "
+                  "effect that holds at daily, weekly AND monthly rebalancing, surviving controls for size, "
+                  "turnover and illiquidity. Zaremba et al. independently corroborate a daily reversal "
+                  "across a much larger sample (3,600+ coins), attributing it to illiquidity. Both find the "
+                  "SAME underlying liquidity-provision mechanism already registered for this program's "
+                  "India strategy 'short_term_reversal' (PASS, paper trading) and its own US port "
+                  "(us_short_term_reversal, candidate on this same roadmap): a short-horizon loser is often "
+                  "a coin that just absorbed selling pressure, and the reversal compensates whoever supplied "
+                  "that liquidity. Genuinely new for the crypto lane specifically: every existing crypto "
+                  "candidate/strategy on this roadmap is either momentum/trend-continuation "
+                  "(crypto_xs_momentum, crypto_tsmom, crypto_trend_timing*) or longer-horizon reversal "
+                  "(crypto_long_horizon_reversal, a 1-3 month momentum-to-reversal switch point) -- none "
+                  "occupies the short (days-to-weeks) reversal horizon this candidate targets.",
+        typical_holding_period="The source papers test daily, weekly and monthly rebalancing and find the "
+                                "effect at all three; this program's own India/US siblings use a 1-month "
+                                "formation/hold, the natural starting specification here too, pending "
+                                "confirmation the effect is not concentrated at a shorter horizon on this "
+                                "platform's own universe (see known_weaknesses).",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="High -- full rotation at whatever rebalance cadence is chosen.",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Two independent, real, peer-reviewed studies (Applied Economics Letters and "
+                        "International Review of Financial Analysis, both real finance journals) "
+                        "corroborate the same reversal mechanism already proven real and PASS on this "
+                        "program's own India equity data -- a genuinely well-evidenced candidate, not a "
+                        "bare analogy. Fully implementable TODAY from data already fetched (crypto daily "
+                        "OHLCV, data/fetch_crypto.py) -- no new data source needed. The India Strategy class "
+                        "is reusable unmodified, exactly as the existing equity cross-market ports already "
+                        "demonstrated with their own India classes.",
+        known_weaknesses="Both source papers are explicit, and this is the central caveat: the reversal "
+                         "effect is CONCENTRATED IN SMALL, ILLIQUID coins, while the largest, most liquid "
+                         "coins instead show MOMENTUM (continuation, the opposite sign). This platform's own "
+                         "crypto universe (data/fetch_crypto.py's CRYPTO_UNIVERSE) is deliberately the 40 "
+                         "largest, most liquid USDT pairs -- explicitly the segment BOTH papers say shows "
+                         "momentum rather than reversal, not the small/illiquid segment where the premium "
+                         "they document actually lives. This is a more direct, better-evidenced version of "
+                         "the same universe-mismatch concern already disclosed for this program's equity "
+                         "Short-Term Reversal US port (its own expected_robustness_score is this roadmap's "
+                         "lowest, 3/10, for the same large-cap-vs-small-cap reason) -- scored even more "
+                         "conservatively here rather than assuming the premium transfers. A real possibility "
+                         "is that this platform's universe would show the OPPOSITE of what is being tested "
+                         "(momentum, not reversal) -- a REJECT, or even a sign-flipped result, would itself "
+                         "be a genuinely informative finding given this disclosed tension, not a wasted "
+                         "research cycle. Also shares this program's 'reversal_short_horizon' tag directly "
+                         "with the India strategy and its US port -- a third test of the identical "
+                         "mechanism, so its marginal value as NEW mechanistic knowledge is lower than a "
+                         "brand-new factor family's would be, even though lane-scoped diversification "
+                         "scoring does not mechanically penalize it here (no crypto strategy shares this tag "
+                         "today).",
+        academic_replication_quality="Two independent, real, peer-reviewed studies (2021, different venues, "
+                                      "different authors, different sample sizes) converge on the same "
+                                      "reversal-in-small/illiquid-coins, momentum-in-large/liquid-coins "
+                                      "pattern -- a genuine, if young (both 2021), replication; the pattern "
+                                      "itself, not just the papers' existence, is the source of this "
+                                      "candidate's central known weakness above.",
+        evidence_sufficiency_note="Sufficient to catalogue given two corroborating peer-reviewed sources and "
+                                   "full data availability, but the evidence itself argues AGAINST expecting "
+                                   "a clean PASS on this platform's large/liquid-coin universe -- the honest "
+                                   "framing, consistent with this program's equity Short-Term Reversal US "
+                                   "port, is that this tests whether the effect exists at all outside the "
+                                   "small/illiquid segment where it was actually documented.",
+        academic_evidence_score=7, expected_robustness_score=2, operational_simplicity_score=8,
+        research_value_score=6, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="crypto", market="Global",
+    ),
 ]
 
 
