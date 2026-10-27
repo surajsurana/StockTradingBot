@@ -1128,3 +1128,88 @@ def compute_crypto_long_horizon_reversal_percentile_ranks(
     wide = pd.DataFrame(scores)
     pct_ranks = _percentile_rank_rows(wide)
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
+INDUSTRY_MOMENTUM_FORMATION_DAYS = MOMENTUM_FORMATION_DAYS  # J=6 months, same formation window as
+                                                              # compute_momentum_score() -- Moskowitz &
+                                                              # Grinblatt (1999) test the same J=6/K=6
+                                                              # specification Jegadeesh & Titman's own
+                                                              # stock-level result is most cited for.
+
+
+def compute_industry_momentum_percentile_ranks(data: dict, sector_map: dict) -> dict:
+    """
+    Moskowitz, T.J. and Grinblatt, M. (1999), "Do Industries Explain
+    Momentum?" -- unlike compute_momentum_percentile_ranks() (which ranks
+    STOCKS cross-sectionally by their OWN formation return), this ranks
+    INDUSTRIES by an equal-weighted average of their constituent stocks'
+    individual J=6-month (INDUSTRY_MOMENTUM_FORMATION_DAYS) formation
+    returns, then assigns EVERY STOCK the percentile rank of its OWN
+    industry -- the whole point of the paper being that stock-level
+    momentum is substantially explained at the industry level, not
+    stock-by-stock.
+
+    sector_map: {symbol: industry}, this program's existing coarse NSE-
+    sector proxy (the SAME mapping already used for Turtle's correlation-
+    group position caps -- see research_director._sector_map_for_trades()
+    / research_lab.performance_analyst.load_sector_map()), not the finer
+    Fama-French-style industry classification the original paper uses --
+    a disclosed adaptation (see this candidate's known_weaknesses in
+    research_roadmap.py).
+
+    Equal-weighted (not value/cap-weighted) industry portfolio return is
+    itself a disclosed simplification: the paper's own industry
+    portfolios are value-weighted; this program has no reliable point-in-
+    time market-cap series to build a cap-weighted industry portfolio
+    with, so an equal-weighted average of same-industry constituents'
+    formation returns is used as the industry's own momentum score
+    instead.
+
+    Symbols with no entry in sector_map (or mapped to "" / "Unknown") are
+    EXCLUDED from every industry's average return AND get no entry at all
+    in the returned dict -- the caller's Strategy.precompute() already
+    treats a genuinely absent column as "does not qualify" (same
+    convention as compute_momentum_percentile_ranks() and every other
+    cross-sectional signal in this module), so an unmapped stock simply
+    never qualifies rather than being silently assigned a fabricated
+    industry.
+
+    Returns {symbol: pd.Series of industry_momentum_percentile (0-100),
+    indexed by date} -- every mapped symbol in a qualifying top industry
+    gets the SAME percentile value as every other stock in that industry,
+    on a given date (by construction: they share one industry-level
+    score).
+    """
+    industry_of = {
+        symbol: sector_map.get(symbol)
+        for symbol in data
+        if sector_map.get(symbol) and sector_map.get(symbol) != "Unknown"
+    }
+
+    scores = {}
+    for symbol, industry in industry_of.items():
+        df = data.get(symbol)
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_momentum_score(df.sort_index())
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)  # dates x symbols
+
+    # Group symbol COLUMNS by industry and average row-wise (one equal-weighted
+    # industry portfolio return per day) without relying on the deprecated
+    # groupby(axis=1): transpose so symbols become the index, group rows by the
+    # industry_of mapping, average, then transpose back to dates x industries.
+    industry_for_scored_symbol = {symbol: industry_of[symbol] for symbol in wide.columns}
+    industry_returns = wide.T.groupby(by=industry_for_scored_symbol).mean().T
+
+    industry_pct_ranks = industry_returns.rank(axis=1, pct=True) * 100
+
+    result = {}
+    for symbol, industry in industry_of.items():
+        if symbol not in wide.columns or industry not in industry_pct_ranks.columns:
+            continue
+        result[symbol] = industry_pct_ranks[industry]
+    return result

@@ -17,6 +17,7 @@ from swing_research.cross_sectional import (
     compute_crypto_idiosyncratic_volatility_percentile_ranks, compute_crypto_idiosyncratic_volatility_score,
     compute_crypto_market_factor_close,
     compute_idiosyncratic_volatility_percentile_ranks, compute_idiosyncratic_volatility_score,
+    compute_industry_momentum_percentile_ranks,
     compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
     compute_rs_percentile_ranks, compute_rs_score,
@@ -299,6 +300,60 @@ class TestComputeShortTermReversalPercentileRanks(unittest.TestCase):
         last_date = data["B"].index[-1]
         # B has the lowest (most negative) return of the four -> rank 1/4 -> 25th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
+
+
+class TestComputeIndustryMomentumPercentileRanks(unittest.TestCase):
+    def test_stock_shares_its_industrys_average_not_its_own_return(self):
+        # IND_A = avg(0.80, 0.00) = 0.40; IND_B = 0.30; IND_C = 0.10.
+        # A2's OWN return (0.00) is the lowest of all four stocks, but it
+        # must rank with IND_A (its industry's 0.40 average, the highest
+        # of the three industries) -- proving the signal is the industry's
+        # equal-weighted average, not a relabeled per-stock rank.
+        data = {
+            "A1": _flat_then_final_jump(0.80), "A2": _flat_then_final_jump(0.00),
+            "B1": _flat_then_final_jump(0.30), "C1": _flat_then_final_jump(0.10),
+        }
+        sector_map = {"A1": "IND_A", "A2": "IND_A", "B1": "IND_B", "C1": "IND_C"}
+        ranks = compute_industry_momentum_percentile_ranks(data, sector_map)
+        last_date = data["A1"].index[-1]
+        self.assertAlmostEqual(ranks["A1"].loc[last_date], ranks["A2"].loc[last_date])
+        self.assertAlmostEqual(ranks["A1"].loc[last_date], 100.0)
+        self.assertAlmostEqual(ranks["B1"].loc[last_date], 66.666666, places=4)
+        self.assertAlmostEqual(ranks["C1"].loc[last_date], 33.333333, places=4)
+
+    def test_percentiles_are_between_0_and_100(self):
+        data = {
+            "A1": _flat_then_final_jump(0.10), "B1": _flat_then_final_jump(0.40),
+            "C1": _flat_then_final_jump(-0.10), "D1": _flat_then_final_jump(0.05),
+        }
+        sector_map = {"A1": "IND_A", "B1": "IND_B", "C1": "IND_C", "D1": "IND_D"}
+        ranks = compute_industry_momentum_percentile_ranks(data, sector_map)
+        last_date = data["A1"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        self.assertEqual(compute_industry_momentum_percentile_ranks({}, {}), {})
+
+    def test_symbol_absent_from_sector_map_is_excluded(self):
+        data = {
+            "A1": _flat_then_final_jump(0.10), "B1": _flat_then_final_jump(0.40),
+            "NOMAP": _flat_then_final_jump(0.90),
+        }
+        sector_map = {"A1": "IND_A", "B1": "IND_B"}  # NOMAP deliberately absent
+        ranks = compute_industry_momentum_percentile_ranks(data, sector_map)
+        self.assertNotIn("NOMAP", ranks)
+
+    def test_symbol_mapped_to_unknown_sector_is_excluded(self):
+        data = {
+            "A1": _flat_then_final_jump(0.10), "B1": _flat_then_final_jump(0.40),
+            "U1": _flat_then_final_jump(0.90),
+        }
+        sector_map = {"A1": "IND_A", "B1": "IND_B", "U1": "Unknown"}
+        ranks = compute_industry_momentum_percentile_ranks(data, sector_map)
+        self.assertNotIn("U1", ranks)
 
 
 class TestComputeMaxEffectScore(unittest.TestCase):

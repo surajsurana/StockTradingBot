@@ -311,6 +311,15 @@ RESEARCH_EXPERIMENT_SPECS = [
         ).run_short_term_reversal_experiment,
     ),
     ResearchExperimentSpec(
+        strategy_key="industry_momentum",
+        variant_description=("Industry Momentum (J=6mo industry-level formation, equal-weighted coarse "
+                             "NSE-sector industry portfolios, top-decile percentile, K=6mo single-vintage, "
+                             "no percentile-based early exit)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_industry_momentum_experiment"]
+        ).run_industry_momentum_experiment,
+    ),
+    ResearchExperimentSpec(
         strategy_key="betting_against_beta",
         variant_description="Betting Against Beta (Frazzini-Pedersen shrunk beta, 1yr lookback, bottom-decile percentile, 1mo single-vintage, long-only unlevered)",
         runner_getter=lambda: __import__(
