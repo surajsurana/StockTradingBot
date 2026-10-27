@@ -280,13 +280,16 @@ class TestScoringAndRoadmap(unittest.TestCase):
 # here, which is the intended signal to go and look at what landed.
 _CRYPTO_KEYS = {"crypto_size_factor", "crypto_long_horizon_reversal",                  # PR #2
                 "crypto_idiosyncratic_volatility", "crypto_illiquidity_premium",       # PR #3
-                "crypto_funding_rate_carry"}
+                "crypto_funding_rate_carry",
+                # cross-market ports of India PASS strategies, discovery run 2026-10-27
+                "crypto_max_effect", "crypto_short_term_reversal"}
 _US_KEYS = {"dogs_of_the_dow",                                                         # PR #2
             "us_price_delay_factor",                                                   # PR #3
             # cross-market ports of India PASS strategies, added 2026-10-03
             "us_short_term_reversal", "us_max_effect", "us_turn_of_month",
             "us_overnight_return_anomaly", "us_high_volume_return_premium",
-            "us_earnings_announcement_premium"}
+            "us_earnings_announcement_premium",
+            "us_downside_beta"}                                                         # discovery 2026-10-27
 
 
 class TestLaneOf(unittest.TestCase):
@@ -450,7 +453,7 @@ class TestBuildRoadmapLaneFilter(unittest.TestCase):
         self.assertEqual({s.candidate.key for s in r_crypto["all_scored"]}, _CRYPTO_KEYS)
         self.assertEqual({s.candidate.key for s in r_crypto["researchable_now"]},
                          {"crypto_long_horizon_reversal", "crypto_idiosyncratic_volatility",
-                          "crypto_illiquidity_premium"})
+                          "crypto_illiquidity_premium", "crypto_max_effect", "crypto_short_term_reversal"})
 
     def test_us_lane_is_researchable_now_that_a_non_blocked_candidate_exists(self):
         # 2026-10-03 (PR #3): us_price_delay_factor (Hou & Moskowitz, RFS 2005) needs only daily OHLCV,
