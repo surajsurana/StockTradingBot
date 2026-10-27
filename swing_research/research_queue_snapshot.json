@@ -4,8 +4,8 @@
     "name": "Industry Momentum",
     "mode": "backtest",
     "in_progress": true,
-    "stale": false,
-    "claimed_days_ago": 1.7500132666782409,
+    "stale": true,
+    "claimed_days_ago": 2.0000030837500002,
     "horizon_lane": "swing"
   }
 }
