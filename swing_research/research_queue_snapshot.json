@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "industry_momentum",
-    "name": "Industry Momentum",
+    "key": "nifty_alpha_jensens",
+    "name": "Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology)",
     "mode": "backtest",
-    "in_progress": true,
-    "stale": true,
-    "claimed_days_ago": 3.000009829849537,
+    "in_progress": false,
+    "stale": false,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
