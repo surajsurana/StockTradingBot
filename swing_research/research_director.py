@@ -815,6 +815,53 @@ def run_high_volume_return_premium_us_experiment(data: dict, start_date: date, e
     )
 
 
+def run_max_effect_us_experiment(data: dict, start_date: date, end_date: date,
+                                  starting_capital: float = 100_000,
+                                  n_walk_forward_windows: int = 3,
+                                  narrative_api_key: str = "",
+                                  narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                  experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                  knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                  skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to run_max_effect_experiment() -- the EXACT SAME Strategy class,
+    unmodified, against US equity `data` (S&P 500 universe, swing_research/universe_us.py)
+    instead of NSE data. See run_minervini_us_experiment()'s own docstring for the full
+    reasoning (identical pattern, different strategy). Bali, Cakici & Whitelaw (2011)'s own
+    sample is US (CRSP), so this is closer to the paper's native market than the India
+    application ever was -- but see published_research_analyst.MAX_EFFECT_US's own
+    distinctiveness note for the large-cap/IVOL-attribution caveat the roadmap flags for this
+    candidate specifically.
+    """
+    from swing_research.strategies.max_effect import MaxEffectStrategy
+    from swing_research.published_research_analyst import MAX_EFFECT_US
+    from swing_research.cross_sectional import compute_max_effect_percentile_ranks
+
+    max_effect_percentiles = compute_max_effect_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("max_effect_percentile")
+                     for symbol, series in max_effect_percentiles.items()}
+
+    strategy = MaxEffectStrategy()
+    return run_generic_swing_experiment(
+        strategy, MAX_EFFECT_US, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "max_effect_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "max_effect_stop_loss_pct": 0.08,
+            "max_effect_percentile_threshold": 10.0,
+            "max_effect_formation_days": 21,
+            "max_effect_holding_period_trading_days": 21,
+            "max_effect_single_vintage": True,
+            "max_effect_percentile_based_early_exit": False,
+            "max_effect_variant": "MAX(1) -- single highest daily return in trailing month",
+            "max_effect_market": "US",
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,

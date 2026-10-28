@@ -68,6 +68,10 @@ RUNNERS = {
         lambda: _director().run_high_volume_return_premium_us_experiment,
         "High-Volume Return Premium, US variant (the unmodified India Strategy class against the "
         "frozen S&P 500 universe)"),
+    "us_max_effect": (
+        lambda: _director().run_max_effect_us_experiment,
+        "MAX Effect (Lottery-Demand Anomaly), US variant (the unmodified India Strategy class "
+        "against the frozen S&P 500 universe)"),
 }
 
 

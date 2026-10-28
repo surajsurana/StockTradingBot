@@ -9,7 +9,7 @@ class TestRunnersCatalog(unittest.TestCase):
     def test_the_known_pool_i_strategies_are_registered(self):
         self.assertEqual(set(rue.RUNNERS),
                          {"minervini_trend_template_filter_us", "cross_sectional_momentum_us",
-                          "us_short_term_reversal", "us_high_volume_return_premium"})
+                          "us_short_term_reversal", "us_high_volume_return_premium", "us_max_effect"})
 
     def test_every_entry_resolves_to_a_real_callable_in_research_director(self):
         # the getters are lazy (so importing this CLI stays cheap) -- prove they actually resolve.
