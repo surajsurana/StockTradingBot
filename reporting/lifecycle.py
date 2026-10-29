@@ -224,7 +224,27 @@ def research_summary(experiment_id: str, lane: str, verdict: str, roots: Optiona
         why = (body[:157] + "...") if len(body) > 160 else body
     else:
         why = ""
-    return {"money": _money_line(m, _LANE_CURRENCY.get(lane, "")), "stats": " · ".join(parts), "why": why}
+    return {"money": _money_line(m, _LANE_CURRENCY.get(lane, "")), "years": _years(m, _LANE_CURRENCY.get(lane, "")),
+            "stats": " · ".join(parts), "why": why}
+
+
+def _years(m: dict, sym: str) -> list:
+    """[{year, amount, pct, gain}] -- what the backtest made or lost in each calendar year, shown when
+    a research result is tapped (2026-10-29, Suraj: "when i click on that notification, i should see
+    year wise how much it made or lost"). swing_research/metrics.py writes annual_returns_pct as
+    that year's closed-trade P&L over the STARTING money, so pct x capital is the year's amount and
+    the years add up to total_pnl exactly."""
+    pnl, roc = m.get("total_pnl"), m.get("return_on_capital_pct")
+    if not roc or pnl is None:
+        return []
+    capital = float(pnl) * 100.0 / float(roc)
+    out = []
+    for year, pct in sorted((m.get("annual_returns_pct") or {}).items()):
+        amount = capital * float(pct) / 100.0
+        sign = "+" if amount >= 0 else "−"
+        out.append({"year": year, "amount": f"{sign}{_amount(sym, amount)}",
+                    "pct": f"{sign}{abs(float(pct)):.1f}%", "gain": amount >= 0})
+    return out
 
 
 def timeline(state_dir: str, records=None, limit: int = 120) -> list:

@@ -407,6 +407,7 @@ tr.clickable{cursor:pointer}
 .expand-toggle:hover{color:var(--accent)}
 tr.subrow td{background:var(--band);color:var(--muted)}
 tr.subrow td.note{padding-left:22px}
+.yeartbl{width:auto;margin:2px 0 4px 22px}.yeartbl td,.yeartbl th{padding:2px 14px 2px 0;background:none}
 .tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 12px}
 .pager{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0 4px}
 .pager select{font:inherit;padding:3px 6px;border:1px solid var(--rule);background:var(--card);color:var(--ink);border-radius:4px}
@@ -1920,6 +1921,7 @@ function timelineRows(n){
 const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"ok", result:"", research:"info",
                        status:"info", refused:"due", not_taken:"due", auth_fail:"miss", auth_ok:"ok"};
 let NOTIF_PAGE = 1, NOTIF_PAGE_SIZE = 50;
+const NOTIF_OPEN = new Set();   // research results opened to year by year; kept across refreshes
 function renderActivity(rows){
   wireNotifPager();
   const pages = Math.max(1, Math.ceil(rows.length / NOTIF_PAGE_SIZE));
@@ -1939,24 +1941,43 @@ function renderActivity(rows){
   const moneyHtml = m => esc(m)
     .replace(/^(Made|Lost) (\S+)/, (_, w, amt) => `<span class="${w === "Made" ? "gain" : "loss"}">${w} ${amt}</span>`)
     .replace(/(unseen period: )([+−]\S+)/, (_, lbl, amt) => `${lbl}<span class="${amt[0] === "+" ? "gain" : "loss"}">${amt}</span>`);
-  document.getElementById("notif-activity").innerHTML = page.map(r => {
+  // A research result with yearly figures opens, on tap, into what it made or lost each year
+  // (2026-10-29, Suraj: "when i click on that notification, i should see year wise how much it made
+  // or lost"). Each year is that year's P&L on the starting money, so the years add up to the total.
+  const yearsRow = (r, i) => `<tr class="subrow" data-years-of="${i}"${NOTIF_OPEN.has(r.experiment || r.name) ? "" : " hidden"}><td colspan="6">`
+    + `<table class="yeartbl"><thead><tr><th>Year</th><th class="n">Made / lost</th><th class="n">On starting money</th></tr></thead><tbody>`
+    + r.years.map(y => `<tr><td>${esc(y.year)}</td><td class="n ${y.gain ? "gain" : "loss"}">${esc(y.amount)}</td>`
+                     + `<td class="n ${y.gain ? "gain" : "loss"}">${esc(y.pct)}</td></tr>`).join("")
+    + `</tbody></table></td></tr>`;
+  document.getElementById("notif-activity").innerHTML = page.map((r, i) => {
     // A verdict is the headline, so it keeps the colour of its own answer rather than its stage.
     const cls = /PASS/.test(r.what) ? "ok" : /REJECT/.test(r.what) ? "miss" : (ACTIVITY_PILL[r.kind] || "");
     const who = [r.sid, r.name].filter(Boolean).join(" · ");
-    return `<tr><td class="n nowrap">${esc(dmy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
+    const opens = (r.years || []).length > 0;
+    return (opens ? `<tr class="clickable" data-years="${i}" data-open-key="${esc(r.experiment || r.name || "")}" title="Tap for year by year">` : `<tr>`)
+         + `<td class="n nowrap">${esc(dmy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
          + `<td class="nowrap"><span class="pill ${cls}">${esc(r.what)}</span></td>`
          + `<td>${esc(who || r.key || "")}</td>`
          + `<td class="nowrap">${esc(r.pool || r.experiment || "—")}</td>`
          // A research result shows its backtest in one line and the verdict's reason in plain words
          // in another, in full -- read on a phone, where a hover tooltip does not exist (2026-10-26).
          + (r.stats || r.why || r.money
-             ? `<td>${r.money ? `<div><b>${moneyHtml(r.money)}</b></div>` : ""}${r.stats ? `<div>${esc(r.stats)}</div>` : ""}${r.why ? `<div class="note">${esc(r.why)}</div>` : ""}</td></tr>`
-             : `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`);
+             ? `<td>${r.money ? `<div><b>${moneyHtml(r.money)}</b>${opens ? ` <span class="note">▸ year by year</span>` : ""}</div>` : ""}${r.stats ? `<div>${esc(r.stats)}</div>` : ""}${r.why ? `<div class="note">${esc(r.why)}</div>` : ""}</td></tr>`
+             : `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`)
+         + (opens ? yearsRow(r, i) : "");
   }).join("") || `<tr><td colspan="6" class="note">Nothing has happened yet.</td></tr>`;
 }
 function wireNotifPager(){
   const pager = document.getElementById("notif-pager"); if(pager.dataset.wired) return;
   pager.dataset.wired = "1";
+  // One listener for the table body, which is re-rendered on every refresh and page change.
+  document.getElementById("notif-activity").addEventListener("click", e => {
+    const tr = e.target.closest("tr[data-years]"); if(!tr) return;
+    const sub = tr.parentNode.querySelector(`tr[data-years-of="${tr.dataset.years}"]`);
+    if(!sub) return;
+    sub.hidden = !sub.hidden;
+    sub.hidden ? NOTIF_OPEN.delete(tr.dataset.openKey) : NOTIF_OPEN.add(tr.dataset.openKey);
+  });
   const again = () => { if(STATE) renderNotifications(STATE); };
   document.getElementById("notif-pagesize").addEventListener("change", e => {
     NOTIF_PAGE_SIZE = +e.target.value; NOTIF_PAGE = 1; again(); });

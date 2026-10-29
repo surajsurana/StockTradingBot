@@ -313,6 +313,15 @@ class TestResearchSummary(unittest.TestCase):
                          "Lost $1,501 on $1,000 (more than the whole book) (Nov 2022 – Oct 2026) · "
                          "most recent unseen period: −$612")
 
+    def test_year_by_year_amounts_add_up_to_the_total(self):
+        from reporting.lifecycle import research_summary
+        root = self._exp({"total_pnl": 30000.0, "return_on_capital_pct": 30.0,
+                          "annual_returns_pct": {"2024": -10.0, "2023": 40.0}}, "# Verdict: REJECT")
+        years = research_summary("EXP-1", "india", "REJECT", roots=[root])["years"]
+        self.assertEqual(years, [
+            {"year": "2023", "amount": "+₹40,000", "pct": "+40.0%", "gain": True},
+            {"year": "2024", "amount": "−₹10,000", "pct": "−10.0%", "gain": False}])
+
     def test_no_pnl_recorded_means_no_money_line(self):
         from reporting.lifecycle import research_summary
         root = self._exp({"total_trades": 3}, "# Verdict: REJECT")
