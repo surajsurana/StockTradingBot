@@ -999,6 +999,47 @@ MAX_EFFECT = PublishedStrategy(
 )
 
 
+MAX_EFFECT_US = PublishedStrategy(
+    name="MAX Effect (Lottery-Demand Anomaly) (US)",
+    source_citation=MAX_EFFECT.source_citation,
+    mechanism=MAX_EFFECT.mechanism,
+    rules=MAX_EFFECT.rules,
+    variant_chosen=MAX_EFFECT.variant_chosen,
+    scope_reductions=(
+        "Same MAX(1) construction, 1-month formation/holding, single-vintage holding, exit rule, "
+        "protective stop and position sizing adaptations as the India version (see MAX_EFFECT "
+        "above for the full reasoning) -- unchanged, none of it is India-specific. Long-only: this "
+        "codebase has no short-selling infrastructure for ANY market yet (not an NSE-specific gap "
+        "-- the constraint is this codebase's own execution layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS verdict (max_effect, SW-011, EXP-052/EXP-053, "
+        "live in paper trading). Bali, Cakici & Whitelaw (2011)'s own sample IS US (CRSP) data, so "
+        "this test is closer to the paper's own native market than the India application ever "
+        "was -- but unlike Minervini and Cross-Sectional Momentum US, this candidate carries a "
+        "real open question the roadmap itself flags: the lottery-demand effect is documented as "
+        "strongest in small, cheap, retail-held stocks, and the S&P 500 is the large-cap, "
+        "institution-dominated end of exactly that spectrum, where the effect is weakest; several "
+        "post-2011 studies also attribute much of MAX's power to its correlation with "
+        "idiosyncratic volatility (a separate roadmap candidate, INCONCLUSIVE for India) rather "
+        "than to lottery demand as a distinct channel. A REJECT here is a genuinely informative, "
+        "cost-and-universe-informed result, not a wasted cycle -- see the candidate's own "
+        "evidence_sufficiency_note in research_roadmap.py."
+    ),
+    assumptions_impact=(
+        MAX_EFFECT.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here. One market-specific "
+        "addition: the S&P 500 large-cap, institutionally-dominated universe is, per the "
+        "literature, where the lottery-demand effect is weakest and the IVOL-attribution critique "
+        "strongest -- a structural headwind this program's cross-sectional MAX percentile has no "
+        "way to correct for -- see this variant's own distinctiveness note above."
+    ),
+)
+
+
 OVERNIGHT_RETURN_ANOMALY = PublishedStrategy(
     name="Overnight Return Anomaly",
     source_citation=(
