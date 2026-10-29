@@ -301,13 +301,13 @@ class TestResearchSummary(unittest.TestCase):
                           "monthly_returns_pct": {"2017-05": 1.0, "2026-10": 0.5},
                           "out_of_sample_metrics": {"total_pnl": 153460.81}}, "# Verdict: PASS")
         self.assertEqual(research_summary("EXP-1", "india", "PASS", roots=[root])["money"],
-                         "Made ₹2,91,708 on ₹1,00,000 (May 2017 – Oct 2026) · most recent unseen period: +₹1,53,461")
+                         "Made ₹2,91,708 on ₹1,00,000 (May 2017 – Oct 2026) before charges · most recent unseen period: +₹1,53,461")
 
     def test_money_lost_past_the_whole_book(self):
         # EXP-100's real figures (crypto, a book that kept trading after it was gone).
         from reporting.lifecycle import research_summary
         root = self._exp({"total_pnl": -1500.97, "return_on_capital_pct": -150.1,
-                          "monthly_returns_pct": {"2022-11": -1.0, "2026-10": -2.0},
+                          "monthly_returns_pct": {"2022-11": -1.0, "2026-10": -2.0}, "diagnostic_zero_cost_baseline": {},
                           "out_of_sample_metrics": {"total_pnl": -611.91}}, "# Verdict: REJECT")
         self.assertEqual(research_summary("EXP-1", "crypto", "REJECT", roots=[root])["money"],
                          "Lost $1,501 on $1,000 (more than the whole book) (Nov 2022 – Oct 2026) · "

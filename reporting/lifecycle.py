@@ -148,6 +148,11 @@ def _money_line(m: dict, sym: str) -> str:
             except ValueError:
                 return ym
         line += f" ({label(months[0])} – {label(months[-1])})"
+    # research_director.py's full-period run takes costs out only where a lane adjusts its trades
+    # (crypto, execution realism), and those runs keep the unadjusted figures as this baseline. The
+    # India/US full-period run has no charges at all -- said, so the total is not read as net.
+    if "diagnostic_zero_cost_baseline" not in m:
+        line += " before charges"
     oos = (m.get("out_of_sample_metrics") or {}).get("total_pnl")
     if oos is not None:
         line += f" · most recent unseen period: {'+' if float(oos) >= 0 else '−'}{_amount(sym, float(oos))}"
