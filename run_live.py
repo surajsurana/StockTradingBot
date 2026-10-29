@@ -162,11 +162,15 @@ def run_all(*, settings=None, state_dir: str = STATE_DIR, dry_run: bool = True, 
         if venues and venue_of(record) not in venues:
             continue
         try:
-            results.append(run_one(record, rupees, settings=settings, state_dir=state_dir,
-                                   dry_run=dry_run, now=now, resolve_at_open=resolve_at_open))
+            result = run_one(record, rupees, settings=settings, state_dir=state_dir,
+                             dry_run=dry_run, now=now, resolve_at_open=resolve_at_open)
         except Exception as e:
-            results.append({"key": record.strategy_key, "status": "error",
-                            "reason": f"{type(e).__name__}: {e}"[:300]})
+            result = {"key": record.strategy_key, "status": "error",
+                      "reason": f"{type(e).__name__}: {e}"[:300]}
+        # Refusals return before run_one knows its client; the venue is what lets
+        # broker_auth_watch tell whose key a failure belongs to.
+        result.setdefault("venue", venue_of(record))
+        results.append(result)
     return results
 
 
@@ -188,6 +192,14 @@ def main() -> None:
     if not results:
         print("Nothing to run: no strategy is both promoted to live and funded.")
         return
+    if args.live:
+        # A refused key used to show up only in this log (Pool G sat halted ~1 day in Oct 2026).
+        # Telegram once when a venue's key/login stops working, once when it works again.
+        from deployment import broker_auth_watch
+        try:
+            broker_auth_watch.observe_run(results, STATE_DIR)
+        except Exception as e:               # noqa: BLE001 -- reporting must never break a run
+            print(f"broker_auth: {type(e).__name__}: {e}")
     for r in results:
         print(f"[{r['key']}] {r.get('status')}" + (f" -- {r['reason']}" if r.get("reason") else ""))
         for order in r.get("orders", []) or []:

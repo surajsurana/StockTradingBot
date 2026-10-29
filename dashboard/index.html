@@ -1918,7 +1918,7 @@ function timelineRows(n){
 // A promotion to paper is good news and should look like it. It was the only lifecycle event drawn
 // without a pill, which is exactly the one that got overlooked in a column of them.
 const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"ok", result:"", research:"info",
-                       status:"info", refused:"due", not_taken:"due"};
+                       status:"info", refused:"due", not_taken:"due", auth_fail:"miss", auth_ok:"ok"};
 let NOTIF_PAGE = 1, NOTIF_PAGE_SIZE = 50;
 function renderActivity(rows){
   wireNotifPager();

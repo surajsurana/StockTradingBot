@@ -75,7 +75,8 @@ class TestTheGate(_TempLog):
     def test_the_default_setting_is_research_outcome_bot_reply_kite_renewal_and_research_alert(self):
         from deployment import settings
         from reporting import telegram_notifier
-        expected = {"research_outcome", "bot_reply", "kite_renewal", "research_alert", "desk_answer"}
+        expected = {"research_outcome", "bot_reply", "kite_renewal", "research_alert", "desk_answer",
+                    "broker_auth"}
         self.assertEqual(set(telegram_notifier.DEFAULT_ALLOWED_KINDS), expected)
         if "TELEGRAM_ALLOWED_KINDS" not in os.environ:
             self.assertEqual(set(settings.TELEGRAM_ALLOWED_KINDS), expected)

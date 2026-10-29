@@ -250,6 +250,15 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
     except Exception:                            # noqa: BLE001
         pass
 
+    # 3. A live broker refusing our key or login, and the all-clear once it works again.
+    try:
+        from deployment.broker_auth_watch import timeline_rows
+        for e in timeline_rows(state_dir):
+            rows.append(_row(e["at"], "", e["kind"], e["what"], "", {"name": e["name"]},
+                             detail=e["detail"]))
+    except Exception:                            # noqa: BLE001
+        pass
+
     # Newest first. A date-only row sorts against the start of its day, which puts it before that
     # day's timed events -- the honest order given nobody recorded when in the day it happened.
     rows.sort(key=lambda r: r["at"] or "", reverse=True)

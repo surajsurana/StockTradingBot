@@ -175,9 +175,13 @@ TELEGRAM_SINGLE_DAILY_SUMMARY = os.environ.get("TELEGRAM_SINGLE_DAILY_SUMMARY", 
 # lane turns red, and once when it recovers -- research stalled ~8 days unseen because every alert
 # that noticed was muted.
 # "desk_answer" (2026-10-24) = desk_inbox.py's late answer to a question Suraj asked the bot.
+# "broker_auth" (2026-10-29, approved by Suraj after CoinDCX expired the key and Pool G halted
+# unseen) = deployment/broker_auth_watch.py's one line when a live broker key/login stops working,
+# and once when it works again.
 TELEGRAM_ALLOWED_KINDS = frozenset(
     k.strip() for k in os.environ.get("TELEGRAM_ALLOWED_KINDS",
-                                      "research_outcome,bot_reply,kite_renewal,research_alert,desk_answer").split(",")
+                                      "research_outcome,bot_reply,kite_renewal,research_alert,desk_answer,"
+                                      "broker_auth").split(",")
     if k.strip())
 
 DEPLOYMENT_DIR = os.path.dirname(os.path.abspath(__file__))

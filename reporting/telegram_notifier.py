@@ -39,7 +39,8 @@ import requests
 # would have gone out is still findable. The scripts that used to send keep running and keep doing
 # their real work (writing the caches the dashboard reads) -- only the push is gone. Undoing this is
 # one setting, not a code change.
-DEFAULT_ALLOWED_KINDS = frozenset({"research_outcome", "bot_reply", "kite_renewal", "research_alert", "desk_answer"})
+DEFAULT_ALLOWED_KINDS = frozenset({"research_outcome", "bot_reply", "kite_renewal", "research_alert", "desk_answer",
+                                   "broker_auth"})
 MUTED_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               "logs", "telegram_muted.log")
 

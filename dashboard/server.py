@@ -1210,6 +1210,38 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 TLS_CERT_PATH = os.path.join(STATE_DIR, "dashboard_tls_cert.pem")
 TLS_KEY_PATH = os.path.join(STATE_DIR, "dashboard_tls_key.pem")
+TLS_HANDSHAKE_TIMEOUT_SECONDS = 15
+
+
+class _TLSHandshakeInWorkerServer(ThreadingHTTPServer):
+    """HTTPS where the TLS handshake happens in the request's own thread, under a timeout.
+
+    WHY (2026-10-29, the second time :8443 froze while :8085 kept working). The listener used to wrap
+    the LISTENING socket, which makes accept() perform each client's handshake on the one thread that
+    accepts everybody. A client that opens a connection and never speaks -- an internet scanner, a
+    half-open phone connection -- held that thread forever: the port still showed LISTEN, the kernel
+    queued everyone after it, and every browser timed out until the dashboard was restarted. Here
+    accept() only accepts; the handshake runs in the worker thread with a deadline, so a silent
+    client costs one thread for 15 seconds and nobody else waits on it."""
+
+    def __init__(self, server_address, handler_class, ssl_context):
+        super().__init__(server_address, handler_class)
+        self.ssl_context = ssl_context
+
+    def finish_request(self, request, client_address):
+        request.settimeout(TLS_HANDSHAKE_TIMEOUT_SECONDS)
+        try:
+            tls = self.ssl_context.wrap_socket(request, server_side=True)
+        except (ssl.SSLError, OSError):
+            return              # a scanner, a plain-http request to the https port, or a timeout
+        tls.settimeout(None)
+        try:
+            self.RequestHandlerClass(tls, client_address, self)
+        finally:
+            try:
+                tls.close()
+            except OSError:
+                pass
 
 
 def _start_https_listener(host: str, port: int) -> None:
@@ -1233,8 +1265,7 @@ def _start_https_listener(host: str, port: int) -> None:
     try:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(certfile=TLS_CERT_PATH, keyfile=TLS_KEY_PATH)
-        https_server = ThreadingHTTPServer((host, port), DashboardHandler)
-        https_server.socket = ctx.wrap_socket(https_server.socket, server_side=True)
+        https_server = _TLSHandshakeInWorkerServer((host, port), DashboardHandler, ctx)
         print(f"Dashboard ALSO on https://{host}:{port}/ (self-signed -- clients need -k/--insecure or "
               f"to accept the certificate warning)", flush=True)
         https_server.serve_forever()
