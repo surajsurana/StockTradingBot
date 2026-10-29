@@ -296,6 +296,17 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                 # the pipeline-health grid's job now.
                 if outcome in HIDDEN_QUEUE_OUTCOMES and not verdict:
                     continue
+                # A broken test is not a result -- research_health.py sent it for a re-test, and
+                # the reason it looked broken is what the reader needs (2026-10-29).
+                if outcome == "retest_needed":
+                    key = str(r.get("key") or "")
+                    known = meta.get(key, {})
+                    rows.append(_row(None, str(r.get("resolved")), "research",
+                                     "Test looked broken: re-testing", key,
+                                     {"sid": known.get("sid", ""), "name": r.get("name") or known.get("name") or key,
+                                      "pool": lane.upper()},
+                                     detail=str(r.get("note") or ""), experiment=exp))
+                    continue
                 # A verdict is the result; an outcome without one means the candidate left the
                 # queue without producing a backtest, which is a different kind of news.
                 what = (f"Research result: {verdict}" if verdict

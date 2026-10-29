@@ -397,7 +397,7 @@ def backtest_stage(lane: str, parsed: dict, log_seen: Optional[datetime], now: d
 
 def outcome_stage(lane: str, queue: dict, now: datetime) -> dict:
     history = queue.get("history", [])
-    done = [h for h in history if h.get("outcome") in ("researched", "paper_trading_proposed") and h.get("resolved")]
+    done = [h for h in history if h.get("outcome") in ("researched", "paper_trading_proposed", "retest_needed") and h.get("resolved")]
     if done:
         last = max(done, key=lambda h: str(h["resolved"]))
         days = _days_since(last["resolved"], now) or 0

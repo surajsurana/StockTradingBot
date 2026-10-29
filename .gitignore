@@ -65,3 +65,5 @@ config/credentials.json
 config/live_settings.json
 deployment/state/deployment_status.json
 deployment/state/desk_inbox.json
+deployment/state/research_retests.json
+deployment/state/broker_auth.json

@@ -49,6 +49,7 @@ import re
 import subprocess
 import sys
 
+import research_health
 import research_queue
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -175,9 +176,23 @@ def run_lane(lane: str, state_dir: str, windows: int, send: bool, token: str, ch
     exp_id, verdict, tail = run_backtest(lane, key, windows)
     if not exp_id:
         return False   # left in_progress on purpose: a failed run is retried, not silently resolved
-    research_queue.resolve(state_dir, key, "researched", experiment_id=exp_id,
-                           branch=f"research/{key}" if lane == "india" else f"research-{lane}/{key}",
-                           lane=lane)
+    branch = f"research/{key}" if lane == "india" else f"research-{lane}/{key}"
+    # A broken test is re-run, never acted on -- not rejected, not promoted (research_health.py).
+    broken = research_health.problems(exp_id)
+    if broken:
+        note = "test looked broken: " + "; ".join(broken)
+        research_queue.resolve(state_dir, key, "retest_needed", experiment_id=exp_id, branch=branch,
+                               lane=lane, note=note)
+        research_health.add_retest(state_dir, lane, key, exp_id, broken)
+        msg = (f"\U0001F52C Research done \u2014 {strategy_name(state_dir, lane, key)} ({LANE_SHORT.get(lane, lane)}): "
+               f"the test looked broken ({broken[0]}) \u2192 re-testing on the next night")
+        print(f"[{lane}] {key}: {exp_id} NOT acted on -- {note}", flush=True)
+        print(msg, flush=True)
+        if send:
+            from reporting.telegram_notifier import send_telegram_message
+            send_telegram_message(msg, token, chat_id, kind="research_outcome", parse_mode=None)
+        return True
+    research_queue.resolve(state_dir, key, "researched", experiment_id=exp_id, branch=branch, lane=lane)
     # PASS or INCONCLUSIVE goes straight into paper trading -- the second test, not a deployment
     # (2026-10-10, per explicit direction). Live promotion is untouched and stays a human decision.
     # This never raises: a verdict is worth more than a promotion, and the two must not share a fate.
@@ -194,7 +209,14 @@ def run_lane(lane: str, state_dir: str, windows: int, send: bool, token: str, ch
     return True
 
 
-RETEST_NOTE = "re-test after the 29 Oct 2026 minimum-trade-size fix"
+RETEST_NOTE = "re-test"
+
+
+def _alert(send: bool, token: str, chat_id: str, text: str) -> None:
+    print(text, flush=True)
+    if send:
+        from reporting.telegram_notifier import send_telegram_message
+        send_telegram_message(text, token, chat_id, kind="research_alert", parse_mode=None)
 
 
 def retest(lane: str, key: str, state_dir: str, windows: int, send: bool, token: str, chat_id: str) -> bool:
@@ -202,14 +224,31 @@ def retest(lane: str, key: str, state_dir: str, windows: int, send: bool, token:
     the normal way: PASS/INCONCLUSIVE goes to paper trading, one Telegram line, a Notifications row.
     Added 2026-10-29 for the three verdicts the minimum-trade-size freeze made unreliable; the queue
     itself is left alone."""
+    attempt = research_health.attempts_so_far(state_dir, lane, key) + 1     # this run's number
     if key not in implemented_keys(lane):
         print(f"[{lane}] {key}: not in the {lane} experiment catalog -- nothing to re-test", flush=True)
+        research_health.remove_retest(state_dir, lane, key)
         return False
     exp_id, verdict, tail = run_backtest(lane, key, windows)
+    research_health.remove_retest(state_dir, lane, key)
     if not exp_id:
+        _alert(send, token, chat_id, f"\u26A0\uFE0F Re-test of {strategy_name(state_dir, lane, key)} "
+                                     f"({LANE_SHORT.get(lane, lane)}) did not finish -- needs a look.")
         return False
     name = strategy_name(state_dir, lane, key)
-    research_queue.record_retest(state_dir, key, name, exp_id, RETEST_NOTE, lane=lane)
+    broken = research_health.problems(exp_id)
+    if broken and attempt < research_health.MAX_ATTEMPTS:
+        research_health.add_retest(state_dir, lane, key, exp_id, broken, attempts=attempt)
+        return True
+    note = RETEST_NOTE
+    if broken:
+        # The same strategy's test broke twice: a bug to find, not a reason to loop. Its verdict
+        # stands (a PASS still goes to paper -- the next test) and a human is asked to look.
+        note += "; test still looked broken: " + "; ".join(broken)
+        _alert(send, token, chat_id, f"\u26A0\uFE0F {name} ({LANE_SHORT.get(lane, lane)}): the re-test "
+                                     f"({exp_id}) still looks broken -- {broken[0]}. Its verdict stands; "
+                                     f"needs a look.")
+    research_queue.record_retest(state_dir, key, name, exp_id, note, lane=lane)
     from deployment.auto_paper_promotion import line as promo_line, promote
     promo = promote(key, verdict, display_name=key, experiment_id=exp_id)
     print(f"[{lane}] {key}: re-test verdict {verdict or 'unreadable'} ({exp_id}). {promo_line(promo)}", flush=True)
@@ -296,6 +335,13 @@ def main() -> None:
     try:
         if args.retest:
             retest(args.lane, args.retest, state_dir, args.windows, args.send, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            return
+        # A test that came back broken is re-run before any new research: its strategy is waiting
+        # on a verdict nobody can trust, and new research can wait one night.
+        pending = research_health.next_retest(state_dir) if not args.lane else None
+        if pending:
+            retest(pending["lane"], pending["key"], state_dir, args.windows, args.send,
+                   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
             return
         for lane in ([args.lane] if args.lane else list(research_queue.LANES)):
             if run_lane(lane, state_dir, args.windows, args.send, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID):

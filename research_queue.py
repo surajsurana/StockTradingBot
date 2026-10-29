@@ -360,14 +360,16 @@ def build_snapshot(state_dir: str, roadmap: dict, lane: str = "india") -> dict:
 
 
 def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str] = None,
-            branch: Optional[str] = None, now: Optional[datetime] = None, lane: str = "india") -> None:
+            branch: Optional[str] = None, now: Optional[datetime] = None, lane: str = "india",
+            note: Optional[str] = None) -> None:
     """Called once the research routine finishes with `key` (whatever the result): clears `current`
     and fills in its history row. outcome is "researched" (mode="backtest" -- a real backtest ran,
     PASS or REJECT, experiment_id/branch identify it), "paper_trading_proposed" (mode="paper_direct" --
     no backtest was possible, but a paper-trading pool was implemented and proposed in a PR, branch
-    identifies it) or "skipped" (nobody got to it / it was abandoned, either mode)."""
-    if outcome not in ("researched", "paper_trading_proposed", "skipped"):
-        raise ValueError("outcome must be 'researched', 'paper_trading_proposed' or 'skipped'")
+    identifies it), "skipped" (nobody got to it / it was abandoned, either mode) or "retest_needed"
+    (a backtest ran but research_health.py found the test itself broken -- it is re-run, not acted on)."""
+    if outcome not in ("researched", "paper_trading_proposed", "skipped", "retest_needed"):
+        raise ValueError("outcome must be 'researched', 'paper_trading_proposed', 'skipped' or 'retest_needed'")
     now = now or datetime.now()
     data = load(state_dir, lane)
     if not data["current"] or data["current"]["key"] != key:
@@ -388,4 +390,9 @@ def resolve(state_dir: str, key: str, outcome: str, experiment_id: Optional[str]
         return
     data["current"] = None
     _close_open_row(data, key, outcome, now, experiment_id, branch)
+    if note:
+        for row in reversed(data["history"]):
+            if row["key"] == key:
+                row["note"] = note
+                break
     _save(state_dir, data, lane)
