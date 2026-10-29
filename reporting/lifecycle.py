@@ -113,6 +113,47 @@ def _verdict_of(experiment_id: str) -> str:
 _LANE_CURRENCY = {"india": "₹", "us": "$", "crypto": "$"}
 
 
+def _amount(sym: str, value: float) -> str:
+    """₹2,91,708 / $1,501 -- rupees grouped the Indian way, since that is how Suraj reads them."""
+    whole = round(abs(value))
+    n = f"{whole:,}"
+    if sym == "₹" and whole >= 100000:
+        head, tail = str(whole)[:-3], str(whole)[-3:]
+        n = ",".join([head[max(0, i - 2):i] for i in range(len(head), 0, -2)][::-1]) + "," + tail
+    return f"{sym}{n}"
+
+
+def _money_line(m: dict, sym: str) -> str:
+    """'Made ₹2,91,708 on ₹1,00,000 (May 2017 – Oct 2026) · most recent unseen period: +₹1,53,461'.
+    Added 2026-10-29, Suraj: "i should also be able to see how much money was made or lost in
+    testing period." Starting money is total_pnl / return_on_capital, which is how both were made."""
+    pnl, roc = m.get("total_pnl"), m.get("return_on_capital_pct")
+    if pnl is None:
+        return ""
+    pnl = float(pnl)
+    line = f"{'Made' if pnl >= 0 else 'Lost'} {_amount(sym, pnl)}"
+    if roc:
+        # The percentage is stored to two decimals, so this lands a hair off the real starting money
+        # (₹99,999.4 for ₹1,00,000); books start on round hundreds, so round to one.
+        raw = pnl * 100.0 / float(roc)
+        capital = round(raw, -2) or raw
+        line += f" on {_amount(sym, capital)}"
+        if pnl < 0 and -pnl > capital:
+            line += " (more than the whole book)"
+    months = sorted(m.get("monthly_returns_pct") or {})
+    if months:
+        def label(ym):
+            try:
+                return datetime.strptime(ym, "%Y-%m").strftime("%b %Y")
+            except ValueError:
+                return ym
+        line += f" ({label(months[0])} – {label(months[-1])})"
+    oos = (m.get("out_of_sample_metrics") or {}).get("total_pnl")
+    if oos is not None:
+        line += f" · most recent unseen period: {'+' if float(oos) >= 0 else '−'}{_amount(sym, float(oos))}"
+    return line
+
+
 def _plain_reasons(verdict_text: str) -> list:
     """The auditor's reasons (research_lab/statistical_auditor.py wrote them into verdict.md) in a
     few plain words each. Suraj reads this on his phone; the full text stays in the Research tab."""
@@ -183,7 +224,7 @@ def research_summary(experiment_id: str, lane: str, verdict: str, roots: Optiona
         why = (body[:157] + "...") if len(body) > 160 else body
     else:
         why = ""
-    return {"stats": " · ".join(parts), "why": why}
+    return {"money": _money_line(m, _LANE_CURRENCY.get(lane, "")), "stats": " · ".join(parts), "why": why}
 
 
 def timeline(state_dir: str, records=None, limit: int = 120) -> list:
