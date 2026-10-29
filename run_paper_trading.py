@@ -115,7 +115,7 @@ from deployment.settings import (POOL_A_CAPITAL_MULTIPLES, PAPER_TRADING_WINDDOW
                                  REPORTS_DIR, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_SINGLE_DAILY_SUMMARY,
                                  pool_a_subpool_capital)
 from swing_research.research_director import SWING_EXPERIMENTS_DIR
-from swing_research.broker_costs import min_viable_notional
+from swing_research.broker_costs import FLOOR_ROUND_UP_TOLERANCE, min_viable_notional
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
 # All five paper-trading strategies are End-of-Day: they need the full
@@ -272,6 +272,7 @@ def _run_subpools(strategy_key: str, config: dict, force: bool = False, fetch_da
                         compute_extra_columns_fn=extra_fn,
                         force=force, execution_config=config.get("execution_config", _DEFAULT_EXECUTION_CONFIG),
                         min_position_value_rupees=min_viable_notional(),
+                        floor_round_up=FLOOR_ROUND_UP_TOLERANCE,
                         sizing_capital_cap=capital,
                     )
                 print(f"[{strategy_key}] {label}: {result}")
@@ -545,6 +546,7 @@ def _run_one(strategy_key: str, force: bool = False) -> dict:
                 # research that approved them assumed. Derived from the charge model, not chosen; see
                 # swing_research/broker_costs.py. Crypto and US pools pass their own value.
                     min_position_value_rupees=min_viable_notional(),
+                    floor_round_up=FLOOR_ROUND_UP_TOLERANCE,
                 )
             finally:
                 # Pools A2/A3 run whatever happened to Pool A's own call -- they never raise.

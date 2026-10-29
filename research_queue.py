@@ -156,6 +156,23 @@ def _close_open_row(data: dict, key: str, outcome: str, now: datetime,
             return
 
 
+def record_retest(state_dir: str, key: str, name: str, experiment_id: str, note: str,
+                  now: Optional[datetime] = None, lane: str = "india") -> None:
+    """A finished RE-TEST of a candidate the lane already resolved, as its own history row, so the
+    Notifications timeline shows the new result beside the old one. Never touches `current`: a re-test
+    runs outside the queue and must not disturb whatever the lane is working on (2026-10-29, the
+    re-tests after the minimum-trade-size fix)."""
+    now = now or datetime.now()
+    data = load(state_dir, lane)
+    day = now.date().isoformat()
+    data["history"] = list(data["history"]) + [{"key": key, "name": name, "queued": day, "started": day,
+                                                 "started_by": "retest", "mode": "backtest",
+                                                 "resolved": day, "outcome": "researched",
+                                                 "experiment_id": experiment_id, "branch": None,
+                                                 "note": note}]
+    _save(state_dir, data, lane)
+
+
 def advance(state_dir: str, roadmap: dict, now: Optional[datetime] = None, lane: str = "india",
             exclude: Optional[set] = None, claim_is_busy: bool = False) -> Optional[dict]:
     """Keeps `current` pointed at the best available candidate: picks the top-ranked one if nothing is

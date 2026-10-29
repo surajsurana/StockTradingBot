@@ -35,7 +35,7 @@ from research_lab.knowledge_base import KNOWLEDGE_BASE_PATH as INTRADAY_KB_PATH 
 from swing_research import benchmarks
 from swing_research.backtesting_engine import date_window, simulate_portfolio, simulate_portfolio_single_unit
 from swing_research.base import Strategy
-from swing_research.broker_costs import apply_broker_costs, min_viable_notional
+from swing_research.broker_costs import FLOOR_ROUND_UP_TOLERANCE, apply_broker_costs, min_viable_notional
 from swing_research.evidence_quality import compute_evidence_quality
 from swing_research.metrics import compute_holding_period_breakdown, compute_metrics
 from swing_research.published_research_analyst import PublishedStrategy
@@ -109,6 +109,11 @@ def record_strategy_conclusion(conclusion_text: str, based_on_exp_ids: list,
     record_conclusion(conclusion_text, based_on_exp_ids, path=path)
 
 
+# What an India research backtest starts with (run_swing_experiment.py). Rs2,00,000 from 2026-10-29,
+# per Suraj -- see broker_costs.FLOOR_ROUND_UP_TOLERANCE for why Rs1,00,000 froze test windows.
+SWING_RESEARCH_STARTING_CAPITAL = 200_000
+
+
 def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: float,
                               sector_map: dict, start_date: date, end_date: date,
                               n_walk_forward_windows: int = 3,
@@ -117,7 +122,9 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
                               min_trades_total: int = 15, min_out_of_sample_trades: int = 3,
                               min_consistent_window_fraction: float = 0.5,
                               charge_broker_costs: bool = True,
-                              min_trade_notional: Optional[float] = None) -> dict:
+                              min_trade_notional: Optional[float] = None,
+                              floor_round_up: float = FLOOR_ROUND_UP_TOLERANCE,
+                              market: Optional[str] = None) -> dict:
     """
     Splits [start_date, end_date] into n_walk_forward_windows sequential
     windows via research_lab.backtesting_engineer.walk_forward_split()
@@ -144,7 +151,16 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
     # A trade too small to carry its own flat charges is skipped rather than taken at a loss it
     # cannot recover. Derived from the charge model, not chosen -- see broker_costs.py. Pass 0.0 to
     # reproduce a pre-2026-10-07 experiment, which took every signal at any size.
-    notional_floor = min_viable_notional() if min_trade_notional is None else float(min_trade_notional)
+    # A US book pays IBKR's fees, not Indian STT/DP, and has no Indian DP-driven minimum trade. Until
+    # 2026-10-29 every US backtest ran on the Indian charges and the Rs12,469 floor on a $ book.
+    market = market or _market_of(data)
+    if market == "us":
+        from swing_research.us_equity_costs import apply_us_broker_costs
+        charge_fn = apply_us_broker_costs
+        default_floor = 0.0
+    else:
+        charge_fn, default_floor = apply_broker_costs, min_viable_notional()
+    notional_floor = default_floor if min_trade_notional is None else float(min_trade_notional)
 
     for w_start, w_end in windows:
         windowed_data = {
@@ -161,8 +177,9 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
             windowed_data, strategy, starting_capital, sector_map=sector_map,
             max_units_per_sector=max_units_per_sector, max_units_total=max_units_total,
             extra_columns_by_symbol=windowed_extra,
-            min_trade_notional=notional_floor,
+            min_trade_notional=notional_floor, floor_round_up=floor_round_up,
         )
+        stalled = _stalled_on_floor(result, w_start, w_end)
         # Pay what a real contract note takes. Until 2026-10-07 this step did not exist: friction was
         # modelled only as a percentage (execution_realism_engine.py's 0.1% one way), so the flat
         # Rs13.5-per-scrip DP charge was invisible and the whole Indian book was accepted on
@@ -170,10 +187,12 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
         # charge_broker_costs=False restores the old, wrong numbers, for comparing against a
         # pre-2026-10-07 experiment and nothing else.
         if charge_broker_costs:
-            result = apply_broker_costs(result)
+            result = charge_fn(result)
             broker_charges_total += result["broker_charges"]["total"]
         metrics = compute_metrics(result["trades"], starting_capital, result["trading_calendar"],
                                    daily_equity=result["daily_equity"])
+        metrics["floor_skips"] = result.get("floor_skips", 0)
+        metrics["stalled"] = stalled
         walk_forward_metrics.append(metrics)
         all_trades_by_window.append(result["trades"])
 
@@ -193,8 +212,31 @@ def run_walk_forward_generic(strategy: Strategy, data: dict, starting_capital: f
         "out_of_sample_metrics": out_of_sample_metrics, "out_of_sample_trades": out_of_sample_trades,
         "all_trades": all_trades, "windows": windows,
         "broker_charges_total": broker_charges_total, "broker_costs_charged": charge_broker_costs,
-        "min_trade_notional": notional_floor,
+        "min_trade_notional": notional_floor, "floor_round_up": floor_round_up, "market": market,
     }
+
+
+def _market_of(data: dict) -> str:
+    """"us" when every symbol is in the frozen S&P 500 universe, else "india". Decided from the data
+    rather than passed by each US runner, so a new US strategy written by the research routine gets
+    US costs without anyone remembering to ask for them."""
+    if not data:
+        return "india"
+    from swing_research.universe_us import get_swing_universe_us
+    us = set(get_swing_universe_us())
+    return "us" if all(sym in us for sym in data) else "india"
+
+
+def _stalled_on_floor(result: dict, w_start: date, w_end: date) -> bool:
+    """True when a window stopped trading because every entry fell under the minimum trade size --
+    entries were refused for it, and none was taken in the second half of the window. Such a window
+    is a book too small to trade, not evidence about the strategy (2026-10-29: three windows froze
+    after ~8 losing trades and sat idle 3+ years, scored as losses)."""
+    if not result.get("floor_skips"):
+        return False
+    halfway = w_start + (w_end - w_start) / 2
+    entries = [t.entry_date for t in result.get("trades") or [] if getattr(t, "entry_date", None)]
+    return not any(d >= halfway for d in entries)
 
 
 def run_generic_swing_experiment(strategy: Strategy, published: PublishedStrategy, data: dict,

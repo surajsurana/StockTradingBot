@@ -194,6 +194,33 @@ def run_lane(lane: str, state_dir: str, windows: int, send: bool, token: str, ch
     return True
 
 
+RETEST_NOTE = "re-test after the 29 Oct 2026 minimum-trade-size fix"
+
+
+def retest(lane: str, key: str, state_dir: str, windows: int, send: bool, token: str, chat_id: str) -> bool:
+    """Re-runs one strategy the lane already researched, with today's engine, and takes the result
+    the normal way: PASS/INCONCLUSIVE goes to paper trading, one Telegram line, a Notifications row.
+    Added 2026-10-29 for the three verdicts the minimum-trade-size freeze made unreliable; the queue
+    itself is left alone."""
+    if key not in implemented_keys(lane):
+        print(f"[{lane}] {key}: not in the {lane} experiment catalog -- nothing to re-test", flush=True)
+        return False
+    exp_id, verdict, tail = run_backtest(lane, key, windows)
+    if not exp_id:
+        return False
+    name = strategy_name(state_dir, lane, key)
+    research_queue.record_retest(state_dir, key, name, exp_id, RETEST_NOTE, lane=lane)
+    from deployment.auto_paper_promotion import line as promo_line, promote
+    promo = promote(key, verdict, display_name=key, experiment_id=exp_id)
+    print(f"[{lane}] {key}: re-test verdict {verdict or 'unreadable'} ({exp_id}). {promo_line(promo)}", flush=True)
+    msg = outcome_message(lane, name, verdict, exp_id, promo).replace("Research done", "Re-test done", 1)
+    print(msg, flush=True)
+    if send:
+        from reporting.telegram_notifier import send_telegram_message
+        send_telegram_message(msg, token, chat_id, kind="research_outcome", parse_mode=None)
+    return True
+
+
 LANE_SHORT = {"india": "India", "us": "US", "crypto": "crypto"}
 
 
@@ -247,7 +274,11 @@ def main() -> None:
     ap.add_argument("--lane", default=None, choices=research_queue.LANES)
     ap.add_argument("--windows", type=int, default=3)
     ap.add_argument("--send", action="store_true", help="send the verdict to Telegram")
+    ap.add_argument("--retest", default=None, metavar="KEY",
+                    help="re-run one already-researched strategy of --lane, outside the queue")
     args = ap.parse_args()
+    if args.retest and not args.lane:
+        ap.error("--retest needs --lane")
 
     from config.settings import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
     state_dir = os.path.join(REPO_DIR, "deployment", "state")
@@ -263,6 +294,9 @@ def main() -> None:
     with open(LOCK_PATH, "w", encoding="utf-8") as f:
         json.dump({"pid": os.getpid(), "lane": args.lane or "", "at": datetime.now().isoformat(timespec="seconds")}, f)
     try:
+        if args.retest:
+            retest(args.lane, args.retest, state_dir, args.windows, args.send, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+            return
         for lane in ([args.lane] if args.lane else list(research_queue.LANES)):
             if run_lane(lane, state_dir, args.windows, args.send, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID):
                 break   # these are long -- the next lane waits for the next cycle

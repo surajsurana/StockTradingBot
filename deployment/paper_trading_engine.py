@@ -48,6 +48,7 @@ from typing import Callable, Optional
 
 from reporting.format_utils import format_metric
 from swing_research.backtesting_engine import Trade
+from swing_research.broker_costs import lift_to_floor
 from swing_research.base import OpenPosition, PositionUnit, Strategy
 from swing_research.candidate_ranking import rank_candidate_symbols
 from swing_research.metrics import compute_metrics
@@ -301,7 +302,7 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
                             risk_pct_per_unit: float,
                             min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
                             sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
-                            fractional_quantities: bool = False) -> tuple:
+                            fractional_quantities: bool = False, floor_round_up: float = 0.0) -> tuple:
     """
     Resolves any entries/exits queued on a PRIOR day (fill_timing=
     "next_day_open") against target_date's real Open. This is the EXACT
@@ -408,6 +409,8 @@ def _resolve_pending_fills(strategy_key: str, portfolio: dict, data: dict,
         quantity = _size(min(cash, sizing_capital_cap) * risk_pct_per_unit / risk_per_share
                          * float(pending.get("size_multiplier", 1.0)), fractional_quantities)
         fill_price, quantity = _cost_adjusted(symbol, "BUY", open_price, quantity)
+        quantity = lift_to_floor(quantity, fill_price, min_position_value_rupees, floor_round_up,
+                                 whole_units=not fractional_quantities)
         cost = fill_price * quantity
         skip = _why_not_taken(quantity, cost, cash, min_position_value_rupees,
                               _min_quantity(fractional_quantities))
@@ -510,6 +513,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
               execution_config: Optional[ExecutionRealismConfig] = None,
               min_position_value_rupees: float = PAPER_TRADING_MIN_POSITION_VALUE_RUPEES,
               sizing_capital_cap: float = PAPER_TRADING_WINDDOWN_TARGET_CAPITAL,
+              floor_round_up: float = 0.0,
               entries_enabled: bool = True,
               partial_booking: Optional["PartialBookingConfig"] = None) -> dict:
     """
@@ -550,6 +554,8 @@ def run_daily(strategy_key: str, strategy: Strategy,
     price x quantity) falls below this is skipped, same soft-fail
     convention as an unaffordable/zero-quantity signal (recorded nowhere,
     simply not taken -- not an error).
+    floor_round_up: 0 (plain skip) by default. When > 0, a position up to that fraction short of
+    min_position_value_rupees is bought AT it instead (broker_costs.lift_to_floor, 2026-10-29).
     sizing_capital_cap: see _resolve_pending_fills()'s own docstring --
     every NEW buy (both the next-day-open resolution above and this
     function's own same-day-close path below) is sized off
@@ -644,6 +650,7 @@ def run_daily(strategy_key: str, strategy: Strategy,
     new_entries, new_exits, not_taken = _resolve_pending_fills(
         strategy_key, portfolio, data, execution_config, target_date, strategy.risk_pct_per_unit,
         min_position_value_rupees, sizing_capital_cap, fractional_quantities=fractional,
+        floor_round_up=floor_round_up,
     )
     cash = portfolio["cash"]
     positions = portfolio["positions"]
@@ -814,6 +821,9 @@ def run_daily(strategy_key: str, strategy: Strategy,
                         quantity = _size(min(cash, sizing_capital_cap) * strategy.risk_pct_per_unit
                                          / risk_per_share * getattr(signal, "size_multiplier", 1.0), fractional)
                         fill_price, quantity = _cost_adjusted(symbol, "BUY", signal.entry_price, quantity)
+                        # A near miss on the minimum trade size is bought at it (broker_costs.lift_to_floor).
+                        quantity = lift_to_floor(quantity, fill_price, min_position_value_rupees,
+                                                 floor_round_up, whole_units=not fractional)
                         cost = fill_price * quantity
                         # WHY a decided signal was not taken. An underfunded book produces nothing
                         # but these, and before 2026-10-07 they vanished silently -- so a book that

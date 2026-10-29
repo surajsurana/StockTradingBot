@@ -23,6 +23,7 @@ import sys
 from config import settings
 from data.fetch_historical import fetch_all
 from swing_research.manifest import build_run_manifest, save_run_manifest
+from swing_research.research_director import SWING_RESEARCH_STARTING_CAPITAL
 from swing_research.strategy_catalog import RESEARCH_EXPERIMENT_SPECS
 from swing_research.universe import get_swing_universe
 
@@ -56,7 +57,10 @@ def run_strategy(strategy_key: str, years: int, limit: int, windows: int):
         benchmark_config={
             "benchmarks": ["ma_crossover_production", "mean_reversion_production",
                            "buy_and_hold", "nifty_500_index"],
-            "starting_capital": getattr(settings, "RESEARCH_LAB_VIRTUAL_CAPITAL", 1_000_000),
+            # Rs2,00,000, not the Rs1,00,000 RESEARCH_LAB_VIRTUAL_CAPITAL Pool D shares (2026-10-29,
+            # Suraj): at Rs1L a 1%-risk position sits Rs31 above the minimum trade size and a few
+            # losses froze whole test windows. See swing_research/broker_costs.lift_to_floor.
+            "starting_capital": SWING_RESEARCH_STARTING_CAPITAL,
         },
         repo_dir=REPO_DIR,
     )

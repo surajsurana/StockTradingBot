@@ -37,7 +37,7 @@ from datetime import date as date_type, datetime
 from typing import Optional
 
 import deployment.paper_trading_engine as pte
-from swing_research.broker_costs import min_viable_notional
+from swing_research.broker_costs import FLOOR_ROUND_UP_TOLERANCE, min_viable_notional
 from deployment.base import DeploymentStatus
 from deployment.deployment_manager import list_strategies
 from deployment.live_allocations import allocation_for
@@ -114,13 +114,16 @@ def _engine_plan(strategy_key: str, live_pool: str = ""):
             return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
                     "dirname": variant["dirname"], "execution": None, "cap": None,
                     "min_value": min_viable_notional(),
+                    # Pool F is watch-only: it keeps the plain skip under the minimum trade size.
+                    "round_up": 0.0 if variant["partial"] else FLOOR_ROUND_UP_TOLERANCE,
                     "partial_booking": PARTIAL_BOOKING if variant["partial"] else None}
         # min_value: the same charge-derived floor run_paper_trading.py and run_pool_f.py apply.
         # Without it the LIVE equity book would take the Rs3,532 positions the paper books were
         # taking -- with real money, and paying the flat DP charge for real.
         return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
                 "dirname": "paper_trading", "execution": None, "cap": None,
-                "min_value": min_viable_notional(), "partial_booking": None}
+                "min_value": min_viable_notional(), "round_up": FLOOR_ROUND_UP_TOLERANCE,
+                "partial_booking": None}
     try:
         from run_pool_e import POOL_E_STARTING_CAPITAL_USDT, POOL_E_STRATEGIES
     except Exception:
@@ -203,6 +206,8 @@ def run_live(strategy_key: str, fetch_data_fn, as_of: Optional[date_type] = None
             engine_kwargs["sizing_capital_cap"] = plan["cap"]
         if plan["min_value"] is not None:
             engine_kwargs["min_position_value_rupees"] = plan["min_value"]
+        if plan.get("round_up"):
+            engine_kwargs["floor_round_up"] = plan["round_up"]
         # Pool F IS partial booking. Omitting it would run Pool A's method against Pool F's book.
         if plan.get("partial_booking") is not None:
             engine_kwargs["partial_booking"] = plan["partial_booking"]

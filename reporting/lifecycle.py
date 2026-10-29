@@ -172,6 +172,8 @@ def _plain_reasons(verdict_text: str) -> list:
     m = re.search(r"Only (\d+)/(\d+) walk-forward windows", verdict_text)
     if m:
         out.append(f"made money in only {m.group(1)} of {m.group(2)} test periods")
+    if "out-of-sample holdout stopped trading partway" in verdict_text:
+        out.append("the most recent period stopped trading partway, so there was too little evidence")
     if re.search(r"Out-of-sample expectancy is -|Out-of-sample expectancy is \+0\.00", verdict_text):
         out.append("lost money in the most recent period it had never seen")
     return out

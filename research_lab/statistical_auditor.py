@@ -56,7 +56,13 @@ def audit(walk_forward_metrics: list, out_of_sample_metrics: dict,
         reasons.append(f"Out-of-sample holdout only has {oos_trades} trade(s) -- below the "
                         f"minimum of {min_out_of_sample_trades}, too few to validate anything on.")
 
-    windows_with_data = [m for m in walk_forward_metrics if m.get("total_trades", 0) > 0]
+    # A window that STALLED -- stopped trading because every entry fell under the minimum trade size
+    # (swing_research/research_director._stalled_on_floor) -- says the book was too small, not that
+    # the strategy lost. It is left out rather than counted as a loss (2026-10-29).
+    stalled = [m for m in walk_forward_metrics if m.get("stalled")]
+    checks["stalled_windows"] = len(stalled)
+    windows_with_data = [m for m in walk_forward_metrics
+                         if m.get("total_trades", 0) > 0 and not m.get("stalled")]
     positive_windows = [m for m in windows_with_data if m.get("expectancy", 0) > 0]
     consistency_fraction = (len(positive_windows) / len(windows_with_data)) if windows_with_data else 0.0
     checks["walk_forward_consistency_fraction"] = round(consistency_fraction, 2)
@@ -69,7 +75,12 @@ def audit(walk_forward_metrics: list, out_of_sample_metrics: dict,
 
     oos_expectancy = out_of_sample_metrics.get("expectancy", 0)
     checks["out_of_sample_expectancy"] = oos_expectancy
-    if oos_trades > 0 and oos_expectancy <= 0:
+    if out_of_sample_metrics.get("stalled"):
+        checks["out_of_sample_stalled"] = True
+        reasons.append("Not enough evidence: the out-of-sample holdout stopped trading partway, "
+                       "because every later entry fell under the minimum trade size -- the book was "
+                       "too small for the trade, so this window cannot show whether the edge holds.")
+    elif oos_trades > 0 and oos_expectancy <= 0:
         reasons.append(f"Out-of-sample expectancy is {oos_expectancy:+.2f} per trade -- not "
                         f"positive on genuinely unseen data, which is the most important single "
                         f"check. Good in-sample/walk-forward numbers do not override this.")

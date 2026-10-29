@@ -30,6 +30,7 @@ model tax; tax is a function of the whole book's result, not of one trade, and r
 equity_costs.book_costs() already does it where a book exists.
 """
 
+import math
 from collections import defaultdict
 from dataclasses import replace
 from typing import Optional
@@ -86,6 +87,30 @@ def min_viable_notional(max_round_trip_pct: float = MAX_ACCEPTABLE_ROUND_TRIP_PC
         # and saying so is more useful than returning a number that looks achievable.
         return float("inf")
     return flat / headroom
+
+
+# A position that comes out just short of min_viable_notional() is bought AT the floor instead of
+# being skipped (2026-10-29, Suraj: "make the trade at 25% too"). Why: a Rs1,00,000 book sizes a 1%-
+# risk, 8%-stop position at Rs12,500 -- Rs31 above the Rs12,469 floor -- so ~Rs250 of losses put every
+# later entry under it and the book stopped trading for good. Three research windows froze that way
+# for over three years each, and the live order log had 97 entries skipped for it. Rounding up within
+# 25% raises the risk on those trades from 1% to at most ~1.33%; anything further short is still a
+# book too small for the trade, and is still skipped. Pool F keeps the plain skip (watch-only).
+FLOOR_ROUND_UP_TOLERANCE = 0.25
+
+
+def lift_to_floor(quantity: float, price: float, floor: float,
+                  tolerance: float = FLOOR_ROUND_UP_TOLERANCE, whole_units: bool = True) -> float:
+    """`quantity`, raised to the smallest that reaches `floor` when quantity x price falls short of it
+    by no more than `tolerance`; unchanged otherwise (the caller's own floor check then skips it).
+    Never lowers a quantity, and never lifts from zero -- a zero size is a stop problem, not a floor one."""
+    if not floor or tolerance <= 0 or quantity <= 0 or price <= 0:
+        return quantity
+    cost = quantity * price
+    if cost >= floor or cost < floor * (1.0 - tolerance):
+        return quantity
+    needed = floor / price
+    return int(math.ceil(needed)) if whole_units else round(needed + 5e-7, 6)
 
 
 def min_viable_book_size(risk_pct_per_unit: float, stop_distance_pct: float,

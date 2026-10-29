@@ -178,3 +178,30 @@ class IBKRUSTieredCostModel:
                 "clearing_per_share": self.clearing_per_share,
                 "sec_fee_pct_of_sell_value": self.sec_fee_pct_of_sell_value * 100,
                 "cat_fee_per_share_sold": self.cat_fee_per_share_sold}
+
+
+def apply_us_broker_costs(result: dict, model: "IBKRUSTieredCostModel" = None) -> dict:
+    """broker_costs.apply_broker_costs() for a US research window: IBKR's fees instead of Indian
+    STT/DP/stamp duty. Added 2026-10-29 -- until then a US backtest paid Indian charges on a dollar
+    book and was held to the Rs12,469 Indian minimum trade, which froze three US/India windows.
+    Same output shape, so the research pipeline treats both markets alike."""
+    from collections import defaultdict
+    from dataclasses import replace
+
+    from swing_research.broker_costs import charge_equity_curve
+    model = model or IBKRUSTieredCostModel()
+    charged, by_date, total = [], defaultdict(float), 0.0
+    for trade in result.get("trades") or []:
+        cost = model.round_trip_cost(abs(float(getattr(trade, "quantity", 0) or 0)),
+                                     float(getattr(trade, "entry_price", 0) or 0),
+                                     float(getattr(trade, "exit_price", 0) or 0))
+        total += cost
+        exit_date = getattr(trade, "exit_date", None)
+        if exit_date is not None:
+            by_date[exit_date] += cost
+        charged.append(replace(trade, pnl=float(getattr(trade, "pnl", 0.0) or 0.0) - cost))
+    out = dict(result)
+    out["trades"] = charged
+    out["daily_equity"] = charge_equity_curve(result.get("daily_equity"), dict(by_date))
+    out["broker_charges"] = {"total": total, "detail": {"ibkr_us_tiered": total}}
+    return out

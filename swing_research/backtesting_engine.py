@@ -63,6 +63,7 @@ import numpy as np
 import pandas as pd
 
 from swing_research.base import OpenPosition, PositionUnit, Strategy
+from swing_research.broker_costs import lift_to_floor
 from swing_research.candidate_ranking import rank_candidate_symbols
 
 
@@ -308,8 +309,10 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                         max_units_per_sector: int = 6, max_units_total: int = 10,
                         min_bars_required: int = 60,
                         extra_columns_by_symbol: Optional[dict] = None,
-                        min_trade_notional: float = 0.0) -> dict:
+                        min_trade_notional: float = 0.0, floor_round_up: float = 0.0) -> dict:
     """
+    floor_round_up: a position up to this fraction short of min_trade_notional is bought AT the floor
+    instead of skipped (broker_costs.lift_to_floor, 2026-10-29). 0.0 keeps the plain skip.
     data: {symbol: DataFrame of daily OHLCV bars, full multi-year history}.
     strategy: a swing_research.base.Strategy (precompute + entry/pyramid/exit hooks).
     starting_capital: realized-equity starting point (see module docstring
@@ -370,6 +373,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
     equity = starting_capital
     open_positions = {}   # symbol -> OpenPosition
     trades = []
+    floor_skips = 0                # entries refused for being under min_trade_notional
     daily_equity = {}
     calendar = set()
 
@@ -453,13 +457,16 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                                      * getattr(signal, "size_multiplier", 1.0), strategy)
             if quantity <= 0:
                 continue
-            cost = quantity * signal.entry_price
             # A trade too small to carry its own flat charges is not worth taking. The DP charge is
             # Rs13.5 per scrip however small the trade, so a Rs3,500 position pays 0.45% in DP alone
-            # -- see swing_research/broker_costs.py. Skipped, never scaled up: scaling up to clear
-            # the floor would silently spend several times the strategy's own risk budget on one
-            # position, and the honest answer is that this book is too small for this trade.
+            # -- see swing_research/broker_costs.py. A near miss (within floor_round_up) is bought at
+            # the floor; anything further short is skipped, never scaled up: that would spend several
+            # times the strategy's own risk budget on one position.
+            quantity = lift_to_floor(quantity, signal.entry_price, min_trade_notional, floor_round_up,
+                                     whole_units=not getattr(strategy, "fractional_quantities", False))
+            cost = quantity * signal.entry_price
             if min_trade_notional and cost < min_trade_notional:
+                floor_skips += 1
                 continue
             if cost > (equity - capital_deployed()):
                 continue
@@ -511,13 +518,16 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
                                      * getattr(signal, "size_multiplier", 1.0), strategy)
             if quantity <= 0:
                 continue
-            cost = quantity * signal.entry_price
             # A trade too small to carry its own flat charges is not worth taking. The DP charge is
             # Rs13.5 per scrip however small the trade, so a Rs3,500 position pays 0.45% in DP alone
-            # -- see swing_research/broker_costs.py. Skipped, never scaled up: scaling up to clear
-            # the floor would silently spend several times the strategy's own risk budget on one
-            # position, and the honest answer is that this book is too small for this trade.
+            # -- see swing_research/broker_costs.py. A near miss (within floor_round_up) is bought at
+            # the floor; anything further short is skipped, never scaled up: that would spend several
+            # times the strategy's own risk budget on one position.
+            quantity = lift_to_floor(quantity, signal.entry_price, min_trade_notional, floor_round_up,
+                                     whole_units=not getattr(strategy, "fractional_quantities", False))
+            cost = quantity * signal.entry_price
             if min_trade_notional and cost < min_trade_notional:
+                floor_skips += 1
                 continue
             if cost > (equity - capital_deployed()):
                 continue
@@ -541,7 +551,7 @@ def simulate_portfolio(data: dict, strategy: Strategy, starting_capital: float,
     return {
         "trades": trades, "trading_calendar": sorted(calendar),
         "symbols": list(rows_by_symbol.keys()), "daily_equity": daily_equity,
-        "starting_capital": starting_capital,
+        "starting_capital": starting_capital, "floor_skips": floor_skips,
     }
 
 
