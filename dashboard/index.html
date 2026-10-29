@@ -1934,6 +1934,11 @@ function renderActivity(rows){
   document.getElementById("notif-prev").disabled = NOTIF_PAGE <= 1;
   document.getElementById("notif-next").disabled = NOTIF_PAGE >= pages;
   document.getElementById("notif-pager").hidden = rows.length <= NOTIF_PAGE_SIZE && NOTIF_PAGE === 1;
+  // "Made ₹2,91,708" green, "Lost $1,501" red, and the unseen period's amount by its own sign
+  // (2026-10-29, Suraj: "a little green and red colors to see who made and who lost").
+  const moneyHtml = m => esc(m)
+    .replace(/^(Made|Lost) (\S+)/, (_, w, amt) => `<span class="${w === "Made" ? "gain" : "loss"}">${w} ${amt}</span>`)
+    .replace(/(unseen period: )([+−]\S+)/, (_, lbl, amt) => `${lbl}<span class="${amt[0] === "+" ? "gain" : "loss"}">${amt}</span>`);
   document.getElementById("notif-activity").innerHTML = page.map(r => {
     // A verdict is the headline, so it keeps the colour of its own answer rather than its stage.
     const cls = /PASS/.test(r.what) ? "ok" : /REJECT/.test(r.what) ? "miss" : (ACTIVITY_PILL[r.kind] || "");
@@ -1945,7 +1950,7 @@ function renderActivity(rows){
          // A research result shows its backtest in one line and the verdict's reason in plain words
          // in another, in full -- read on a phone, where a hover tooltip does not exist (2026-10-26).
          + (r.stats || r.why || r.money
-             ? `<td>${r.money ? `<div><b>${esc(r.money)}</b></div>` : ""}${r.stats ? `<div>${esc(r.stats)}</div>` : ""}${r.why ? `<div class="note">${esc(r.why)}</div>` : ""}</td></tr>`
+             ? `<td>${r.money ? `<div><b>${moneyHtml(r.money)}</b></div>` : ""}${r.stats ? `<div>${esc(r.stats)}</div>` : ""}${r.why ? `<div class="note">${esc(r.why)}</div>` : ""}</td></tr>`
              : `<td class="trunc" title="${esc(r.detail || "")}">${esc(short(r.detail || "", 90))}</td></tr>`);
   }).join("") || `<tr><td colspan="6" class="note">Nothing has happened yet.</td></tr>`;
 }
