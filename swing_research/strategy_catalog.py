@@ -264,6 +264,21 @@ PAPER_TRADING_STRATEGY_SPECS = [
             data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
         ), "idio_vol_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="industry_momentum",
+        display_name="Industry Momentum",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.industry_momentum", fromlist=["IndustryMomentumStrategy"]
+        ).IndustryMomentumStrategy(),
+        # Each stock gets its OWN industry's percentile, from the same sector map research used
+        # (run_industry_momentum_experiment), so paper trades exactly what EXP-103 passed on.
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_industry_momentum_percentile_ranks"]
+        ).compute_industry_momentum_percentile_ranks(
+            data, {f"{s}.NS": sector for s, sector in __import__(
+                "research_lab.performance_analyst", fromlist=["load_sector_map"]).load_sector_map().items()}
+        ), "industry_momentum_percentile"),
+    ),
 ]
 
 

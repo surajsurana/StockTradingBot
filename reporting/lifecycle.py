@@ -92,8 +92,20 @@ def _meta(records) -> dict:
                 pool = ""
         out[r.strategy_key] = {"sid": getattr(r, "strategy_id", "") or "",
                                "name": getattr(r, "display_name", r.strategy_key),
-                               "pool": pool}
+                               "pool": pool,
+                               "status": str(getattr(r, "deployment_status", "") or "").split(".")[-1]}
     return out
+
+
+# Where a researched strategy stands TODAY, shown beside each research result (2026-10-30, Suraj:
+# "it should also show the status - Retired, paper trade etc in the notifications"). A strategy the
+# registry does not know, or still marks RESEARCH, is not being traded anywhere.
+NOW_LABELS = {"PAPER_TRADING": "Paper trading", "PILOT_LIVE": "Live", "PRODUCTION": "Live",
+              "ARCHIVED": "Retired"}
+
+
+def now_label(status: str) -> str:
+    return NOW_LABELS.get(str(status or "").split(".")[-1], "Not traded")
 
 
 def _verdict_of(experiment_id: str) -> str:
@@ -306,6 +318,7 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                                      {"sid": known.get("sid", ""), "name": r.get("name") or known.get("name") or key,
                                       "pool": lane.upper()},
                                      detail=str(r.get("note") or ""), experiment=exp))
+                    rows[-1]["now"] = now_label(known.get("status"))
                     continue
                 # A verdict is the result; an outcome without one means the candidate left the
                 # queue without producing a backtest, which is a different kind of news.
@@ -325,6 +338,7 @@ def timeline(state_dir: str, records=None, limit: int = 120) -> list:
                            detail=str(r.get("note") or ""), experiment=exp)
                 if verdict:
                     row.update(research_summary(exp, lane, verdict))
+                row["now"] = now_label(known.get("status"))
                 rows.append(row)
     except Exception:                            # noqa: BLE001
         pass

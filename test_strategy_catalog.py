@@ -140,3 +140,13 @@ class TestLiveRegistryStrategiesHaveCatalogWiring(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIndustryMomentumIsWiredForPaper(unittest.TestCase):
+    """EXP-103 passed on 2026-10-30 but could not be promoted: nothing in paper could trade it."""
+    def test_paper_has_a_runner_and_it_uses_the_research_column(self):
+        from deployment.auto_paper_promotion import paper_runner_for
+        from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
+        self.assertEqual(paper_runner_for("industry_momentum"), "run_paper_trading.py (Pool A)")
+        spec = next(s for s in PAPER_TRADING_STRATEGY_SPECS if s.strategy_key == "industry_momentum")
+        self.assertEqual(type(spec.strategy_factory()).__name__, "IndustryMomentumStrategy")

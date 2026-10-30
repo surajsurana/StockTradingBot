@@ -1920,6 +1920,7 @@ function timelineRows(n){
 // without a pill, which is exactly the one that got overlooked in a column of them.
 const ACTIVITY_PILL = {live:"ok", retired:"miss", paper:"ok", result:"", research:"info",
                        status:"info", refused:"due", not_taken:"due", auth_fail:"miss", auth_ok:"ok"};
+const NOW_PILL = {"Paper trading":"ok", "Live":"ok", "Retired":"miss", "Not traded":""};
 let NOTIF_PAGE = 1, NOTIF_PAGE_SIZE = 50;
 const NOTIF_OPEN = new Set();   // research results opened to year by year; kept across refreshes
 function renderActivity(rows){
@@ -1957,7 +1958,8 @@ function renderActivity(rows){
     return (opens ? `<tr class="clickable" data-years="${i}" data-open-key="${esc(r.experiment || r.name || "")}" title="Tap for year by year">` : `<tr>`)
          + `<td class="n nowrap">${esc(dmy(r.date))}</td><td class="n nowrap">${esc(r.time || "—")}</td>`
          + `<td class="nowrap"><span class="pill ${cls}">${esc(r.what)}</span></td>`
-         + `<td>${esc(who || r.key || "")}</td>`
+         // Where the strategy stands today, beside every research result (2026-10-30).
+         + `<td>${esc(who || r.key || "")}${r.now ? ` <span class="pill ${NOW_PILL[r.now] || ""}" title="Where this strategy stands today">${esc(r.now)}</span>` : ""}</td>`
          + `<td class="nowrap">${esc(r.pool || r.experiment || "—")}</td>`
          // A research result shows its backtest in one line and the verdict's reason in plain words
          // in another, in full -- read on a phone, where a hover tooltip does not exist (2026-10-26).

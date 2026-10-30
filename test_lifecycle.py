@@ -162,6 +162,20 @@ class TestResearchResults(unittest.TestCase):
             rows = timeline(self.root, records=[_Rec("alpha", "SW-007", "Alpha Strategy")])
         self.assertEqual(rows[0]["name"], "As Proposed")
 
+    def test_each_result_says_where_the_strategy_stands_today(self):
+        """2026-10-30: "it should also show the status - Retired, paper trade etc"."""
+        history = [{"key": k, "resolved": "2026-10-10", "outcome": "researched", "experiment_id": "E"}
+                   for k in ("p", "r", "l", "x", "u")]
+        recs = [_Rec("p", "", "P"), _Rec("r", "", "R"), _Rec("l", "", "L"), _Rec("x", "", "X")]
+        for rec, status in zip(recs, ("DeploymentStatus.PAPER_TRADING", "ARCHIVED", "PILOT_LIVE", "RESEARCH")):
+            rec.deployment_status = status
+        with patch("research_queue.load", return_value={"current": {}, "history": history}), \
+             patch("research_queue.LANES", ("india",)), \
+             patch("reporting.lifecycle._verdict_of", return_value="REJECT"):
+            rows = timeline(self.root, records=recs)
+        self.assertEqual({r["key"]: r["now"] for r in rows},
+                         {"p": "Paper trading", "r": "Retired", "l": "Live", "x": "Not traded", "u": "Not traded"})
+
     def test_an_unresolved_candidate_is_not_on_the_timeline(self):
         """It has not happened yet."""
         self.assertEqual(self._with_queue([{"key": "k", "resolved": None, "outcome": None}]), [])
