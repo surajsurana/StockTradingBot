@@ -279,6 +279,18 @@ PAPER_TRADING_STRATEGY_SPECS = [
                 "research_lab.performance_analyst", fromlist=["load_sector_map"]).load_sector_map().items()}
         ), "industry_momentum_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="nifty_momentum_30_style",
+        display_name="Risk-Adjusted Blended Momentum (Nifty200 Momentum 30 methodology)",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.nifty_momentum_30_style", fromlist=["NiftyMomentum30StyleStrategy"]
+        ).NiftyMomentum30StyleStrategy(),
+        # Same column research computed (run_nifty_momentum_30_style_experiment), wired before its
+        # 2026-11-01 re-test so a PASS can be promoted.
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_nifty_momentum_30_percentile_ranks"]
+        ).compute_nifty_momentum_30_percentile_ranks(data), "nifty_momentum_30_percentile"),
+    ),
 ]
 
 

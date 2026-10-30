@@ -150,3 +150,8 @@ class TestIndustryMomentumIsWiredForPaper(unittest.TestCase):
         self.assertEqual(paper_runner_for("industry_momentum"), "run_paper_trading.py (Pool A)")
         spec = next(s for s in PAPER_TRADING_STRATEGY_SPECS if s.strategy_key == "industry_momentum")
         self.assertEqual(type(spec.strategy_factory()).__name__, "IndustryMomentumStrategy")
+
+    def test_the_two_pending_retests_can_be_promoted_if_they_pass(self):
+        from deployment.auto_paper_promotion import paper_runner_for
+        self.assertEqual(paper_runner_for("nifty_momentum_30_style"), "run_paper_trading.py (Pool A)")
+        self.assertEqual(paper_runner_for("us_high_volume_return_premium"), "run_pool_i.py (Pool I, US)")
