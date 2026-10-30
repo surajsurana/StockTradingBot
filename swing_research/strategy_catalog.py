@@ -294,6 +294,52 @@ PAPER_TRADING_STRATEGY_SPECS = [
 ]
 
 
+
+# --- Paper wiring for the US and crypto pools (2026-10-30) ---
+# A research PASS is only promoted to paper when a paper runner lists the strategy
+# (deployment/auto_paper_promotion.py), and Industry Momentum's PASS (EXP-103) was refused because
+# nothing did. India's list is PAPER_TRADING_STRATEGY_SPECS above; Pool I's and Pool E's own maps
+# live in run_pool_i.py / run_pool_e.py, which the research merge gate forbids a research branch to
+# touch. So research adds a strategy's paper wiring HERE, in the same PR as its backtest runner, and
+# those runners read it. Each entry must be the research wrapper's own Strategy class and extra
+# columns, unchanged -- paper trades exactly what was tested. test_strategy_catalog.py refuses a
+# research runner with no paper wiring, so the merge gate holds such a branch with that reason.
+
+def _ranked(module_fn: str, column: str):
+    """data -> {symbol: Series named `column`}, from swing_research.cross_sectional.<module_fn>."""
+    return lambda data: _renamed(getattr(__import__("swing_research.cross_sectional", fromlist=[module_fn]),
+                                         module_fn)(data), column)
+
+
+def _cls(module: str, name: str):
+    """A zero-arg factory for swing_research.strategies.<module>.<name>, imported when called."""
+    return lambda: getattr(__import__(f"swing_research.strategies.{module}", fromlist=[name]), name)()
+
+
+# strategy_key -> (strategy factory, extra-columns fn) -- run_pool_i.py's POOL_I_STRATEGIES shape.
+PAPER_US_STRATEGIES = {
+    "us_high_volume_return_premium": (_cls("high_volume_return_premium", "HighVolumeReturnPremiumStrategy"),
+                                      _ranked("compute_volume_shock_percentile_ranks", "volume_shock_percentile")),
+    "us_max_effect": (_cls("max_effect", "MaxEffectStrategy"),
+                      _ranked("compute_max_effect_percentile_ranks", "max_effect_percentile")),
+}
+
+# strategy_key -> (strategy factory, symbols getter, extra-columns fn) -- run_pool_e.py's shape, with
+# the symbol list behind a zero-arg getter so this module imports nothing from data/ at load time.
+# The symbols must be the ones run_crypto_experiment.py's RUNNERS backtests the strategy on.
+PAPER_CRYPTO_STRATEGIES = {}
+
+# Research runners with no paper wiring, frozen as of 2026-10-30: every one was rejected or retired
+# before this rule existed (52_week_high_momentum trades in paper under the key
+# fifty_two_week_high_momentum). Never add to this -- a new strategy gets wiring instead. Re-testing
+# one of these means wiring it first and removing it from here.
+RESEARCH_ONLY_LEGACY = {
+    "52_week_high_momentum", "downside_beta", "nifty_low_volatility_30", "size_premium_banz",
+    "turnover_liquidity", "turtle_system2",
+    "crypto_idiosyncratic_volatility", "crypto_illiquidity_premium", "crypto_long_horizon_reversal",
+    "crypto_vol_managed", "crypto_xs_momentum",
+}
+
 @dataclass
 class ResearchExperimentSpec:
     strategy_key: str

@@ -56,12 +56,11 @@ from deployment.settings import STATE_DIR
 from reporting.pool_i import POOL_I_STARTING_CAPITAL_USD, pool_i_starting_capital  # noqa: F401
 from swing_research.cross_sectional import (compute_momentum_percentile_ranks,
                                             compute_rs_percentile_ranks,
-                                            compute_short_term_reversal_percentile_ranks,
-                                            compute_volume_shock_percentile_ranks)
+                                            compute_short_term_reversal_percentile_ranks)
 from swing_research.strategies.minervini_trend_template_filter import MinerviniTrendTemplateFilterStrategy
 from swing_research.strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 from swing_research.strategies.short_term_reversal import ShortTermReversalStrategy
-from swing_research.strategies.high_volume_return_premium import HighVolumeReturnPremiumStrategy
+from swing_research.strategy_catalog import PAPER_US_STRATEGIES
 from swing_research.universe_us import get_swing_universe_us
 
 POOL_I_STATE_DIR = os.path.join(STATE_DIR, "pool_i")
@@ -91,14 +90,10 @@ POOL_I_STRATEGIES = {
         ShortTermReversalStrategy,
         lambda data: {s: series.rename("reversal_percentile") for s, series in compute_short_term_reversal_percentile_ranks(data).items()},
     ),
-    # Added 2026-10-30, before its re-test, so a PASS can actually be promoted (Industry Momentum's
-    # passed that morning and was refused for want of exactly this). Same class and column as
-    # research_director.run_high_volume_return_premium_us_experiment.
-    "us_high_volume_return_premium": (
-        HighVolumeReturnPremiumStrategy,
-        lambda data: {s: series.rename("volume_shock_percentile") for s, series in compute_volume_shock_percentile_ranks(data).items()},
-    ),
 }
+# Strategies research wired for paper in swing_research/strategy_catalog.py (2026-10-30) -- a research
+# branch may not edit this file, so a passing US strategy is listed there instead.
+POOL_I_STRATEGIES.update({k: v for k, v in PAPER_US_STRATEGIES.items() if k not in POOL_I_STRATEGIES})
 
 
 def _state_dir_of(dirname: str) -> str:

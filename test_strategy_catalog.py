@@ -155,3 +155,56 @@ class TestIndustryMomentumIsWiredForPaper(unittest.TestCase):
         from deployment.auto_paper_promotion import paper_runner_for
         self.assertEqual(paper_runner_for("nifty_momentum_30_style"), "run_paper_trading.py (Pool A)")
         self.assertEqual(paper_runner_for("us_high_volume_return_premium"), "run_pool_i.py (Pool I, US)")
+
+
+class TestEveryResearchedStrategyCanBePromoted(unittest.TestCase):
+    """2026-10-30: a PASS is promoted to paper only if a paper runner lists the strategy, and research
+    used to add only the backtest runner -- so Industry Momentum passed and was refused. Research must
+    now wire paper in the same PR; this test is what the merge gate's suite run enforces."""
+
+    FROZEN_LEGACY = {
+        "52_week_high_momentum", "downside_beta", "nifty_low_volatility_30", "size_premium_banz",
+        "turnover_liquidity", "turtle_system2",
+        "crypto_idiosyncratic_volatility", "crypto_illiquidity_premium", "crypto_long_horizon_reversal",
+        "crypto_vol_managed", "crypto_xs_momentum",
+    }
+
+    def _research_keys(self):
+        import run_crypto_experiment
+        import run_us_experiment
+        from swing_research.strategy_catalog import RESEARCH_EXPERIMENT_SPECS
+        return ({s.strategy_key for s in RESEARCH_EXPERIMENT_SPECS} | set(run_us_experiment.RUNNERS)
+                | set(run_crypto_experiment.RUNNERS))
+
+    def test_every_research_runner_has_paper_wiring(self):
+        from deployment.auto_paper_promotion import paper_runner_for
+        from swing_research.strategy_catalog import RESEARCH_ONLY_LEGACY
+        missing = sorted(k for k in self._research_keys() - RESEARCH_ONLY_LEGACY if not paper_runner_for(k))
+        self.assertEqual(missing, [], "these strategies can be backtested but a PASS could not go to paper. Add "
+                         "each to swing_research/strategy_catalog.py -- PAPER_TRADING_STRATEGY_SPECS (India), "
+                         "PAPER_US_STRATEGIES (US) or PAPER_CRYPTO_STRATEGIES (crypto) -- with the research "
+                         f"wrapper's own Strategy class and extra columns: {missing}")
+
+    def test_the_legacy_list_only_ever_shrinks(self):
+        from deployment.auto_paper_promotion import paper_runner_for
+        from swing_research.strategy_catalog import RESEARCH_ONLY_LEGACY
+        self.assertLessEqual(RESEARCH_ONLY_LEGACY, self.FROZEN_LEGACY, "never add to RESEARCH_ONLY_LEGACY")
+        wired = sorted(k for k in RESEARCH_ONLY_LEGACY if paper_runner_for(k))
+        self.assertEqual(wired, [], f"now wired for paper -- remove from RESEARCH_ONLY_LEGACY: {wired}")
+
+    def test_us_and_crypto_paper_entries_build_and_reach_their_pools(self):
+        import run_pool_e
+        import run_pool_i
+        from swing_research.base import Strategy
+        from swing_research.strategy_catalog import PAPER_CRYPTO_STRATEGIES, PAPER_US_STRATEGIES
+        for key, (factory, extra_fn) in PAPER_US_STRATEGIES.items():
+            with self.subTest(key=key):
+                self.assertIsInstance(factory(), Strategy)
+                self.assertTrue(callable(extra_fn))
+                self.assertIn(key, run_pool_i.POOL_I_STRATEGIES)
+        for key, (factory, symbols, extra_fn) in PAPER_CRYPTO_STRATEGIES.items():
+            with self.subTest(key=key):
+                self.assertIsInstance(factory(), Strategy)
+                self.assertTrue(symbols())
+                self.assertTrue(callable(extra_fn))
+                self.assertIn(key, run_pool_e.POOL_E_STRATEGIES)

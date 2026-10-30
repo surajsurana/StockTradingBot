@@ -39,6 +39,7 @@ from deployment.base import DeploymentStatus, is_crypto_record
 from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from reporting.pool_e import POOL_E_STARTING_CAPITAL_USDT
+from swing_research.strategy_catalog import PAPER_CRYPTO_STRATEGIES
 from swing_research.strategies.crypto_trend_timing import CryptoTrendTimingStrategy, compute_month_end_sma
 from swing_research.strategies.crypto_trend_timing_weekly import CryptoWeeklyTrendTimingStrategy, compute_week_end_sma
 from swing_research.strategies.crypto_trend_timing_daily import CryptoDailyTrendTimingStrategy, compute_daily_sma
@@ -74,6 +75,11 @@ POOL_E_STRATEGIES = {
         lambda data: {s: compute_daily_sma(df)[["sma_daily"]] for s, df in data.items()},
     ),
 }
+# Strategies research wired for paper in swing_research/strategy_catalog.py (2026-10-30) -- a research
+# branch may not edit this file, so a passing crypto strategy is listed there instead.
+POOL_E_STRATEGIES.update({k: (factory, symbols(), extra_fn)
+                          for k, (factory, symbols, extra_fn) in PAPER_CRYPTO_STRATEGIES.items()
+                          if k not in POOL_E_STRATEGIES})
 
 
 def _seed_if_missing(strategy_key: str) -> None:
