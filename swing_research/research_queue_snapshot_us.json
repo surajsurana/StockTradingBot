@@ -4,8 +4,8 @@
     "name": "MAX Effect / Lottery-Demand Anomaly (US)",
     "mode": "backtest",
     "in_progress": true,
-    "stale": false,
-    "claimed_days_ago": 1.9999989676967591,
+    "stale": true,
+    "claimed_days_ago": 2.2500436035185185,
     "horizon_lane": "swing"
   }
 }
