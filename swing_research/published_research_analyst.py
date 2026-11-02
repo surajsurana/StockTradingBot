@@ -2190,6 +2190,102 @@ CRYPTO_LONG_HORIZON_REVERSAL = PublishedStrategy(
 )
 
 
+CRYPTO_SHORT_TERM_REVERSAL = PublishedStrategy(
+    name="Short-Term Reversal (Crypto)",
+    source_citation=(
+        "Kozlowski, S.E., Puleo, M.R. and Zhou, J. (2021), \"Cryptocurrency return reversals,\" "
+        "Applied Economics Letters, Vol. 28, No. 11, 887-893 (DOI 10.1080/13504851.2020.1784831); "
+        "Zaremba, A., Bilgin, M.H., Long, H., Mercik, A. and Szczygielski, J.J. (2021), \"Up or "
+        "down? Short-term reversal, momentum, and liquidity effects in cryptocurrency markets,\" "
+        "International Review of Financial Analysis, Vol. 78, 101908 (DOI 10.1016/"
+        "j.irfa.2021.101908). Same underlying mechanism already registered for this program's India "
+        "implementation (short_term_reversal, PASS, paper trading): Jegadeesh, N. (1990), "
+        "\"Evidence of Predictable Behavior of Security Returns,\" The Journal of Finance, Vol. 45, "
+        "No. 3."
+    ),
+    mechanism=(
+        "Kozlowski, Puleo & Zhou test 200 cryptocurrencies (2015-2019) and find a return-reversal "
+        "effect that holds at daily, weekly AND monthly rebalancing, surviving controls for size, "
+        "turnover and illiquidity. Zaremba et al. independently corroborate a daily reversal across "
+        "a much larger sample (3,600+ coins), attributing it to illiquidity. Both find the SAME "
+        "underlying liquidity-provision mechanism already registered for this program's India "
+        "strategy short_term_reversal (PASS, paper trading): a short-horizon loser is often a coin "
+        "that just absorbed selling pressure, and the reversal compensates whoever supplied that "
+        "liquidity. The first SHORT-horizon reversal mechanism in this program's crypto lane -- this "
+        "lane's only other reversal strategy, crypto_long_horizon_reversal, targets the much longer "
+        "(~2-month) horizon where Dobrynskaya (2023) finds crypto momentum switches sign; this "
+        "candidate targets the short, Jegadeesh-style 1-month horizon instead."
+    ),
+    rules=(
+        "The source papers test daily, weekly and monthly rebalancing and find the effect at all "
+        "three. Cross-sectional decile sort by formation-period return at each formation date. Long "
+        "the BOTTOM decile (worst performers / 'losers'); the papers' zero-cost portfolios short the "
+        "top decile (best performers / 'winners'), the reverse polarity of every momentum strategy "
+        "already tested in this program's crypto lane."
+    ),
+    variant_chosen=(
+        "30-CALENDAR-day formation AND holding period -- the SAME 21-TRADING-day -> 30-CALENDAR-day "
+        "conversion already established for this lane's own crypto_idiosyncratic_volatility.py "
+        "(CRYPTO_IVOL_FORMATION_DAYS), matching this program's India/US siblings' own 1-month "
+        "formation/hold, which the candidate's own typical_holding_period field (research_roadmap.py) "
+        "names as 'the natural starting specification here too.' SINGLE-VINTAGE, DAILY STATE-"
+        "TRANSITION entry (the direct crypto analogue of the India sibling's own design -- entry "
+        "fires the day a coin's percentile first drops to <=10), not the month-end-gated batch "
+        "reformation this lane's own crypto_long_horizon_reversal.py/crypto_illiquidity_premium.py/"
+        "crypto_idiosyncratic_volatility.py use -- those three gate to month-end specifically "
+        "because each one's OWN formation window is LONGER than its own rebalance period; here "
+        "formation and holding are the SAME length (30 days each), exactly the India sibling's own "
+        "21-day/21-day relationship, so its daily-transition design is the more faithful port."
+    ),
+    scope_reductions=(
+        "LONG ONLY (same disclosed reason as every strategy in this program). BOTTOM-DECILE "
+        "THRESHOLD (percentile <=10, past LOSERS), the same convention as every reversal strategy "
+        "in this program. SINGLE-VINTAGE, DAILY-TRANSITION HOLDING instead of the papers' "
+        "overlapping-portfolio construction -- mirrors the India sibling's own approved deviation. "
+        "EXIT RULE is ONLY the 30-calendar-day time-stop or the synthetic protective stop -- "
+        "deliberately no percentile-based early exit, same discipline as every prior strategy. 20% "
+        "protective stop-loss -- NOT the India sibling's 8%, which this lane's own crypto_xs_"
+        "momentum.py/crypto_tsmom.py/crypto_trend_timing*.py/crypto_illiquidity_premium.py/crypto_"
+        "idiosyncratic_volatility.py/crypto_long_horizon_reversal.py already disclose is an "
+        "equity-volatility number inappropriate for crypto's much higher daily volatility; reused "
+        "rather than inventing a new number. 2.5% risk-per-unit sizing (12.5% of the book per coin) "
+        "-- identical sizing convention to every other cross-sectional crypto strategy in this lane. "
+        "Book in USDT, fractional quantities. Costs (0.30%/side + 10bps spread) and India's 31.2% "
+        "per-profitable-trade VDA tax with no loss set-off are applied before the audit, exactly as "
+        "for every other crypto strategy -- the verdict is post-tax, pre-tax recorded alongside."
+    ),
+    distinctiveness=(
+        "First SHORT-horizon (not long-horizon) crypto-lane reversal strategy -- shares this "
+        "program's 'reversal_short_horizon' tag directly with the India strategy and its US port, a "
+        "third test of the identical mechanism, so its marginal value as NEW mechanistic knowledge "
+        "is lower than a brand-new factor family's would be (no existing crypto strategy shares this "
+        "tag today, so lane-scoped diversification scoring does not mechanically penalize it). "
+        "CENTRAL DISCLOSED CAVEAT, carried verbatim from the candidate's own known_weaknesses field: "
+        "both source papers are explicit that the reversal effect is CONCENTRATED IN SMALL, "
+        "ILLIQUID coins, while the largest, most liquid coins instead show MOMENTUM (the opposite "
+        "sign) -- and this platform's own crypto universe (data/fetch_crypto.py's CRYPTO_UNIVERSE) "
+        "is deliberately the 40 largest, most liquid USDT pairs, explicitly the segment BOTH papers "
+        "say shows momentum, not reversal. A REJECT, or even a sign-flipped result, would itself be "
+        "a genuinely informative finding given this disclosed tension, not a wasted research cycle."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. 30-calendar-day formation/holding period "
+        "(the same conversion already used elsewhere in this lane, matching the India/US siblings' "
+        "1-month specification): MINOR, a direct restatement of the documented/sibling rule. "
+        "Single-vintage daily-transition holding (vs. the papers' overlapping-portfolio "
+        "construction): MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to the "
+        "India sibling's own single-vintage deviation. Bottom-decile threshold (percentile <=10): "
+        "MINOR. 20% crypto-scaled stop (not the equity strategy's 8%): MODERATE, one-directional. "
+        "2.5% risk-per-unit / 12.5%-of-book sizing: MINOR. USDT book / USD-INR conversion: "
+        "NEGLIGIBLE for the verdict. Costs and 31.2% no-offset tax: MAJOR and one-directional -- the "
+        "lane's standing question. UNIVERSE MISMATCH (this platform's large/liquid-coin universe vs. "
+        "the papers' documented small/illiquid-coin effect): the central, disclosed reason this "
+        "candidate's own expected_robustness_score (2/10) is this roadmap's lowest -- a REJECT or "
+        "sign flip here would be consistent with, not contrary to, the source papers' own findings."
+    ),
+)
+
+
 INDUSTRY_MOMENTUM = PublishedStrategy(
     name="Industry Momentum",
     source_citation=(

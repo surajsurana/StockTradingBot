@@ -1130,6 +1130,57 @@ def compute_crypto_long_horizon_reversal_percentile_ranks(
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS = 30  # ~1 month of CALENDAR days, the same 21-TRADING-day
+    # -> 30-CALENDAR-day conversion already established for CRYPTO_IVOL_FORMATION_DAYS above -- this
+    # candidate's own typical_holding_period field (research_roadmap.py) explicitly says the India/US
+    # siblings' 1-month formation/hold is "the natural starting specification here too", not the
+    # longer (~2 month) horizon crypto_long_horizon_reversal tests -- a different mechanism (short-,
+    # not long-, horizon reversal) sharing only the bottom-decile polarity convention.
+
+
+def compute_crypto_short_term_reversal_score(
+        price_history: pd.DataFrame, lookback_days: int = CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS) -> pd.Series:
+    """Kozlowski, Puleo & Zhou (2021) / Zaremba et al. (2021)'s short-horizon formation return: the
+    SAME single-period cumulative-return construction as compute_short_term_reversal_score() (the
+    equity lane's own 21-TRADING-day version) and compute_crypto_long_horizon_reversal_score() (this
+    lane's own longer-horizon version) -- just this candidate's own 30-CALENDAR-day (~1 month)
+    lookback. No .shift() needed before the ratio -- the value at row i uses only Close prices up to
+    and including row i, no lookahead."""
+    close = price_history["Close"]
+    return close / close.shift(lookback_days) - 1
+
+
+def compute_crypto_short_term_reversal_percentile_ranks(
+        data: dict, lookback_days: int = CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of crypto_short_reversal_percentile (0-100), indexed by date} -- each
+    coin's cross-sectional percentile rank, among whatever coins have a valid (non-NaN, i.e.
+    >=`lookback_days` bars of history) trailing formation-period return that day, of its own
+    30-calendar-day return. LOW percentile means a WORSE recent 1-month return -- this strategy's
+    entry condition is percentile <=10 (the bottom decile, past LOSERS), the same <=10/bottom-decile
+    polarity convention as compute_short_term_reversal_percentile_ranks() (the equity lane's 1-month
+    version) and compute_crypto_long_horizon_reversal_percentile_ranks() (this lane's own ~2-month
+    version) -- a structurally identical mechanism at the SHORT end of the horizon spectrum the
+    candidate's own source papers test (daily/weekly/monthly), not a duplicate of either. Same
+    vectorized .rank(axis=1, pct=True) construction as every other cross-sectional signal in this
+    module -- one call ranks every coin for every day simultaneously.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_crypto_short_term_reversal_score(df.sort_index(), lookback_days)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = _percentile_rank_rows(wide)
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 INDUSTRY_MOMENTUM_FORMATION_DAYS = MOMENTUM_FORMATION_DAYS  # J=6 months, same formation window as
                                                               # compute_momentum_score() -- Moskowitz &
                                                               # Grinblatt (1999) test the same J=6/K=6
