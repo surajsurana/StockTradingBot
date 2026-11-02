@@ -346,7 +346,6 @@ td{padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap;verti
 #reg-wrap{overflow-x:auto}#reg-wrap table{min-width:0}
 #reg-wrap th{padding:6px 5px;letter-spacing:.01em}#reg-wrap td{padding:5px 5px}
 #reg-wrap td:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis}
-.expand-slot{display:inline-block;width:13px}
 tr:last-child td{border-bottom:0}
 td.n,th.n{text-align:right;font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 td.c,th.c{text-align:center}
@@ -403,8 +402,6 @@ tr.clickable{cursor:pointer}
 #life table{min-width:0;width:100%;font-size:12.5px;table-layout:auto}#life td,#life th{white-space:normal}#life td.n,#life th.n{white-space:nowrap}#life tr.subt td{font-weight:600;border-top:1px solid var(--rule)}#life th,#life td{padding:5px 6px}
 #life .sum{margin:10px 0 0;font-size:12.5px;color:var(--muted)}#life .sum b{color:var(--ink)}
 #life .x{float:right}
-.expand-toggle{all:unset;cursor:pointer;color:var(--muted);font-size:10px;padding:0 3px;vertical-align:middle}
-.expand-toggle:hover{color:var(--accent)}
 tr.subrow td{background:var(--band);color:var(--muted)}
 tr.subrow td.note{padding-left:22px}
 .yeartbl{width:auto;margin:2px 0 4px 22px}.yeartbl td,.yeartbl th{padding:2px 14px 2px 0;background:none}
@@ -1277,11 +1274,12 @@ document.addEventListener("click", e => { const b = e.target.closest(".fxbtn"); 
 const netValue = r => {
   if(r.pnl == null) return "—";
   if(!r.net) return `<span title="No costed statement for this strategy yet — this is gross, before charges and tax.">${money(r.pnl, true)}<span class="grossmark">*</span></span>`;
+  if(r.net.pool_only) return `<span title="Gross ${money(r.pnl, true)}, after this pool's charges and tax.">${money(r.net.net, true)}</span>`;
   return `<span title="Gross ${money(r.pnl, true)}, less ${money(r.net.charges + r.net.gst + r.net.tax)} of charges and tax.">${money(r.net.net, true)}</span>`;
 };
 // The value the column sorts and colours by, so ranking by profit ranks by what is actually kept.
 const netOf = r => r.net ? r.net.net : (r.pnl == null ? null : r.pnl);
-const netBtn = r => r.net ? ` <button class="netbtn" data-key="${esc(r.key)}" title="What is left after charges and tax">ⓘ</button>` : "";
+const netBtn = r => r.net && !r.net.pool_only ? ` <button class="netbtn" data-key="${esc(r.key)}" title="What is left after charges and tax">ⓘ</button>` : "";
 function showNet(key){
   const r = (STATE.strategies || []).find(x => x.key === key); if(!r || !r.net) return;
   const n = r.net;
@@ -2694,6 +2692,18 @@ function paperCapCell(r){
     return `<span class="note" title="No paper book yet, so there is nothing to size.">—</span>`;
   return capBox(r.key, Math.round(r.capital), "How much notional cash this paper book trades with");
 }
+// Capital is set per strategy and split across its pools by their weights, so a strategy shown as
+// one row per pool gets ONE box: on its live pool's row in Live mode, on its first pool's row in
+// Paper mode, showing the strategy's total -- not that row's own pool.
+function capCell(r){
+  if(!r.pool_row) return MODE === "live" ? allocCell(r) : paperCapCell(r);
+  const here = MODE === "live" ? (r.live_pool ? poolCode(r.pool) === r.live_pool : r.first_pool) : r.first_pool;
+  const total = (STATE.strategies || []).find(x => x.key === r.key);
+  if(!here) return `<span class="note" title="Set for the whole strategy on its ${MODE === "live" ? "live pool's" : "first pool's"} row.">—</span>`;
+  const cell = MODE === "live" ? allocCell(total || r) : paperCapCell(total || r);
+  return MODE === "live" ? cell : cell.replace(/title="How much notional cash this paper book trades with"/,
+    `title="Total for all ${r.pool_count} pools of this strategy, split between them by pool weight"`);
+}
 function capBox(key, amount, title){
   return `<span style="display:inline-flex;gap:4px;align-items:center">
     <input class="allocinput" data-key="${esc(key)}" type="number" min="0" step="100" value="${amount}" style="width:100px">
@@ -3309,7 +3319,8 @@ readRoute();
 // computed over a strategy's whole life, not per window. What a window CAN answer comes off the
 // ledger: the trades that CLOSED inside it, what they booked, and how many of them won. So a range
 // rewrites exactly those three columns and leaves the rest alone, and the figure it shows is gross
-// -- marked with the same * the pool sub-rows already use for "not costed".
+// -- marked with the same * an uncosted figure uses everywhere else. Kept per pool as well as per
+// strategy, because every pool is its own row.
 function periodFigures(s, from, to){
   if(!from && !to) return null;
   const within = d => (!from || (d || "") >= from) && (!to || (d || "") <= to);
@@ -3317,12 +3328,25 @@ function periodFigures(s, from, to){
   for(const r of (s.ledger || [])){
     const key = r.book_key;
     if(!key || String(r.status || "").toLowerCase() === "open" || !within(r.date)) continue;
-    const v = out[key] || (out[key] = {pnl: 0, closed: 0, wins: 0});
-    v.pnl += (+r.pnl || 0);
-    v.closed += 1;
-    if((+r.pnl || 0) > 0) v.wins += 1;
+    for(const k of [key, key + "|" + (r.pool || "")]){
+      const v = out[k] || (out[k] = {pnl: 0, closed: 0, wins: 0});
+      v.pnl += (+r.pnl || 0);
+      v.closed += 1;
+      if((+r.pnl || 0) > 0) v.wins += 1;
+    }
   }
   return out;
+}
+
+// ONE ROW PER POOL. A strategy running in Pool A, F, A2 and A3 is four books with four results,
+// so it is four rows -- each sorts on its own figures, and nothing hides behind an expand arrow.
+// The strategy-level things (verdict, live gate, the brief) repeat on each of its rows.
+function poolRows(r){
+  const pb = r.pools_breakdown || [];
+  if(pb.length < 2) return [r];
+  return pb.map((p, i) => ({...r, row_id: r.key + "|" + p.pool, pool_row: p, pool_count: pb.length, first_pool: i === 0,
+    pool: p.pool, capital: p.capital, pnl: p.pnl, started: p.started, closed_trades: p.closed_trades, wins: p.wins,
+    net: p.net == null ? null : {net: p.net, pool_only: true}, pools_breakdown: []}));
 }
 
 function renderRegistry(s){
@@ -3347,8 +3371,8 @@ function renderRegistry(s){
     : "Show each strategy's results for a chosen period only";
   // A strategy with no trade closed inside the window reads as a dash, not a zero: nothing happened
   // is not the same as it made nothing.
-  const inPeriod = r => period ? (period[r.key] || null) : null;
-  const all = (s.strategies || [])
+  const inPeriod = r => period ? (period[r.row_id || r.key] || null) : null;
+  const all = (s.strategies || []).flatMap(poolRows)
     .map(r => {
       if(!period) return r;
       const p = inPeriod(r);
@@ -3356,19 +3380,20 @@ function renderRegistry(s){
               wins: p ? p.wins : null, pools_breakdown: []};
     });
   const winOf = (w, n) => n ? w / n * 100 : null;   // share of closed trades that made money
+  const byName = (a, b) => a.name.localeCompare(b.name) || String(a.pool).localeCompare(String(b.pool));
   const pctOf = r => r.capital ? netOf(r) / r.capital * 100 : null;   // net return on capital allocated, null if never deployed
   const rows = all.filter(r => (!q || [r.name, r.sid, r.key].some(v => String(v||"").toLowerCase().includes(q))) && (!poolF || r.pool === poolF || (poolF !== "-" && r.pool.split(", ").map(x => x.startsWith("Pool") ? x : "Pool " + x).includes(poolF))) && (!typeF || r.type === typeF) && (!verdictF || r.verdict === verdictF) && (!statusF || regClass(r.status) === statusF) && (!pilotF || (r.pilot && r.pilot.state) === pilotF))
     .sort((a,b) => { const k=REG_SORT.key;
-      if(k==="pnl"){ const nx=netOf(a), ny=netOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="capital"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="win_pct"){ const nx=winOf(a.wins,a.closed_trades), ny=winOf(b.wins,b.closed_trades); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }
+      if(k==="pnl"){ const nx=netOf(a), ny=netOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || byName(a,b); }
+      if(k==="capital"||k==="closed_trades"){ const nx=a[k]==null?-Infinity:+a[k], ny=b[k]==null?-Infinity:+b[k]; return (nx-ny)*REG_SORT.dir || byName(a,b); }
+      if(k==="win_pct"){ const nx=winOf(a.wins,a.closed_trades), ny=winOf(b.wins,b.closed_trades); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || byName(a,b); }
+      if(k==="pnl_pct"){ const nx=pctOf(a), ny=pctOf(b); return ((nx==null?-Infinity:nx)-(ny==null?-Infinity:ny))*REG_SORT.dir || byName(a,b); }
+      if(k==="started"){ return (a.started||"").localeCompare(b.started||"")*REG_SORT.dir || byName(a,b); }
       if(k==="pilot"){ const sc=r=>(r.pilot||{}).score==null ? -1 : (r.pilot||{}).score;
-        return (sc(a)-sc(b))*REG_SORT.dir || a.name.localeCompare(b.name); }   // by readiness score
+        return (sc(a)-sc(b))*REG_SORT.dir || byName(a,b); }   // by readiness score
       if(k==="promote"){ const sc=r=>(r.pilot||{}).score==null ? -1 : (r.pilot||{}).score;
-        return (sc(a)-sc(b))*REG_SORT.dir || a.name.localeCompare(b.name); }
-      if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || a.name.localeCompare(b.name); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
+        return (sc(a)-sc(b))*REG_SORT.dir || byName(a,b); }
+      if(k==="days"){ return (b.started||"").localeCompare(a.started||"")*REG_SORT.dir || byName(a,b); }   // days = today - started, so it sorts the OPPOSITE way to the date itself
       const x=String(a[k]||""), y=String(b[k]||""); if(k==="sid"||k==="experiment"){ const nx=parseInt(x.replace(/\D/g,""))||0, ny=parseInt(y.replace(/\D/g,""))||0; return (nx-ny)*REG_SORT.dir || x.localeCompare(y); } return x.localeCompare(y)*REG_SORT.dir; });
   document.getElementById("reg-count").textContent = `${rows.length} of ${all.length}`;
   const sig = JSON.stringify([q, poolF, typeF, verdictF, statusF, REG_SORT.key, REG_SORT.dir,
@@ -3384,45 +3409,31 @@ function renderRegistry(s){
   document.getElementById("reg-prev").disabled = REG_PAGE <= 1;
   document.getElementById("reg-next").disabled = REG_PAGE >= totalPages;
   document.getElementById("registry").innerHTML = pageRows.map(r => { const ls = liveState(r.status), pct = pctOf(r), days = daysSince(r.started);
-    const pb = r.pools_breakdown || [], expandable = pb.length > 1;
-    const mainRow = `<tr class="clickable" data-key="${esc(r.key)}"><td><span class="expand-slot">${expandable?`<button class="expand-toggle" data-key="${esc(r.key)}" title="Show ${esc(r.pool)} separately">▸</button>`:""}</span>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}">${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n cap-link" title="Click for this book's day-by-day equity">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}" title="Click for this book's day-by-day equity">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td><td class="n">${MODE === "live" ? allocCell(r) : paperCapCell(r)}</td><td class="c">${promoteBtn(r.pilot, r)}</td></tr>`;
-    const subRows = expandable ? pb.map(p => { const ppct = p.capital ? (p.net == null ? p.pnl : p.net) / p.capital * 100 : null, pdays = daysSince(p.started);
-      return `<tr class="subrow" data-parent="${esc(r.key)}" hidden><td></td><td></td><td class="note pool-link" data-pool="${esc(p.pool)}">${esc(p.pool)}</td><td></td><td class="n" title="${esc(p.started||"")}">${fmtDate(p.started)}</td><td class="n">${money(p.capital)}</td><td class="n ${cls(p.net==null?p.pnl:p.net)} pnl-link" data-pool="${esc(p.pool)}" title="${p.net==null?"Gross — not costed":"Gross "+money(p.pnl,true)}">${p.net==null?money(p.pnl,true)+'<span class="grossmark">*</span>':money(p.net,true)}</td><td class="n ${cls(ppct)}">${ppct==null?"—":(ppct>0?"+":"")+ppct.toFixed(1)+"%"}</td><td class="c">${p.closed_trades}</td><td class="c">${winOf(p.wins,p.closed_trades)==null?"—":winOf(p.wins,p.closed_trades).toFixed(0)+"%"}</td><td></td><td></td><td></td><td></td><td class="c">${ageText(pdays)}</td><td></td><td class="c">${poolPromoteBtn(p, r)}</td></tr>`;
-    }).join("") : "";
-    return mainRow + subRows; }).join("")
+    return `<tr class="clickable" data-key="${esc(r.key)}" data-row="${esc(r.row_id || r.key)}"><td>${esc(r.sid)}</td><td class="strategy-name" title="${esc(r.name)} — click to see how it works">${esc(r.name)}</td><td class="${r.pool==="-"?"":"pool-link"}"${r.pool_row?` data-pool="${esc(r.pool)}"`:""}>${esc(r.pool)}</td><td>${esc(r.type)}</td><td class="n" title="${esc(r.started||"")}">${fmtDate(r.started)}</td><td class="n cap-link" title="Click for this book's day-by-day equity">${r.capital==null?"—":money(r.capital)}</td><td class="n ${cls(netOf(r))}${r.pnl==null?"":" pnl-link"}" title="Click for this book's day-by-day equity">${netValue(r)}${r.pnl==null?"":netBtn(r)}</td><td class="n ${cls(pct)}">${pct==null?"—":(pct>0?"+":"")+pct.toFixed(1)+"%"}</td><td class="c">${r.closed_trades==null?"—":r.closed_trades}</td><td class="c">${winOf(r.wins,r.closed_trades)==null?"—":winOf(r.wins,r.closed_trades).toFixed(0)+"%"}</td><td>${r.verdict==="-"?"—":`<span class="pill ${r.verdict==="PASS"?"ok":r.verdict==="REJECT"?"miss":""}">${esc(r.verdict.replace(/_/g," "))}</span>`}</td><td><span class="tristate" title="${esc(r.status.replace(/_/g," "))}"><i class="${ls==="Paper"?"on paper":""}">Paper</i><i class="${ls==="Live"?"on live":""}">Live</i><i class="${ls==="Off"?"on off":""}">Off</i></span></td><td>${pilotCell(r.pilot, r)}</td><td>${esc(r.experiment)}</td><td class="c">${ageText(days)}</td><td class="n">${capCell(r)}</td><td class="c">${r.pool_row ? poolPromoteBtn(r.pool_row, r) : promoteBtn(r.pilot, r)}</td></tr>`;
+    }).join("")
     || `<tr><td colspan="${regCols().length}" class="note">${
          statusF === "Live" ? "No strategy is running real money yet. Everything is still in paper trading."
          : statusF === "Retired" ? "Nothing has been retired. A paper book is archived after 120 days with no profit and no route to live."
          : "No strategies match these filters."}</td></tr>`;
-  const toggleExpand = key => {
-    const btn = document.querySelector(`#registry .expand-toggle[data-key="${CSS.escape(key)}"]`); if(!btn) return;
-    const open = btn.textContent === "▾";
-    btn.textContent = open ? "▸" : "▾";
-    document.querySelectorAll(`#registry tr.subrow[data-parent="${CSS.escape(key)}"]`).forEach(tr => tr.hidden = open);
-  };
   wireAllocInputs();
   wirePromoteButtons();
   wireNetButtons();
-  document.querySelectorAll("#registry .expand-toggle").forEach(btn => btn.addEventListener("click", e => {
-    e.stopPropagation(); toggleExpand(btn.dataset.key);
-  }));
   document.querySelectorAll("#registry .pool-link").forEach(td => td.addEventListener("click", e => {
     e.stopPropagation();
-    const tr = td.closest("tr"), r = all.find(x => x.key === tr.dataset.key || x.key === tr.dataset.parent); if(!r) return;
+    const tr = td.closest("tr"), r = all.find(x => (x.row_id || x.key) === tr.dataset.row); if(!r) return;
     goLive(td.dataset.pool || "", r.type, r.name);
   }));
   // Capital and Net Profit both open the same chart: they are two readings of one curve, and the
   // question behind either of them is "how did this get here".
   document.querySelectorAll("#registry .cap-link, #registry .pnl-link").forEach(td => td.addEventListener("click", e => {
     e.stopPropagation();
-    const tr = td.closest("tr"), r = all.find(x => x.key === tr.dataset.key || x.key === tr.dataset.parent); if(!r) return;
+    const tr = td.closest("tr"), r = all.find(x => (x.row_id || x.key) === tr.dataset.row); if(!r) return;
     showEquity(r.key, `${r.sid} · ${r.name}`, `${r.pool === "-" ? "Not trading" : r.pool} · ${r.type}`);
   }));
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", e => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
-    // Only the strategy name opens the "how it works" popup -- clicking anywhere else on the
-    // row toggles its pool breakdown, if it has one; otherwise the click does nothing.
-    if(!e.target.closest(".strategy-name")){ toggleExpand(tr.dataset.key); return; }
+    // Only the strategy name opens the "how it works" popup; a click anywhere else does nothing.
+    if(!e.target.closest(".strategy-name")) return;
     document.getElementById("brief-name").textContent = `${r.sid} · ${r.name}`;
     document.getElementById("brief-meta").textContent = `${r.pool==="-"?"Not trading":r.pool} · ${r.type} · verdict ${r.verdict.replace(/_/g," ")} · ${r.status.replace(/_/g," ")}${r.experiment?" · "+r.experiment:""}`;
     document.getElementById("brief-text").textContent = r.brief || "No description written yet.";
