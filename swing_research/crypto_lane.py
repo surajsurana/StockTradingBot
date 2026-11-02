@@ -345,6 +345,31 @@ def run_crypto_long_horizon_reversal_experiment(data: dict, start_date: date, en
     )
 
 
+def run_crypto_short_term_reversal_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Kozlowski, Puleo & Zhou (2021) / Zaremba et al. (2021) crypto short-term reversal
+    (crypto_short_term_reversal candidate, 2026-11-02) -- the crypto lane's first SHORT-horizon (not
+    long-horizon) reversal mechanism."""
+    from swing_research.strategies.crypto_short_term_reversal import (
+        CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS, HOLDING_PERIOD_DAYS, REVERSAL_PERCENTILE_THRESHOLD,
+        STOP_LOSS_PCT, CryptoShortTermReversalStrategy,
+    )
+    from swing_research.published_research_analyst import CRYPTO_SHORT_TERM_REVERSAL
+    from swing_research.cross_sectional import compute_crypto_short_term_reversal_percentile_ranks
+
+    ranks = compute_crypto_short_term_reversal_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("crypto_short_reversal_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoShortTermReversalStrategy(), CRYPTO_SHORT_TERM_REVERSAL, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_short_reversal_formation_days": CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS,
+                          "crypto_bottom_decile_percentile_threshold": REVERSAL_PERCENTILE_THRESHOLD,
+                          "crypto_holding_period_days": HOLDING_PERIOD_DAYS,
+                          "crypto_rebalance": "daily state-transition (single-vintage, not month-end-gated)",
+                          "crypto_stop_loss_pct": STOP_LOSS_PCT, "crypto_short_reversal_single_vintage": True},
+        **kwargs,
+    )
+
+
 def run_crypto_trend_timing_daily_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
     """Faber's rule at daily cadence (2026-09-17) -- see crypto_trend_timing_daily.py."""
     from swing_research.strategies.crypto_trend_timing_daily import (
