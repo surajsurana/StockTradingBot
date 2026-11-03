@@ -27,6 +27,7 @@ AI_BOOKS = (("Pool G (AI judgment, crypto)", "pool_g.log", os.path.join("pool_g"
             ("Portfolio C (AI overlay)", "portfolio_c.log", os.path.join("portfolio_c", "portfolio.json")))
 
 CREDIT_MESSAGE = "credit balance is too low"
+TRACEBACK = "Traceback (most recent call last):"
 TAIL_BYTES = 60_000          # plenty for the last few runs, trivial to read on every refresh
 # A run that worked writes its state and its log seconds apart; one that failed leaves the state a
 # whole cron interval behind. An hour is far longer than the first and far shorter than the second.
@@ -45,8 +46,15 @@ def _tail(path: str) -> str:
 
 
 def _refused_recently(text: str) -> bool:
-    """Is the API's credit refusal in this book's most recent output?"""
-    return CREDIT_MESSAGE in text
+    """Is the API's credit refusal in this book's most recent output?
+
+    Only the LAST traceback counts. On 2026-11-03 Portfolio B and C failed because Yahoo Finance was
+    down; the credit refusals from weeks earlier were still inside the tail, and the failed run had
+    just touched the log -- so the bar announced a credit outage dated that afternoon while Pool G
+    was calling the model fine. A refusal followed by a different failure is history, not the cause.
+    A chained ClaudeAPIError repeats the API's message, so a credit failure still reads as one."""
+    last = text.rfind(TRACEBACK)
+    return CREDIT_MESSAGE in (text[last:] if last >= 0 else text)
 
 
 def _when(path: str) -> str:

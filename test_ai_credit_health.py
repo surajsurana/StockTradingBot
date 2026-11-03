@@ -140,6 +140,27 @@ class TestNoticingTheOutage(unittest.TestCase):
         self._log("pool_g.log", "[2026-10-11] RuntimeError: data provider outage\n")
         self.assertFalse(check(self.state, self.logs)["blocked"])
 
+    def test_an_old_refusal_behind_a_newer_different_failure_is_not_an_outage(self):
+        """2026-11-03: B and C failed on a Yahoo Finance outage with October's credit refusals still
+        in the tail. The newest failure is the one that says why the book stopped."""
+        self._log("portfolio_b.log", "[2026-10-14] starting\n" + ERROR_LINE + "ran fine\n"
+                  "Traceback (most recent call last):\n"
+                  "yfinance.exceptions.YFDataException: *** YAHOO! FINANCE IS CURRENTLY DOWN! ***\n",
+                  when=time.mktime((2026, 11, 3, 15, 50, 0, 0, 0, -1)))
+        self._state("portfolio_b/portfolio.json", when=time.mktime((2026, 11, 2, 15, 51, 0, 0, 0, -1)))
+        self.assertFalse(check(self.state, self.logs)["blocked"])
+
+    def test_a_chained_refusal_is_still_a_refusal(self):
+        """news_agent re-raises the API error as ClaudeAPIError, which prints a second traceback; the
+        API's own words are repeated in it, so the last traceback still names the cause."""
+        self._log("portfolio_c.log", ERROR_LINE + "\nDuring handling of the above exception, another "
+                  "exception occurred:\n\nTraceback (most recent call last):\n"
+                  "news.news_agent.ClaudeAPIError: Anthropic account has insufficient credit balance "
+                  "(Original error: Your " + CREDIT_MESSAGE + " to access the Anthropic API.)\n",
+                  when=time.mktime((2026, 10, 13, 8, 30, 0, 0, 0, -1)))
+        self._state("portfolio_c/portfolio.json", when=time.mktime((2026, 10, 11, 8, 30, 0, 0, 0, -1)))
+        self.assertTrue(check(self.state, self.logs)["blocked"])
+
     def test_every_ai_book_is_watched_not_just_pool_g(self):
         for log, state in (("pool_g.log", "pool_g/portfolio.json"),
                            ("portfolio_b.log", "portfolio_b/portfolio.json"),
