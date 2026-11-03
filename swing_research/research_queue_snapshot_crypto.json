@@ -3,9 +3,9 @@
     "key": "crypto_short_term_reversal",
     "name": "Short-Term Reversal (Crypto)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 6.388981481481482e-06,
     "horizon_lane": "crypto"
   }
 }
