@@ -322,6 +322,16 @@ PAPER_US_STRATEGIES = {
                                       _ranked("compute_volume_shock_percentile_ranks", "volume_shock_percentile")),
     "us_max_effect": (_cls("max_effect", "MaxEffectStrategy"),
                       _ranked("compute_max_effect_percentile_ranks", "max_effect_percentile")),
+    # Unlike every other entry here, this strategy has no cross-sectional percentile at all -- the
+    # extra-columns fn is the SAME compute_monthly_eligibility() the research wrapper
+    # (run_turn_of_month_us_experiment) passes to the backtest, not a renamed percentile, per-month
+    # eligibility column, same column name ("eligible_this_month"), required because this dict's own
+    # shape (unlike PAPER_TRADING_STRATEGY_SPECS's Optional compute_extra_columns_fn) always needs a
+    # callable -- see test_strategy_catalog.py's test_us_and_crypto_paper_entries_build_and_reach_their_pools.
+    "us_turn_of_month": (_cls("turn_of_month", "TurnOfMonthStrategy"),
+                        lambda data: __import__(
+                            "swing_research.strategies.turn_of_month", fromlist=["compute_monthly_eligibility"]
+                        ).compute_monthly_eligibility(data)),
 }
 
 # strategy_key -> (strategy factory, symbols getter, extra-columns fn) -- run_pool_e.py's shape, with
