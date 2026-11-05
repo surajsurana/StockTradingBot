@@ -3,9 +3,9 @@
     "key": "us_turn_of_month",
     "name": "Turn-of-the-Month Effect (US)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 1.1444525462962963e-05,
     "horizon_lane": "swing"
   }
 }
