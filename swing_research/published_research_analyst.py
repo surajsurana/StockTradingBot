@@ -686,6 +686,44 @@ TURN_OF_MONTH = PublishedStrategy(
 )
 
 
+TURN_OF_MONTH_US = PublishedStrategy(
+    name="Turn-of-the-Month Effect (US)",
+    source_citation=TURN_OF_MONTH.source_citation,
+    mechanism=TURN_OF_MONTH.mechanism,
+    rules=TURN_OF_MONTH.rules,
+    variant_chosen=TURN_OF_MONTH.variant_chosen,
+    scope_reductions=(
+        "Same per-symbol application, same per-month combined-rank diversification fix "
+        "(ELIGIBLE_PER_MONTH=40), same row-position-based 3-trading-day exit, same protective "
+        "stop-loss (8%) and position sizing (1% risk/unit) as the India version (see "
+        "TURN_OF_MONTH above for the full reasoning) -- unchanged, none of it is India-specific. "
+        "Long-only: this codebase has no short-selling infrastructure for ANY market yet (not an "
+        "NSE-specific gap -- the constraint is this codebase's own execution layer, not the "
+        "exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS/paper-trading verdict. Ariel (1987)'s own "
+        "sample is US, so this test is arguably closer to the paper's own native market than the "
+        "India application ever was -- but UNLIKE the Minervini and Cross-Sectional Momentum US "
+        "ports, that proximity doesn't raise this candidate's research value: the signal is a "
+        "pure calendar date with no per-symbol selection criterion at all, so a US result mostly "
+        "confirms or denies post-publication decay rather than teaching this program anything "
+        "mechanistically new -- exactly why the roadmap's own research_value_score for this "
+        "candidate (6) is the lowest of the six despite its operational_simplicity_score (9) "
+        "being the highest. A REJECT here (US calendar anomalies are the canonical "
+        "data-mining concern in this literature, and this one has been publicly known and "
+        "tradeable for nearly four decades) would be an expected, useful result, not a surprise."
+    ),
+    assumptions_impact=(
+        TURN_OF_MONTH.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here."
+    ),
+)
+
+
 IDIOSYNCRATIC_VOLATILITY_ANOMALY = PublishedStrategy(
     name="Idiosyncratic Volatility Anomaly",
     source_citation=(

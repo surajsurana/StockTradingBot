@@ -72,6 +72,10 @@ RUNNERS = {
         lambda: _director().run_max_effect_us_experiment,
         "MAX Effect (Lottery-Demand Anomaly), US variant (the unmodified India Strategy class "
         "against the frozen S&P 500 universe)"),
+    "us_turn_of_month": (
+        lambda: _director().run_turn_of_month_us_experiment,
+        "Turn-of-the-Month Effect, US variant (the unmodified India Strategy class and "
+        "per-month combined-rank diversification fix, against the frozen S&P 500 universe)"),
 }
 
 

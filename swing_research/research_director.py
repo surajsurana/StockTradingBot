@@ -904,6 +904,53 @@ def run_max_effect_us_experiment(data: dict, start_date: date, end_date: date,
     )
 
 
+def run_turn_of_month_us_experiment(data: dict, start_date: date, end_date: date,
+                                     starting_capital: float = 100_000, n_walk_forward_windows: int = 3,
+                                     narrative_api_key: str = "", narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                     experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                     knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                     skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to run_turn_of_month_experiment() -- the EXACT SAME Strategy class
+    (TurnOfMonthStrategy) and the EXACT SAME per-month combined-rank diversification fix
+    (compute_monthly_eligibility()), unmodified, against US equity `data` (S&P 500 universe,
+    swing_research/universe_us.py) instead of NSE data. See run_minervini_us_experiment()'s own
+    docstring for the full reasoning (identical pattern, different strategy). Ariel (1987)'s own
+    sample is US, so this is closer to the paper's native market than the India application ever
+    was -- but see published_research_analyst.TURN_OF_MONTH_US's own distinctiveness note for why
+    that proximity doesn't raise this candidate's research value (the signal is a pure calendar
+    date, not a mechanism that gains new information from being tested in a different market).
+
+    `starting_capital` defaults to 100,000 (US dollars, not rupees -- this is only the backtest's
+    internal position-sizing capital, unrelated to whatever capital a later paper pool is
+    actually seeded with).
+    """
+    from swing_research.strategies.turn_of_month import (
+        ELIGIBLE_PER_MONTH, TurnOfMonthStrategy, compute_monthly_eligibility,
+    )
+    from swing_research.published_research_analyst import TURN_OF_MONTH_US
+
+    eligibility_columns = compute_monthly_eligibility(data)
+
+    strategy = TurnOfMonthStrategy()
+    return run_generic_swing_experiment(
+        strategy, TURN_OF_MONTH_US, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        extra_columns_by_symbol=eligibility_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "turn_of_month_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "turn_of_month_stop_loss_pct": 0.08,
+            "turn_of_month_exit_lag_trading_days": 3,
+            "turn_of_month_no_cross_sectional_selection": True,
+            "turn_of_month_percentile_based_early_exit": False,
+            "turn_of_month_eligible_per_month": ELIGIBLE_PER_MONTH,
+            "turn_of_month_market": "US",
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,
