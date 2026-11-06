@@ -679,6 +679,66 @@ class TestBuildDashboardState(unittest.TestCase):
         self.assertEqual(gate["days"], 147)                     # from the EARLIEST book's own start
         self.assertTrue(gate["eligible"], gate["reasons"])
 
+    def _books(self, key, books):
+        root = tempfile.mkdtemp()
+        for pool_dir, count, pnl in books:
+            book = os.path.join(root, pool_dir, key)
+            os.makedirs(book)
+            with open(os.path.join(book, "trades.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(count):
+                    f.write(json.dumps({"entry_date": "2026-01-05", "pnl": pnl}) + chr(10))
+        return root
+
+    def test_promotion_judges_only_books_that_can_go_live(self):
+        """2026-11-06: SW-008 read Qualified on profit that came entirely from Pools A2/A3, while A
+        and F -- the only books that can go live -- were losing. Promotion now ignores the
+        comparison books; retirement, which asks whether to run the strategy at all, still counts them."""
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        record = StrategyRecord(strategy_key="carried", display_name="Carried", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        root = self._books("carried", [("paper_trading", 15, -10.0), ("pool_f", 15, -10.0),
+                                       ("pool_a2", 10, 100.0), ("pool_a3", 10, 100.0)])
+        self.assertTrue(pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))["eligible"])
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1), live_books_only=True)
+        self.assertEqual(gate["trades"], 30)
+        self.assertFalse(gate["eligible"])
+        self.assertIn("Gate E", " ".join(gate["reasons"]))
+
+    def test_promoting_one_pool_judges_that_pool_alone(self):
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        record = StrategyRecord(strategy_key="split", display_name="Split", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        root = self._books("split", [("paper_trading", 25, -10.0), ("pool_f", 25, 20.0)])
+        now = datetime(2026, 6, 1)
+        self.assertFalse(pilot_gate_for_key(record, root, now=now, pool="A", live_books_only=True)["eligible"])
+        f = pilot_gate_for_key(record, root, now=now, pool="F", live_books_only=True)
+        self.assertEqual(f["trades"], 25)
+        self.assertTrue(f["eligible"], f["reasons"])
+
+    def test_the_page_gate_is_the_best_live_able_pool_on_its_own_net(self):
+        from dashboard.state_view import attach_promotion_score
+        gate = lambda: {"eligible": True, "state": "qualified", "reasons": [], "allocation_pct": 5.0,
+                        "days": 70, "trades": 120, "backtest_impossible": False}
+        row = {"verdict": "PASS", "net": {"net": 6000.0},
+               "pools_breakdown": [{"pool": "Pool A", "net": -5000.0}, {"pool": "Pool F", "net": -4400.0},
+                                   {"pool": "Pool A2", "net": 5900.0}, {"pool": "Pool A3", "net": 9500.0}],
+               "pilot": {**gate(), "pools": {"Pool A": gate(), "Pool F": gate()}}}
+        attach_promotion_score([row])
+        p = row["pilot"]
+        self.assertEqual(p["state"], "not_qualified")
+        self.assertFalse(p["eligible"])
+        self.assertTrue(all(x.startswith("Pool ") for x in p["reasons"]), p["reasons"])
+        self.assertEqual(set(p["pools"]), {"Pool A", "Pool F"})
+        row["pools_breakdown"][1]["net"] = 1200.0             # Pool F turns a profit
+        row["pilot"] = {**gate(), "pools": {"Pool A": gate(), "Pool F": gate()}}
+        attach_promotion_score([row])
+        self.assertEqual((row["pilot"]["state"], row["pilot"]["pool"]), ("qualified", "Pool F"))
+        self.assertEqual(row["pilot"]["pools"]["Pool A"]["state"], "not_qualified")
+
     def test_a_losing_book_is_not_eligible_for_real_money(self):
         """GATE E, which LIVE_PROMOTION_CRITERIA.md has always required and the promote endpoint
         never checked. A strategy past both floors with a PASS verdict could lose money for months

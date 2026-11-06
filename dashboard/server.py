@@ -975,7 +975,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raise ValueError(f"{key or 'that strategy'} is not in the deployment registry.")
 
                 if target == "PILOT_LIVE":
-                    gate = pilot_gate_for_key(record, STATE_DIR)
+                    # The gate of the book that would go live -- that pool alone when one was
+                    # chosen, and never the comparison books (A2/A3, I2/I3), which cannot go live.
+                    gate = pilot_gate_for_key(record, STATE_DIR, pool=pool or None, live_books_only=True)
                     evidence = (f"verdict {getattr(record.research_verdict, 'value', record.research_verdict)}, "
                                 f"{gate['days']} paper days, {gate['trades']} closed trades")
                     which = f" Pool {pool} is the live book." if pool else ""

@@ -3345,6 +3345,7 @@ function poolRows(r){
   const pb = r.pools_breakdown || [];
   if(pb.length < 2) return [r];
   return pb.map((p, i) => ({...r, row_id: r.key + "|" + p.pool, pool_row: p, pool_count: pb.length, first_pool: i === 0,
+    pilot: ((r.pilot || {}).pools || {})[p.pool] || null,   // each pool's own gate; none for a comparison book
     pool: p.pool, capital: p.capital, pnl: p.pnl, started: p.started, closed_trades: p.closed_trades, wins: p.wins,
     net: p.net == null ? null : {net: p.net, pool_only: true}, pools_breakdown: []}));
 }

@@ -35,6 +35,13 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": 
 # Rs.3,00,000 books (2026-10-19). Matched by exact code, never by prefix: "A1" is the unrelated
 # legacy books, which the dashboard does not show at all.
 PER_STRATEGY_POOLS = ("A", "F", "A2", "A3")
+# Books that can never be the live one, so they say nothing about whether a strategy can go live:
+# A2/A3 and I2/I3 run the same strategies on more paper money, for comparison, and paper_trading_legacy
+# is the retired A1 books. On 2026-11-06 SW-008 read "Qualified" on +Rs6,042 that came entirely from
+# A2/A3 -- eight trades each, two weeks old, mostly open -- while Pools A and F, the only books that
+# can go live, were down Rs4,999 and Rs4,377 over 319 closed trades.
+COMPARISON_POOLS = ("Pool A2", "Pool A3", "Pool I2", "Pool I3")
+NOT_LIVE_BOOK_DIRS = ("pool_a2", "pool_a3", "pool_i2", "pool_i3", "paper_trading_legacy")
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -711,7 +718,18 @@ def _pilot_gate(record, started: Optional[str], closed_trades: Optional[int], no
             "backtest_impossible": backtest_is_impossible(record)}
 
 
-def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None) -> dict:
+def _pool_gates(gate: dict, record, pools_breakdown: list, started: Optional[str],
+                now: Optional[datetime]) -> dict:
+    """Adds one gate per live-able pool when a strategy runs in more than one book. Gate E for each
+    is folded in later by attach_promotion_score, once each pool's net of costs is known."""
+    if len(pools_breakdown or []) > 1:
+        gate["pools"] = {p["pool"]: _pilot_gate(record, p.get("started") or started, p.get("closed_trades"), now)
+                         for p in pools_breakdown if p.get("pool") not in COMPARISON_POOLS}
+    return gate
+
+
+def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None, pool: Optional[str] = None,
+                       live_books_only: bool = False) -> dict:
     """The same automated gate as _pilot_gate, recomputed for ONE strategy from the registry and that
     strategy's own paper books on disk.
 
@@ -722,10 +740,19 @@ def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None) -
 
     Every pool keeps its books at <state_dir>/<pool_dir>/<strategy_key>/, so one glob finds them all.
     The live book is at <state_dir>/live/paper_trading/<key> -- a level deeper, so it does not match
-    here, which is what we want: the gate is about the PAPER record."""
+    here, which is what we want: the gate is about the PAPER record.
+
+    PROMOTION asks about the book that would go live, so it passes `live_books_only` (the comparison
+    and legacy books do not count) and, when one was chosen, `pool` ("A", "F"): that book alone.
+    RETIREMENT asks whether the strategy is worth running at all, and keeps the default: every book."""
     import glob as _glob
     trades, starts, gross = 0, [], 0.0
     for book_dir in _glob.glob(os.path.join(state_dir, "*", record.strategy_key)):
+        book_root = os.path.basename(os.path.dirname(book_dir))
+        if live_books_only and book_root in NOT_LIVE_BOOK_DIRS:
+            continue
+        if pool and book_root != POOL_DIRS.get(pool):
+            continue
         book_trades = _read_jsonl(os.path.join(book_dir, "trades.jsonl"))
         trades += len(book_trades)
         gross += sum(float(t.get("pnl") or 0) for t in book_trades)
@@ -924,6 +951,27 @@ def attach_promotion_score(strategy_rows: list) -> None:
         # it evaluates every other gate and leaves this one out; re-deciding it now is what stops a
         # losing strategy reading as eligible for real capital.
         _apply_gate_e(pilot, row)
+        if pilot.get("pools"):
+            net_of = {p.get("pool"): p.get("net") for p in row.get("pools_breakdown") or []}
+            for label, gate in pilot["pools"].items():
+                net = None if net_of.get(label) is None else {"net": net_of[label]}
+                gate.update(promotion_score(gate, net, row.get("verdict", "")))
+                _apply_gate_e(gate, {"net": net})
+            _adopt_best_pool(pilot)
+
+
+def _adopt_best_pool(pilot: dict) -> None:
+    """A strategy in more than one live-able pool is as ready as its best such pool, judged on that
+    pool's own days, trades and net -- never on the pools added together, which let a comparison
+    book's profit carry a losing live-able one."""
+    rank = {"qualified": 2, "waiting": 1}
+    label, best = max(pilot["pools"].items(),
+                      key=lambda kv: (rank.get(kv[1].get("state"), 0), kv[1].get("score") or 0))
+    for k in ("eligible", "state", "days", "trades", "score", "parts", "blocked"):
+        if k in best:
+            pilot[k] = best[k]
+    pilot["reasons"] = [f"{label}: {x}" for x in best.get("reasons") or []]
+    pilot["pool"] = label
 
 
 def _apply_gate_e(pilot: dict, row: dict) -> None:
@@ -1492,7 +1540,7 @@ def strategies_view(registry_records: list, pool_d_strategy: str, pool_f_keys: O
         rows.append({"key": r.strategy_key, "sid": getattr(r, "strategy_id", ""), "name": r.display_name, "pool": pool,
                      # which of its books is the live one, for a strategy that runs in two
                      "live_pool": getattr(r, "live_pool", "") or "",
-                     "pilot": _pilot_gate(r, started, closed_trades, now),
+                     "pilot": _pool_gates(_pilot_gate(r, started, closed_trades, now), r, pools_breakdown, started, now),
                      "type": kind, "verdict": str(getattr(r.research_verdict, "value", r.research_verdict)).split(".")[-1],
                      "status": status, "experiment": exp, "brief": brief, "capital": capital, "pnl": pnl,
                      "started": started, "closed_trades": closed_trades, "wins": wins,
