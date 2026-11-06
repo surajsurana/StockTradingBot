@@ -41,7 +41,7 @@ from swing_research.broker_costs import FLOOR_ROUND_UP_TOLERANCE, min_viable_not
 from deployment.base import DeploymentStatus
 from deployment.deployment_manager import list_strategies
 from deployment.live_allocations import allocation_for
-from deployment.settings import STATE_DIR
+from deployment.settings import STATE_DIR, pool_a_subpool_capital
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
 
 LIVE_STATE_DIR = os.path.join(STATE_DIR, "live", "paper_trading")
@@ -90,9 +90,15 @@ def intended_orders(result: dict) -> list:
 # The pools a strategy can be promoted INTO, and what makes each one that pool. A pool is not a
 # folder: Pool F is Pool A's strategy with half the position booked at +5% and the stop moved to
 # entry, so running "Pool F live" means running that, not Pool A's book under another name.
+#
+# A2 and A3 are Pool A's method on 2x and 3x the money, and size off that money (sizing_capital_cap):
+# a Rs3,00,000 live book run with Pool A's Rs1,00,000 cap would be Pool A at a third of its size, not
+# the book whose record earned the promotion. Promotable since 2026-11-06, each judged on its own book.
 POOL_VARIANTS = {
     "A": {"dirname": "paper_trading", "partial": False},
     "F": {"dirname": "pool_f", "partial": True},
+    "A2": {"dirname": "pool_a2", "partial": False, "cap": pool_a_subpool_capital("pool_a2")},
+    "A3": {"dirname": "pool_a3", "partial": False, "cap": pool_a_subpool_capital("pool_a3")},
 }
 
 
@@ -112,7 +118,7 @@ def _engine_plan(strategy_key: str, live_pool: str = ""):
         if variant is not None:
             from run_pool_f import PARTIAL_BOOKING
             return {"factory": spec.strategy_factory, "extra_fn": spec.compute_extra_columns_fn,
-                    "dirname": variant["dirname"], "execution": None, "cap": None,
+                    "dirname": variant["dirname"], "execution": None, "cap": variant.get("cap"),
                     "min_value": min_viable_notional(),
                     # Pool F is watch-only: it keeps the plain skip under the minimum trade size.
                     "round_up": 0.0 if variant["partial"] else FLOOR_ROUND_UP_TOLERANCE,

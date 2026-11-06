@@ -2406,10 +2406,10 @@ const poolCode = label => (String(label || "").match(/Pool\s+([A-Z0-9]+)/) || []
 const poolPromoteBtn = (p, r) => {
   const code = poolCode(p.pool);
   if(!code || !r) return "";
-  // Pools A2/A3 and I2/I3 are the same strategies on more paper money -- a comparison, never a live
-  // book (the server refuses them too; this just does not offer a button that can only fail).
-  if(["A2", "A3", "I2", "I3"].includes(code))
-    return `<span class="note" title="${esc(p.pool)} runs the same strategy on more paper money, to compare; it is not a pool that goes live.">—</span>`;
+  // Pools I2/I3 have no live path yet (the server refuses them too; this just does not offer a
+  // button that can only fail). A2/A3 can go live, each on its own record, at its own size.
+  if(["I2", "I3"].includes(code))
+    return `<span class="note" title="${esc(p.pool)} runs the same strategy on more paper money; there is no live path for it yet.">—</span>`;
   const live = liveState(r.status) === "Live";
   const isThisOne = (r.live_pool || "") === code;
   if(live)

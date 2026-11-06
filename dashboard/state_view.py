@@ -35,13 +35,13 @@ POOL_LABELS = {"A": "Pool A", "B": "Pool B", "C": "Pool C", "D": "Pool D", "E": 
 # Rs.3,00,000 books (2026-10-19). Matched by exact code, never by prefix: "A1" is the unrelated
 # legacy books, which the dashboard does not show at all.
 PER_STRATEGY_POOLS = ("A", "F", "A2", "A3")
-# Books that can never be the live one, so they say nothing about whether a strategy can go live:
-# A2/A3 and I2/I3 run the same strategies on more paper money, for comparison, and paper_trading_legacy
-# is the retired A1 books. On 2026-11-06 SW-008 read "Qualified" on +Rs6,042 that came entirely from
-# A2/A3 -- eight trades each, two weeks old, mostly open -- while Pools A and F, the only books that
-# can go live, were down Rs4,999 and Rs4,377 over 319 closed trades.
-COMPARISON_POOLS = ("Pool A2", "Pool A3", "Pool I2", "Pool I3")
-NOT_LIVE_BOOK_DIRS = ("pool_a2", "pool_a3", "pool_i2", "pool_i3", "paper_trading_legacy")
+# EACH BOOK IS JUDGED ON ITS OWN. A book is evidence for one size of capital -- the fixed DP charge
+# and whole-share rounding weigh differently on Rs1L and Rs3L -- so books are never added together
+# for the live gate. On 2026-11-06 SW-008 read "Qualified" on +Rs6,042 that came entirely from A2/A3
+# (eight trades each, mostly open) while Pools A and F were down Rs4,999 and Rs4,377 over 319 trades.
+# I2/I3 have no live path yet and paper_trading_legacy is the retired A1 books: never live-able.
+COMPARISON_POOLS = ("Pool I2", "Pool I3")
+NOT_LIVE_BOOK_DIRS = ("pool_i2", "pool_i3", "paper_trading_legacy")
 
 # ----------------------------------------------------------------------------
 # Static: the agent team and the pipelines. Kept as data so the page can
@@ -746,6 +746,10 @@ def pilot_gate_for_key(record, state_dir: str, now: Optional[datetime] = None, p
     and legacy books do not count) and, when one was chosen, `pool` ("A", "F"): that book alone.
     RETIREMENT asks whether the strategy is worth running at all, and keeps the default: every book."""
     import glob as _glob
+    # No pool chosen is the runner's default book, Pool A, wherever the strategy has one -- the same
+    # resolution run_pool_live._engine_plan makes -- so it is never several books added together.
+    if live_books_only and not pool and os.path.isdir(os.path.join(state_dir, POOL_DIRS["A"], record.strategy_key)):
+        pool = "A"
     trades, starts, gross = 0, [], 0.0
     for book_dir in _glob.glob(os.path.join(state_dir, "*", record.strategy_key)):
         book_root = os.path.basename(os.path.dirname(book_dir))

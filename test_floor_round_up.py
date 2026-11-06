@@ -172,6 +172,19 @@ class TestWhereItApplies(unittest.TestCase):
         self.assertEqual(_engine_plan(key, "F")["round_up"], 0.0)
         self.assertEqual(_engine_plan(key)["round_up"], FLOOR_ROUND_UP_TOLERANCE)
 
+    def test_live_a2_and_a3_run_pool_a_s_method_at_their_own_size(self):
+        """Their paper books size off Rs2L/Rs3L; a live A3 sized off Pool A's Rs1L cap would be a
+        different book from the one whose record earned the promotion."""
+        from run_pool_live import _engine_plan
+        from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
+        key = PAPER_TRADING_STRATEGY_SPECS[0].strategy_key
+        for code, dirname, cap in (("A2", "pool_a2", 200000.0), ("A3", "pool_a3", 300000.0)):
+            plan = _engine_plan(key, code)
+            self.assertEqual((plan["dirname"], plan["cap"]), (dirname, cap))
+            self.assertEqual(plan["round_up"], FLOOR_ROUND_UP_TOLERANCE)
+            self.assertIsNone(plan["partial_booking"])
+        self.assertIsNone(_engine_plan(key, "A")["cap"])         # Pool A keeps the engine default
+
     def test_the_paper_engine_defaults_to_the_plain_skip(self):
         from deployment.paper_trading_engine import run_daily
         self.assertEqual(inspect.signature(run_daily).parameters["floor_round_up"].default, 0.0)

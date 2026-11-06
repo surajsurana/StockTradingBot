@@ -689,22 +689,37 @@ class TestBuildDashboardState(unittest.TestCase):
                     f.write(json.dumps({"entry_date": "2026-01-05", "pnl": pnl}) + chr(10))
         return root
 
-    def test_promotion_judges_only_books_that_can_go_live(self):
+    def test_promotion_judges_one_book_never_the_books_added_together(self):
         """2026-11-06: SW-008 read Qualified on profit that came entirely from Pools A2/A3, while A
-        and F -- the only books that can go live -- were losing. Promotion now ignores the
-        comparison books; retirement, which asks whether to run the strategy at all, still counts them."""
+        and F were losing. Each book is evidence for its own size of capital, so promotion judges the
+        chosen book alone (Pool A, the runner's default, when none is chosen); retirement, which asks
+        whether to run the strategy at all, still counts every book."""
         from dashboard.state_view import pilot_gate_for_key
         from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
         record = StrategyRecord(strategy_key="carried", display_name="Carried", strategy_family="fam",
                                 research_verdict=ResearchVerdict.PASS,
                                 deployment_status=DeploymentStatus.PAPER_TRADING)
-        root = self._books("carried", [("paper_trading", 15, -10.0), ("pool_f", 15, -10.0),
+        root = self._books("carried", [("paper_trading", 25, -10.0), ("pool_f", 15, -10.0),
                                        ("pool_a2", 10, 100.0), ("pool_a3", 10, 100.0)])
         self.assertTrue(pilot_gate_for_key(record, root, now=datetime(2026, 6, 1))["eligible"])
         gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1), live_books_only=True)
-        self.assertEqual(gate["trades"], 30)
+        self.assertEqual(gate["trades"], 25)                    # Pool A alone
         self.assertFalse(gate["eligible"])
         self.assertIn("Gate E", " ".join(gate["reasons"]))
+        a3 = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1), pool="A3", live_books_only=True)
+        self.assertEqual(a3["trades"], 10)                      # A3 on its own record: short of 20
+        self.assertEqual(a3["state"], "waiting")
+
+    def test_comparison_and_legacy_books_without_a_live_path_never_count(self):
+        from dashboard.state_view import pilot_gate_for_key
+        from deployment.base import DeploymentStatus, ResearchVerdict, StrategyRecord
+        record = StrategyRecord(strategy_key="usx", display_name="US", strategy_family="fam",
+                                research_verdict=ResearchVerdict.PASS,
+                                deployment_status=DeploymentStatus.PAPER_TRADING)
+        root = self._books("usx", [("pool_i", 5, -10.0), ("pool_i2", 30, 50.0),
+                                   ("paper_trading_legacy", 30, 50.0)])
+        gate = pilot_gate_for_key(record, root, now=datetime(2026, 6, 1), live_books_only=True)
+        self.assertEqual(gate["trades"], 5)
 
     def test_promoting_one_pool_judges_that_pool_alone(self):
         from dashboard.state_view import pilot_gate_for_key
