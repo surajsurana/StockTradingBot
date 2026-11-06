@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "us_turn_of_month",
-    "name": "Turn-of-the-Month Effect (US)",
+    "key": "us_overnight_return_anomaly",
+    "name": "Overnight Return Anomaly (US)",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "stale": false,
-    "claimed_days_ago": 1.000042825324074,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
