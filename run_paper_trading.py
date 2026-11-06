@@ -101,7 +101,7 @@ from reporting.telegram_templates import format_daily_summary, format_execution_
 
 import deployment.capital_winddown as _cwd
 import deployment.paper_trading_engine as _pte
-from deployment.base import DeploymentStatus, is_pool_a_record
+from deployment.base import RUNS_PAPER_BOOKS, is_pool_a_record
 from deployment.capital_winddown import apply_capital_winddown, cumulative_withdrawn_up_to
 from deployment.daily_details_store import save_detail
 from deployment.deployment_manager import get_strategy, list_strategies
@@ -172,9 +172,9 @@ POOL_A_SUBPOOLS = {"Pool A2": "pool_a2", "Pool A3": "pool_a3"}
 
 
 def _subpools_apply(strategy_key: str) -> bool:
-    """Pool F's rule: a book only for a strategy the registry has at PAPER_TRADING, in Pool A's family."""
+    """Pool A's rule: a book for a strategy the registry has paper trading or live, in Pool A's family."""
     record = get_strategy(strategy_key)
-    return (record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING
+    return (record is not None and record.deployment_status in RUNS_PAPER_BOOKS
             and is_pool_a_record(record))
 
 
@@ -734,8 +734,7 @@ def main():
     if args.resolve_at_open:
         active_keys = [r.strategy_key for r in list_strategies()
                        if r.strategy_key in _STRATEGY_FACTORIES
-                       and r.deployment_status in (DeploymentStatus.PAPER_TRADING, DeploymentStatus.PILOT_LIVE,
-                                                     DeploymentStatus.PRODUCTION)]
+                       and r.deployment_status in RUNS_PAPER_BOOKS]
         for strategy_key in active_keys:
             _resolve_at_open_one(strategy_key)
     elif args.all_due:

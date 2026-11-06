@@ -86,6 +86,14 @@ def is_crypto_record(record) -> bool:
 POOL_A_STRATEGY_FAMILY_PREFIX = "swing_research"
 
 
+# THE STATUSES WHOSE PAPER BOOKS KEEP RUNNING. Going live does not end the paper record: the paper
+# books are the control the live book is compared against, and the 1x/2x/3x books are how you learn
+# which size of capital the strategy pays at. Before 2026-11-06 only Pool A used this rule; Pool F
+# and A2/A3 ran PAPER_TRADING alone, so SW-016's Pool F paper book -- the twin of its live book --
+# had stopped on 2026-10-07, the day it was promoted, and it never got A2/A3 books at all.
+RUNS_PAPER_BOOKS = (DeploymentStatus.PAPER_TRADING, DeploymentStatus.PILOT_LIVE, DeploymentStatus.PRODUCTION)
+
+
 def is_pool_a_record(record) -> bool:
     """A registry record that gets a Pool A book when PAPER_TRADING: the
     swing_research families only. Crypto strategies (Pool E), the AI

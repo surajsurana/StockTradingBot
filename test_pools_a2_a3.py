@@ -201,8 +201,14 @@ class TestEndOfDayEngineCalls(_TempState):
         self.assertEqual([c[0] for c in self.calls], ["paper_trading", "pool_a2", "pool_a3"])
         self.assertEqual({w[0] for w in self.winddowns}, {"pool_a2", "pool_a3"})
 
-    def test_only_paper_trading_strategies_get_sub_pool_books(self):
+    def test_a_live_strategy_keeps_all_three_paper_books(self):
+        """Its paper books are the control for the live book, and the 1x/2x/3x books are how you
+        learn which size of capital it pays at (SW-016, 2026-11-06)."""
         self._run(record=_record(status=DeploymentStatus.PILOT_LIVE))
+        self.assertEqual([c[0] for c in self.calls], ["paper_trading", "pool_a2", "pool_a3"])
+
+    def test_a_retired_strategy_gets_no_sub_pool_books(self):
+        self._run(record=_record(status=DeploymentStatus.ARCHIVED))
         self.assertEqual([c[0] for c in self.calls], ["paper_trading"])
         self.assertFalse(os.path.exists(os.path.join(self.root, "pool_a2")))
 

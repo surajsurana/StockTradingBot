@@ -125,3 +125,33 @@ class TestPoolFReporting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWhichStrategiesPoolFRuns(unittest.TestCase):
+    """A strategy that goes live keeps its Pool F paper book -- the control its live book is
+    compared against. SW-016's had stopped on 2026-10-07, the day it was promoted."""
+
+    def _keys(self, status):
+        from unittest.mock import patch
+
+        import run_pool_f
+        from deployment.base import DeploymentStatus
+        from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
+
+        spec = PAPER_TRADING_STRATEGY_SPECS[0]
+
+        class _Rec:
+            strategy_family = "swing_research"
+            deployment_status = getattr(DeploymentStatus, status)
+
+        with patch.object(run_pool_f, "get_strategy",
+                          side_effect=lambda k: _Rec() if k == spec.strategy_key else None):
+            return spec.strategy_key in run_pool_f.pool_f_strategy_keys()
+
+    def test_paper_and_live_strategies_keep_their_pool_f_book(self):
+        for status in ("PAPER_TRADING", "PILOT_LIVE", "PRODUCTION"):
+            self.assertTrue(self._keys(status), status)
+
+    def test_retired_and_research_strategies_do_not(self):
+        for status in ("ARCHIVED", "RESEARCH"):
+            self.assertFalse(self._keys(status), status)

@@ -34,7 +34,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import deployment.paper_trading_engine as pte
 from data.fetch_historical import fetch_all
-from deployment.base import DeploymentStatus, is_pool_a_record
+from deployment.base import RUNS_PAPER_BOOKS, is_pool_a_record
 from deployment.deployment_manager import get_strategy
 from deployment.settings import STATE_DIR
 from swing_research.strategy_catalog import PAPER_TRADING_STRATEGY_SPECS
@@ -49,19 +49,19 @@ _SPECS_BY_KEY = {spec.strategy_key: spec for spec in PAPER_TRADING_STRATEGY_SPEC
 
 
 def pool_f_strategy_keys() -> list:
-    """Every catalog strategy that is PAPER_TRADING in the registry and is
+    """Every catalog strategy the registry has paper trading or live (RUNS_PAPER_BOOKS) that is
     not a crypto strategy -- i.e. exactly Pool A's active books."""
     keys = []
     for spec in PAPER_TRADING_STRATEGY_SPECS:
         record = get_strategy(spec.strategy_key)
-        if record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING and is_pool_a_record(record):
+        if record is not None and record.deployment_status in RUNS_PAPER_BOOKS and is_pool_a_record(record):
             keys.append(spec.strategy_key)
     return keys
 
 
 def _pead_active() -> bool:
     record = get_strategy(PEAD_KEY)
-    return record is not None and record.deployment_status == DeploymentStatus.PAPER_TRADING
+    return record is not None and record.deployment_status in RUNS_PAPER_BOOKS
 
 
 def _execution_config(spec) -> pte.ExecutionRealismConfig:

@@ -1971,8 +1971,11 @@ def build_dashboard_state(state_dir: str, logs_dir: str, registry_records: list,
                           research_health: Optional[dict] = None) -> dict:
     now = now or datetime.now()
     today = now.date()
+    # Every strategy whose paper books still run, live ones included (deployment.base.RUNS_PAPER_BOOKS):
+    # a live strategy's paper books are its control, and hiding them hid exactly the comparison.
     active = {r.strategy_key: r.display_name for r in registry_records
-              if str(getattr(r.deployment_status, "value", r.deployment_status)).endswith("PAPER_TRADING")
+              if str(getattr(r.deployment_status, "value", r.deployment_status)).split(".")[-1]
+              in ("PAPER_TRADING", "PILOT_LIVE", "PRODUCTION")
               and is_pool_a_record(r)}
     summary = build_pool_summary(state_dir, active, lambda symbols: {s: prices[s] for s in symbols if s in prices},
                                  today=today, crypto_prices=crypto_prices, usdinr=usdinr)
