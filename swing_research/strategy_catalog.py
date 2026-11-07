@@ -291,6 +291,20 @@ PAPER_TRADING_STRATEGY_SPECS = [
             "swing_research.cross_sectional", fromlist=["compute_nifty_momentum_30_percentile_ranks"]
         ).compute_nifty_momentum_30_percentile_ranks(data), "nifty_momentum_30_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="nifty_alpha_jensens",
+        display_name="Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology)",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.nifty_alpha_jensens", fromlist=["NiftyAlphaJensensStrategy"]
+        ).NiftyAlphaJensensStrategy(),
+        # Needs the Nifty 50 series as the market, exactly as the research runner does -- same
+        # convention as betting_against_beta's own paper wiring above.
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_nifty_alpha_jensens_percentile_ranks"]
+        ).compute_nifty_alpha_jensens_percentile_ranks(
+            data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
+        ), "nifty_alpha_jensens_percentile"),
+    ),
 ]
 
 
@@ -408,6 +422,13 @@ RESEARCH_EXPERIMENT_SPECS = [
         runner_getter=lambda: __import__(
             "swing_research.research_director", fromlist=["run_betting_against_beta_experiment"]
         ).run_betting_against_beta_experiment,
+    ),
+    ResearchExperimentSpec(
+        strategy_key="nifty_alpha_jensens",
+        variant_description="Jensen's Alpha Selection (plain OLS market-model intercept, 1yr lookback, top-decile percentile, 6mo single-vintage, long-only)",
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_nifty_alpha_jensens_experiment"]
+        ).run_nifty_alpha_jensens_experiment,
     ),
     ResearchExperimentSpec(
         strategy_key="amihud_illiquidity",

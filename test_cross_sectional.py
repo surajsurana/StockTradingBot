@@ -20,8 +20,10 @@ from swing_research.cross_sectional import (
     compute_industry_momentum_percentile_ranks,
     compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
+    compute_nifty_alpha_jensens_percentile_ranks, compute_nifty_alpha_jensens_score,
     compute_rs_percentile_ranks, compute_rs_score,
     compute_short_term_reversal_percentile_ranks, compute_short_term_reversal_score,
+    NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS,
 )
 
 
@@ -526,6 +528,92 @@ class TestComputeIdiosyncraticVolatilityPercentileRanks(unittest.TestCase):
         last_date = data["B"].index[-1]
         # B has the lowest idiosyncratic volatility of the four -> rank 1/4 -> 25th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 25.0)
+
+
+# A non-constant NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS-value (252, 1yr) return pattern,
+# deliberately not monotonic, mirroring _MARKET_RETURNS_21's construction above but for
+# Jensen's Alpha's longer regression window.
+_MARKET_RETURNS_252 = [(-0.01 + 0.0001 * i) if i % 2 == 0 else (0.01 - 0.0001 * i)
+                       for i in range(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS)]
+
+
+class TestComputeNiftyAlphaJensensScore(unittest.TestCase):
+    def test_stock_that_exactly_tracks_the_market_has_zero_alpha(self):
+        # stock_r == market_r every day -> OLS beta is exactly 1, OLS intercept (alpha) is
+        # exactly 0 -- the stock earns precisely what its market beta alone would predict.
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        stock_close = _close_from_returns(_MARKET_RETURNS_252)
+        score = compute_nifty_alpha_jensens_score(_ohlcv_from_close(stock_close), market_close)
+        self.assertAlmostEqual(score.iloc[-1], 0.0, places=8)
+
+    def test_score_matches_independent_closed_form_calculation(self):
+        # stock_r = market_r + a constant daily outperformance -> OLS beta stays 1 (added a
+        # constant, not a scaled copy), OLS intercept (alpha) equals that constant exactly --
+        # cross-check against the same mean(r_i) - beta*mean(r_m) identity computed
+        # independently here via plain numpy (not by re-deriving the rolling machinery).
+        outperformance = 0.0015
+        stock_returns = [r + outperformance for r in _MARKET_RETURNS_252]
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        stock_close = _close_from_returns(stock_returns)
+
+        score = compute_nifty_alpha_jensens_score(_ohlcv_from_close(stock_close), market_close)
+
+        rho = np.corrcoef(stock_returns, _MARKET_RETURNS_252)[0, 1]
+        sigma_stock = np.std(stock_returns, ddof=1)
+        sigma_market = np.std(_MARKET_RETURNS_252, ddof=1)
+        beta_ols = rho * (sigma_stock / sigma_market)
+        expected = np.mean(stock_returns) - beta_ols * np.mean(_MARKET_RETURNS_252)
+        self.assertAlmostEqual(score.iloc[-1], expected, places=8)
+        self.assertAlmostEqual(score.iloc[-1], outperformance, places=4)
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        short_returns = _MARKET_RETURNS_252[:10]  # short of the 252-day regression window
+        market_close = _close_from_returns(short_returns)
+        stock_close = _close_from_returns(short_returns)
+        score = compute_nifty_alpha_jensens_score(_ohlcv_from_close(stock_close), market_close)
+        self.assertTrue(pd.isna(score.iloc[-1]))
+
+
+class TestComputeNiftyAlphaJensensPercentileRanks(unittest.TestCase):
+    def _symbol(self, outperformance):
+        returns = [r + outperformance for r in _MARKET_RETURNS_252]
+        return _ohlcv_from_close(_close_from_returns(returns))
+
+    def test_higher_alpha_symbol_ranks_higher(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        data = {
+            "LOW": self._symbol(-0.001),
+            "MID": self._symbol(0.0005),
+            "HIGH": self._symbol(0.002),
+        }
+        ranks = compute_nifty_alpha_jensens_percentile_ranks(data, market_close)
+        last_date = data["LOW"].index[-1]
+        self.assertLess(ranks["LOW"].loc[last_date], ranks["MID"].loc[last_date])
+        self.assertLess(ranks["MID"].loc[last_date], ranks["HIGH"].loc[last_date])
+
+    def test_percentiles_are_between_0_and_100(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        data = {"A": self._symbol(0.0002), "B": self._symbol(0.003),
+                "C": self._symbol(-0.001), "D": self._symbol(0.0015)}
+        ranks = compute_nifty_alpha_jensens_percentile_ranks(data, market_close)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        self.assertEqual(compute_nifty_alpha_jensens_percentile_ranks({}, market_close), {})
+
+    def test_highest_alpha_symbol_lands_at_top_percentile(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        data = {"A": self._symbol(0.0005), "B": self._symbol(0.003),
+                "C": self._symbol(-0.0008), "D": self._symbol(0.0015)}
+        ranks = compute_nifty_alpha_jensens_percentile_ranks(data, market_close)
+        last_date = data["B"].index[-1]
+        # B has the highest Jensen's Alpha of the four -> rank 4/4 -> 100th pct
+        self.assertAlmostEqual(ranks["B"].loc[last_date], 100.0)
 
 
 # A non-constant 30-value return pattern (CRYPTO_IVOL_FORMATION_DAYS), deliberately not

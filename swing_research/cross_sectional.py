@@ -381,6 +381,104 @@ def compute_shrunk_beta_percentile_ranks(data: dict, market_close: pd.Series) ->
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+# 1 year, same length as BETA_LOOKBACK_DAYS and for the IDENTICAL structural
+# reason (see that constant's own comment above): the paper/methodology's own
+# preferred estimation window is not documented here as a short-formation
+# measure, and a multi-year regression window would consume this program's
+# frozen 3-year recent-period check (swing_research/acceptance_criteria.py,
+# RECENT_PERIOD_YEARS=3) with no days left to trade. Betting Against Beta's
+# own known_weaknesses note (research_roadmap.py, key="nifty_alpha_jensens")
+# explicitly flags that this lookback-length tension "would need to be
+# resolved again here before implementation, not assumed solved" -- it is
+# resolved here the SAME way, for the SAME reason, not silently inherited.
+NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS = 252
+
+
+def compute_nifty_alpha_jensens_score(price_history: pd.DataFrame, market_close: pd.Series) -> pd.Series:
+    """
+    Jensen's Alpha -- the INTERCEPT of a single-factor (CAPM/market-model)
+    OLS regression of the stock's daily returns on the market's (Nifty 50)
+    daily returns: r_i = alpha + beta * r_m + residual. Mechanically related
+    to (reuses the same rho x sigma_i/sigma_m beta-estimation algebra as)
+    compute_shrunk_beta_score(), but selects on the regression's INTERCEPT
+    rather than its SLOPE -- see research_roadmap.py's nifty_alpha_jensens
+    CandidateProfile for why this is a genuinely different economic claim
+    from Betting Against Beta, not a restatement of it.
+
+    DISCLOSED DEVIATION FROM compute_shrunk_beta_score(): this uses a PLAIN
+    (unshrunk) OLS beta and PLAIN (non-overlapping) daily returns, not
+    Frazzini-Pedersen's shrink-toward-1.0 estimator or their overlapping-
+    3-day-return thin-trading correction -- those are that OTHER paper's own
+    specific estimator choices, not a general convention for every strategy
+    needing a market-model regression (same reasoning already applied by
+    compute_idiosyncratic_volatility_score()'s own plain-daily-return
+    market-model regression, which this mirrors).
+
+    For a single-regressor OLS, both the slope and intercept have closed
+    forms that avoid running an actual regression (consistent with this
+    module's existing idiosyncratic-volatility closed-form convention):
+        beta_ols  = cov(r_i, r_m) / var(r_m) = rho * (sigma_i / sigma_m)
+        alpha_ols = mean(r_i) - beta_ols * mean(r_m)
+    using PLAIN daily returns (not excess-of-risk-free -- no risk-free-rate
+    time series is integrated anywhere in this platform, same disclosed,
+    negligible-at-daily-frequency simplification as Betting Against Beta's
+    own assumption #4) over the trailing NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS window.
+
+    market_close: the market index's (Nifty 50) own daily Close series,
+    reindexed to price_history's own dates and forward-filled, same
+    alignment convention as compute_shrunk_beta_score() /
+    compute_idiosyncratic_volatility_score(). No .shift() needed before
+    .rolling() -- the value at row i uses only data up to and including row
+    i's own Close, no lookahead.
+    """
+    stock_close = price_history["Close"]
+    aligned_market = market_close.reindex(stock_close.index).ffill()
+
+    stock_r1 = stock_close.pct_change()
+    market_r1 = aligned_market.pct_change()
+
+    rho = stock_r1.rolling(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS).corr(market_r1)
+    sigma_i = stock_r1.rolling(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS).std()
+    sigma_m = market_r1.rolling(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS).std()
+    beta_ols = rho * (sigma_i / sigma_m)
+
+    mean_stock_r = stock_r1.rolling(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS).mean()
+    mean_market_r = market_r1.rolling(NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS).mean()
+
+    return mean_stock_r - beta_ols * mean_market_r
+
+
+def compute_nifty_alpha_jensens_percentile_ranks(data: dict, market_close: pd.Series) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}. market_close: the market
+    index's own daily Close series (see compute_nifty_alpha_jensens_score()).
+
+    Returns {symbol: pd.Series of jensens_alpha_percentile (0-100), indexed
+    by date} -- each symbol's cross-sectional percentile rank, among
+    whatever symbols have a valid (non-NaN) Jensen's Alpha that day, of its
+    own risk-adjusted regression outperformance. HIGH percentile means HIGH
+    alpha (beats what its market beta alone would predict) -- this
+    strategy's entry condition is percentile >=90 (top decile), the same
+    "selects the biggest positive outliers" polarity as
+    compute_nifty_momentum_30_percentile_ranks()'s own top-decile threshold
+    (both are NSE-index-methodology-derived cross-sectional selections).
+    Same vectorized .rank(axis=1, pct=True) construction as every other
+    cross-sectional signal in this module.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_nifty_alpha_jensens_score(df.sort_index(), market_close)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = _percentile_rank_rows(wide)
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 LOOKBACK_52W = 252  # trading days -- same convention as
                      # strategies/minervini_trend_template_filter.py's own LOOKBACK_52W
 

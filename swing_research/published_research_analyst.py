@@ -2034,6 +2034,107 @@ NIFTY_MOMENTUM_30_STYLE = PublishedStrategy(
     ),
 )
 
+NIFTY_ALPHA_JENSENS = PublishedStrategy(
+    name="Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology)",
+    source_citation=(
+        "Nifty Alpha 50 / Nifty200 Alpha 30 Index Methodology (official NSE Indices Limited "
+        "methodology document) -- verified via WebSearch 2026-08-15, per "
+        "swing_research.research_roadmap's own CandidateProfile (key=\"nifty_alpha_jensens\")."
+    ),
+    mechanism=(
+        "Selects and weights stocks by Jensen's Alpha -- the INTERCEPT term of a CAPM-style "
+        "regression of each stock's returns against the market (Nifty), i.e. risk-adjusted "
+        "outperformance NOT explained by market beta. A real, live, institutionally-tracked "
+        "index product, not an academic finding."
+    ),
+    rules=(
+        "Jensen's Alpha = the intercept of a single-factor (CAPM/market-model) regression of each "
+        "stock's returns against the market index's returns. Universe: Nifty 100/200 "
+        "constituents. Selects (and weights) the top stocks by Jensen's Alpha. Semi-annual "
+        "reconstitution."
+    ),
+    variant_chosen=(
+        "A plain (unshrunk) single-factor OLS market-model regression, computed via "
+        "swing_research/cross_sectional.py's compute_jensens_alpha_score() -- selecting on the "
+        "regression's INTERCEPT, which this methodology documents, is a genuinely different "
+        "economic claim from Betting Against Beta's (SW-009, REJECT) SLOPE-based selection, so a "
+        "plain OLS estimator is used rather than BAB's own paper-specific shrink-toward-1.0 "
+        "estimator. Single-vintage holding instead of the index's semi-annual whole-portfolio "
+        "reconstitution -- the same structural adaptation already applied to Cross-Sectional "
+        "Momentum, 52-Week High Momentum and the Nifty200 Momentum 30 methodology, approved for "
+        "the identical underlying reason (see scope_reductions below)."
+    ),
+    scope_reductions=(
+        "LONG ONLY -- a direct restatement of the source's own long-only index construction, not "
+        "a deviation. PLAIN (UNSHRUNK) OLS REGRESSION, not Betting Against Beta's shrink-toward-"
+        "1.0 beta estimator or its overlapping-3-day-return thin-trading correction -- those are "
+        "that OTHER paper's own specific estimator choices, not a general convention for every "
+        "market-model regression in this program (same reasoning already applied by "
+        "Idiosyncratic Volatility's own plain-daily-return market-model regression). REGRESSION "
+        "LOOKBACK SHORTENED TO 1 YEAR (252 trading days, NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS) -- the "
+        "identical structural reason as Betting Against Beta's own approved lookback shortening "
+        "(this program's frozen 3-year recent-period check, swing_research/acceptance_criteria.py "
+        "RECENT_PERIOD_YEARS=3, never modified, cannot absorb a multi-year regression warm-up "
+        "with any days left to trade). The roadmap candidate's own known_weaknesses note "
+        "explicitly flags that this lookback-length tension 'would need to be resolved again here "
+        "before implementation, not assumed solved' -- it is resolved here the SAME way as BAB, "
+        "for the SAME structural reason, deliberately re-examined rather than silently inherited. "
+        "RAW DAILY RETURNS used in place of returns in excess of a risk-free rate for the "
+        "regression (no risk-free-rate time series is integrated anywhere in this platform) -- "
+        "identical, negligible-impact simplification to Betting Against Beta's own assumption #4. "
+        "SINGLE-VINTAGE HOLDING instead of continuous semi-annual rebalancing into overlapping "
+        "positions -- mirrors every prior cross-sectional strategy's own approved deviation. RANK "
+        "THRESHOLD of percentile >=90 (top decile) standing in for the index's own 'top 30-50 of "
+        "100-200' selection. EXIT RULE is ONLY a 126-trading-day time-stop (standing in for the "
+        "~6-month semi-annual cadence) or the synthetic protective stop -- deliberately no "
+        "percentile-based early exit, same discipline as every prior cross-sectional strategy. "
+        "PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE "
+        "ORIGINAL METHODOLOGY AT ALL -- the source is an index construction/weighting methodology "
+        "with no position-level risk management whatsoever. UNIVERSE is whatever universe this "
+        "experiment is run against, with no derivatives-availability or minimum-listing-history "
+        "filter applied."
+    ),
+    distinctiveness=(
+        "Shares computational machinery and the RISK-BASED/regression family with Betting Against "
+        "Beta (SW-009, REJECT) -- not the same signal (intercept, not slope), but enough "
+        "conceptual/methodological overlap that a moderate, not full, diversification credit is "
+        "warranted, per the roadmap candidate's own known_weaknesses. Reuses "
+        "swing_research/cross_sectional.py's existing vectorized .rank(pct=True, axis=1) pattern "
+        "via a new compute_jensens_alpha_percentile_ranks() function, and is the second strategy "
+        "(after Betting Against Beta and Idiosyncratic Volatility) needing an EXTERNAL "
+        "market-index series (Nifty 50 daily closes) as an input to its own cross-sectional "
+        "signal. Its real distinguishing feature is evidentiary TYPE, not mechanism: an audited, "
+        "live, institutionally-tracked index methodology rather than an academic replication -- "
+        "see the roadmap candidate's own evidence_sufficiency_note."
+    ),
+    assumptions_impact=(
+        "Long-only scope: N/A, a direct restatement of the source's own long-only construction. "
+        "Plain OLS regression (vs. BAB's shrink-toward-1.0 estimator): N/A -- selecting on the "
+        "intercept is this methodology's own documented construction, not a simplification of "
+        "BAB's slope-based estimator. Regression lookback shortened to 1 year: MODERATE, "
+        "DIRECTIONALLY UNKNOWN -- a 1-year window is noisier/more regime-reactive than a "
+        "multi-year estimate would be, identical fidelity cost to BAB's own disclosed deviation, "
+        "accepted here for the identical structural reason (this platform's frozen recency gate). "
+        "Raw returns vs. excess-of-risk-free returns: NEGLIGIBLE at daily frequency, standard "
+        "simplification already used elsewhere in this program. Single-vintage holding: "
+        "MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical reasoning to every prior "
+        "cross-sectional strategy's own single-vintage deviation; realizes one entry point's path "
+        "per qualifying episode, with materially higher variance than the index's smoothed, "
+        "diversified multi-stock portfolio. 90th-percentile rank threshold (vs. the index's own "
+        "~top-15-30% selection): MINOR-to-MODERATE, a slightly tighter cutoff erring toward the "
+        "stronger-signal side of the same underlying score. 126-trading-day time-stop exit: N/A, "
+        "a direct analogue of the documented semi-annual cadence. Protective stop-loss (8%) and "
+        "position sizing (1% risk/unit): MODERATE by themselves (standard conventions already used "
+        "elsewhere), but structurally significant in that NEITHER exists in the source at all -- "
+        "the original is an index construction/weighting methodology, not a trading system, and "
+        "has zero position-level risk management. Also disclosed per the roadmap candidate's own "
+        "evidence_sufficiency_note: 'the index exists and has AUM' is a different TYPE of evidence "
+        "than 'a paper found a statistically significant premium' -- a PASS here would show this "
+        "implementation faithfully captures a real, live, audited product's own return "
+        "construction, not that an independent academic study found the same effect."
+    ),
+)
+
 CRYPTO_IDIOSYNCRATIC_VOLATILITY = PublishedStrategy(
     name="Cryptocurrency Idiosyncratic Volatility Factor",
     source_citation=(
