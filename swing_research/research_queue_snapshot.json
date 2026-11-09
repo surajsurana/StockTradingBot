@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "nifty_alpha_jensens",
-    "name": "Jensen's Alpha Selection (Nifty Alpha 50 / Nifty200 Alpha 30 methodology)",
+    "key": "nifty_alpha_low_volatility_30",
+    "name": "Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology)",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "stale": false,
-    "claimed_days_ago": 0.7500252419675926,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
