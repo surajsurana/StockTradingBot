@@ -2000,6 +2000,8 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 const dmy = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
   return m ? `${+m[3]} ${MONTHS[+m[2] - 1]} ${m[1]}` : (iso || "—"); };
 
+// Groww (Pool H) is one row per HOLDING in the ledger; here it is one row per order.
+const orderRows = s => s.pool_h_orders ? [...s.ledger.filter(a => a.pool !== "Pool H"), ...s.pool_h_orders] : s.ledger;
 function renderOrders(s){
   buildOrdersHead();
   markSort(document.getElementById("orders-head"), ORDERS_SORT);
@@ -2014,12 +2016,10 @@ function renderOrders(s){
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
   markFilters(document.getElementById("orders-head"), {status: statusF, symbol: ORDERS_FILTER, pool: poolF, kind: kindF, book: bookF});
   const f = ORDERS_FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.ledger.filter(a => hit(a)
+  const rows = orderRows(s).filter(a => hit(a)
     && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status||"") === statusF))
     && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF) && (!bookF || a.book === bookF)
-  // An open position's order is its BUY, so it shows the real buy date -- the one Live day's Bought on
-  // shows. `date` on synced Groww holdings is the day they were imported, not the day they were bought.
-  ).map(a => a.status === "Open" ? {...a, date: a.bought_on || ""} : a).sort((a,b) => {
+  ).sort((a,b) => {
     const k = ORDERS_SORT.key, x = a[k], y = b[k];
     // same-key ties fall back to date, then time, then symbol -- all descending except symbol,
     // so "latest order first" holds even when the chosen sort column has lots of repeats.
@@ -2027,7 +2027,9 @@ function renderOrders(s){
     if(numeric.has(k)){ const nx = x==null?-Infinity:+x, ny = y==null?-Infinity:+y; return (nx-ny)*ORDERS_SORT.dir || tie; }
     return String(x??"").localeCompare(String(y??""))*ORDERS_SORT.dir || tie;
   });
-  document.getElementById("orders-count").textContent = `${rows.length} of ${s.ledger.length} order${s.ledger.length===1?"":"s"}`;
+  const nAll = orderRows(s).length, thru = s.pool_h_orders_through;
+  document.getElementById("orders-count").textContent = `${rows.length} of ${nAll} order${nAll===1?"":"s"}`
+    + (thru ? ` · Groww orders up to ${dmy(thru)} (from the last order-history download)` : "");
   const sig = JSON.stringify([ORDERS_SORT.key, ORDERS_SORT.dir, f, statusF, poolF, kindF, bookF]);
   if(sig !== ORDERS_LAST_SIG){ ORDERS_PAGE = 1; ORDERS_LAST_SIG = sig; }
   wireOrdersPager();

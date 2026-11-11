@@ -26,15 +26,19 @@ HOW = {"entry": "You decide and place the buys yourself, usually every month fro
        "source": "Real money at Groww, read only. Nothing here places an order."}
 
 
-def fifo(orders: list) -> Tuple[List[dict], Dict[str, list]]:
+def fifo(orders: list, every_lot: Optional[list] = None) -> Tuple[List[dict], Dict[str, list]]:
     """Closed sells (one per day and symbol, matched to the oldest buys) and the lots still open.
-    orders: [date, symbol, "B"/"S", qty, value]. Buys sort before sells on the same day."""
+    orders: [date, symbol, "B"/"S", qty, value]. Buys sort before sells on the same day.
+    every_lot, when given, collects every buy lot (sold-out ones too, at qty 0) in order."""
     lots: Dict[str, list] = {}
     closed: Dict[tuple, dict] = {}
     for d, sym, side, qty, value in sorted(orders, key=lambda o: (o[0], 0 if o[2] == "B" else 1)):
         qty, value = float(qty), float(value)
         if side == "B":
-            lots.setdefault(sym, []).append({"date": d, "qty": qty, "cost": value / qty if qty else 0.0})
+            lot = {"date": d, "symbol": sym, "qty": qty, "bought": qty, "value": value, "cost": value / qty if qty else 0.0}
+            lots.setdefault(sym, []).append(lot)
+            if every_lot is not None:
+                every_lot.append(lot)
             continue
         rec = closed.setdefault((d, sym), {"date": d, "symbol": sym, "qty": 0.0, "value": 0.0, "cost": 0.0, "matched": 0.0, "oldest": None})
         rec["qty"] += qty
@@ -73,7 +77,8 @@ def _tax_estimate(tax: Optional[dict]) -> float:
 def build(mine: dict, raw: dict, cash: Optional[float], today: date, tax: Optional[dict]) -> Optional[dict]:
     if not mine or not mine.get("holdings") or not raw or not raw.get("orders"):
         return None
-    closed, lots = fifo(raw["orders"])
+    every_lot: list = []
+    closed, lots = fifo(raw["orders"], every_lot)
     last_order = max(o[0] for o in raw["orders"])
     holdings = mine["holdings"]
     invested = sum(h["invested"] for h in holdings)
@@ -114,6 +119,20 @@ def build(mine: dict, raw: dict, cash: Optional[float], today: date, tax: Option
                      "entry_price": round(entry, 2), "note": "" if frac > 0.999 else "history incomplete (free or changed shares)", "amount": round(c["value"], 2),
                      "kind": "Long-term", "life": None, "partial": False, "pct": round((c["value"] * frac / c["cost"] - 1) * 100, 2) if c["cost"] else None, "pnl_today": None,
                      "symbol_key": c["symbol"] + ".NS", "book_key": "long_term", "direction": "SELL"})
+    # ---- the Orders page: every buy as its own row (the ledger above has one row per holding, so a
+    # fund bought thirty times showed once), plus the same sale rows. A buy still held shows the
+    # unrealised P&L on the shares left; a sold-out one shows none -- its profit is on the sale row.
+    price = {h["symbol"]: h.get("price") for h in holdings}
+    orders = []
+    for l in every_lot:
+        left = l["qty"] if l["qty"] > 1e-9 else 0.0
+        px = price.get(l["symbol"])
+        orders.append({"date": l["date"], "time": "", "action": "BUY", "symbol": l["symbol"], "qty": round(l["bought"], 4), "price": round(l["cost"], 2), "pool": LABEL, "book": BOOK,
+                       "status": "Open" if left else "Closed", "partial": bool(left) and left < l["bought"] - 1e-9,
+                       "pnl": round((px - l["cost"]) * left, 2) if left and px else None, "amount": round(l["value"], 2),
+                       "kind": "Long-term", "symbol_key": l["symbol"] + ".NS", "book_key": "long_term", "direction": "BUY"})
+    orders += [r for r in rows if r["status"] == "Closed"]
+    orders.sort(key=lambda a: a["date"], reverse=True)
     closed_pnl = [r["pnl"] for r in rows if r["status"] == "Closed"]
     first_order = min(o[0] for o in raw["orders"])
 
@@ -128,7 +147,7 @@ def build(mine: dict, raw: dict, cash: Optional[float], today: date, tax: Option
     line = {"pool": LABEL, "key": "long_term", "sid": "LT-001", "name": BOOK, "type": "Long-term", "capital": round(capital, 2), "cash": round(cash, 2), "deployed": round(invested, 2),
             "realised": round(realised, 2), "unrealised": round(unrealised, 2), "charges": round(charges, 2), "gst": round(gst, 2), "tax": round(_tax_estimate(tax), 2), "tds": None,
             "tax_rate": 0.125, "detail": {k: round(v, 2) for k, v in detail.items()}, "taxable": True}
-    return {"pool": pool, "info": INFO, "strategy": strategy, "line": line, "ledger": rows}
+    return {"pool": pool, "info": INFO, "strategy": strategy, "line": line, "ledger": rows, "orders": orders, "orders_through": last_order}
 
 
 def add_pool_h(state: dict, mine: dict, raw: Optional[dict], cash: Optional[float], today: date, tax: Optional[dict]) -> bool:
@@ -148,6 +167,8 @@ def add_pool_h(state: dict, mine: dict, raw: Optional[dict], cash: Optional[floa
     # In Live mode the P&L statement is real money only: drop the empty lines the paper books would show
     state["statement"] = [l for l in state["statement"] if l.get("capital") or l.get("deployed") or l.get("cash")] + [h["line"]]
     state["ledger"] = sorted(list(state["ledger"]) + h["ledger"], key=lambda a: (a["date"], a.get("time") or ""), reverse=True)
+    state["pool_h_orders"] = h["orders"]
+    state["pool_h_orders_through"] = h["orders_through"]
     return True
 
 

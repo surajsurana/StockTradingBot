@@ -44,6 +44,15 @@ class TestBuild(unittest.TestCase):
         self.assertAlmostEqual(sold["pnl"], 2250 - 1750)                            # sold for 2250; the oldest 15 shares cost 10x100 + 5x150
         self.assertEqual((sold["bought_on"], sold["held_days"]), ("2025-01-10", (date(2026, 1, 5) - date(2025, 1, 10)).days))
 
+    def test_orders_page_gets_every_buy_on_its_own_date(self):
+        h = build(MINE, RAW, 500.0, date(2026, 9, 21), None)
+        o = [(r["date"], r["symbol"], r["action"], r["qty"], r["status"], r["partial"], r["pnl"]) for r in h["orders"]]
+        self.assertEqual(o, [("2026-01-05", "AAA", "SELL", 15.0, "Closed", False, 500.0),
+                             ("2025-03-10", "AAA", "BUY", 10.0, "Open", True, 50.0),        # 5 of its 10 still held: (160 - 150) x 5
+                             ("2025-02-01", "BBB", "BUY", 4.0, "Open", False, -40.0),
+                             ("2025-01-10", "AAA", "BUY", 10.0, "Closed", False, None)])    # sold out; its profit is on the sale row
+        self.assertEqual(h["orders_through"], "2026-01-05")
+
     def test_nothing_to_add_without_holdings_or_orders(self):
         self.assertIsNone(build({"holdings": []}, RAW, 0, date(2026, 9, 21), None))
         self.assertIsNone(build(MINE, {"orders": [], "fy": []}, 0, date(2026, 9, 21), None))
