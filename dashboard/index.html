@@ -1039,7 +1039,7 @@ function renderLive(s){
 
 }
 
-const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["held_days","Days",true],["sell","",false]];
+const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["pct_today","Today's P&L %",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"bought_on", dir:-1};
 let TODAY = null;      // the day's P&L as renderLive worked it out -- see renderLive()
 const CAL = {y: null, m: null, from: "", to: ""};
@@ -1102,6 +1102,15 @@ function buildTapeHead(){
   document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
   document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
 }
+// Today's move as a % of what the position was worth at yesterday's close (open rows), or of its
+// cost when it was closed today (pnl_today is then the whole booked P&L).
+function pctToday(a){
+  if(a.pnl_today == null || !a.amount) return null;
+  const open = (a.status || (a.pnl != null ? "Closed" : "Open")) === "Open";
+  const before = (+a.pnl || 0) - (+a.pnl_today || 0);
+  const base = !open ? +a.amount : a.direction === "SELL" ? +a.amount - before : +a.amount + before;
+  return base > 0 ? (+a.pnl_today) / base * 100 : null;
+}
 function renderTape(s){
   buildTapeHead();
   markSort(document.getElementById("tape-head"), TAPE_SORT);
@@ -1145,7 +1154,7 @@ function renderTape(s){
   }).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open")})).sort((a,b) => {
+  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open"), pct_today: pctToday(a)})).sort((a,b) => {
     // Open rows used to be pinned above closed ones WHATEVER the sort said, so "newest first" put
     // today's closed trades 31 rows down and they read as missing -- which is exactly how a pair
     // of crypto sells came to look like they had never happened. The grouping is a TIEBREAK now:
@@ -1177,7 +1186,7 @@ function renderTape(s){
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
   document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = a.pnl, pctV = a.pct;
-    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n ${a.pnl_today!=null?cls(+a.pnl_today):""}" title="${a.status==="Closed"?"booked today":"today's move on this position"}">${a.pnl_today!=null?money(+a.pnl_today,true):"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="16" class="note">No positions or trades match.</td></tr>`;
+    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n ${a.pnl_today!=null?cls(+a.pnl_today):""}" title="${a.status==="Closed"?"booked today":"today's move on this position"}">${a.pnl_today!=null?money(+a.pnl_today,true):"—"}</td><td class="n ${a.pct_today!=null?cls(a.pct_today):""}">${a.pct_today!=null?(a.pct_today>0?"+":"")+a.pct_today.toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="17" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 function showLife(id){
