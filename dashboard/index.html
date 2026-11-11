@@ -2017,7 +2017,9 @@ function renderOrders(s){
   const rows = s.ledger.filter(a => hit(a)
     && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status||"") === statusF))
     && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF) && (!bookF || a.book === bookF)
-  ).sort((a,b) => {
+  // An open position's order is its BUY, so it shows the real buy date -- the one Live day's Bought on
+  // shows. `date` on synced Groww holdings is the day they were imported, not the day they were bought.
+  ).map(a => a.status === "Open" ? {...a, date: a.bought_on || ""} : a).sort((a,b) => {
     const k = ORDERS_SORT.key, x = a[k], y = b[k];
     // same-key ties fall back to date, then time, then symbol -- all descending except symbol,
     // so "latest order first" holds even when the chosen sort column has lots of repeats.
