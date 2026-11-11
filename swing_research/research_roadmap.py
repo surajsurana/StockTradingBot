@@ -185,6 +185,16 @@ DATA_CAPABILITIES = {
     # LIMITS, disclosed rather than assumed away: an unofficial source (that module says so itself),
     # day-level timestamp ambiguity, and only ~4 years of depth -- enough for this program's
     # walk-forward windows, NOT enough for a multi-decade replication.
+
+    # --- Added 2026-11-02, monthly discovery pass (crypto/US weighted) ---
+    "crypto_onchain_activity_data": False,
+    # CONFIRMED ABSENT 2026-11-02: data/fetch_crypto.py integrates only Binance's public SPOT klines
+    # endpoint (BINANCE_KLINES_URL) -- OHLCV only, no on-chain metrics of any kind (active-address
+    # counts, transaction counts, hash rate, mining difficulty). No on-chain data vendor (Glassnode,
+    # CoinMetrics, IntoTheBlock or similar) is integrated anywhere in this program. Needed for any
+    # crypto "network factor" / user-adoption factor, as distinct from every price-only crypto signal
+    # already on this roadmap (momentum, trend, reversal, idiosyncratic volatility, size, liquidity --
+    # all computed purely from OHLCV).
 }
 
 
@@ -2961,6 +2971,311 @@ CANDIDATES = [
                                    "small/illiquid segment where it was actually documented.",
         academic_evidence_score=7, expected_robustness_score=2, operational_simplicity_score=8,
         research_value_score=6, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="crypto", market="Global",
+    ),
+
+    # =================================================================
+    # Monthly discovery pass (2026-11-02) -- crypto/US weighted, per the two thinnest lanes. Two
+    # cross-market ports of already-registered India strategies to the US lane (where, unusually,
+    # the destination market is the factor's own ORIGINATING evidence base, not a transplant -- see
+    # each entry's known_strengths), plus two brand-new-to-this-program mechanism families for the
+    # crypto lane (on-chain network activity; calendar seasonality), per explicit direction to work
+    # the thinnest lanes first and to treat cross-market ports as first-class, not a loophole.
+    # =================================================================
+    CandidateProfile(
+        key="us_amihud_illiquidity",
+        name="Amihud Illiquidity Premium (US)",
+        authors="Amihud, Y.",
+        publication="\"Illiquidity and Stock Returns: Cross-Section and Time-Series Effects,\" Journal of "
+                     "Financial Markets, Vol. 5, No. 1, 31-56 (2002) -- the same citation already recorded "
+                     "for this program's India implementation (amihud_illiquidity, INCONCLUSIVE, paper "
+                     "trading); re-verified real via WebSearch 2026-11-02 (confirmed journal, volume/pages "
+                     "and year, and that Harris & Amato (2019, Critical Finance Review) independently "
+                     "replicated the original result on current CRSP data), not from memory.",
+        year=2002,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only TOP decile (most illiquid), the same disclosed reduction and polarity as the "
+                  "India implementation.",
+        factor_family="Liquidity risk premium",
+        factor_tags={"liquidity"},
+        mechanism="ILLIQ (mean of daily |return| / dollar volume over a trailing formation window) proxies "
+                  "price impact per dollar traded; stocks that are harder to trade command a return premium "
+                  "for the illiquidity risk they carry. Identical mechanism and identical Strategy class "
+                  "(swing_research/strategies/amihud_illiquidity.py, already confirmed market-agnostic -- "
+                  "it reads only Close/Volume) to this program's registered India strategy 'amihud_"
+                  "illiquidity' (INCONCLUSIVE, deployment_status PAPER_TRADING); the open question is "
+                  "whether the premium is even detectable on the S&P 500's frozen large-cap universe, "
+                  "whose cross-sectional illiquidity variation is far more compressed than the India "
+                  "universe's small- and mid-cap tail. The US sample is also this candidate's ORIGINATING "
+                  "evidence -- Amihud's own tests are confined to NYSE-listed stocks 1964-1997, specifically "
+                  "to avoid cross-exchange microstructure noise -- unlike the India application, which was "
+                  "already once removed from the paper's native market and native exchange rules.",
+        typical_holding_period="21 trading days (1 month), matching both the India version's single-vintage "
+                               "hold and the tradeable-portfolio literature's monthly reformation cadence.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="One of the most cited liquidity papers in empirical asset pricing, independently "
+                        "re-replicated on current data (Harris & Amato 2019) -- a stronger, more-replicated "
+                        "evidence base than most candidates on this roadmap. The US sample IS the paper's "
+                        "own sample -- this is the factor's home market, not a transplant, the reverse "
+                        "situation from the India version. Needs nothing beyond the daily OHLCV already "
+                        "fetched for the frozen S&P 500 universe (swing_research/universe_us.py); the "
+                        "existing India Strategy class is reused completely unmodified, exactly as this "
+                        "program's prior Pool I ports (Minervini, Cross-Sectional Momentum, Downside Beta) "
+                        "already demonstrated with their own India classes. No existing US-lane candidate or "
+                        "registered strategy carries the 'liquidity' tag yet -- a genuinely new factor "
+                        "family for the US lane specifically (distinct from us_downside_beta's risk_based "
+                        "tag and every price-pattern US candidate already on this roadmap).",
+        known_weaknesses="Harris & Amato's own replication also reports the Amihud measure is 'no better "
+                         "than simpler measures built from the same data' -- a real, disclosed critique of "
+                         "the measure's incremental value, not just a robustness confirmation. More "
+                         "specific to this port: Amihud's original time-series finding is explicitly "
+                         "STRONGER for small firms, and his cross-sectional tests span the full NYSE size "
+                         "range (1964-1997 NYSE, including many genuinely illiquid names) -- the frozen "
+                         "S&P 500 large-cap-only universe this program's US lane is restricted to "
+                         "(swing_research/universe_us.py) is exactly the segment where the paper's own "
+                         "evidence says the effect should be weakest, a real universe-mismatch tension "
+                         "comparable to the one already disclosed for this program's Short-Term Reversal US "
+                         "port (that candidate's expected_robustness_score is this roadmap's lowest, 3/10, "
+                         "for the analogous large-cap reason). India's own amihud_illiquidity result is "
+                         "INCONCLUSIVE, not PASS -- encouraging context that the mechanism is at least "
+                         "plausible, but not strong prior evidence either way for the US lane; this still "
+                         "earns its own full walk-forward verdict on US data, exactly as directed for Pool I.",
+        academic_replication_quality="Foundational, extremely well-cited paper (Journal of Financial "
+                                      "Markets), independently re-replicated on modern CRSP data by Harris "
+                                      "& Amato (2019, Critical Finance Review) -- a stronger replication "
+                                      "record than most candidates on this roadmap, tempered by that same "
+                                      "replication's critique of the measure's incremental value over "
+                                      "simpler alternatives.",
+        evidence_sufficiency_note="Sufficient to research. The real question is whether a well-established "
+                                   "liquidity premium, INCONCLUSIVE on NSE data, is even measurable at all "
+                                   "on a large-cap-only US universe explicitly outside the size range where "
+                                   "the original paper's own evidence is strongest -- informative either "
+                                   "way, not assumed to replicate just because it is this factor's "
+                                   "originating market.",
+        academic_evidence_score=8, expected_robustness_score=4, operational_simplicity_score=8,
+        research_value_score=7, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="us_idiosyncratic_volatility",
+        name="Idiosyncratic Volatility Anomaly (US)",
+        authors="Ang, A., Hodrick, R.J., Xing, Y. and Zhang, X.",
+        publication="\"The Cross-Section of Volatility and Expected Returns,\" The Journal of Finance, Vol. "
+                     "61, No. 1, 259-299 (2006) -- the same citation already recorded for this program's "
+                     "India implementation (idiosyncratic_volatility, INCONCLUSIVE, paper trading); "
+                     "re-verified real via WebSearch 2026-11-02 (confirmed journal, volume/pages and year, "
+                     "and the existence of real follow-on debate -- Fu (2009, Journal of Financial "
+                     "Economics) disputes the original interpretation using time-varying EGARCH "
+                     "volatilities), not from memory.",
+        year=2006,
+        asset_class="Single-stock equities (US, S&P 500 universe), cross-sectional",
+        direction="Long-only BOTTOM decile (lowest idiosyncratic volatility) -- the same disclosed "
+                  "reduction and polarity as the India implementation.",
+        factor_family="Risk-based (idiosyncratic/residual volatility)",
+        factor_tags={"risk_based"},
+        mechanism="Idiosyncratic volatility (the standard deviation of a stock's own return residual after "
+                  "removing market-model exposure) is NEGATIVELY related to subsequent returns -- the "
+                  "opposite of what a risk premium would predict, attributed to lottery-preference/limits-"
+                  "to-arbitrage effects. Identical mechanism and identical Strategy class (swing_research/"
+                  "strategies/idiosyncratic_volatility.py, already confirmed market-agnostic) to this "
+                  "program's registered India strategy 'idiosyncratic_volatility' (INCONCLUSIVE, "
+                  "deployment_status PAPER_TRADING), including the same disclosed single-factor "
+                  "(CAPM/market-model) substitution for the paper's primary 3-factor (market+SMB+HML) "
+                  "construction -- SMB/HML need point-in-time market-cap and book-to-market data this "
+                  "platform has confirmed unavailable in EITHER lane, so this adaptation is not a US-"
+                  "specific new gap. The US sample is also this candidate's ORIGINATING evidence -- Ang, "
+                  "Hodrick, Xing and Zhang's own sample is NYSE/AMEX/NASDAQ (CRSP), unlike the India "
+                  "application, which was already once removed from the paper's native market.",
+        typical_holding_period="21 trading days (1 month), matching both the India version's single-vintage "
+                               "hold and the paper's own monthly re-formation cadence.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Foundational, extremely well-cited paper in a top-tier journal (The Journal of "
+                        "Finance), with a large, decades-long replication/debate literature (not silence, "
+                        "which would be a weaker signal) -- real engagement from the profession, not just "
+                        "citation count. The US sample IS the paper's own sample -- this is the factor's "
+                        "home market, not a transplant, the reverse situation from the India version. Needs "
+                        "nothing beyond the daily OHLCV already fetched for the frozen S&P 500 universe; "
+                        "the existing India Strategy class is reused completely unmodified, exactly as this "
+                        "program's prior Pool I ports have all demonstrated with their own India classes.",
+        known_weaknesses="Shares the 'risk_based' tag directly with us_downside_beta, already a candidate "
+                         "on this same US-lane roadmap -- a real, not merely nominal, mechanical and "
+                         "economic overlap (both are regression-residual risk measures), so the marginal "
+                         "diversification value of implementing both is smaller than either's raw score "
+                         "alone suggests, the same caveat already disclosed for us_downside_beta's own "
+                         "overlap with India's Betting Against Beta (REJECT) and Idiosyncratic Volatility "
+                         "(INCONCLUSIVE). The original finding's interpretation itself is genuinely "
+                         "disputed in the literature -- Fu (2009) argues the negative idio-vol/return "
+                         "relation is largely a return-reversal artifact among a subset of small, high-"
+                         "idio-vol stocks once time-varying volatility is modeled properly, not evidence of "
+                         "a clean standalone anomaly. India's own idiosyncratic_volatility result is "
+                         "INCONCLUSIVE, not PASS -- encouraging context that the mechanism is at least "
+                         "plausible, but not strong prior evidence either way for the US lane; this still "
+                         "earns its own full walk-forward verdict on US data, exactly as directed for Pool "
+                         "I. Also carries this program's already-disclosed interaction risk with short-term "
+                         "reversal (idio-vol is known to correlate with recent-return reversal if not "
+                         "separately controlled for), unchanged from the India version's own caveat.",
+        academic_replication_quality="Foundational, top-tier-journal paper with a genuine, decades-long "
+                                      "replication and reinterpretation literature (Fu 2009 and others) -- "
+                                      "real engagement, though the direction of that engagement partly "
+                                      "challenges rather than simply confirms the original result.",
+        evidence_sufficiency_note="Sufficient to research. The real question is whether a well-established "
+                                   "but genuinely disputed risk-based anomaly, INCONCLUSIVE on NSE data "
+                                   "using the same single-factor adaptation, also produces a detectable "
+                                   "edge on the deeper, more efficiently-priced large-cap US universe -- "
+                                   "informative either way, not assumed to replicate just because it is "
+                                   "this factor's originating market.",
+        academic_evidence_score=8, expected_robustness_score=5, operational_simplicity_score=6,
+        research_value_score=5, data_availability_score=10, implementation_feasibility_score=8,
+        horizon_lane="swing", market="US",
+    ),
+    CandidateProfile(
+        key="crypto_network_onchain_activity",
+        name="Cryptocurrency Network (On-Chain User-Adoption) Factor",
+        authors="Liu, Y. and Tsyvinski, A.",
+        publication="\"Risks and Returns of Cryptocurrency,\" The Review of Financial Studies, Vol. 34, No. "
+                     "6, 2689-2727 (2021), DOI 10.1093/rfs/hhaa113 -- verified real via WebSearch 2026-11-02 "
+                     "(confirmed authors, journal, volume/pages, DOI and year; earlier NBER Working Paper "
+                     "24877 version also confirmed), not from memory.",
+        year=2021,
+        asset_class="Cryptocurrencies, cross-sectional",
+        direction="Long-only top group by network-factor score -- a disclosed reduction from the paper's "
+                  "own cross-sectional-correlation/portfolio-sort framing, same convention as every other "
+                  "candidate in this program.",
+        factor_family="On-chain network activity / user adoption (crypto-specific)",
+        factor_tags={"crypto_factor", "onchain_activity"},
+        mechanism="Liu & Tsyvinski construct 'network factors' from ON-CHAIN user-adoption proxies -- "
+                  "average daily log of unique active addresses over a trailing window (addresses active "
+                  "either as sender or recipient, not double-counted), plus transaction-count growth -- "
+                  "separately from 'production factors' proxying mining cost (hash rate, mining "
+                  "difficulty). The paper reports the first principal component of these network measures "
+                  "correlates positively with future cryptocurrency returns, and that returns are exposed "
+                  "to the network factors but NOT to the production factors. STRUCTURALLY DIFFERENT from "
+                  "every existing crypto candidate/strategy on this roadmap: every one of those (crypto_"
+                  "xs_momentum, crypto_tsmom, crypto_trend_timing*, crypto_long_horizon_reversal, crypto_"
+                  "short_term_reversal, crypto_size_factor, crypto_idiosyncratic_volatility, crypto_"
+                  "illiquidity_premium, crypto_max_effect, crypto_funding_rate_carry) is computed purely "
+                  "from PRICE (and, for size, market-cap) data -- this is this program's first candidate of "
+                  "any kind built from the underlying blockchain ledger itself rather than a traded price "
+                  "series, a genuinely new data MODALITY, not just a new formula over the same inputs.",
+        typical_holding_period="The paper's own cross-sectional portfolio tests use monthly re-formation, "
+                               "matching this program's other crypto cross-sectional factor candidates "
+                               "(crypto_idiosyncratic_volatility, crypto_illiquidity_premium) for "
+                               "comparability, pending the full paper's own exact specification.",
+        holding_days_min=25, holding_days_max=35,
+        expected_trade_frequency="Moderate",
+        data_requirements=["daily_ohlcv_history", "crypto_onchain_activity_data"],
+        known_strengths="Published in The Review of Financial Studies, one of the three top-tier finance "
+                        "journals -- the strongest single-journal credibility of any crypto candidate on "
+                        "this roadmap. A genuinely new mechanism family and new DATA MODALITY for the "
+                        "crypto lane specifically, directly responsive to this program's own standing "
+                        "observation that crypto momentum/trend variants are already well covered here "
+                        "and that volatility, funding-rate/basis, on-chain-activity and liquidity families "
+                        "are the open ground. Legitimate to catalogue even while fully data-blocked, per "
+                        "this program's own 2026-10-02/2026-10-03 precedent of cataloguing confirmed-real, "
+                        "confirmed-blocked crypto candidates (crypto_size_factor, crypto_funding_rate_"
+                        "carry) so future dataset decisions have a concrete target.",
+        known_weaknesses="NOT_CURRENTLY_IMPLEMENTABLE: requires on-chain active-address and transaction-"
+                         "count history, confirmed absent from this platform's only integrated crypto data "
+                         "source (data/fetch_crypto.py, Binance public klines, OHLCV only) -- see the new "
+                         "crypto_onchain_activity_data DATA_CAPABILITIES entry above. Closing this gap would "
+                         "mean integrating an entirely new kind of vendor (e.g. Glassnode, CoinMetrics, "
+                         "IntoTheBlock), a materially larger platform change than adding a price-data field, "
+                         "not a quick API-key addition. Even if integrated, on-chain data quality/coverage "
+                         "is uneven across smaller coins -- this platform's 40-coin universe "
+                         "(data/fetch_crypto.py's CRYPTO_UNIVERSE) extends well past the handful of majors "
+                         "(BTC, ETH, and a few others) where on-chain vendors have the longest, most "
+                         "reliable histories, a real coverage risk beyond the primary data-access block. "
+                         "The paper's own reported edge is a cross-sectional correlation/principal-"
+                         "component finding, not yet translated into this program's single-strategy, "
+                         "state-transition entry/exit convention -- that translation step is itself "
+                         "undocumented and would need real design work before implementation, beyond the "
+                         "data gap alone.",
+        academic_replication_quality="A single paper, but in a top-three finance journal with a long NBER "
+                                      "working-paper history (first circulated 2018) and wide subsequent "
+                                      "citation in the crypto-asset-pricing literature (e.g. the related "
+                                      "Liu, Tsyvinski & Wu 2022 Journal of Finance three-factor model "
+                                      "already partially represented on this roadmap via crypto_size_"
+                                      "factor) -- strong standing for a young literature, though the "
+                                      "network-factor result specifically has not had the same decade-plus "
+                                      "replication history as this roadmap's equity candidates.",
+        evidence_sufficiency_note="Sufficient to catalogue as a real, well-evidenced, genuinely distinct "
+                                   "mechanism and data modality -- but correctly kept out of the researchable-"
+                                   "now ranking until an on-chain data vendor is integrated; this is exactly "
+                                   "the kind of candidate worth having on record FOR that future decision, "
+                                   "not one to force an implementation around today's data ceiling.",
+        academic_evidence_score=9, expected_robustness_score=4, operational_simplicity_score=3,
+        research_value_score=8, data_availability_score=1, implementation_feasibility_score=1,
+        horizon_lane="crypto", market="Global",
+    ),
+    CandidateProfile(
+        key="crypto_day_of_week_effect",
+        name="Day-of-the-Week (Monday) Effect in Cryptocurrency Returns",
+        authors="Caporale, G.M. and Plastun, A.",
+        publication="\"The day of the week effect in the cryptocurrency market,\" Finance Research Letters, "
+                     "Vol. 31, 258-269 (2019) -- verified real via WebSearch 2026-11-02 (confirmed authors, "
+                     "journal, volume/pages and year), not from memory.",
+        year=2019,
+        asset_class="Cryptocurrencies, calendar-based",
+        direction="Long-only around the qualifying weekday (Monday), the same disclosed single-sided "
+                  "reduction convention as this program's India 'day_of_week' candidate.",
+        factor_family="Calendar seasonality (crypto-specific)",
+        factor_tags={"crypto_factor", "seasonality_calendar"},
+        mechanism="Caporale & Plastun test several major cryptocurrencies and find Bitcoin returns on "
+                  "Mondays are significantly higher than on other days of the week -- the crypto-market "
+                  "analogue of this program's own India 'day_of_week' candidate (French 1980's weekend "
+                  "effect), tested on a structurally different, 24/7, no-weekend-close market where the "
+                  "ORIGINAL economic explanation (information accumulating over a market closure before "
+                  "Monday's open) does not mechanically apply at all -- crypto markets never close -- so "
+                  "any effect found has to have a different proximate cause (plausibly retail-trading-"
+                  "attention or settlement/liquidity patterns tied to the traditional-market week rather "
+                  "than an actual exchange closure), a genuinely distinct question from the equity version, "
+                  "not merely the same test on different data. A genuinely new factor family for this "
+                  "program's crypto lane specifically -- no existing crypto candidate or registered crypto "
+                  "strategy carries the 'seasonality_calendar' tag today.",
+        typical_holding_period="Single day (the qualifying weekday), matching the India day_of_week "
+                               "candidate's convention.",
+        holding_days_min=1, holding_days_max=1,
+        expected_trade_frequency="High (weekly, every qualifying day), with a small expected per-trade edge",
+        data_requirements=["daily_ohlcv_history"],
+        known_strengths="Real, peer-reviewed paper in a recognized finance journal (Finance Research "
+                        "Letters); fully implementable today from data already fetched (crypto daily "
+                        "OHLCV, data/fetch_crypto.py) -- no new data source needed, the cheapest candidate "
+                        "to test on this entire roadmap alongside the India day_of_week entry. A genuinely "
+                        "new, if modest, mechanism family for the crypto lane, directly responsive to this "
+                        "program's own standing observation that crypto's existing candidates are "
+                        "momentum/trend/reversal-heavy.",
+        known_weaknesses="The evidence for crypto calendar anomalies generally is explicitly mixed across "
+                         "the wider literature this paper sits in -- other studies on day-of-week effects "
+                         "in crypto find no effect, find it only post-COVID, or find it concentrated in "
+                         "Bitcoin alone and absent in other coins (a real, disclosed caveat the India "
+                         "day_of_week entry's own 'weakest evidentiary case in this roadmap' framing "
+                         "already anticipates for calendar anomalies generally). This specific paper's own "
+                         "finding is for Bitcoin only -- extending it across this platform's 40-coin "
+                         "universe is an assumption the paper itself does not support, not a confirmed "
+                         "generalization. Very small per-trade edge means transaction/slippage costs (not "
+                         "yet modeled in every corner of this platform's backtesting engine) could "
+                         "plausibly erase any measured effect entirely, the same risk already disclosed for "
+                         "the India version. Crypto markets have also matured and become far more "
+                         "institutionally traded since 2019 -- a six-year-old finding on a fast-evolving "
+                         "market structure is more likely to have decayed than an equity calendar effect "
+                         "tested over decades.",
+        academic_replication_quality="A single paper in a recognized but not top-tier finance journal, "
+                                      "sitting inside a wider literature of calendar-anomaly studies in "
+                                      "crypto with genuinely mixed, sample-period-dependent findings -- a "
+                                      "thinner, less consistent evidence base than this roadmap's typical "
+                                      "candidates, comparable in strength to the India day_of_week entry's "
+                                      "own standing.",
+        evidence_sufficiency_note="Directionally sufficient to catalogue and cheaply test given full data "
+                                   "availability and near-zero implementation cost, but not at the same "
+                                   "evidentiary bar as this roadmap's better-replicated candidates -- a "
+                                   "near-free robustness check for the crypto lane's calendar-seasonality "
+                                   "gap, not a high-conviction priority.",
+        academic_evidence_score=5, expected_robustness_score=2, operational_simplicity_score=9,
+        research_value_score=4, data_availability_score=10, implementation_feasibility_score=10,
         horizon_lane="crypto", market="Global",
     ),
 ]
