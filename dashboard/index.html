@@ -1091,6 +1091,7 @@ function buildTapeHead(){
     pool: `<select id="tape-pool"><option value="">All</option><option>Pool A</option><option>Pool A2</option><option>Pool A3</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option></select>`,
     kind: `<select id="tape-kind"><option value="">All</option><option>Swing</option><option>Intraday</option><option>Crypto</option><option>Long-term</option><option>US Equity</option></select>`,
     book: `<select id="tape-book"><option value="">All</option></select>`,
+    sid: `<select id="tape-sid"><option value="">All</option></select>`,
   })[k] || "";
   head.innerHTML = `<tr>${TAPE_COLS.map(([k,l,num]) => k==="sell" ? `<th></th>`
     : k==="bought_on" ? `<th class="n"><span class="hf"><button id="tape-cal" class="fbtn" title="Filter by date">Bought on</button><button data-sort="bought_on" class="sortbtn" title="Sort">↕</button><div id="tape-pop" class="pop" hidden></div></span></th>`
@@ -1099,6 +1100,8 @@ function buildTapeHead(){
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { TAPE_SORT = {key:b.dataset.sort, dir: TAPE_SORT.key===b.dataset.sort ? -TAPE_SORT.dir : 1}; renderTape(STATE); }));
   document.getElementById("q").addEventListener("input", e => { FILTER = e.target.value.trim().toLowerCase(); if(STATE) renderTape(STATE); });
   ["tape-book","tape-status","tape-pool","tape-kind"].forEach(id => document.getElementById(id).addEventListener("change", () => { if(STATE) renderTape(STATE); }));
+  // ID picks the same thing the Book filter does (one strategy = one book), so it just sets that.
+  document.getElementById("tape-sid").addEventListener("change", e => { document.getElementById("tape-book").value = e.target.value; if(STATE) renderTape(STATE); });
   document.getElementById("tape-cal").addEventListener("click", e => { e.stopPropagation(); const pop = document.getElementById("tape-pop"); const open = pop.hidden; document.querySelectorAll(".hpop").forEach(x => x.hidden = true); pop.hidden = !open; if(!pop.hidden) calRender(CAL_TAPE); });
   document.getElementById("tape-pop").addEventListener("click", e => e.stopPropagation());
   document.addEventListener("click", () => { document.getElementById("tape-pop").hidden = true; });
@@ -1154,6 +1157,9 @@ function renderTape(s){
     return `<option value="${esc(n)}"${n===prevBook?" selected":""}>${sid?esc(sid)+" · ":""}${esc(n)}</option>`;
   }).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
+  document.getElementById("tape-sid").innerHTML = `<option value="">All</option>` + bookNames.filter(n => sidFor(n))
+    .sort((a, b) => sidFor(a).localeCompare(sidFor(b))).map(n => `<option value="${esc(n)}"${n===bookF?" selected":""}>${esc(sidFor(n))}</option>`).join("");
+  document.querySelector('#tape-head .fbtn[data-hf="sid"]').classList.toggle("on", !!(bookF && sidFor(bookF)));
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
   const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open"), pct_today: pctToday(a), sid: sidFor(a.book) || ""})).sort((a,b) => {
     // Open rows used to be pinned above closed ones WHATEVER the sort said, so "newest first" put
