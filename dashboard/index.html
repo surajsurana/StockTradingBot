@@ -1039,8 +1039,9 @@ function renderLive(s){
 
 }
 
-const TAPE_COLS = [["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["pct_today","Today's P&L %",true],["held_days","Days",true],["sell","",false]];
+const TAPE_COLS = [["sid","ID",false],["status","Status",false],["bought_on","Bought on",false],["time","Time",false],["action","Side",false],["symbol","Symbol",false],["qty","Qty",true],["price","Price",true],["amount","Amount",true],["pool","Pool",false],["kind","Type",false],["book","Book",false],["pnl","P&L",true],["pct","P&L %",true],["pnl_today","Today's P&L",true],["pct_today","Today's P&L %",true],["held_days","Days",true],["sell","",false]];
 let TAPE_SORT = {key:"bought_on", dir:-1};
+let LIVE_SCOPE = null, LIVE_SCOPE_CASH = null;   // the Positions table's filtered rows and, when a pool/type/strategy is picked, its cash by account
 let TODAY = null;      // the day's P&L as renderLive worked it out -- see renderLive()
 const CAL = {y: null, m: null, from: "", to: ""};
 // The Strategies tab's own range, kept apart from the Live-day one: filtering the trade list and
@@ -1137,7 +1138,7 @@ function renderTape(s){
     if(ib && ib.sid) return ib.sid;
     if(name === "Intraday") return (strategyByKey["pool_d_vwap_fade"] || {}).sid || "";
     if(name === "AI judgment") return (strategyByKey["portfolio_g"] || {}).sid || "";
-    return "";
+    return ((s.strategies || []).find(r => r.name === name) || {}).sid || "";
   };
   const sidNumber = sid => { const m = /(\d+)/.exec(sid || ""); return m ? +m[1] : Infinity; };
   const bookNames = [...new Set([
@@ -1154,7 +1155,7 @@ function renderTape(s){
   }).join("");
   const bookF = bookNames.includes(prevBook) ? prevBook : "";
   const f = FILTER, hit = a => !f || [a.symbol, a.book, a.pool, a.kind].some(v => String(v||"").toLowerCase().includes(f));
-  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open"), pct_today: pctToday(a)})).sort((a,b) => {
+  const rows = s.ledger.filter(a => hit(a) && inRange(a) && (!bookF || a.book === bookF) && (!statusF || (statusF === "Partial" ? !!a.partial : !a.partial && (a.status || (a.pnl!=null ? "Closed" : "Open")) === statusF)) && (!poolF || a.pool === poolF) && (!kindF || a.kind === kindF)).map(a => ({...a, status: a.status || (a.pnl!=null ? "Closed" : "Open"), pct_today: pctToday(a), sid: sidFor(a.book) || ""})).sort((a,b) => {
     // Open rows used to be pinned above closed ones WHATEVER the sort said, so "newest first" put
     // today's closed trades 31 rows down and they read as missing -- which is exactly how a pair
     // of crypto sells came to look like they had never happened. The grouping is a TIEBREAK now:
@@ -1169,6 +1170,10 @@ function renderTape(s){
   });
   document.getElementById("tape-count").textContent = `${rows.length} of ${s.ledger.length}`;
   renderLiveCards(s, rows, poolF, kindF, statusF, bookF);
+  // The cards above the table follow the same filters. They are drawn on load, but a filter change
+  // only re-ran the table, so the cards kept showing every account.
+  LIVE_SCOPE = {rows, active: !!(f || bookF || statusF || poolF || kindF || fromF || toF), cash: LIVE_SCOPE_CASH};
+  if(!document.getElementById("liveboard")?.hidden) renderLiveBoard(s);
 
   // Pagination -- reset to page 1 whenever the filtered/sorted set itself changes (a new
   // filter, search, date range or sort), not on every render (e.g. the periodic price refresh
@@ -1186,7 +1191,7 @@ function renderTape(s){
   document.getElementById("tape-next").disabled = TAPE_PAGE >= totalPages;
 
   document.getElementById("tape").innerHTML = pageRows.length ? pageRows.map(a => { const pnlV = a.pnl, pctV = a.pct;
-    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n ${a.pnl_today!=null?cls(+a.pnl_today):""}" title="${a.status==="Closed"?"booked today":"today's move on this position"}">${a.pnl_today!=null?money(+a.pnl_today,true):"—"}</td><td class="n ${a.pct_today!=null?cls(a.pct_today):""}">${a.pct_today!=null?(a.pct_today>0?"+":"")+a.pct_today.toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="17" class="note">No positions or trades match.</td></tr>`;
+    return `<tr class="${a.status==="Closed"?"tape-closed":"tape-open"}"><td class="narrow">${esc(a.sid||"—")}</td><td><b>${a.partial ? "Partial" : a.status}</b></td><td class="n narrow">${esc(a.bought_on||"—")}</td><td class="n">${esc(a.time||"—")}</td><td class="${a.action==="BUY"?"gain":"loss"}"><b>${a.action}</b></td><td class="l">${esc(a.symbol)}</td><td class="n narrow">${a.qty}</td><td class="n">${priceWithCcy(a.price, a.ccy)}</td><td class="n amt">${inr(a.amount)}${fxBtn(a)}</td><td>${esc(String(a.pool||"").replace("Pool ",""))}</td><td>${esc(a.kind)}</td><td class="trunc narrow l" title="${esc(a.book||"")}">${a.book && a.book!=="Intraday"?esc(a.book):"—"}</td>${pnlV!=null?cell(pnlV, true, null, a.life):`<td class="n">—</td>`}<td class="n ${cls(+pctV)}">${pctV!=null?(pctV>0?"+":"")+(+pctV).toFixed(2)+"%":"—"}</td><td class="n ${a.pnl_today!=null?cls(+a.pnl_today):""}" title="${a.status==="Closed"?"booked today":"today's move on this position"}">${a.pnl_today!=null?money(+a.pnl_today,true):"—"}</td><td class="n ${a.pct_today!=null?cls(a.pct_today):""}">${a.pct_today!=null?(a.pct_today>0?"+":"")+a.pct_today.toFixed(2)+"%":"—"}</td><td class="n" title="${esc(a.note||"")}">${a.held_days!=null?a.held_days:"—"}</td><td>${a.status==="Open" && a.symbol_key && MODE==="paper" ? `<button class="sellbtn ${a.direction==="SELL"?"buy":""}" data-row="${esc(JSON.stringify({side:"sell", short:a.direction==="SELL", pool:a.pool, book:a.book_key||"", book_name:a.book, symbol:a.symbol_key, shown:a.symbol, qty:a.qty, price:a.price, kind:a.kind}))}">${a.direction==="SELL"?"Buy back":"Sell"}</button>` : ""}</td></tr>`; }).join("") : `<tr><td colspan="18" class="note">No positions or trades match.</td></tr>`;
   document.querySelectorAll("#tape .sellbtn").forEach(b => b.addEventListener("click", () => openSell(JSON.parse(b.dataset.row))));
 }
 function showLife(id){
@@ -1699,7 +1704,9 @@ function renderLiveBoard(s){
   // The same cash source the Strategies cards use -- the brokers' balances in Live, the paper books'
   // own cash in Paper. Reading the real Kite balance beside simulated positions described an account
   // that does not exist.
-  const vcash = cashByVenue(s);
+  const scoped = LIVE_SCOPE && LIVE_SCOPE.active ? LIVE_SCOPE : null;
+  const vcash = scoped && scoped.cash ? {kite: scoped.cash.kite ?? null, coindcx: scoped.cash.coindcx ?? null, groww: scoped.cash.groww ?? null, us: scoped.cash.us ?? null}
+              : cashByVenue(s);
   const vs = {
     kite:    {name: "Kite",    what: "Indian equities", cash: vcash.kite,    invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
     coindcx: {name: "CoinDCX", what: "crypto",          cash: vcash.coindcx, invested: 0, held: 0, today: 0, pnl: 0, open: 0, closed: 0},
@@ -1720,7 +1727,7 @@ function renderLiveBoard(s){
   const costOf = r => (r.order_value != null ? r.order_value : (r.amount || 0));
   // Every figure comes off the SAME ledger rows the Positions table shows, so the two cannot
   // disagree -- a summary built from its own source is a second opinion, not a summary.
-  for(const r of (s.ledger || [])){
+  for(const r of (scoped ? scoped.rows : (s.ledger || []))){
     const v = vs[poolVenue(r.pool)];
     if(!v) continue;
     v.pnl += (r.pnl || 0);
@@ -2124,8 +2131,10 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
                                                                     realised: s.pool_g.booked.raw*g_rate, unrealised: s.pool_g.unbooked.raw*g_rate,
                                                                     realised_today: s.pool_g.booked_today.raw*g_rate, positions: s.pool_g.positions};
   }
+  const cashV = {};
   if(bookOne){
     keys = bookOne.pools;
+    cashV[poolVenue(bookOne.pools[0])] = +bookOne.cash || 0;
     capital = +bookOne.capital || 0; deployed = +bookOne.deployed || 0; cash = +bookOne.cash || 0;
     booked = +bookOne.realised || 0; unbooked = +bookOne.unrealised || 0; open = +bookOne.positions || 0;
     // `today` and todayByKind are both filled from the ledger below, under the same filters this
@@ -2142,11 +2151,13 @@ function renderLiveCards(s, rows, poolF, kindF, statusF, bookF){
       else if(["I", "I2", "I3"].includes(k)){ const pi = s["pool_" + k.toLowerCase()] || {}; if(pi.exists) p = {capital: pi.inr.capital, deployed: pi.inr.deployed, cash: pi.inr.cash, realised: pi.inr.booked.raw, unrealised: pi.inr.unbooked.raw, realised_today: pi.inr.booked_today.raw, positions: pi.usd.positions}; }
       else p = s.pools[k];
       if(!p) continue;
+      cashV[poolVenue(k)] = (cashV[poolVenue(k)] || 0) + (+p.cash || 0);
       capital += +p.capital || 0; deployed += +p.deployed || 0; cash += +p.cash || 0; booked += +p.realised || 0; unbooked += +p.unrealised || 0; open += +p.positions || 0;
       // `today` (booked today) is NOT taken from p.realised_today any more -- see below.
     }
   }
   const scope = bookF || poolF || kindF ? [poolF, kindF, bookF].filter(Boolean).join(" · ") : "all pools";
+  LIVE_SCOPE_CASH = bookF || poolF || kindF ? cashV : null;
   const poolLetters = new Set(keys.map(k => "Pool " + k));
   const inBook = a => !bookF || a.book === bookF;
   // TODAY COMES OFF THE LEDGER, the same rows the Positions table shows, so the Today's P&L column
