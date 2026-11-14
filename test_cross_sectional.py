@@ -21,6 +21,7 @@ from swing_research.cross_sectional import (
     compute_max_effect_percentile_ranks, compute_max_effect_score,
     compute_momentum_percentile_ranks, compute_momentum_score,
     compute_nifty_alpha_jensens_percentile_ranks, compute_nifty_alpha_jensens_score,
+    compute_nifty_alpha_low_volatility_30_percentile_ranks,
     compute_rs_percentile_ranks, compute_rs_score,
     compute_short_term_reversal_percentile_ranks, compute_short_term_reversal_score,
     NIFTY_ALPHA_JENSENS_LOOKBACK_DAYS,
@@ -614,6 +615,116 @@ class TestComputeNiftyAlphaJensensPercentileRanks(unittest.TestCase):
         last_date = data["B"].index[-1]
         # B has the highest Jensen's Alpha of the four -> rank 4/4 -> 100th pct
         self.assertAlmostEqual(ranks["B"].loc[last_date], 100.0)
+
+
+def _scaled_market_tracker_returns(market_returns, k, target_alpha):
+    """
+    Builds a return series stock_r = A + k*(market_r - mean(market_r)), which is an exact
+    scaled-and-shifted copy of market_r -- so correlation(stock_r, market_r) == 1 exactly
+    (for k > 0), giving beta_ols = rho*(sigma_stock/sigma_market) = k exactly, and
+    sigma_stock = k*sigma_market exactly (k controls REALIZED VOLATILITY, independent of
+    alpha). Solving alpha = mean(stock_r) - beta*mean(market_r) = A - k*mean(market_r) for A
+    lets target_alpha be hit EXACTLY regardless of k: A = target_alpha + k*mean(market_r).
+    This is what lets the tests below isolate each leg of
+    compute_nifty_alpha_low_volatility_30_percentile_ranks() -- varying k alone (same
+    target_alpha) changes ONLY realized volatility, with Jensen's Alpha provably unchanged
+    (to the same closed-form identity test_score_matches_independent_closed_form_calculation
+    already verifies above), and varying target_alpha alone (same k) changes ONLY alpha, with
+    realized volatility provably unchanged (same k -> same sigma_stock).
+    """
+    market_r = np.array(market_returns, dtype=float)
+    mean_market_r = market_r.mean()
+    a = target_alpha + k * mean_market_r
+    return (a + k * (market_r - mean_market_r)).tolist()
+
+
+class TestComputeNiftyAlphaLowVolatility30PercentileRanks(unittest.TestCase):
+    def test_same_alpha_lower_volatility_ranks_higher(self):
+        # LOW_VOL and HIGH_VOL have the SAME target Jensen's Alpha (0.001, by construction --
+        # floating-point noise in the closed-form OLS computation can still separate two
+        # "tied" alpha values by ~1e-17, so two FILLER symbols with alpha far below/above
+        # 0.001 are included to keep that noise from deciding a 2-symbol rank outright; with
+        # 4 symbols LOW_VOL/HIGH_VOL's alpha leg can differ by at most one adjacent rank step
+        # (25 percentile points), while their realized volatility (0.3x vs 3x the market's)
+        # is unambiguous and gives a much larger swing -- so the volatility leg should decide
+        # the combined ranking either way.
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        low_vol_returns = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=0.3, target_alpha=0.001)
+        high_vol_returns = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=3.0, target_alpha=0.001)
+        filler_low_alpha = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=1.0, target_alpha=-0.01)
+        filler_high_alpha = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=1.0, target_alpha=0.01)
+        data = {
+            "LOW_VOL": _ohlcv_from_close(_close_from_returns(low_vol_returns)),
+            "HIGH_VOL": _ohlcv_from_close(_close_from_returns(high_vol_returns)),
+            "FILLER_LOW_ALPHA": _ohlcv_from_close(_close_from_returns(filler_low_alpha)),
+            "FILLER_HIGH_ALPHA": _ohlcv_from_close(_close_from_returns(filler_high_alpha)),
+        }
+        ranks = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, market_close)
+        last_date = data["LOW_VOL"].index[-1]
+        self.assertGreater(ranks["LOW_VOL"].loc[last_date], ranks["HIGH_VOL"].loc[last_date])
+
+    def test_same_volatility_higher_alpha_ranks_higher(self):
+        # Both symbols use the SAME k (=1) -- identical realized volatility (sigma_stock =
+        # 1*sigma_market for both) -- but different target_alpha: only the alpha leg can
+        # separate them.
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        low_alpha_returns = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=1.0, target_alpha=-0.0015)
+        high_alpha_returns = _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=1.0, target_alpha=0.0015)
+        data = {
+            "LOW_ALPHA": _ohlcv_from_close(_close_from_returns(low_alpha_returns)),
+            "HIGH_ALPHA": _ohlcv_from_close(_close_from_returns(high_alpha_returns)),
+        }
+        ranks = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, market_close)
+        last_date = data["LOW_ALPHA"].index[-1]
+        self.assertGreater(ranks["HIGH_ALPHA"].loc[last_date], ranks["LOW_ALPHA"].loc[last_date])
+
+    def test_good_on_both_legs_lands_at_the_top_bad_on_both_lands_at_the_bottom(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        data = {
+            "BEST": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=0.2, target_alpha=0.0025))),
+            "MIXED_1": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=2.5, target_alpha=0.0015))),
+            "MIXED_2": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=0.6, target_alpha=-0.0005))),
+            "WORST": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=3.0, target_alpha=-0.0025))),
+        }
+        ranks = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, market_close)
+        last_date = data["BEST"].index[-1]
+        best, worst = ranks["BEST"].loc[last_date], ranks["WORST"].loc[last_date]
+        for key in ("MIXED_1", "MIXED_2"):
+            mixed = ranks[key].loc[last_date]
+            self.assertGreater(best, mixed)
+            self.assertGreater(mixed, worst)
+
+    def test_percentiles_are_between_0_and_100(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        data = {
+            "A": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=0.5, target_alpha=0.0002))),
+            "B": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=1.5, target_alpha=0.003))),
+            "C": _ohlcv_from_close(_close_from_returns(
+                _scaled_market_tracker_returns(_MARKET_RETURNS_252, k=2.0, target_alpha=-0.001))),
+        }
+        ranks = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, market_close)
+        last_date = data["A"].index[-1]
+        for symbol in data:
+            pct = ranks[symbol].loc[last_date]
+            self.assertGreaterEqual(pct, 0.0)
+            self.assertLessEqual(pct, 100.0)
+
+    def test_empty_data_returns_empty_dict(self):
+        market_close = _close_from_returns(_MARKET_RETURNS_252)
+        self.assertEqual(compute_nifty_alpha_low_volatility_30_percentile_ranks({}, market_close), {})
+
+    def test_no_lookahead_early_rows_are_nan(self):
+        short_returns = _MARKET_RETURNS_252[:10]  # short of either leg's 252-day rolling window
+        market_close = _close_from_returns(short_returns)
+        data = {"A": _ohlcv_from_close(_close_from_returns(short_returns))}
+        ranks = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, market_close)
+        self.assertTrue(pd.isna(ranks["A"].iloc[-1]))
 
 
 # A non-constant 30-value return pattern (CRYPTO_IVOL_FORMATION_DAYS), deliberately not

@@ -2135,6 +2135,117 @@ NIFTY_ALPHA_JENSENS = PublishedStrategy(
     ),
 )
 
+NIFTY_ALPHA_LOW_VOLATILITY_30 = PublishedStrategy(
+    name="Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology)",
+    source_citation=(
+        "Nifty Alpha Low-Volatility 30 Index Methodology (official NSE Indices Limited "
+        "methodology document, index launched 2017) -- verified via WebSearch 2026-08-15, per "
+        "swing_research.research_roadmap's own CandidateProfile "
+        "(key=\"nifty_alpha_low_volatility_30\")."
+    ),
+    mechanism=(
+        "A real, separately-published NSE index combining the Alpha selection (Jensen's Alpha, "
+        "the INTERCEPT of a CAPM-style regression against the market) with a low-volatility "
+        "screen (standard deviation of daily returns over the last one year) into one combined "
+        "score -- a genuinely distinct, separately-tracked product, not merely 'the average of "
+        "two already-implemented strategies' by informal description alone."
+    ),
+    rules=(
+        "Combined score = Alpha score (Jensen's Alpha vs. the market) blended with a "
+        "low-volatility score (1-year daily-return standard deviation, low=good). Universe: "
+        "Nifty 100 constituents. Selects (and weights) the top stocks by the combined score. "
+        "Semi-annual reconstitution."
+    ),
+    variant_chosen=(
+        "Reuses nifty_alpha_jensens's own plain (unshrunk) single-factor OLS market-model "
+        "regression for the Alpha leg and realized_low_volatility's own rolling 1-year "
+        "standard-deviation-of-daily-log-returns for the Low-Volatility leg, UNCHANGED -- "
+        "neither leg is re-derived or re-tuned here, only combined. Single-vintage holding "
+        "instead of the index's semi-annual whole-portfolio reconstitution -- the same "
+        "structural adaptation already applied to every prior cross-sectional strategy in this "
+        "program, approved for the identical underlying reason (see scope_reductions below)."
+    ),
+    scope_reductions=(
+        "LONG ONLY -- a direct restatement of the source's own long-only index construction, "
+        "not a deviation. COMBINATION METHOD: each leg is percentile-ranked cross-sectionally "
+        "FIRST (not blended in raw units -- Alpha's ~1e-4-scale daily-return units and "
+        "volatility's ~1e-2-scale daily-return-stdev units are not directly comparable, unlike "
+        "nifty_momentum_30_style's own same-units blend), the two percentiles are averaged "
+        "50/50 (no weighting is documented either way in the roadmap candidate's own mechanism "
+        "note), and the average is percentile-ranked ONE more time so the final value is a true "
+        "top-decile-of-the-combined-score percentile. This stands in for the official "
+        "methodology's own cross-sectional Z-score-then-sum construction -- this program has no "
+        "Z-score convention, and a percentile rank plays the same normalizing role every other "
+        "cross-sectional strategy here already uses (see "
+        "swing_research/cross_sectional.py's compute_nifty_alpha_low_volatility_30_percentile_"
+        "ranks() for the full reasoning). BOTH LEGS REUSE THEIR OWN STRATEGY'S EXISTING 252-"
+        "trading-day LOOKBACK UNCHANGED -- not re-derived here, same structural reason "
+        "(this platform's frozen 3-year recent-period check, "
+        "swing_research/acceptance_criteria.py RECENT_PERIOD_YEARS=3) each leg's own strategy "
+        "already discloses. RAW DAILY RETURNS used in place of returns in excess of a "
+        "risk-free rate for the Alpha leg's regression (no risk-free-rate time series is "
+        "integrated anywhere in this platform) -- identical, negligible-impact simplification "
+        "already used by every other market-model-regression strategy. SINGLE-VINTAGE HOLDING "
+        "instead of continuous semi-annual rebalancing into overlapping positions -- mirrors "
+        "every prior cross-sectional strategy's own approved deviation. RANK THRESHOLD of "
+        "percentile >=90 (top decile) standing in for the index's own 'top 30 of 100' "
+        "selection. EXIT RULE is ONLY a 126-trading-day time-stop (standing in for the ~6-month "
+        "semi-annual cadence) or the synthetic protective stop -- deliberately no percentile-"
+        "based early exit, same discipline as every prior cross-sectional strategy. PROTECTIVE "
+        "STOP-LOSS (8%) and POSITION SIZING (1% risk per unit) are NOT PART OF THE ORIGINAL "
+        "METHODOLOGY AT ALL -- the source is an index construction/weighting methodology with "
+        "no position-level risk management whatsoever. UNIVERSE is whatever universe this "
+        "experiment is run against, with no derivatives-availability or minimum-listing-history "
+        "filter applied."
+    ),
+    distinctiveness=(
+        "Touches BOTH the risk_based_alpha tag (shared with nifty_alpha_jensens) AND the "
+        "risk_based tag (shared with Betting Against Beta, SW-009, REJECT, and with "
+        "nifty_low_volatility_30) -- the weakest diversification case of any candidate in this "
+        "batch by construction, since it is explicitly a combination of two already-represented "
+        "mechanisms, per the roadmap candidate's own known_weaknesses. Reuses "
+        "swing_research/cross_sectional.py's existing vectorized .rank(pct=True, axis=1) "
+        "pattern, plus the two already-existing compute_nifty_alpha_jensens_score() and "
+        "compute_realized_volatility_score() functions UNCHANGED, via a new "
+        "compute_nifty_alpha_low_volatility_30_percentile_ranks() combining function. Its real "
+        "distinguishing feature is evidentiary TYPE, not mechanism: an audited, live, "
+        "institutionally-tracked index methodology rather than an academic replication -- see "
+        "the roadmap candidate's own evidence_sufficiency_note."
+    ),
+    assumptions_impact=(
+        "Long-only scope: N/A, a direct restatement of the source's own long-only construction. "
+        "Percentile-rank-then-average-then-percentile-rank (vs. Z-score-then-sum): MINOR-to-"
+        "MODERATE, DIRECTIONALLY UNKNOWN for a decile-cutoff entry rule -- both constructions "
+        "normalize each leg onto a comparable scale before combining, so the resulting ORDERING "
+        "should track closely, though not identically, especially near the decile boundary "
+        "where a few symbols could swap sides between a percentile-based blend and a "
+        "Z-score-based one. Reused 252-trading-day lookback on each leg: N/A, a direct reuse of "
+        "each leg's own already-approved, already-disclosed lookback (not a new deviation "
+        "introduced here). Raw returns vs. excess-of-risk-free returns: NEGLIGIBLE at daily "
+        "frequency, standard simplification already used elsewhere in this program. "
+        "Single-vintage holding: MODERATE-to-MATERIAL, DIRECTIONALLY UNKNOWN -- identical "
+        "reasoning to every prior cross-sectional strategy's own single-vintage deviation; "
+        "realizes one entry point's path per qualifying episode, with materially higher "
+        "variance than the index's smoothed, diversified 30-stock portfolio. 90th-percentile "
+        "rank threshold (vs. the index's own ~top-30-of-100 selection): MINOR-to-MODERATE, a "
+        "slightly tighter cutoff erring toward the stronger-signal side of the same underlying "
+        "score. 126-trading-day time-stop exit: N/A, a direct analogue of the documented "
+        "semi-annual cadence. Protective stop-loss (8%) and position sizing (1% risk/unit): "
+        "MODERATE by themselves (standard conventions already used elsewhere), but structurally "
+        "significant in that NEITHER exists in the source at all -- the original is an index "
+        "construction/weighting methodology, not a trading system, and has zero position-level "
+        "risk management. Also disclosed per the roadmap candidate's own "
+        "evidence_sufficiency_note: 'the index exists and has AUM' is a different TYPE of "
+        "evidence than 'a paper found a statistically significant premium' -- a PASS here would "
+        "show this implementation faithfully captures a real, live, audited product's own "
+        "return construction, not that an independent academic study found the same effect. "
+        "Given the compounded family overlap flagged above, even a PASS here is, per the "
+        "roadmap candidate's own evidence_sufficiency_note, the lowest-research-priority result "
+        "in its batch -- informative about this specific combined product, but weak evidence of "
+        "a genuinely independent new effect."
+    ),
+)
+
 CRYPTO_IDIOSYNCRATIC_VOLATILITY = PublishedStrategy(
     name="Cryptocurrency Idiosyncratic Volatility Factor",
     source_citation=(
