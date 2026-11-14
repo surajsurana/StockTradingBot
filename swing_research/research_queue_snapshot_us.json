@@ -4,8 +4,8 @@
     "name": "Overnight Return Anomaly (US)",
     "mode": "backtest",
     "in_progress": true,
-    "stale": false,
-    "claimed_days_ago": 1.7500170932754628,
+    "stale": true,
+    "claimed_days_ago": 2.0000070783680552,
     "horizon_lane": "swing"
   }
 }
