@@ -1145,6 +1145,47 @@ OVERNIGHT_RETURN_ANOMALY = PublishedStrategy(
 )
 
 
+OVERNIGHT_RETURN_ANOMALY_US = PublishedStrategy(
+    name="Overnight Return Anomaly (US)",
+    source_citation=OVERNIGHT_RETURN_ANOMALY.source_citation,
+    mechanism=OVERNIGHT_RETURN_ANOMALY.mechanism,
+    rules=OVERNIGHT_RETURN_ANOMALY.rules,
+    variant_chosen=OVERNIGHT_RETURN_ANOMALY.variant_chosen,
+    scope_reductions=(
+        "Same 21-day formation window, single-vintage holding, 1-trading-day time-stop, "
+        "protective stop and position sizing adaptations as the India version (see "
+        "OVERNIGHT_RETURN_ANOMALY above for the full reasoning) -- unchanged, none of it is "
+        "India-specific. CRITICALLY, the SAME fill_timing=\"close_to_next_open\" execution-realism "
+        "override (execution_realism_engine.py) is applied here from this strategy's very first US "
+        "run -- see run_overnight_return_us_experiment()'s own docstring. Unlike every other US "
+        "port in this program, that override is not an enhancement on top of the platform default; "
+        "it is a precondition for this backtest meaning anything at all, because the signal under "
+        "test IS the close-to-open gap, and the platform default (next_day_open) adds a full extra "
+        "intraday session per leg that the source papers' own 'tug of war' finding says moves "
+        "opposite the effect being measured -- exactly the contamination that produced the India "
+        "version's first, REJECTed run (EXP-076) before the fix. Long-only: this codebase has no "
+        "short-selling infrastructure for ANY market yet (not an NSE-specific gap -- the constraint "
+        "is this codebase's own execution layer, not the exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India PASS verdict (overnight_return_anomaly, live in paper "
+        "trading). Lou, Polk & Skouras (2019) and Berkman et al. (2012) are themselves US-sample "
+        "studies, so this test is closer to the papers' own native market than the India "
+        "application ever was. Needs zero new data (Open and Close are already columns in every "
+        "US OHLCV pull this program makes)."
+    ),
+    assumptions_impact=(
+        OVERNIGHT_RETURN_ANOMALY.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+          "market -- the fill-timing sensitivity is a property of the mechanism (the overnight gap "
+          "IS the signal), not of NSE vs. US market structure specifically, though US open auctions "
+          "are their own, separately-documented source of elevated open-of-day spreads/slippage "
+          "(see research_roadmap.py's known_weaknesses note for this candidate)."
+    ),
+)
+
+
 HIGH_VOLUME_RETURN_PREMIUM = PublishedStrategy(
     name="High-Volume Return Premium",
     source_citation=(

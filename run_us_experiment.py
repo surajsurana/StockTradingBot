@@ -76,6 +76,17 @@ RUNNERS = {
         lambda: _director().run_turn_of_month_us_experiment,
         "Turn-of-the-Month Effect, US variant (the unmodified India Strategy class and "
         "per-month combined-rank diversification fix, against the frozen S&P 500 universe)"),
+    # Added 2026-11-11. UNLIKE every other entry above, this one's walk-forward does NOT use Pool
+    # I's platform-default fill timing at all -- run_overnight_return_us_experiment() pre-binds its
+    # own walk_forward_fn/full_period_trade_adjuster to fill_timing="close_to_next_open" (see that
+    # function's docstring). This strategy's edge IS the close-to-open gap, so the default
+    # next_day_open fill would silently misrepresent the backtest -- not a choice this CLI makes,
+    # the research wrapper itself overrides it unconditionally.
+    "us_overnight_return_anomaly": (
+        lambda: _director().run_overnight_return_us_experiment,
+        "Overnight Return Anomaly, US variant (the unmodified India Strategy class against the "
+        "frozen S&P 500 universe, with the close_to_next_open fill-timing override the mechanism "
+        "requires)"),
 }
 
 
