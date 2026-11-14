@@ -788,8 +788,8 @@ dialog button{font:inherit;padding:6px 12px;border:1px solid var(--rule);backgro
 <section id="tab-research" hidden>
   <div class="repbar" style="margin-bottom:14px"><h2 id="research-title" style="margin:0">Next up for research</h2>
     <div class="ltnav" id="research-nav" role="group" aria-label="Research view">
-      <button data-view="queue" class="on">Next up</button><button data-view="results">Results</button></div></div>
-  <div id="research-health" class="rhealth tblwrap"></div>
+      <button data-view="queue" class="on">Next up</button><button data-view="results">Results</button><button data-view="health" id="research-health-btn">Health</button></div></div>
+  <div id="research-health" class="rhealth tblwrap" hidden></div>
   <div id="research-queue-view">
     <!-- The same four counts as the Strategies tab. Research is the front of that pipeline, so the
          question "and then what happened to them?" belongs on this page too, answered by the same
@@ -2982,7 +2982,8 @@ document.getElementById("research-nav").addEventListener("click", e => {
   document.querySelectorAll("#research-nav button").forEach(x => x.classList.toggle("on", x.dataset.view === RESEARCH_VIEW));
   document.getElementById("research-queue-view").hidden = RESEARCH_VIEW !== "queue";
   document.getElementById("research-results-view").hidden = RESEARCH_VIEW !== "results";
-  document.getElementById("research-title").textContent = RESEARCH_VIEW === "queue" ? "Next up for research" : "Completed research";
+  document.getElementById("research-health").hidden = RESEARCH_VIEW !== "health";
+  document.getElementById("research-title").textContent = {queue: "Next up for research", results: "Completed research", health: "Research lane health"}[RESEARCH_VIEW];
 });
 const currentTab = () => CUR_TAB;
 function pushRoute(){
@@ -3508,6 +3509,10 @@ function renderResearchHealth(s){
     el.innerHTML = `<table>${head}<tbody><tr><td class="none" colspan="${stages.length + 2}">Not checked yet</td></tr></tbody></table>`;
     return;
   }
+  // The table lives on its own tab now; a red dot on the tab says when a lane is stuck.
+  const btn = document.getElementById("research-health-btn");
+  if(btn){ const stuck = h.lanes.filter(l => l.status === "red").length;
+    btn.innerHTML = "Health" + (stuck ? ` <span class="hdot red" title="${stuck} lane${stuck===1?"":"s"} stuck"></span>` : ""); }
   const st = h.self_test || {};
   const stTip = st.ran_at ? ` · merge-gate self-test ${String(st.ran_at).slice(0, 10)}: ${st.ok === true ? "clean main green" : st.ok === false ? "clean main FAILS" : (st.summary || "no result")}` : "";
   el.innerHTML = `<table>${head}<tbody>${h.lanes.map(l => `<tr><td><b>${esc(l.label)}</b></td>${(l.stages || []).map(x => `<td>${dot(x.status, x.reason)}</td>`).join("")}<td><span class="pill ${pill[l.status] || ""}" title="${esc((l.red_since ? "Red since " + l.red_since : "") + (l.candidate ? (l.red_since ? " · " : "") + l.candidate : "") + stTip)}">${esc(word[l.status] || "—")}</span></td></tr>`).join("")}</tbody></table>`;
