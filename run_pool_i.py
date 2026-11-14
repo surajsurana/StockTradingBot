@@ -60,7 +60,7 @@ from swing_research.cross_sectional import (compute_momentum_percentile_ranks,
 from swing_research.strategies.minervini_trend_template_filter import MinerviniTrendTemplateFilterStrategy
 from swing_research.strategies.cross_sectional_momentum import CrossSectionalMomentumStrategy
 from swing_research.strategies.short_term_reversal import ShortTermReversalStrategy
-from swing_research.strategy_catalog import PAPER_US_STRATEGIES
+from swing_research.strategy_catalog import PAPER_US_STRATEGIES, US_FILL_TIMING
 from swing_research.universe_us import get_swing_universe_us
 
 POOL_I_STATE_DIR = os.path.join(STATE_DIR, "pool_i")
@@ -136,7 +136,7 @@ def run_one(strategy_key: str, symbols: list, data: dict, as_of: datetime.date, 
     result = pte.run_daily(
         strategy_key, factory(), fetch_data_fn=lambda: data, compute_extra_columns_fn=extra_fn or own_extra_fn,
         as_of_date=as_of, force=force,
-        execution_config=pte.ExecutionRealismConfig(fill_timing="next_day_open"),
+        execution_config=pte.ExecutionRealismConfig(fill_timing=US_FILL_TIMING.get(strategy_key, "next_day_open")),
         min_position_value_rupees=5.0, sizing_capital_cap=pool_i_starting_capital(dirname),
     )
     print(f"[{strategy_key}] {label}: {result}")

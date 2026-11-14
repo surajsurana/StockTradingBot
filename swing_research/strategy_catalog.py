@@ -331,6 +331,14 @@ def _cls(module: str, name: str):
 
 
 # strategy_key -> (strategy factory, extra-columns fn) -- run_pool_i.py's POOL_I_STRATEGIES shape.
+# A US strategy whose research verdict was validated under a fill timing other than Pool I's default
+# next_day_open. Paper must trade it the SAME way or the book re-runs a mechanism the backtest never
+# tested -- the US twin of PaperTradingStrategySpec.execution_config_factory (India). Overnight
+# Return Anomaly's whole edge is the close-to-open gap: buy at the close, sell at the next open.
+US_FILL_TIMING = {
+    "us_overnight_return_anomaly": "close_to_next_open",
+}
+
 PAPER_US_STRATEGIES = {
     "us_high_volume_return_premium": (_cls("high_volume_return_premium", "HighVolumeReturnPremiumStrategy"),
                                       _ranked("compute_volume_shock_percentile_ranks", "volume_shock_percentile")),

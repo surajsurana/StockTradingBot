@@ -264,6 +264,21 @@ class TestRunPoolISubPools(unittest.TestCase):
             self.assertEqual(c[2]["min_position_value_rupees"], 5.0)
             self.assertEqual(c[2]["execution_config"], pte.ExecutionRealismConfig(fill_timing="next_day_open"))
 
+    def test_a_strategy_validated_close_to_next_open_trades_that_way_in_every_sub_pool(self):
+        from unittest import mock
+        from deployment import paper_trading_engine as pte
+        configs = []
+        original_dir = pte.PAPER_TRADING_STATE_DIR
+        spec = self.rpi.POOL_I_STRATEGIES["cross_sectional_momentum_us"]
+        try:
+            with mock.patch.object(pte, "run_daily", side_effect=lambda key, strategy, **kw: configs.append(kw["execution_config"]) or {}), \
+                    mock.patch.dict(self.rpi.POOL_I_STRATEGIES, {"us_overnight_return_anomaly": spec}):
+                for label, dirname in self.rpi.POOL_I_SUBPOOLS.items():
+                    self.rpi.run_one("us_overnight_return_anomaly", [], {}, date(2026, 10, 1), dirname=dirname, label=label)
+        finally:
+            pte.PAPER_TRADING_STATE_DIR = original_dir
+        self.assertEqual([c.fill_timing for c in configs], ["close_to_next_open"] * 3)
+
     def test_one_sub_pool_failing_does_not_stop_the_others(self):
         from unittest import mock
         import pandas as pd
