@@ -305,6 +305,20 @@ PAPER_TRADING_STRATEGY_SPECS = [
             data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
         ), "nifty_alpha_jensens_percentile"),
     ),
+    PaperTradingStrategySpec(
+        strategy_key="nifty_alpha_low_volatility_30",
+        display_name="Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology)",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.nifty_alpha_low_volatility_30", fromlist=["NiftyAlphaLowVolatility30Strategy"]
+        ).NiftyAlphaLowVolatility30Strategy(),
+        # Needs the Nifty 50 series as the market for the Alpha leg, exactly as the research
+        # runner does -- same convention as nifty_alpha_jensens's own paper wiring above.
+        compute_extra_columns_fn=lambda data: _renamed(__import__(
+            "swing_research.cross_sectional", fromlist=["compute_nifty_alpha_low_volatility_30_percentile_ranks"]
+        ).compute_nifty_alpha_low_volatility_30_percentile_ranks(
+            data, __import__("data.fetch_historical", fromlist=["fetch_nifty"]).fetch_nifty(period="3y")["Close"]
+        ), "nifty_alpha_low_volatility_30_percentile"),
+    ),
 ]
 
 
@@ -552,5 +566,16 @@ RESEARCH_EXPERIMENT_SPECS = [
         runner_getter=lambda: __import__(
             "swing_research.research_director", fromlist=["run_nifty_momentum_30_style_experiment"]
         ).run_nifty_momentum_30_style_experiment,
+    ),
+    ResearchExperimentSpec(
+        strategy_key="nifty_alpha_low_volatility_30",
+        variant_description=("Combined Alpha + Low-Volatility Screen / Nifty Alpha Low-Volatility 30 "
+                             "methodology (Jensen's Alpha leg + 1yr realized-volatility leg, each "
+                             "percentile-ranked then averaged 50/50 then percentile-ranked once more, "
+                             "top-decile percentile, 126-trading-day single-vintage hold, long-only, no "
+                             "percentile-based early exit)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_nifty_alpha_low_volatility_30_experiment"]
+        ).run_nifty_alpha_low_volatility_30_experiment,
     ),
 ]

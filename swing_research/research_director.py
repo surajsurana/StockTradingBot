@@ -1137,6 +1137,63 @@ def run_nifty_alpha_jensens_experiment(data: dict, start_date: date, end_date: d
     )
 
 
+def run_nifty_alpha_low_volatility_30_experiment(data: dict, start_date: date, end_date: date,
+                                                  starting_capital: float = 1_000_000,
+                                                  n_walk_forward_windows: int = 3,
+                                                  narrative_api_key: str = "",
+                                                  narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                                  experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                                  knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                                  skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Combined
+    Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30
+    methodology) -- computes the combined cross-sectional percentile ONCE
+    up front (same pattern as every prior cross-sectional strategy),
+    reused across every walk-forward window by run_walk_forward_generic()'s
+    own per-window slicing of extra_columns_by_symbol.
+
+    Same EXTERNAL market-index series (Nifty 50) dependency as
+    run_nifty_alpha_jensens_experiment() -- the Alpha leg needs it, the
+    Low-Volatility leg does not, so it is fetched here and threaded
+    through unconditionally (same convention as every prior strategy
+    needing a market-index series), fetched via
+    data.fetch_historical.fetch_nifty() (period="max", read-only reuse),
+    independent of whatever period `data` itself covers.
+    """
+    from swing_research.strategies.nifty_alpha_low_volatility_30 import NiftyAlphaLowVolatility30Strategy
+    from swing_research.published_research_analyst import NIFTY_ALPHA_LOW_VOLATILITY_30
+    from swing_research.cross_sectional import compute_nifty_alpha_low_volatility_30_percentile_ranks
+    from data.fetch_historical import fetch_nifty
+
+    nifty = fetch_nifty(period="max")
+    combined_percentiles = compute_nifty_alpha_low_volatility_30_percentile_ranks(data, nifty["Close"])
+    extra_columns = {
+        symbol: series.rename("nifty_alpha_low_volatility_30_percentile")
+        for symbol, series in combined_percentiles.items()
+    }
+
+    strategy = NiftyAlphaLowVolatility30Strategy()
+    return run_generic_swing_experiment(
+        strategy, NIFTY_ALPHA_LOW_VOLATILITY_30, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "nifty_alpha_low_volatility_30_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "nifty_alpha_low_volatility_30_stop_loss_pct": 0.08,
+            "nifty_alpha_low_volatility_30_percentile_threshold": 90.0,
+            "nifty_alpha_low_volatility_30_alpha_lookback_days": 252,
+            "nifty_alpha_low_volatility_30_low_vol_lookback_days": 252,
+            "nifty_alpha_low_volatility_30_holding_period_trading_days": 126,
+            "nifty_alpha_low_volatility_30_single_vintage": True,
+            "nifty_alpha_low_volatility_30_percentile_based_early_exit": False,
+            "nifty_alpha_low_volatility_30_combination_method": "percentile-rank each leg, average 50/50, percentile-rank once more",
+        },
+    )
+
+
 def run_short_term_reversal_experiment(data: dict, start_date: date, end_date: date,
                                         starting_capital: float = 1_000_000,
                                         n_walk_forward_windows: int = 3,
