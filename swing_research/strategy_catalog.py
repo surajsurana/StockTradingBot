@@ -351,7 +351,13 @@ PAPER_US_STRATEGIES = {
 # strategy_key -> (strategy factory, symbols getter, extra-columns fn) -- run_pool_e.py's shape, with
 # the symbol list behind a zero-arg getter so this module imports nothing from data/ at load time.
 # The symbols must be the ones run_crypto_experiment.py's RUNNERS backtests the strategy on.
-PAPER_CRYPTO_STRATEGIES = {}
+PAPER_CRYPTO_STRATEGIES = {
+    "crypto_short_term_reversal": (
+        _cls("crypto_short_term_reversal", "CryptoShortTermReversalStrategy"),
+        lambda: __import__("data.fetch_crypto", fromlist=["CRYPTO_UNIVERSE"]).CRYPTO_UNIVERSE,
+        _ranked("compute_crypto_short_term_reversal_percentile_ranks", "crypto_short_reversal_percentile"),
+    ),
+}
 
 # Research runners with no paper wiring, frozen as of 2026-10-30: every one was rejected or retired
 # before this rule existed (52_week_high_momentum trades in paper under the key

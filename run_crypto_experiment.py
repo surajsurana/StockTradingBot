@@ -35,6 +35,8 @@ RUNNERS = {
                                         CRYPTO_UNIVERSE, 5),
     "crypto_long_horizon_reversal": (lambda: _lane().run_crypto_long_horizon_reversal_experiment,
                                      CRYPTO_UNIVERSE, 5),
+    "crypto_short_term_reversal": (lambda: _lane().run_crypto_short_term_reversal_experiment,
+                                   CRYPTO_UNIVERSE, 5),
 }
 
 
