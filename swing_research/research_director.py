@@ -951,6 +951,88 @@ def run_turn_of_month_us_experiment(data: dict, start_date: date, end_date: date
     )
 
 
+def run_overnight_return_us_experiment(data: dict, start_date: date, end_date: date,
+                                        starting_capital: float = 100_000,
+                                        n_walk_forward_windows: int = 3,
+                                        narrative_api_key: str = "",
+                                        narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                        experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                        knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                        skip_regime_breakdown: bool = False) -> str:
+    """
+    US-market counterpart to run_overnight_return_experiment() -- the EXACT SAME Strategy class
+    (OvernightReturnAnomalyStrategy), unmodified, against US equity `data` (S&P 500 universe,
+    swing_research/universe_us.py) instead of NSE data. See run_minervini_us_experiment()'s own
+    docstring for the full reasoning (identical pattern, different strategy).
+
+    CRITICAL, UNLIKE most other US ports: this strategy's entire edge IS the close-to-open gap, so
+    it is exactly as sensitive to fill timing here as run_overnight_return_experiment() found for
+    India (EXP-076 REJECT under next_day_open, re-run as EXP-078 under close_to_next_open -- see
+    that function's own docstring and OVERNIGHT_RETURN_ANOMALY's module docstring for the full
+    history). This wrapper therefore reuses the SAME walk_forward_fn=
+    execution_realism_engine.run_walk_forward_execution_realistic / full_period_trade_adjuster
+    pairing, pre-bound with fill_timing="close_to_next_open" ONLY -- not the platform default
+    "next_day_open" a generic US port would otherwise get. Using next_day_open here would shift
+    BOTH legs to an Open price (Open(t+1) to Open(t+2), a full extra intraday session the source
+    papers say moves OPPOSITE the effect under test), silently producing a meaningless verdict --
+    exactly the failure mode research_roadmap.CandidateProfile's own known_weaknesses note for
+    this candidate warns must be checked before this backtest can be trusted. Lou, Polk & Skouras
+    (2019) and Berkman et al. (2012) are themselves US-sample studies, so this is closer to the
+    papers' own native market than the India application ever was.
+    """
+    from functools import partial
+
+    from swing_research.strategies.overnight_return_anomaly import OvernightReturnAnomalyStrategy
+    from swing_research.published_research_analyst import OVERNIGHT_RETURN_ANOMALY_US
+    from swing_research.cross_sectional import compute_overnight_return_percentile_ranks
+    from swing_research.execution_realism_engine import (
+        apply_execution_realism, run_walk_forward_execution_realistic,
+    )
+
+    overnight_percentiles = compute_overnight_return_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("overnight_percentile") for symbol, series in overnight_percentiles.items()}
+
+    execution_realism_kwargs = dict(fill_timing="close_to_next_open")
+    walk_forward_fn = partial(run_walk_forward_execution_realistic, **execution_realism_kwargs)
+
+    def full_period_trade_adjuster(trades: list, full_data: dict) -> list:
+        return apply_execution_realism(trades, full_data, **execution_realism_kwargs)["trades"]
+
+    strategy = OvernightReturnAnomalyStrategy()
+    return run_generic_swing_experiment(
+        strategy, OVERNIGHT_RETURN_ANOMALY_US, data, start_date, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        walk_forward_fn=walk_forward_fn, full_period_trade_adjuster=full_period_trade_adjuster,
+        extra_parameters={
+            "overnight_return_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "overnight_return_stop_loss_pct": 0.08,
+            "overnight_return_percentile_threshold": 90.0,
+            "overnight_return_formation_days": 21,
+            "overnight_return_holding_period_trading_days": 1,
+            "overnight_return_single_vintage": True,
+            "overnight_return_percentile_based_early_exit": False,
+            "overnight_return_market": "US",
+            "transaction_costs_modeled": False, "slippage_modeled": False,
+            "execution_realism_config": {
+                "fill_timing": "close_to_next_open",
+                "methodology_note": (
+                    "Same fill-timing fix the India version needed (see "
+                    "run_overnight_return_experiment()'s own docstring): next_day_open shifts BOTH "
+                    "entry and exit to an Open price, spanning a full extra intraday session the "
+                    "source papers say moves opposite the effect under test. close_to_next_open "
+                    "leaves entry at that day's Close and substitutes only exit_date's own Open, "
+                    "giving the pure Close(entry_date) -> Open(exit_date) overnight round trip the "
+                    "papers describe. Applied from this strategy's FIRST US run -- there is no "
+                    "contaminated prior US run to correct, unlike the India EXP-076 history."
+                ),
+            },
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,
