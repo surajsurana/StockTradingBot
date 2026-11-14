@@ -336,6 +336,11 @@ PAPER_US_STRATEGIES = {
                                       _ranked("compute_volume_shock_percentile_ranks", "volume_shock_percentile")),
     "us_max_effect": (_cls("max_effect", "MaxEffectStrategy"),
                       _ranked("compute_max_effect_percentile_ranks", "max_effect_percentile")),
+    # The India class and percentile, unmodified, as the research wrapper uses them. Paper fills at
+    # Pool I's next_day_open like every US book; the backtest's close_to_next_open override is not
+    # carried here, the same as the India overnight_return_anomaly entry.
+    "us_overnight_return_anomaly": (_cls("overnight_return_anomaly", "OvernightReturnAnomalyStrategy"),
+                                    _ranked("compute_overnight_return_percentile_ranks", "overnight_percentile")),
     # Unlike every other entry here, this strategy has no cross-sectional percentile at all -- the
     # extra-columns fn is the SAME compute_monthly_eligibility() the research wrapper
     # (run_turn_of_month_us_experiment) passes to the backtest, not a renamed percentile, per-month
