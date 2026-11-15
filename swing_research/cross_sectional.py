@@ -479,6 +479,68 @@ def compute_nifty_alpha_jensens_percentile_ranks(data: dict, market_close: pd.Se
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+def compute_nifty_alpha_low_volatility_30_percentile_ranks(data: dict, market_close: pd.Series) -> dict:
+    """
+    Nifty Alpha Low-Volatility 30 methodology: a combined score of Jensen's
+    Alpha (research_roadmap.py key="nifty_alpha_jensens") and realized
+    1-year volatility (key="nifty_low_volatility_30") -- see
+    research_roadmap.py's own CandidateProfile (key=
+    "nifty_alpha_low_volatility_30") for why this is a genuinely distinct,
+    separately-tracked NSE product, not merely "the average of two rows
+    above."
+
+    Reuses compute_nifty_alpha_jensens_score() and
+    compute_realized_volatility_score() UNCHANGED (same lookback, same
+    plain-OLS/rolling-std construction each already uses standalone) --
+    this adds only the combination step.
+
+    DISCLOSED SIMPLIFICATION: the official NSE methodology standardises
+    each factor into a cross-sectional Z-score before combining. This
+    program has no Z-score convention; every other cross-sectional
+    strategy here instead gets a single .rank(axis=1, pct=True) percentile
+    step (see compute_nifty_momentum_30_score()'s own blended-ratio-then-
+    percentile construction). Alpha (daily-return units, ~1e-4) and
+    volatility (daily-return-stdev units, ~1e-2) are not on comparable
+    scales, so unlike the momentum-30 blend this cannot blend the two RAW
+    scores directly -- each is percentile-ranked cross-sectionally FIRST
+    (putting both on a common 0-100 scale, the same role a Z-score would
+    play), the two percentiles are averaged 50/50 (no weighting is
+    documented either way), and the averaged score is percentile-ranked
+    ONE more time so the final value is a true "top decile of the
+    combined score" percentile, matching every other cross-sectional
+    strategy's own decile-cutoff convention. Estimated impact: MINOR-to-
+    MODERATE -- a monotonic-in-spirit but not identical substitute for
+    Z-score-then-sum; could disagree with the official construction near
+    the decile boundary.
+
+    Volatility's percentile is inverted (negated before ranking) so HIGH
+    percentile means HIGH desirability (low volatility) on both legs,
+    matching Jensen's Alpha's own "high percentile = good" polarity before
+    they are averaged.
+
+    Returns {symbol: pd.Series of nifty_alpha_low_volatility_30_percentile
+    (0-100), indexed by date}, NaN wherever either leg's own rolling
+    window is not yet full (no lookahead on either leg).
+    """
+    alpha_scores = {}
+    low_vol_scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        sorted_df = df.sort_index()
+        alpha_scores[symbol] = compute_nifty_alpha_jensens_score(sorted_df, market_close)
+        low_vol_scores[symbol] = -compute_realized_volatility_score(sorted_df)
+
+    if not alpha_scores:
+        return {}
+
+    alpha_pct = _percentile_rank_rows(pd.DataFrame(alpha_scores))
+    low_vol_pct = _percentile_rank_rows(pd.DataFrame(low_vol_scores))
+    combined = (alpha_pct + low_vol_pct) / 2.0
+    final_pct = _percentile_rank_rows(combined)
+    return {symbol: final_pct[symbol] for symbol in final_pct.columns}
+
+
 LOOKBACK_52W = 252  # trading days -- same convention as
                      # strategies/minervini_trend_template_filter.py's own LOOKBACK_52W
 
