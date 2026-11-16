@@ -370,6 +370,29 @@ def run_crypto_short_term_reversal_experiment(data: dict, start_date: date, end_
     )
 
 
+def run_crypto_max_effect_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
+    """Grobys & Junttila (2021) / Yadav (2025) crypto MAX effect / lottery-demand anomaly
+    (crypto_max_effect candidate, 2026-11-16) -- the crypto lane's first behavioural/lottery-demand
+    mechanism, and its first WEEKLY cross-sectional QUINTILE rebalance besides crypto_xs_momentum."""
+    from swing_research.strategies.crypto_max_effect import (
+        BOTTOM_QUINTILE_PERCENTILE, HOLDING_DAYS, STOP_LOSS_PCT, CryptoMaxEffectStrategy,
+    )
+    from swing_research.published_research_analyst import CRYPTO_MAX_EFFECT
+    from swing_research.cross_sectional import CRYPTO_MAX_EFFECT_FORMATION_DAYS, compute_crypto_max_effect_percentile_ranks
+
+    ranks = compute_crypto_max_effect_percentile_ranks(data)
+    extra_columns = {symbol: series.rename("crypto_max_effect_percentile") for symbol, series in ranks.items()}
+    return run_crypto_experiment_generic(
+        CryptoMaxEffectStrategy(), CRYPTO_MAX_EFFECT, data, start_date, end_date,
+        extra_columns_by_symbol=extra_columns,
+        extra_parameters={"crypto_max_effect_formation_days": CRYPTO_MAX_EFFECT_FORMATION_DAYS,
+                          "crypto_bottom_quintile_percentile": BOTTOM_QUINTILE_PERCENTILE,
+                          "crypto_holding_days": HOLDING_DAYS,
+                          "crypto_rebalance_weekday": "Monday (UTC)", "crypto_stop_loss_pct": STOP_LOSS_PCT},
+        **kwargs,
+    )
+
+
 def run_crypto_trend_timing_daily_experiment(data: dict, start_date: date, end_date: date, **kwargs) -> str:
     """Faber's rule at daily cadence (2026-09-17) -- see crypto_trend_timing_daily.py."""
     from swing_research.strategies.crypto_trend_timing_daily import (

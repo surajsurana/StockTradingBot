@@ -383,6 +383,11 @@ PAPER_CRYPTO_STRATEGIES = {
         lambda: __import__("data.fetch_crypto", fromlist=["CRYPTO_UNIVERSE"]).CRYPTO_UNIVERSE,
         _ranked("compute_crypto_short_term_reversal_percentile_ranks", "crypto_short_reversal_percentile"),
     ),
+    "crypto_max_effect": (
+        _cls("crypto_max_effect", "CryptoMaxEffectStrategy"),
+        lambda: __import__("data.fetch_crypto", fromlist=["CRYPTO_UNIVERSE"]).CRYPTO_UNIVERSE,
+        _ranked("compute_crypto_max_effect_percentile_ranks", "crypto_max_effect_percentile"),
+    ),
 }
 
 # Research runners with no paper wiring, frozen as of 2026-10-30: every one was rejected or retired

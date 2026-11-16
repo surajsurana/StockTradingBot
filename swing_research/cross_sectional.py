@@ -1424,3 +1424,59 @@ def compute_industry_momentum_percentile_ranks(data: dict, sector_map: dict) -> 
             continue
         result[symbol] = industry_pct_ranks[industry]
     return result
+
+
+CRYPTO_MAX_EFFECT_FORMATION_DAYS = 30  # ~1 month of CALENDAR days, the same 21-TRADING-day ->
+    # 30-CALENDAR-day conversion already established for CRYPTO_IVOL_FORMATION_DAYS /
+    # CRYPTO_SHORT_TERM_REVERSAL_FORMATION_DAYS above -- a direct restatement of the India/US
+    # max_effect.py's own "within the past month" MAX(1) window into calendar days, since crypto
+    # trades every day. The candidate's own mechanism field (research_roadmap.py) describes MAX as
+    # "the single largest daily return over a trailing window" without naming an exact day-count for
+    # that window, and separately names the paper's rebalance cadence as WEEKLY -- those are not
+    # necessarily the same number: this lane's own crypto_xs_momentum.py already establishes the
+    # "formation window != hold period" pattern (3-week formation, 1-week hold), so the underlying
+    # MAX measurement window is kept at the original ~1-month length here while only the REBALANCE
+    # frequency (below) changes to weekly.
+
+
+def compute_crypto_max_effect_score(price_history: pd.DataFrame,
+                                     lookback_days: int = CRYPTO_MAX_EFFECT_FORMATION_DAYS) -> pd.Series:
+    """Bali-Cakici-Whitelaw's MAX(1), adapted to cryptocurrencies by Grobys & Junttila (2021): the
+    single HIGHEST daily return within the trailing `lookback_days` calendar-day window ending at
+    (and including) the current row -- the SAME construction as the India/US max_effect.py's own
+    compute_max_effect_score() above, just a calendar-day rather than trading-day window since
+    crypto trades every day. No .shift() needed before .rolling() -- daily_return at row i depends
+    only on Close[i] and Close[i-1], and .rolling(lookback_days).max() at row i looks only at rows
+    i-(lookback_days-1)..i, never a future row -- no lookahead, the same property every other score
+    function in this module already relies on."""
+    daily_return = price_history["Close"].pct_change()
+    return daily_return.rolling(lookback_days).max()
+
+
+def compute_crypto_max_effect_percentile_ranks(data: dict,
+                                                lookback_days: int = CRYPTO_MAX_EFFECT_FORMATION_DAYS) -> dict:
+    """
+    data: {symbol: DataFrame of daily OHLCV bars}.
+
+    Returns {symbol: pd.Series of crypto_max_effect_percentile (0-100), indexed by date} -- each
+    coin's cross-sectional percentile rank, among whatever coins have a valid (non-NaN, i.e.
+    >=`lookback_days` bars of history) trailing MAX score that day, of its own trailing ~1-month
+    single-highest-daily-return. LOW percentile means a LOW recent maximum daily return (a calmer,
+    less lottery-like coin) -- this strategy's entry condition is percentile <=20, the bottom
+    QUINTILE rather than this module's usual decile, since Grobys & Junttila's own documented rule
+    sorts coins into MAX QUINTILES (not deciles) -- see the strategy's module docstring. Same
+    vectorized .rank(axis=1, pct=True) construction as every other cross-sectional signal in this
+    module -- one call ranks every coin for every day simultaneously.
+    """
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_crypto_max_effect_score(df.sort_index(), lookback_days)
+
+    if not scores:
+        return {}
+
+    wide = pd.DataFrame(scores)
+    pct_ranks = _percentile_rank_rows(wide)
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
