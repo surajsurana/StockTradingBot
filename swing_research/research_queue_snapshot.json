@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "nifty_alpha_low_volatility_30",
-    "name": "Combined Alpha + Low-Volatility Screen (Nifty Alpha Low-Volatility 30 methodology)",
+    "key": "turn_of_year",
+    "name": "Turn-of-the-Year / January Effect",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "stale": false,
-    "claimed_days_ago": 1.0000239650347222,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
