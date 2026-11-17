@@ -3,9 +3,9 @@
     "key": "crypto_max_effect",
     "name": "MAX Effect / Lottery-Demand Anomaly (Crypto)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 7.653287037037037e-06,
     "horizon_lane": "crypto"
   }
 }
