@@ -2577,6 +2577,112 @@ CRYPTO_SHORT_TERM_REVERSAL = PublishedStrategy(
 )
 
 
+CRYPTO_MAX_EFFECT = PublishedStrategy(
+    name="MAX Effect / Lottery-Demand Anomaly (Crypto)",
+    source_citation=(
+        "Grobys, K. and Junttila, J. (2021), \"Speculation and lottery-like demand in "
+        "cryptocurrency markets,\" Journal of International Financial Markets, Institutions and "
+        "Money, Vol. 71, 101289 (DOI 10.1016/j.intfin.2021.101289); corroborated at an intraday "
+        "horizon by Yadav, M. (2025), \"Intraday lottery demands in cryptocurrency market,\" "
+        "Studies in Economics and Finance (Emerald), DOI 10.1108/SEF-07-2024-0461. The underlying "
+        "MAX measure is Bali, T.G., Cakici, N. and Whitelaw, R.F. (2011), \"Maxing Out: Stocks as "
+        "Lotteries and the Cross-Section of Expected Returns,\" Journal of Financial Economics, "
+        "Vol. 99, No. 2 -- the same citation already registered for this program's India "
+        "implementation (max_effect, PASS, paper trading)."
+    ),
+    mechanism=(
+        "Adapting Bali-Cakici-Whitelaw's MAX measure (the single largest daily return over a "
+        "trailing window) to cryptocurrencies, Grobys & Junttila sort 20 large, liquid coins into "
+        "MAX quintiles at a WEEKLY rebalance and find a high-MAX-minus-low-MAX spread exceeding "
+        "1.5% per week: lottery-like (high-MAX) coins subsequently UNDERPERFORM, the same sign and "
+        "economic story as this program's registered India strategy max_effect (PASS, paper "
+        "trading). Yadav (2025) corroborates the same negative sign using intraday (hourly) MAX on "
+        "the top 100 most liquid coins. The first behavioural/lottery-demand mechanism in this "
+        "program's crypto lane -- every existing crypto strategy (implemented or candidate) is "
+        "either price-momentum/trend-based, volatility-time-scaled, or residual-volatility-ranked "
+        "(crypto_idiosyncratic_volatility); none measures a single extreme-return lottery payoff "
+        "the way MAX does."
+    ),
+    rules=(
+        "MAX, each formation date: the single highest daily return a coin experienced within a "
+        "trailing window. Cross-sectional QUINTILE sort by MAX at a WEEKLY rebalance (the paper's "
+        "own documented grouping is quintiles, not this program's usual decile). Long the bottom "
+        "quintile (lowest MAX -- calmest, least lottery-like coins); the paper's zero-cost "
+        "portfolio shorts the top quintile (highest MAX -- most lottery-like coins)."
+    ),
+    variant_chosen=(
+        "30-CALENDAR-day MAX formation window (~1 month) -- the same 21-TRADING-day -> "
+        "30-CALENDAR-day conversion already established for this lane's own crypto_idiosyncratic_"
+        "volatility.py / crypto_short_term_reversal.py (CRYPTO_MAX_EFFECT_FORMATION_DAYS), a direct "
+        "restatement of the India/US max_effect.py's own 'within the past month' MAX(1) window. "
+        "WEEKLY REBALANCE (Monday, UTC) -- deliberately NOT the India sibling's monthly cadence: "
+        "the candidate's own known_weaknesses field (research_roadmap.py) documents that the sign "
+        "of the crypto MAX effect is horizon-dependent and contested -- weekly and intraday "
+        "horizons agree with the India sibling's sign, but daily/monthly horizons (the India "
+        "sibling's own cadence) are shown by two other studies to find the OPPOSITE sign ('MAX "
+        "momentum'). Testing this candidate at the India sibling's monthly cadence could therefore "
+        "easily test the wrong, already-contradicted sign, so the rebalance cadence is pinned to "
+        "the weekly horizon the negative-sign studies actually tested. The underlying MAX "
+        "measurement window (~1 month) and the rebalance/hold cadence (weekly) are therefore "
+        "deliberately different lengths -- the same 'formation window != hold period' pattern this "
+        "lane's own crypto_xs_momentum.py already uses (3-week formation, 1-week hold), since the "
+        "candidate's own mechanism field describes a 'trailing window' without naming its exact "
+        "length, separately from the paper's weekly rebalance cadence."
+    ),
+    scope_reductions=(
+        "LONG ONLY (bottom quintile, lowest MAX) -- same disclosed long-only reduction as every "
+        "strategy in this program. BOTTOM-QUINTILE THRESHOLD (percentile <=20), NOT this program's "
+        "usual decile cutoff -- the paper's own documented rule is a quintile sort. WEEKLY "
+        "rebalance (Monday UTC), the SAME convention as crypto_xs_momentum.py: entries fire only on "
+        "Mondays, exits on the following Monday's close (7 calendar days); a coin still in the "
+        "bottom quintile is re-entered the same day, which IS a weekly rebalance, matching the "
+        "candidate's own disclosed 'High -- weekly full-book rotation' expected trade frequency "
+        "(unlike this lane's other cross-sectional strategies' single-vintage, state-transition "
+        "designs). 20% protective stop-loss -- NOT the India sibling's 8%, which this lane's own "
+        "crypto_xs_momentum.py/crypto_tsmom.py/crypto_trend_timing*.py/crypto_illiquidity_premium.py/"
+        "crypto_idiosyncratic_volatility.py/crypto_long_horizon_reversal.py/crypto_short_term_"
+        "reversal.py already disclose is an equity-volatility number inappropriate for crypto's "
+        "much higher daily volatility; reused rather than inventing a new number. 2.5% "
+        "risk-per-unit sizing (12.5% of the book per coin) -- identical sizing convention to every "
+        "other cross-sectional crypto strategy in this lane. Book in USDT, fractional quantities. "
+        "Costs (0.30%/side + 10bps spread) and India's 31.2% per-profitable-trade VDA tax with no "
+        "loss set-off are applied before the audit, exactly as for every other crypto strategy -- "
+        "the verdict is post-tax, pre-tax recorded alongside."
+    ),
+    distinctiveness=(
+        "First behavioural/lottery-demand mechanism in this program's crypto lane -- genuinely "
+        "distinct from every other candidate's mechanism (momentum, trend, reversal, "
+        "volatility-based), though it shares this program's 'behavioral_lottery' tag conceptually "
+        "with the India strategy max_effect, albeit a looser link than a typical cross-market port "
+        "given the horizon-dependent sign dispute below. CENTRAL DISCLOSED CAVEAT, carried verbatim "
+        "from the candidate's own known_weaknesses field: the sign of the crypto MAX effect is "
+        "GENUINELY HORIZON-DEPENDENT and contested in a young literature -- two studies at adjacent "
+        "short horizons (weekly, intraday) agree with the India sibling's sign, while two further "
+        "studies at the longer daily/monthly horizon the India sibling actually trades find the "
+        "OPPOSITE sign. This candidate's own expected_robustness_score (3/10) reflects that "
+        "contested evidence; a REJECT or a sign-flipped result at this weekly horizon would still "
+        "be informative given the disclosed tension, not a wasted research cycle -- this "
+        "implementation does not adjust the mechanism to try to force a particular verdict."
+    ),
+    assumptions_impact=(
+        "Long-only: DIRECTIONALLY UNKNOWN, standard. 30-calendar-day MAX formation window (the same "
+        "conversion already used elsewhere in this lane, matching the India/US sibling's 1-month "
+        "specification): MINOR, a direct restatement of the documented/sibling rule. Weekly "
+        "rebalance cadence (Monday UTC, 7-calendar-day hold) instead of the India sibling's monthly "
+        "cadence: this is NOT a scope reduction but the candidate's own documented, deliberately "
+        "chosen specification -- pinning to the horizon the negative-sign studies actually tested, "
+        "to avoid testing the already-contradicted opposite-sign horizon. Bottom-quintile threshold "
+        "(percentile <=20, not this module's usual decile): MINOR, a direct restatement of the "
+        "paper's own documented rule. 20% crypto-scaled stop (not the equity strategy's 8%): "
+        "MODERATE, one-directional. 2.5% risk-per-unit / 12.5%-of-book sizing: MINOR. USDT book / "
+        "USD-INR conversion: NEGLIGIBLE for the verdict. Costs and 31.2% no-offset tax: MAJOR and "
+        "one-directional -- the lane's standing question, and especially pointed here given weekly "
+        "full-book rotation implies far more taxable events per year than this lane's monthly- or "
+        "single-vintage-rebalanced strategies."
+    ),
+)
+
+
 INDUSTRY_MOMENTUM = PublishedStrategy(
     name="Industry Momentum",
     source_citation=(
