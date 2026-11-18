@@ -1507,6 +1507,46 @@ DOWNSIDE_BETA = PublishedStrategy(
 )
 
 
+DOWNSIDE_BETA_US = PublishedStrategy(
+    name="Downside Beta / Downside Risk (US)",
+    source_citation=DOWNSIDE_BETA.source_citation,
+    mechanism=DOWNSIDE_BETA.mechanism,
+    rules=DOWNSIDE_BETA.rules,
+    variant_chosen=(
+        "Same estimator, same state-transition entry / 21-trading-day single-vintage hold as the "
+        "India version (see DOWNSIDE_BETA above) -- unchanged, none of it is India-specific. The "
+        "market series is the S&P 500 index (^GSPC, data.fetch_historical.fetch_sp500_index) in "
+        "place of Nifty 50, the only input that needed to change for this market."
+    ),
+    scope_reductions=(
+        DOWNSIDE_BETA.scope_reductions
+        + " Long-only: this codebase has no short-selling infrastructure for ANY market yet (not "
+        "an NSE-specific gap -- the constraint is this codebase's own execution layer, not the "
+        "exchange)."
+    ),
+    distinctiveness=(
+        "Same code, same rules, DIFFERENT market and DIFFERENT data -- a genuinely separate "
+        "backtest, not a reuse of the India RESEARCH-status PASS verdict (downside_beta, EXP-086). "
+        "Ang, Chen & Xing (2006)'s own sample IS US (CRSP) equities, so this test is the factor's "
+        "home market, not a transplant, unlike the India application. No existing US-lane "
+        "candidate or registered strategy carries the 'risk_based' tag yet, so this is a genuinely "
+        "new factor family for the US lane specifically -- see this candidate's own "
+        "research_roadmap.py entry. The India version's PASS carries deployment_status RESEARCH "
+        "rather than PAPER_TRADING, a real but lower-conviction result that should be read as "
+        "encouraging context only, not a strong prior for this US run."
+    ),
+    assumptions_impact=(
+        DOWNSIDE_BETA.assumptions_impact
+        + " NEW for this variant: none of the above assumption-impact reasoning changes with "
+        "market -- every estimate above was already about the STRATEGY's own documented-rules "
+        "gaps, not about India specifically, so it applies unchanged here. One market-specific "
+        "addition: the S&P 500 is a deeper, more efficiently-priced large-cap universe than the "
+        "NSE universe the India version passed on, so a weaker or absent premium here would be an "
+        "informative result on its own, not evidence of an implementation error."
+    ),
+)
+
+
 CRYPTO_TSMOM = PublishedStrategy(
     name="Crypto Time-Series Momentum (12-month)",
     source_citation=(

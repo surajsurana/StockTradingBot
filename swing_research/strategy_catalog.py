@@ -372,6 +372,21 @@ PAPER_US_STRATEGIES = {
                         lambda data: __import__(
                             "swing_research.strategies.turn_of_month", fromlist=["compute_monthly_eligibility"]
                         ).compute_monthly_eligibility(data)),
+    # Unlike every other entry here, this strategy's extra-columns fn needs a market series as well
+    # as `data` -- compute_downside_beta_percentile_ranks() conditions on the S&P 500 index (^GSPC),
+    # fetched fresh here the same way run_downside_beta_us_experiment() fetches it for research, so
+    # _ranked() (which only ever passes `data`) doesn't fit. Same rename-to-column-name step _ranked
+    # performs via _renamed(), done explicitly instead.
+    "us_downside_beta": (_cls("downside_beta", "DownsideBetaStrategy"),
+                        lambda data: _renamed(
+                            __import__("swing_research.cross_sectional", fromlist=["compute_downside_beta_percentile_ranks"])
+                            .compute_downside_beta_percentile_ranks(
+                                data,
+                                __import__("data.fetch_historical", fromlist=["fetch_sp500_index"])
+                                .fetch_sp500_index(period="max")["Close"],
+                            ),
+                            "downside_beta_percentile",
+                        )),
 }
 
 # strategy_key -> (strategy factory, symbols getter, extra-columns fn) -- run_pool_e.py's shape, with

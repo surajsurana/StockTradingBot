@@ -1033,6 +1033,70 @@ def run_overnight_return_us_experiment(data: dict, start_date: date, end_date: d
     )
 
 
+def run_downside_beta_us_experiment(data: dict, start_date: date, end_date: date,
+                                    starting_capital: float = 100_000,
+                                    n_walk_forward_windows: int = 3,
+                                    narrative_api_key: str = "",
+                                    narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                    experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                    knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                    skip_regime_breakdown: bool = False,
+                                    market_close=None, warm_up_days: int = 365) -> str:
+    """
+    US-market counterpart to run_downside_beta_experiment() (added 2026-11-18) -- the EXACT SAME
+    Strategy class (DownsideBetaStrategy), unmodified, against US equity `data` (S&P 500
+    universe, swing_research/universe_us.py) instead of NSE data. See
+    run_minervini_us_experiment()'s own docstring for the full reasoning (identical pattern,
+    different strategy). Ang, Chen & Xing (2006)'s own sample IS US (CRSP) equities, so this is
+    the factor's home market, not a transplant, unlike the India application -- see
+    published_research_analyst.DOWNSIDE_BETA_US's own distinctiveness note.
+
+    The only input that changes for this market: `market_close` defaults to the S&P 500 index
+    (^GSPC, data.fetch_historical.fetch_sp500_index) in place of Nifty 50. Same warm-up-year
+    convention as the India wrapper -- the estimator needs a full year of daily returns, so the
+    walk-forward judgement starts `warm_up_days` after the data start.
+
+    `starting_capital` defaults to 100,000 (US dollars, not rupees -- this is only the
+    backtest's internal position-sizing capital, unrelated to whatever capital a later paper
+    pool is actually seeded with).
+    """
+    from datetime import timedelta
+    from swing_research.strategies.downside_beta import (
+        DownsideBetaStrategy, DOWNSIDE_BETA_PERCENTILE_THRESHOLD, HOLDING_PERIOD_DAYS, STOP_LOSS_PCT,
+    )
+    from swing_research.published_research_analyst import DOWNSIDE_BETA_US
+    from swing_research.cross_sectional import DOWNSIDE_BETA_LOOKBACK_DAYS, compute_downside_beta_percentile_ranks
+
+    if market_close is None:
+        from data.fetch_historical import fetch_sp500_index
+        market_close = fetch_sp500_index(period="max")["Close"]
+    percentiles = compute_downside_beta_percentile_ranks(data, market_close)
+    extra_columns = {symbol: series.rename("downside_beta_percentile") for symbol, series in percentiles.items()}
+
+    judged_start = start_date + timedelta(days=warm_up_days)
+    if judged_start >= end_date:
+        judged_start = start_date
+    strategy = DownsideBetaStrategy()
+    return run_generic_swing_experiment(
+        strategy, DOWNSIDE_BETA_US, data, judged_start, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "downside_beta_lookback_days": DOWNSIDE_BETA_LOOKBACK_DAYS,
+            "downside_beta_percentile_threshold": DOWNSIDE_BETA_PERCENTILE_THRESHOLD,
+            "downside_beta_side": "TOP quintile (highest downside beta) -- the paper's premium side",
+            "downside_beta_market": "S&P 500 index (^GSPC), aligned and forward-filled per stock",
+            "downside_beta_holding_period_trading_days": HOLDING_PERIOD_DAYS,
+            "downside_beta_stop_loss_pct": STOP_LOSS_PCT, "downside_beta_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "downside_beta_single_vintage": True,
+            "data_start_with_warm_up": start_date.isoformat(), "walk_forward_judged_from": judged_start.isoformat(),
+            "warm_up_days": warm_up_days,
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,
