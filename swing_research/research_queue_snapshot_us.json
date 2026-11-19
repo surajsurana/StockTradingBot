@@ -3,9 +3,9 @@
     "key": "us_downside_beta",
     "name": "Downside Beta / Downside Risk (US)",
     "mode": "backtest",
-    "in_progress": false,
+    "in_progress": true,
     "stale": false,
-    "claimed_days_ago": null,
+    "claimed_days_ago": 5.661388888888889e-06,
     "horizon_lane": "swing"
   }
 }
