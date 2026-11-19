@@ -54,6 +54,16 @@ def fetch_nifty(period: str = "2y") -> pd.DataFrame:
     return fetch_daily_candles("^NSEI", period=period)
 
 
+def fetch_sp500_index(period: str = "2y") -> pd.DataFrame:
+    """
+    Fetch S&P 500 index history (^GSPC). US-market counterpart to
+    fetch_nifty() -- the "market" series downside-beta-style conditional
+    estimators condition on, added for the US downside beta candidate
+    (swing_research/strategies/downside_beta.py, unmodified).
+    """
+    return fetch_daily_candles("^GSPC", period=period)
+
+
 if __name__ == "__main__":
     df = fetch_daily_candles("RELIANCE.NS", period="6mo")
     print(df.tail())

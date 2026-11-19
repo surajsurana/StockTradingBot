@@ -87,6 +87,16 @@ RUNNERS = {
         "Overnight Return Anomaly, US variant (the unmodified India Strategy class against the "
         "frozen S&P 500 universe, with the close_to_next_open fill-timing override the mechanism "
         "requires)"),
+    # Added 2026-11-18. UNLIKE every other entry above, this one's extra-columns function needs a
+    # market series as well as `data` -- run_downside_beta_us_experiment() fetches the S&P 500
+    # index (^GSPC) itself when market_close is not passed, exactly as run_downside_beta_experiment()
+    # fetches Nifty 50 for the India version. Nothing about that is this CLI's concern; it calls the
+    # wrapper the same way as every other entry.
+    "us_downside_beta": (
+        lambda: _director().run_downside_beta_us_experiment,
+        "Downside Beta / Downside Risk, US variant (the unmodified India Strategy class against "
+        "the frozen S&P 500 universe, with the S&P 500 index in place of Nifty 50 as the market "
+        "series)"),
 }
 
 
