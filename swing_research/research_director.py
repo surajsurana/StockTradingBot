@@ -1630,6 +1630,57 @@ def run_turn_of_month_experiment(data: dict, start_date: date, end_date: date,
     )
 
 
+def run_turn_of_year_experiment(data: dict, start_date: date, end_date: date,
+                                 starting_capital: float = 1_000_000,
+                                 n_walk_forward_windows: int = 3,
+                                 narrative_api_key: str = "",
+                                 narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                 experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                 knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                 skip_regime_breakdown: bool = False) -> str:
+    """
+    Thin wrapper over run_generic_swing_experiment() for the Turn-of-the-
+    Year / January Effect (Keim, 1983) -- combines Turn-of-the-Month's
+    calendar-window mechanism (entry/exit by trading-day ROW POSITION
+    around a specific calendar event, computed directly in
+    TurnOfYearStrategy.precompute() from the price history's own index, no
+    injected eligibility column needed) with Size Premium / Banz's
+    point-in-time market-cap cross-sectional percentile (same
+    compute_market_cap_percentile_ranks() function, same current-snapshot
+    shares-outstanding fetch, same bottom-decile cut) -- because the
+    published mechanism is explicitly small-cap-concentrated, unlike
+    Turn-of-the-Month's universe-wide application.
+    """
+    from swing_research.strategies.turn_of_year import TurnOfYearStrategy
+    from swing_research.published_research_analyst import TURN_OF_YEAR
+    from swing_research.cross_sectional import compute_market_cap_percentile_ranks
+    from data.fetch_shares_outstanding import get_shares_outstanding
+
+    shares_outstanding = get_shares_outstanding(list(data.keys()), max_age_days=30)
+    market_cap_percentiles = compute_market_cap_percentile_ranks(data, shares_outstanding)
+    extra_columns = {symbol: series.rename("market_cap_percentile")
+                     for symbol, series in market_cap_percentiles.items()}
+
+    strategy = TurnOfYearStrategy()
+    return run_generic_swing_experiment(
+        strategy, TURN_OF_YEAR, data, start_date, end_date, starting_capital, n_walk_forward_windows,
+        extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "turn_of_year_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "turn_of_year_stop_loss_pct": 0.08,
+            "turn_of_year_hold_trading_days": 5,
+            "turn_of_year_small_cap_percentile_threshold": 10.0,
+            "turn_of_year_single_vintage": True,
+            "turn_of_year_percentile_based_early_exit": False,
+            "shares_outstanding_symbols_found": len(shares_outstanding),
+            "shares_outstanding_symbols_requested": len(data),
+        },
+    )
+
+
 def run_overnight_return_experiment(data: dict, start_date: date, end_date: date,
                                      starting_capital: float = 1_000_000,
                                      n_walk_forward_windows: int = 3,

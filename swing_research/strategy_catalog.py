@@ -143,6 +143,24 @@ PAPER_TRADING_STRATEGY_SPECS = [
         # date-seeded tie-break is the sole ordering mechanism, same as Turtle System 2.
     ),
     PaperTradingStrategySpec(
+        strategy_key="turn_of_year",
+        display_name="Turn-of-the-Year / January Effect",
+        strategy_factory=lambda: __import__(
+            "swing_research.strategies.turn_of_year", fromlist=["TurnOfYearStrategy"]
+        ).TurnOfYearStrategy(),
+        # Same current-snapshot shares-outstanding fetch and bottom-decile market-cap percentile
+        # as Size Premium / Banz's own research wrapper -- see run_turn_of_year_experiment().
+        compute_extra_columns_fn=lambda data: _renamed(
+            __import__("swing_research.cross_sectional", fromlist=["compute_market_cap_percentile_ranks"])
+            .compute_market_cap_percentile_ranks(
+                data,
+                __import__("data.fetch_shares_outstanding", fromlist=["get_shares_outstanding"])
+                .get_shares_outstanding(list(data.keys()), max_age_days=30),
+            ),
+            "market_cap_percentile",
+        ),
+    ),
+    PaperTradingStrategySpec(
         strategy_key="ma_pullback",
         display_name="Moving Average Pullback",
         strategy_factory=lambda: __import__(
@@ -516,6 +534,14 @@ RESEARCH_EXPERIMENT_SPECS = [
         runner_getter=lambda: __import__(
             "swing_research.research_director", fromlist=["run_turn_of_month_experiment"]
         ).run_turn_of_month_experiment,
+    ),
+    ResearchExperimentSpec(
+        strategy_key="turn_of_year",
+        variant_description=("Turn-of-the-Year / January Effect (last trading day of December entry, "
+                             "5-trading-day hold, bottom-decile market-cap percentile filter)"),
+        runner_getter=lambda: __import__(
+            "swing_research.research_director", fromlist=["run_turn_of_year_experiment"]
+        ).run_turn_of_year_experiment,
     ),
     ResearchExperimentSpec(
         strategy_key="overnight_return_anomaly",

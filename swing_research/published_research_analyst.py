@@ -1984,6 +1984,94 @@ SIZE_PREMIUM_BANZ = PublishedStrategy(
     ),
 )
 
+TURN_OF_YEAR = PublishedStrategy(
+    name="Turn-of-the-Year / January Effect",
+    source_citation=(
+        "Keim, D.B. (1983), \"Size-Related Anomalies and Stock Return Seasonality: Further "
+        "Empirical Evidence,\" Journal of Financial Economics, Vol. 12, No. 1."
+    ),
+    mechanism=(
+        "Small-cap stocks show abnormally strong returns in the first days of January -- "
+        "historically linked to December tax-loss-selling pressure unwinding and a subsequent "
+        "early-January rebound. Keim documents that roughly half of the small-firm size "
+        "premium's entire annual magnitude is concentrated in the first few trading days of "
+        "January alone, with the single largest abnormal return on the very first trading day."
+    ),
+    rules=(
+        "Small-cap concentration: the effect is documented specifically for the smallest-"
+        "market-cap firms, not the broad market. Window: the abnormal return concentrates in "
+        "roughly the first five trading days of January."
+    ),
+    variant_chosen=(
+        "Long-only, bottom-decile market-cap filter (same cut and same "
+        "compute_market_cap_percentile_ranks() function as Size Premium / Banz) -- enter at "
+        "Close on the last trading day of December (January 1st itself is never a trading day), "
+        "exit exactly 5 trading days later (computed by row position, same precedent as "
+        "Turn-of-the-Month's own row-position exit, not a calendar-day approximation)."
+    ),
+    scope_reductions=(
+        "SMALL-CAP FILTER REUSES SIZE PREMIUM / BANZ'S OWN MACHINERY, UNCHANGED: bottom "
+        "market-cap decile (percentile <=10), identical compute_market_cap_percentile_ranks() "
+        "function, identical current-snapshot shares-outstanding caveat "
+        "(data/fetch_shares_outstanding.py) -- mild for a large, stable Nifty 500 constituent, "
+        "more material for anything with a big historical split/bonus issue/buyback/dilution. "
+        "NO DIVERSIFICATION HASH FIX (unlike Turn-of-the-Month): the bottom-decile market-cap "
+        "filter already narrows the universe to roughly 10% of symbols before the shared "
+        "engine's max_units_total=10 cap applies -- the same natural narrowing Size Premium / "
+        "Banz already relies on -- so Turn-of-the-Month's own alphabetical-collapse problem "
+        "(documented in that strategy's module docstring) does not reappear here in the same "
+        "form. HOLDING PERIOD computed by ROW POSITION (exactly 5 trading days after entry), "
+        "same reasoning as Turn-of-the-Month's own short, weekend-sensitive horizon -- NOT "
+        "tuned against any backtest result (none has been run); sized to Keim's own 'roughly "
+        "half the annual premium in the first five trading days' finding, within the roadmap "
+        "candidate profile's own holding_days_min=1/holding_days_max=10 bounds. "
+        "TRANSFERABILITY (disclosed, NOT corrected for): the mechanism is tied to the US tax "
+        "year (calendar year, Dec 31 loss-selling deadline); India's capital-gains tax year "
+        "ends in March, not December, so this test asks whether a US-calendar-specific effect "
+        "also shows up in NSE small-caps, not whether an analogous India-fiscal-year-end effect "
+        "exists -- the published January window is implemented AS PUBLISHED, not shifted to "
+        "India's fiscal year-end, per direction not to deviate from the published mechanism to "
+        "make it perform better. PROTECTIVE STOP-LOSS (8%) and POSITION SIZING (1% risk per "
+        "unit) are NOT PART OF THE ORIGINAL METHODOLOGY AT ALL -- the source paper is a "
+        "factor-return seasonality study with no position-level risk management whatsoever."
+    ),
+    distinctiveness=(
+        "First strategy in this program to combine the pure calendar/seasonality mechanism "
+        "(Turn-of-the-Month) with a cross-sectional size filter (Size Premium / Banz) -- neither "
+        "building block is new, but the combination is. Also directly tests a link Size Premium "
+        "/ Banz's own assumptions_impact note already flagged as a live, well-cited concern in "
+        "the literature: that much of the original size premium may be concentrated in a "
+        "January-effect/small-sample artifact rather than being a clean, persistent small-cap "
+        "risk premium -- this strategy's own result bears directly on how that caveat should be "
+        "read, whatever it comes out as."
+    ),
+    assumptions_impact=(
+        "Small-cap filter (bottom decile, current-snapshot shares outstanding): MINOR for most "
+        "Nifty 500 constituents, POTENTIALLY MATERIAL for any name with a large historical "
+        "split/bonus/buyback/dilution inside the backtest window -- identical caveat and "
+        "identical magnitude as Size Premium / Banz's own disclosure, inherited unchanged. "
+        "5-trading-day holding window (vs. Keim's own less rigidly defined 'first days of "
+        "January'): MODERATE -- a materially shorter or longer window could change which part of "
+        "the documented effect is captured; 5 was chosen for the reasoning above, before any "
+        "backtest was run, not tuned on a result. Row-position-based exit (kept faithful, not "
+        "approximated): NEGLIGIBLE incremental risk, more precise than the generic calendar-day "
+        "approximation used elsewhere. US-calendar mechanism tested on an India fiscal year "
+        "(not corrected for): DIRECTIONALLY UNKNOWN but POTENTIALLY MATERIAL -- this is the "
+        "candidate profile's own flagged known_weakness, and the single largest open question "
+        "about whether this test is even asking the right question for the NSE market, as "
+        "opposed to a faithful but possibly moot replication of a US-specific tax-calendar "
+        "effect. Once-a-year trade frequency: ~10 independent annual events over a 10-year "
+        "backtest window, the same low-event-count concern the roadmap candidate profile's own "
+        "evidence_sufficiency_note already flags -- any verdict from this few independent trials "
+        "carries unusually wide statistical uncertainty regardless of the point estimate. "
+        "Protective stop-loss (8%) and position sizing (1% risk/unit): MINOR by themselves, but "
+        "structurally significant in that neither exists in the source paper at all -- and at "
+        "only a 5-trading-day hold, the 8% stop is far less likely to bind than in most other "
+        "strategies in this program, so its practical impact here is likely smaller than usual."
+    ),
+)
+
+
 SHORT_TERM_REVERSAL_US = PublishedStrategy(
     name="Short-Term Reversal (US)",
     source_citation=SHORT_TERM_REVERSAL.source_citation,
