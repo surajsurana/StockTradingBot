@@ -1,11 +1,11 @@
 {
   "current": {
-    "key": "turn_of_year",
-    "name": "Turn-of-the-Year / January Effect",
+    "key": "day_of_week",
+    "name": "Day-of-the-Week (Weekend) Effect",
     "mode": "backtest",
-    "in_progress": true,
+    "in_progress": false,
     "stale": false,
-    "claimed_days_ago": 0.7500194971875,
+    "claimed_days_ago": null,
     "horizon_lane": "swing"
   }
 }
