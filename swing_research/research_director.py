@@ -1097,6 +1097,74 @@ def run_downside_beta_us_experiment(data: dict, start_date: date, end_date: date
     )
 
 
+def run_price_delay_factor_us_experiment(data: dict, start_date: date, end_date: date,
+                                         starting_capital: float = 100_000,
+                                         n_walk_forward_windows: int = 3,
+                                         narrative_api_key: str = "",
+                                         narrative_call_fn: Optional[Callable[[str], str]] = None,
+                                         experiments_dir: str = SWING_EXPERIMENTS_DIR,
+                                         knowledge_base_path: str = SWING_KNOWLEDGE_BASE_PATH,
+                                         skip_regime_breakdown: bool = False,
+                                         market_close=None, warm_up_days: int = 1095) -> str:
+    """
+    Hou & Moskowitz (2005) price delay (added 2026-11-25) -- the US lane's first GENUINELY NEW
+    factor mechanism (no India sibling; see published_research_analyst.PRICE_DELAY_FACTOR_US's
+    own distinctiveness note and this candidate's research_roadmap.py entry,
+    key="us_price_delay_factor"). The percentile is computed ONCE on the full data (S&P 500
+    index as the market, fetched here unless market_close is passed) and windowed by date like
+    every other cross-sectional signal in this program.
+
+    UNLIKE the warm_up_days=365 convention used by downside_beta (a 252-trading-day/1-year
+    estimator), this estimator needs a rolling ~3-YEAR (156-week) window of weekly returns
+    before a single delay value can even be formed -- so warm_up_days defaults to 1095 (~3
+    years) here, not 365. Without this the first ~3 years of the walk-forward judgement would be
+    blind, the same cold-start problem downside_beta's own warm_up_days fix (EXP-083) addressed
+    for its shorter 1-year estimator. The full-period comparison run still uses all the data (it
+    simply has no signals in the warm-up window).
+
+    `starting_capital` defaults to 100,000 (US dollars -- this is only the backtest's internal
+    position-sizing capital, unrelated to whatever capital a later paper pool is seeded with).
+    """
+    from datetime import timedelta
+    from swing_research.strategies.price_delay_factor import (
+        PriceDelayFactorStrategy, PRICE_DELAY_PERCENTILE_THRESHOLD, HOLDING_PERIOD_DAYS, STOP_LOSS_PCT,
+    )
+    from swing_research.published_research_analyst import PRICE_DELAY_FACTOR_US
+    from swing_research.cross_sectional import (
+        PRICE_DELAY_LOOKBACK_WEEKS, PRICE_DELAY_NUM_LAGS, compute_price_delay_percentile_ranks,
+    )
+
+    if market_close is None:
+        from data.fetch_historical import fetch_sp500_index
+        market_close = fetch_sp500_index(period="max")["Close"]
+    percentiles = compute_price_delay_percentile_ranks(data, market_close)
+    extra_columns = {symbol: series.rename("price_delay_percentile") for symbol, series in percentiles.items()}
+
+    judged_start = start_date + timedelta(days=warm_up_days)
+    if judged_start >= end_date:
+        judged_start = start_date
+    strategy = PriceDelayFactorStrategy()
+    return run_generic_swing_experiment(
+        strategy, PRICE_DELAY_FACTOR_US, data, judged_start, end_date, starting_capital,
+        n_walk_forward_windows, extra_columns_by_symbol=extra_columns,
+        narrative_api_key=narrative_api_key, narrative_call_fn=narrative_call_fn,
+        experiments_dir=experiments_dir, knowledge_base_path=knowledge_base_path,
+        skip_regime_breakdown=skip_regime_breakdown,
+        extra_parameters={
+            "price_delay_lookback_weeks": PRICE_DELAY_LOOKBACK_WEEKS,
+            "price_delay_num_lags": PRICE_DELAY_NUM_LAGS,
+            "price_delay_percentile_threshold": PRICE_DELAY_PERCENTILE_THRESHOLD,
+            "price_delay_side": "TOP decile (highest price delay) -- the paper's premium side",
+            "price_delay_market": "S&P 500 index (^GSPC), aligned and forward-filled per stock",
+            "price_delay_holding_period_trading_days": HOLDING_PERIOD_DAYS,
+            "price_delay_stop_loss_pct": STOP_LOSS_PCT, "price_delay_risk_pct_per_unit": strategy.risk_pct_per_unit,
+            "price_delay_single_vintage": True,
+            "data_start_with_warm_up": start_date.isoformat(), "walk_forward_judged_from": judged_start.isoformat(),
+            "warm_up_days": warm_up_days,
+        },
+    )
+
+
 def run_amihud_experiment(data: dict, start_date: date, end_date: date,
                           starting_capital: float = 1_000_000,
                           n_walk_forward_windows: int = 3,

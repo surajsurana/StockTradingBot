@@ -2899,3 +2899,91 @@ INDUSTRY_MOMENTUM = PublishedStrategy(
         "original is a factor-return study with zero position-level risk management."
     ),
 )
+
+
+PRICE_DELAY_FACTOR_US = PublishedStrategy(
+    name="Price Delay Factor (Slow Information Diffusion)",
+    source_citation=(
+        "Hou, K. and Moskowitz, T.J. (2005), \"Market Frictions, Price Delay, and the Cross-"
+        "Section of Expected Returns,\" The Review of Financial Studies, Vol. 18, No. 3, "
+        "981-1020 -- verified real via WebSearch 2026-10-03 per this candidate's "
+        "research_roadmap.py entry (key=\"us_price_delay_factor\")."
+    ),
+    mechanism=(
+        "Each stock's weekly return is regressed on the contemporaneous AND several lagged "
+        "weekly market returns over a rolling ~3-year window; 'delay' (D1) is the fraction of "
+        "that regression's R^2 that comes only from the lagged terms -- how much of a stock's "
+        "reaction to market-wide information arrives late rather than immediately. The authors "
+        "attribute the premium mainly to investor-recognition frictions (smaller, less-followed "
+        "names diffuse information more slowly), and directly test that it is not explained by "
+        "size, liquidity or microstructure effects. UNLIKE every momentum/reversal candidate on "
+        "this roadmap (which measure a stock's own past return) and this program's beta-based "
+        "risk candidates (Betting Against Beta, Downside Beta, Jensen's Alpha -- a CONTEMPORANEOUS "
+        "regression coefficient at a single lag), this measures the LAG STRUCTURE of a stock's "
+        "co-movement with the market -- a measure of information-processing speed, not of price "
+        "direction at all. See this candidate's own research_roadmap.py entry for the full "
+        "mechanism description this implementation follows."
+    ),
+    rules=(
+        "Monthly re-formation: estimate D1 = 1 - R2_restricted/R2_unrestricted per stock from a "
+        "rolling 156-week (~3-year) window of weekly returns, contemporaneous market return plus "
+        "4 lagged weekly market returns (unrestricted) vs. contemporaneous only (restricted). "
+        "Sort into deciles; the paper's premium accrues to the TOP decile (highest delay). Hold "
+        "one month; re-form monthly. Equal weights, long-only (a disclosed reduction from the "
+        "paper's long-short construction, per the roadmap's own `direction` field)."
+    ),
+    variant_chosen=(
+        "This program's usual state-transition entry (buy at the close of the first day a stock "
+        "enters the top decile, not the prior day) and single-vintage 21-trading-day hold, in "
+        "place of the paper's month-end portfolio formation -- the same substitution this "
+        "program already uses for max_effect, high_volume_return_premium and downside_beta. "
+        "NUM_LAGS=4 weekly lagged market terms: the paper's primary D1 specification (a longer "
+        "lag count is reported there only as a robustness check)."
+    ),
+    scope_reductions=(
+        "Long-only: this codebase has no short-selling infrastructure for ANY market yet (not "
+        "specific to this candidate). Decile sort (percentile >= 90), not the paper's own exact "
+        "portfolio construction. 8% protective stop and 1% risk-per-unit position sizing: not in "
+        "the source at all -- the original is a pure factor-return study with no position-level "
+        "risk management, same scope reduction every strategy on this platform carries."
+    ),
+    distinctiveness=(
+        "The first GENUINELY NEW factor mechanism for the US lane since it was stood up, as "
+        "distinct from every existing US-lane strategy, which is a cross-market port of an "
+        "already-researched India strategy (see this candidate's own research_roadmap.py entry). "
+        "Mechanically distinct from every other candidate in this program: it measures the LAG "
+        "STRUCTURE of a stock's co-movement with the broad market (a rolling multi-lag "
+        "regression's R^2 decomposition), not a stock's own past return or a single-lag beta. "
+        "No India-specific or NSE replication of this exact measure was found or attempted -- "
+        "this candidate is scoped to the US lane specifically, not proposed as a transferable "
+        "India candidate, per the roadmap's own known_weaknesses note."
+    ),
+    assumptions_impact=(
+        "Long-only scope reduction: DIRECTIONALLY UNKNOWN impact -- standard for this program, "
+        "doesn't bias the long side's own measured performance. "
+        "NUM_LAGS=4: MINOR -- D1 is a relative (decile) cross-sectional ranking, not an absolute "
+        "threshold, so a different lag count would shift absolute delay values more than the "
+        "cross-sectional ordering. "
+        "156-week rolling window: NONE on rules (the paper's own window), but MATERIAL in that it "
+        "shortens the usable backtest window substantially -- the walk-forward judgement does not "
+        "start until this ~3-year warm-up has elapsed (run_price_delay_factor_us_experiment's "
+        "warm_up_days), similar in spirit to this program's already-disclosed Long-Term Reversal "
+        "formation-window concern. "
+        "S&P 500 index as the market series (vs. an equal-weighted composite of the same "
+        "universe): NEGLIGIBLE, a defensible standard choice. "
+        "State-transition entry / single-vintage 21-day hold (vs. the paper's month-end "
+        "portfolio formation): MINOR, DIRECTIONALLY UNKNOWN -- entries spread across the month "
+        "instead of clustering at month-end, the same substitution and impact estimate already "
+        "disclosed for downside_beta. "
+        "8% protective stop and 1% risk-per-unit sizing: MODERATE, one-directional for the stop "
+        "-- the authors attribute the premium to smaller, less-followed names, which may gap more "
+        "than the broad universe, same concern already disclosed for downside_beta's high-"
+        "downside-beta names. "
+        "Re-verification caveat: the authors themselves find delay correlates with size, analyst "
+        "coverage and institutional ownership and control for this in the original paper, but a "
+        "from-scratch implementation here needs to independently re-verify the premium survives "
+        "on this platform's own S&P 500 universe and period, not assume the 2005 result transfers "
+        "unchanged two decades later -- exactly the open item the roadmap's own "
+        "evidence_sufficiency_note flags."
+    ),
+)

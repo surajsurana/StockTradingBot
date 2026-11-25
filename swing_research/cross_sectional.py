@@ -969,6 +969,122 @@ def compute_downside_beta_percentile_ranks(data: dict, market_close: pd.Series,
     return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
 
 
+# Hou & Moskowitz (2005) price delay (us_price_delay_factor, added 2026-11-25). For each stock,
+# regress its own WEEKLY log return on the CONTEMPORANEOUS weekly market return AND
+# PRICE_DELAY_NUM_LAGS lagged weekly market returns, over a rolling PRICE_DELAY_LOOKBACK_WEEKS
+# (~3-year) window; "delay" (the paper's D1) is the fraction of R^2 lost by dropping the lagged
+# terms -- i.e. how much of the stock's reaction to market-wide information arrives late:
+#
+#   D1 = 1 - R2_restricted / R2_unrestricted
+#
+# where the unrestricted regression has the contemporaneous AND lagged market terms, and the
+# restricted regression has the contemporaneous term only. UNLIKE compute_downside_beta_score
+# (a single-regressor conditional cov/var ratio with a closed-form sliding-window formula), this
+# is a multi-regressor OLS, so there is no simple rolling cov/var shortcut. It is still computed
+# without a per-window Python loop: the market design matrix is IDENTICAL for every stock (only
+# each stock's own y differs), so each stock's whole set of rolling-window regressions is solved
+# at once via a single batched np.linalg.solve over a stacked (num_windows, k, k) system -- see
+# _batched_r_squared() below. This is the "rolling-regression-with-multiple-lagged-terms
+# machinery" the roadmap profile flagged as not yet existing in this codebase (unlike the
+# single-lag CAPM-style regressions behind Jensen's Alpha / Betting Against Beta).
+PRICE_DELAY_LOOKBACK_WEEKS = 156   # ~3 years of weekly observations -- the paper's own window
+PRICE_DELAY_NUM_LAGS = 4           # DISCLOSED ASSUMPTION: the paper's primary D1 specification;
+                                    # a longer lag count is reported only as a robustness check.
+PRICE_DELAY_RIDGE = 1e-10          # tiny Tikhonov term so a near-singular window (e.g. a long
+                                    # flat stretch) solves instead of raising LinAlgError; far
+                                    # below any real variance in weekly market returns.
+
+
+def _weekly_log_returns(close: pd.Series) -> pd.Series:
+    """Friday-anchored weekly close -> log returns. dropna() at each step so gaps (holidays,
+    a short history) never leave a week silently duplicated via forward-fill."""
+    weekly_close = close.resample("W-FRI").last().dropna()
+    return (np.log(weekly_close) - np.log(weekly_close.shift(1))).dropna()
+
+
+def _batched_r_squared(Xw: np.ndarray, yw: np.ndarray) -> np.ndarray:
+    """Xw: (num_windows, lookback_weeks, k) design matrix per window (shared across stocks for a
+    given k); yw: (num_windows, lookback_weeks) this stock's own weekly returns. Solves the
+    normal equations beta = (X'X)^-1 X'y for every window AT ONCE via a single batched
+    np.linalg.solve (numpy broadcasts linalg.solve over leading dimensions), then returns each
+    window's R^2. No per-window Python loop."""
+    k = Xw.shape[-1]
+    XtX = np.einsum("wtk,wtl->wkl", Xw, Xw) + PRICE_DELAY_RIDGE * np.eye(k)
+    Xty = np.einsum("wtk,wt->wk", Xw, yw)[..., np.newaxis]   # (W, k, 1) -- solve's batched-matrix path
+    beta = np.linalg.solve(XtX, Xty)[..., 0]
+    fitted = np.einsum("wtk,wk->wt", Xw, beta)
+    resid = yw - fitted
+    rss = np.sum(resid ** 2, axis=1)
+    tss = np.sum((yw - yw.mean(axis=1, keepdims=True)) ** 2, axis=1)
+    return np.where(tss > 1e-12, 1.0 - rss / tss, np.nan)
+
+
+def compute_price_delay_score(price_history: pd.DataFrame, market_close: pd.Series,
+                              lookback_weeks: int = PRICE_DELAY_LOOKBACK_WEEKS,
+                              num_lags: int = PRICE_DELAY_NUM_LAGS) -> pd.Series:
+    """
+    Daily-indexed Series (forward-filled from the weekly regression, aligned to price_history's
+    own daily index) of the stock's Hou & Moskowitz price-delay measure D1, clipped to [0, 1].
+    NaN until a full `lookback_weeks` window of weekly stock/market returns exists. market_close
+    is aligned to the stock's own dates and forward-filled first, same convention as
+    compute_downside_beta_score.
+    """
+    stock_close = price_history["Close"]
+    aligned_market = market_close.reindex(stock_close.index).ffill()
+
+    r_i = _weekly_log_returns(stock_close)
+    r_m = _weekly_log_returns(aligned_market)
+    idx = r_i.index.intersection(r_m.index)
+    r_i, r_m = r_i.loc[idx].to_numpy(dtype=float), r_m.loc[idx].to_numpy(dtype=float)
+
+    # Contemporaneous + lagged regressors; a row needs num_lags prior weeks of market return, so
+    # the first num_lags rows (which would need a lag before the series starts) are dropped.
+    cols = [np.ones(len(idx)), r_m]
+    for lag in range(1, num_lags + 1):
+        cols.append(np.concatenate([np.full(lag, np.nan), r_m[:-lag]]))
+    x_full = np.column_stack(cols)[num_lags:]
+    y = r_i[num_lags:]
+    valid_idx = idx[num_lags:]
+
+    n = len(y)
+    weekly_delay = pd.Series(np.nan, index=valid_idx)
+    if n < lookback_weeks:
+        return weekly_delay.reindex(stock_close.index, method="ffill")
+
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    k_full = x_full.shape[1]
+    xw_full = sliding_window_view(x_full, (lookback_weeks, k_full))[:, 0, :, :]
+    xw_restricted = sliding_window_view(x_full[:, :2], (lookback_weeks, 2))[:, 0, :, :]
+    yw = sliding_window_view(y, lookback_weeks)
+
+    r2_full = _batched_r_squared(xw_full, yw)
+    r2_restricted = _batched_r_squared(xw_restricted, yw)
+    delay = np.where(r2_full > 1e-12, 1.0 - r2_restricted / np.where(r2_full > 1e-12, r2_full, 1.0), np.nan)
+    delay = np.clip(delay, 0.0, 1.0)
+    weekly_delay.iloc[lookback_weeks - 1:] = delay
+    return weekly_delay.reindex(stock_close.index, method="ffill")
+
+
+def compute_price_delay_percentile_ranks(data: dict, market_close: pd.Series,
+                                         lookback_weeks: int = PRICE_DELAY_LOOKBACK_WEEKS,
+                                         num_lags: int = PRICE_DELAY_NUM_LAGS) -> dict:
+    """{symbol: Series of price_delay_percentile (0-100)}: each stock's cross-sectional rank by
+    price delay among the stocks with a valid estimate that day. HIGH percentile = HIGH delay =
+    the side Hou & Moskowitz find the premium on. Same .rank(axis=1, pct=True) construction as
+    every other signal here."""
+    scores = {}
+    for symbol, df in data.items():
+        if df is None or df.empty:
+            continue
+        scores[symbol] = compute_price_delay_score(df.sort_index(), market_close, lookback_weeks, num_lags)
+    if not scores:
+        return {}
+    wide = pd.DataFrame(scores)
+    pct_ranks = _percentile_rank_rows(wide)
+    return {symbol: pct_ranks[symbol] for symbol in pct_ranks.columns}
+
+
 # Nifty100 Low Volatility 30 methodology: standard deviation of daily
 # log returns over the last one year, lowest = selected.
 REALIZED_VOL_LOOKBACK_DAYS = 252
