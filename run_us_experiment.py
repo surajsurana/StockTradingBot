@@ -97,6 +97,16 @@ RUNNERS = {
         "Downside Beta / Downside Risk, US variant (the unmodified India Strategy class against "
         "the frozen S&P 500 universe, with the S&P 500 index in place of Nifty 50 as the market "
         "series)"),
+    # Added 2026-11-25. UNLIKE every entry above (a cross-market port of an already-researched
+    # India strategy), this is a genuinely new factor mechanism for the US lane specifically --
+    # no India sibling to reuse a class from. Also needs a market series like us_downside_beta,
+    # and a much longer warm-up (run_price_delay_factor_us_experiment defaults warm_up_days=1095,
+    # not 365 -- the estimator needs a rolling ~3-year window of weekly returns).
+    "us_price_delay_factor": (
+        lambda: _director().run_price_delay_factor_us_experiment,
+        "Price Delay Factor (Slow Information Diffusion), Hou & Moskowitz (2005) -- a new "
+        "rolling multi-lag-regression estimator against the frozen S&P 500 universe, with the "
+        "S&P 500 index as the market series."),
 }
 
 

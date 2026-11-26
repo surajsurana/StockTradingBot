@@ -405,6 +405,18 @@ PAPER_US_STRATEGIES = {
                             ),
                             "downside_beta_percentile",
                         )),
+    # Added 2026-11-25. Same shape as us_downside_beta just above (a market series is needed, so
+    # _ranked() doesn't fit) -- see that entry's own comment for why.
+    "us_price_delay_factor": (_cls("price_delay_factor", "PriceDelayFactorStrategy"),
+                              lambda data: _renamed(
+                                  __import__("swing_research.cross_sectional", fromlist=["compute_price_delay_percentile_ranks"])
+                                  .compute_price_delay_percentile_ranks(
+                                      data,
+                                      __import__("data.fetch_historical", fromlist=["fetch_sp500_index"])
+                                      .fetch_sp500_index(period="max")["Close"],
+                                  ),
+                                  "price_delay_percentile",
+                              )),
 }
 
 # strategy_key -> (strategy factory, symbols getter, extra-columns fn) -- run_pool_e.py's shape, with
