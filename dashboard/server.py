@@ -609,14 +609,17 @@ class StateCache:
         self._entries = {}
         self._lock = threading.Lock()
 
-    def get(self, key, build):
+    def get(self, key, build, ttl=None):
         """Returns the cached payload for `key`, or builds it. The build happens OUTSIDE the lock so
         a slow rebuild cannot block every other request; two racing builds for the same key is a
-        waste but never a corruption, and the window is a few seconds once a minute."""
+        waste but never a corruption, and the window is a few seconds once a minute.
+
+        `ttl` overrides the default for this one key -- the other mode's strategy list is a full
+        rebuild for a small slice, so it is kept longer than the state of the mode being watched."""
         now = time.time()
         with self._lock:
             hit = self._entries.get(key)
-            if hit and now - hit[0] < self.ttl:
+            if hit and now - hit[0] < (self.ttl if ttl is None else ttl):
                 return hit[1]
         payload = build()
         with self._lock:
@@ -1148,6 +1151,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send(200, json.dumps(series_for(root, key, rate)).encode("utf-8"),
                        "application/json")
             return
+        if parsed.path == "/api/strategies":
+            # THE OTHER MODE'S STRATEGY LIST, AND NOTHING ELSE. The Paper and Live tabs of Strategies
+            # always read paper and real books respectively, whichever mode the page is in -- so the
+            # tab that does not match the mode needs the other mode's rows. Fetching that mode's
+            # whole /api/state would be 8.5MB (mostly the trade ledger and lifecycles) for ~200KB of
+            # rows, so this returns just the rows, the closed trades the period picker needs, and
+            # the live-capital split. Held for a minute: it is a full rebuild on a 458MB box.
+            mode = "live" if query.get("mode", ["paper"])[0] == "live" else "paper"
+            state_root = os.path.join(STATE_DIR, "live") if mode == "live" else STATE_DIR
+
+            def build_strategies():
+                state = self._state_dict(mode, state_root, None)
+                closed = [[r.get("book_key"), r.get("pool"), r.get("date"), r.get("pnl")]
+                          for r in (state.get("ledger") or [])
+                          if r.get("book_key") and str(r.get("status") or "").lower() != "open"]
+                out = {"mode": mode, "strategies": state.get("strategies") or [], "closed": closed,
+                       "live_capital": state.get("live_capital") or {}}
+                return json.dumps(json_safe(out), allow_nan=False).encode("utf-8")
+
+            payload = self.state_cache.get(("strategies", mode), build_strategies, ttl=60.0)
+            self._send(HTTPStatus.OK, payload, "application/json", extra)
+            return
         if parsed.path == "/api/state":
             # mode=live is a VIEW of deployment/state/live/ (the same layout
             # as the paper folders) -- it exists so the page's Live/Paper
@@ -1179,6 +1204,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         Returns BYTES, not a dict: serialising once and caching the result means repeat requests skip
         json.dumps on a ~2MB structure as well as the rebuild, and the cached object is a flat buffer
         rather than a large nested graph the collector has to walk."""
+        return json.dumps(json_safe(self._state_dict(mode, state_root, advice)),
+                          allow_nan=False).encode("utf-8")
+
+    def _state_dict(self, mode: str, state_root: str, advice) -> dict:
+        """The dashboard state for one mode, as a dict -- shared by /api/state and /api/strategies."""
         prices, as_of = self.price_cache.snapshot()
         crypto_prices, usdinr = self.price_cache.crypto_snapshot()
         us_prices, _ = self.price_cache.us_snapshot()
@@ -1206,7 +1236,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                                       advice_done=_advice_done() if mode == "live" else None,
                                       advice_results=_advice_results() if mode == "live" else None,
                                       advice_extra=_advice_extra() if mode == "live" else None)
-        return json.dumps(json_safe(state), allow_nan=False).encode("utf-8")
+        return state
 
 
 

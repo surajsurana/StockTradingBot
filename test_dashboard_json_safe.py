@@ -30,7 +30,9 @@ class TestJsonSafe(unittest.TestCase):
     def test_build_state_serialises_through_it(self):
         import inspect
         from dashboard import server
-        self.assertIn("json_safe(state), allow_nan=False", inspect.getsource(server.DashboardHandler._build_state))
+        self.assertIn("json_safe(self._state_dict(mode, state_root, advice)),",
+                      inspect.getsource(server.DashboardHandler._build_state))
+        self.assertIn("allow_nan=False", inspect.getsource(server.DashboardHandler._build_state))
 
 
 if __name__ == "__main__":

@@ -575,8 +575,8 @@ class TestTheFirstClickHappensBeforeTheCodeExists(unittest.TestCase):
     def test_the_header_is_marked_built_only_once_it_is(self):
         """A header that threw half way through is not a built header, and must be rebuilt."""
         fn = self._fn("buildRegHead")
-        self.assertIn("head.dataset.built = MODE;", fn)
-        self.assertGreater(fn.index("head.dataset.built = MODE;"), fn.index("head.innerHTML ="),
+        self.assertIn('head.dataset.built = "1";', fn)
+        self.assertGreater(fn.index('head.dataset.built = "1";'), fn.index("head.innerHTML ="),
                            "the built stamp must come after the header is actually written")
 
     def test_the_rail_click_does_no_dom_work_of_its_own(self):

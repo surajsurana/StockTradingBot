@@ -875,9 +875,9 @@ document.querySelectorAll(".modeswitch button[data-mode]").forEach(b => b.addEve
   MODE = b.dataset.mode; try { localStorage.setItem("desk.mode", MODE); } catch(e){}
   document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
   syncLiveTabs();
-  // The rail now carries the status filter, so switching mode has to move it: landing on Live mode
-  // still looking at the paper books would be the old pre-filter's bug with extra steps.
-  if(CUR_TAB === "registry") stratButton(lastStratView()).click();
+  // THE STRATEGIES TABS DO NOT MOVE WITH THE MODE. Paper always shows the paper books and Live the
+  // real ones (see regMode), so switching mode leaves you on the tab you were reading.
+  if(CUR_TAB === "registry" && STATE) renderRegistry(STATE);
   load();
 }));
 document.querySelectorAll(".modeswitch button[data-mode]").forEach(x => x.classList.toggle("on", x.dataset.mode===MODE));
@@ -1301,7 +1301,7 @@ const netValue = r => {
 const netOf = r => r.net ? r.net.net : (r.pnl == null ? null : r.pnl);
 const netBtn = r => r.net && !r.net.pool_only ? ` <button class="netbtn" data-key="${esc(r.key)}" title="What is left after charges and tax">ⓘ</button>` : "";
 function showNet(key){
-  const r = (STATE.strategies || []).find(x => x.key === key); if(!r || !r.net) return;
+  const r = (REG_LIST || STATE.strategies || []).find(x => x.key === key); if(!r || !r.net) return;
   const n = r.net;
   const line = (what, detail, amount, cls2 = "") =>
     `<tr class="${cls2}"><td>${what}</td><td class="note">${detail}</td><td class="n ${cls2 === "total" ? cls(amount) : ""}">${money(amount, cls2 === "total")}</td></tr>`;
@@ -1526,7 +1526,7 @@ function renderEquity(){
     + ((EQUITY.series || {}).converted ? " &middot; a dollar book, shown in rupees at today's rate" : "");
 }
 
-async function showEquity(key, name, meta){
+async function showEquity(key, name, meta, mode){
   EQUITY = {key: key, name: name, series: null, days: 7};
   document.getElementById("equity-name").textContent = name;
   document.getElementById("equity-meta").textContent = meta || "";
@@ -1534,7 +1534,7 @@ async function showEquity(key, name, meta){
   document.getElementById("equity-foot").textContent = "";
   document.getElementById("equity").showModal();
   try {
-    const r = await fetch(`/api/equity?strategy=${encodeURIComponent(key)}&mode=${MODE}`, {cache: "no-store"});
+    const r = await fetch(`/api/equity?strategy=${encodeURIComponent(key)}&mode=${mode || MODE}`, {cache: "no-store"});
     EQUITY.series = await r.json();
   } catch(e){ EQUITY.series = {points: []}; }
   if(EQUITY.key === key) renderEquity();
@@ -2697,7 +2697,7 @@ function renderAllocations(s){
 // THE SAME COLUMN IN BOTH MODES -- it is "Live capital" against real money and "Paper capital"
 // against notional, but the control is the same control, because paper and live must not differ.
 // The header carries the mode's own label and is rebuilt when the mode changes.
-const regCols = () => [...REG_COLS, ["live_capital", MODE === "live" ? "Live capital" : "Paper capital"]]
+const regCols = () => [...REG_COLS, ["live_capital", regMode() === "live" ? "Live capital" : "Paper capital"]]
   .concat([["promote",""]]);
 // An editable capital box on the strategy's own row. Only a strategy already promoted to live can
 // be funded: anything else has no business holding real money, and the ordering matters -- promote
@@ -2726,12 +2726,13 @@ function paperCapCell(r){
 // one row per pool gets ONE box: on its live pool's row in Live mode, on its first pool's row in
 // Paper mode, showing the strategy's total -- not that row's own pool.
 function capCell(r){
-  if(!r.pool_row) return MODE === "live" ? allocCell(r) : paperCapCell(r);
-  const here = MODE === "live" ? (r.live_pool ? poolCode(r.pool) === r.live_pool : r.first_pool) : r.first_pool;
-  const total = (STATE.strategies || []).find(x => x.key === r.key);
-  if(!here) return `<span class="note" title="Set for the whole strategy on its ${MODE === "live" ? "live pool's" : "first pool's"} row.">—</span>`;
-  const cell = MODE === "live" ? allocCell(total || r) : paperCapCell(total || r);
-  return MODE === "live" ? cell : cell.replace(/title="How much notional cash this paper book trades with"/,
+  const M = regMode();
+  if(!r.pool_row) return M === "live" ? allocCell(r) : paperCapCell(r);
+  const here = M === "live" ? (r.live_pool ? poolCode(r.pool) === r.live_pool : r.first_pool) : r.first_pool;
+  const total = (REG_LIST || []).find(x => x.key === r.key);
+  if(!here) return `<span class="note" title="Set for the whole strategy on its ${M === "live" ? "live pool's" : "first pool's"} row.">—</span>`;
+  const cell = M === "live" ? allocCell(total || r) : paperCapCell(total || r);
+  return M === "live" ? cell : cell.replace(/title="How much notional cash this paper book trades with"/,
     `title="Total for all ${r.pool_count} pools of this strategy, split between them by pool weight"`);
 }
 function capBox(key, amount, title){
@@ -2749,12 +2750,13 @@ function wireAllocInputs(){
     try {
       // Each mode writes to its own kind of money, through its own checks. Nothing about the box
       // decides which: the mode does.
-      const res = await fetch(MODE === "live" ? "/api/live/allocate" : "/api/paper/capital",
+      const res = await fetch(regMode() === "live" ? "/api/live/allocate" : "/api/paper/capital",
                               {method:"POST", headers:{"Content-Type":"application/json"},
                                body: JSON.stringify({key, rupees: Number(input.value)})});
       const body = await res.json();
       if(!body.ok) throw new Error(body.error || "refused");
     } catch(err){ alert("Could not set capital: " + err.message); b.disabled = false; b.textContent = "Save"; return; }
+    REG_OTHER = {};                            // the other mode's copy is stale now too
     if(typeof load === "function") load();
   }));
   document.querySelectorAll("#registry .allocinput").forEach(i =>
@@ -2765,7 +2767,7 @@ function buildRegHead(){
   // MARKED BUILT AT THE END, NOT THE START. Stamping it first meant that a throw anywhere below
   // left an empty <thead> that every later call then skipped as already done -- so the Strategies
   // tab came up with no column headers, and the first sel("reg-status") read .value off null.
-  const head = document.getElementById("reg-head"); if(head.dataset.built === MODE) return;
+  const head = document.getElementById("reg-head"); if(head.dataset.built) return;
   const cell = k => ({
     name: `<input id="reg-q" type="search" placeholder="find…" autocomplete="off">`,
     pool: `<select id="reg-pool"><option value="">All</option><option>Pool A</option><option>Pool A2</option><option>Pool A3</option><option>Pool B</option><option>Pool C</option><option>Pool D</option><option>Pool E</option><option>Pool E1</option><option>Pool F</option><option>Pool G</option><option>Pool H</option><option>Pool I</option><option>Pool I2</option><option>Pool I3</option><option value="-">Not trading</option></select>`,
@@ -2781,7 +2783,7 @@ function buildRegHead(){
   wireHeadPopovers(head);
   head.querySelectorAll("button[data-sort]").forEach(b => b.addEventListener("click", () => { REG_SORT = {key:b.dataset.sort, dir: REG_SORT.key===b.dataset.sort ? -REG_SORT.dir : 1}; renderRegistry(STATE); }));
   ["reg-q","reg-pool","reg-type","reg-verdict","reg-status","reg-pilot"].forEach(id => document.getElementById(id).addEventListener(id==="reg-q"?"input":"change", () => { if(STATE) renderRegistry(STATE); }));
-  head.dataset.built = MODE;
+  head.dataset.built = "1";
 }
 function showStrategies(filters){   // from the cards: open the Strategies tab with these filters set
   buildRegHead();
@@ -3352,11 +3354,13 @@ readRoute();
 // rewrites exactly those three columns and leaves the rest alone, and the figure it shows is gross
 // -- marked with the same * an uncosted figure uses everywhere else. Kept per pool as well as per
 // strategy, because every pool is its own row.
-function periodFigures(s, from, to){
+function periodFigures(d, from, to){
   if(!from && !to) return null;
-  const within = d => (!from || (d || "") >= from) && (!to || (d || "") <= to);
+  const within = x => (!from || (x || "") >= from) && (!to || (x || "") <= to);
   const out = {};
-  for(const r of (s.ledger || [])){
+  const trades = d.closed ? d.closed.map(([book_key, pool, date, pnl]) => ({book_key, pool, date, pnl, status: "closed"}))
+                          : (d.ledger || []);
+  for(const r of trades){
     const key = r.book_key;
     if(!key || String(r.status || "").toLowerCase() === "open" || !within(r.date)) continue;
     for(const k of [key, key + "|" + (r.pool || "")]){
@@ -3381,20 +3385,59 @@ function poolRows(r){
     net: p.net == null ? null : {net: p.net, pool_only: true}, pools_breakdown: []}));
 }
 
+// WHICH BOOKS A STRATEGIES VIEW READS. Paper and Retired are always the paper books, Live always the
+// real-money ones -- the tabs already say which, so the Paper/Live mode switch must not change what
+// they show. Before 2026-11-27 every row came from the current mode's books, so the Paper tab in Live
+// mode lost 70 of its 101 rows (no F/A2/A3/E1/I2/I3 books under live/) and the Live tab in Paper mode
+// showed SW-016's paper books. Any other filter (All, Off, a card's filters) reads the current mode.
+function regMode(){
+  const el = document.getElementById("reg-status");
+  const v = STRAT_VIEW !== null ? STRAT_VIEW : (el ? el.value : "");
+  return v === "Live" ? "live" : (v === "Paper" || v === "Retired") ? "paper" : MODE;
+}
+let REG_OTHER = {}, REG_LIST = null;
+// The rows for the view on screen: this mode's own state, or the other mode's strategy list from
+// /api/strategies (a few hundred KB, not the other mode's whole 8.5MB state). Null while it loads.
+function regData(s){
+  const m = regMode();
+  if(m === (s.mode || MODE)) return {mode: m, strategies: s.strategies || [], ledger: s.ledger, live_capital: s.live_capital};
+  const o = REG_OTHER[m] || (REG_OTHER[m] = {data: null, at: 0, loading: false});
+  if(!o.loading && Date.now() - o.at > 60000){
+    o.loading = true;
+    fetch(`/api/strategies?mode=${m}`, {cache: "no-store"})
+      .then(r => { if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { o.data = d; o.at = Date.now(); })
+      .catch(() => { o.at = Date.now() - 50000; })        // retry in ~10s, not on every render
+      .finally(() => { o.loading = false; if(STATE && CUR_TAB === "registry") renderRegistry(STATE); });
+  }
+  return o.data ? {mode: m, strategies: o.data.strategies || [], closed: o.data.closed || [], live_capital: o.data.live_capital} : null;
+}
+
 function renderRegistry(s){
   buildRegHead();
   if(STRAT_VIEW !== null){ document.getElementById("reg-status").value = STRAT_VIEW; STRAT_VIEW = null; syncStratNav(); }
+  const D = regData(s);
+  const capHead = document.querySelector('#reg-head [data-sort="live_capital"]');
+  const capLbl = capHead && capHead.parentElement.querySelector(".lbl");
+  if(capLbl) capLbl.textContent = regMode() === "live" ? "Live capital" : "Paper capital";
   markSort(document.getElementById("reg-head"), REG_SORT);
   markFilters(document.getElementById("reg-head"), {name: document.getElementById("reg-q").value, pool: sel("reg-pool"), type: sel("reg-type"), verdict: sel("reg-verdict"), status: sel("reg-status"), pilot: sel("reg-pilot")});
   const q = document.getElementById("reg-q").value.trim().toLowerCase(), poolF = sel("reg-pool"), typeF = sel("reg-type"), verdictF = sel("reg-verdict"), statusF = sel("reg-status"), pilotF = sel("reg-pilot");
   renderAllocations(s);
-  ALLOC_BY_KEY = Object.fromEntries(((s.live_capital || {}).strategies || []).map(x => [x.key, x.allocated]));
+  if(!D){
+    REG_LIST = null;
+    document.getElementById("reg-count").textContent = "";
+    document.getElementById("registry").innerHTML = `<tr><td colspan="${regCols().length}" class="note">Loading the ${regMode()} books…</td></tr>`;
+    return;
+  }
+  REG_LIST = D.strategies;
+  ALLOC_BY_KEY = Object.fromEntries(((D.live_capital || {}).strategies || []).map(x => [x.key, x.allocated]));
   // ONE FILTER, NOT TWO. Live mode used to quietly drop every non-live row, because showing all 34
   // with blank capital read as if everything were live but flat. The Live entry in the rail now
   // says that out loud -- and says it in both modes, so Paper, Live and Retired mean the same thing
   // whichever mode you are in, which is the standing rule. What the mode still decides is which one
   // you land on: Live mode opens on Live.
-  const period = periodFigures(s, REG_CAL.from, REG_CAL.to);
+  const period = periodFigures(D, REG_CAL.from, REG_CAL.to);
   const calBtn = document.getElementById("reg-cal");
   calBtn.classList.toggle("on", !!period);
   calBtn.textContent = period ? `${REG_CAL.from || "…"} → ${REG_CAL.to || "…"}` : "All time";
@@ -3404,7 +3447,7 @@ function renderRegistry(s){
   // A strategy with no trade closed inside the window reads as a dash, not a zero: nothing happened
   // is not the same as it made nothing.
   const inPeriod = r => period ? (period[r.row_id || r.key] || null) : null;
-  const all = (s.strategies || []).flatMap(poolRows)
+  const all = D.strategies.flatMap(poolRows)
     .map(r => {
       if(!period) return r;
       const p = inPeriod(r);
@@ -3460,7 +3503,7 @@ function renderRegistry(s){
   document.querySelectorAll("#registry .cap-link, #registry .pnl-link").forEach(td => td.addEventListener("click", e => {
     e.stopPropagation();
     const tr = td.closest("tr"), r = all.find(x => (x.row_id || x.key) === tr.dataset.row); if(!r) return;
-    showEquity(r.key, `${r.sid} · ${r.name}`, `${r.pool === "-" ? "Not trading" : r.pool} · ${r.type}`);
+    showEquity(r.key, `${r.sid} · ${r.name}`, `${r.pool === "-" ? "Not trading" : r.pool} · ${r.type}`, regMode());
   }));
   document.querySelectorAll("#registry tr.clickable").forEach(tr => tr.addEventListener("click", e => {
     const r = all.find(x => x.key === tr.dataset.key); if(!r) return;
