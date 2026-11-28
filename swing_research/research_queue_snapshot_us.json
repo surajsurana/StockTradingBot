@@ -4,8 +4,8 @@
     "name": "Price Delay Factor (Slow Information Diffusion)",
     "mode": "backtest",
     "in_progress": true,
-    "stale": false,
-    "claimed_days_ago": 1.7500166027662036,
+    "stale": true,
+    "claimed_days_ago": 2.0000096168518517,
     "horizon_lane": "swing"
   }
 }
